@@ -35,7 +35,7 @@ jobs:
 
       - name: Install dependencies for Python  ${{ matrix.python-version }} 
         run: |
-          poetry env use " ${{ matrix.python-version }} "
+          poetry env use "${{ matrix.python-version }}"
           poetry install
 
       - name: Build Sphinx docs
