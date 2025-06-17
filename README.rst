@@ -1,4 +1,4 @@
-.. image:: https://raw.githubusercontent.com/unimelbmdap/collectra/main/docs/static/img/collectra-banner.png
+.. image:: https://curly-adventure-5j8lz2j.pages.github.io/_images/collectra-banner.png
 
 .. start-badges
 
