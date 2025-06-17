@@ -6,6 +6,9 @@
 Welcome to Collectra's documentation!
 ===========================================================
 
+.. image:: static/img/collectra-banner.png
+
+
 .. include:: ../README.rst
    :start-after: start-badges
    :end-before: end-badges
