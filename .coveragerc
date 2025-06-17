@@ -1,0 +1,5 @@
+[run]
+source = collectra
+
+[report]
+precision = 2
