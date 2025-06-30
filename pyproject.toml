@@ -19,6 +19,7 @@ classifiers = [
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
+rocrate = "^0.14.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=6.2.5"

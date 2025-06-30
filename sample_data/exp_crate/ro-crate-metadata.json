@@ -1,0 +1,82 @@
+{
+    "@context": "https://w3id.org/ro/crate/1.1/context",
+    "@graph": [
+        {
+            "@id": "./",
+            "@type": "Dataset",
+            "datePublished": "2025-06-23T06:45:50+00:00",
+            "hasPart": [
+                {
+                    "@id": "paper.pdf"
+                },
+                {
+                    "@id": "results.csv"
+                },
+                {
+                    "@id": "images/figure.svg"
+                },
+                {
+                    "@id": "logs/"
+                }
+            ]
+        },
+        {
+            "@id": "ro-crate-metadata.json",
+            "@type": "CreativeWork",
+            "about": {
+                "@id": "./"
+            },
+            "conformsTo": {
+                "@id": "https://w3id.org/ro/crate/1.1"
+            }
+        },
+        {
+            "@id": "paper.pdf",
+            "@type": "File",
+            "author": [
+                {
+                    "@id": "https://orcid.org/0000-0000-0000-0000"
+                },
+                {
+                    "@id": "https://orcid.org/0000-0000-0000-0001"
+                }
+            ],
+            "encodingFormat": "application/pdf",
+            "name": "manuscript"
+        },
+        {
+            "@id": "results.csv",
+            "@type": "File",
+            "author": {
+                "@id": "https://orcid.org/0000-0000-0000-0000"
+            },
+            "encodingFormat": "text/csv",
+            "name": "experimental data"
+        },
+        {
+            "@id": "images/figure.svg",
+            "@type": "File",
+            "author": {
+                "@id": "https://orcid.org/0000-0000-0000-0001"
+            },
+            "encodingFormat": "image/svg+xml",
+            "name": "bar chart"
+        },
+        {
+            "@id": "https://orcid.org/0000-0000-0000-0000",
+            "@type": "Person",
+            "affiliation": "University of Flatland",
+            "name": "Alice Doe"
+        },
+        {
+            "@id": "https://orcid.org/0000-0000-0000-0001",
+            "@type": "Person",
+            "affiliation": "University of Flatland",
+            "name": "Bob Doe"
+        },
+        {
+            "@id": "logs/",
+            "@type": "Dataset"
+        }
+    ]
+}
