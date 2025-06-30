@@ -47,7 +47,7 @@ Each project is saved as a ``.collectra`` file, describing the the workflow whic
 
 When a raw file is processed by the task, the output is saved as a ``.grapto`` file.
 
-Both ``.collectra`` and ``.grapto`` files conform to the `RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.2/>`
+Both ``.collectra`` and ``.grapto`` files conform to the `RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.2/>`_
 
 Sample usage
 
