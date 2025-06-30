@@ -56,8 +56,11 @@ Sample usage:
 
     collectra train --workflow grapto.collectra --engine yolo_primary_label --training train --validation valid
 
- 
+.. image:: img/collectra_wf.png
+    :width: 400px
+    :alt: Collectra workflow
 
+ 
 Credits
 ==================================
 
