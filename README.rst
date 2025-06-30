@@ -52,6 +52,7 @@ Both ``.collectra`` and ``.grapto`` files conform to the `RO-Crate 1.1 specifica
 Sample usage
 
 .. code-block:: bash
+    
     collectra train --workflow grapto.collectra --engine yolo_primary_label --training train/*.grapto --validation valid/*.grapto
 
  
