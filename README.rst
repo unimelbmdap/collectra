@@ -49,11 +49,11 @@ When a raw file is processed by the task, the output is saved as a ``.grapto`` f
 
 Both ``.collectra`` and ``.grapto`` files conform to the `RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.2/>`_
 
-Sample usage
+Sample usage:
 
 .. code-block:: bash
-    
-    collectra train --workflow grapto.collectra --engine yolo_primary_label --training train/*.grapto --validation valid/*.grapto
+
+    collectra train --workflow grapto.collectra --engine yolo_primary_label --training train --validation valid
 
  
 
@@ -63,12 +63,11 @@ Credits
 .. start-credits
 
 Robert Turnbull
-For more information contact: <robert.turnbull@unimelb.edu.au>
+For more information contact: `<robert.turnbull@unimelb.edu.au>`_
 
-Created using torchapp (https://github.com/rbturnbull/torchapp).
+Created using torchapp `https://github.com/rbturnbull/torchapp`_.
 
-James Quang
-<james.quang@unimelb.edu.au>
+James Quang `<james.quang@unimelb.edu.au>`_
 
 .. end-credits
 
