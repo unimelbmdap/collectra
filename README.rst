@@ -42,8 +42,6 @@ System Design
 Collectra fulfills the following user stories:
 ***********************************************
 
-As a user, I can:
-
 1. Basic File Processing
     - Upload a specified photo or a collection of photos from a folder. 
         - If the photo/photos do not have an acommpanying annotation file, it will generate a blank grapto file.        
