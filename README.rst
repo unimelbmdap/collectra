@@ -38,6 +38,23 @@ Install using pip:
 
 .. end-quickstart
 
+Architecture 
+==================================
+
+Each project is saved as a ``.collectra`` file, describing the the workflow which includes:
+- A task: how to process a particular file
+- An engine: what is used to process the file
+
+When a raw file is processed by the task, the output is saved as a ``.grapto`` file.
+
+Both ``.collectra`` and ``.grapto`` files conform to the `RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.2/>`
+
+Sample usage
+
+.. code-block:: bash
+    collectra train --workflow grapto.collectra --engine yolo_primary_label --training train/*.grapto --validation valid/*.grapto
+
+ 
 
 Credits
 ==================================
@@ -48,6 +65,9 @@ Robert Turnbull
 For more information contact: <robert.turnbull@unimelb.edu.au>
 
 Created using torchapp (https://github.com/rbturnbull/torchapp).
+
+James Quang
+<james.quang@unimelb.edu.au>
 
 .. end-credits
 
