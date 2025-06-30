@@ -45,13 +45,11 @@ Collectra fulfills the following user stories:
 As a user, I can:
 
 1. Basic File Processing
-
     - Upload a specified photo or a collection of photos from a folder. 
         - If the photo/photos do not have an acommpanying annotation file, it will generate a blank grapto file.        
     - Upload a single or a list of ``.grapto`` files.
 
 2. Workflow Management
-
     - Select pre-built task templates and chain them together to create a workflow.
     - Have each workflow run saved as a ``.grapto`` file.    
     - Have both the workflow chain and the list of ``.grapto`` files saved in a ``.collectra`` file.
