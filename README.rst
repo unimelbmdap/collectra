@@ -63,11 +63,11 @@ Credits
 .. start-credits
 
 Robert Turnbull
-For more information contact: `<robert.turnbull@unimelb.edu.au>`_
+For more information contact: <robert.turnbull@unimelb.edu.au>
+James Quang
+For more information contact: <james.quang@unimelb.edu.au>
 
-Created using torchapp `https://github.com/rbturnbull/torchapp`_.
-
-James Quang `<james.quang@unimelb.edu.au>`_
+Created using `torchapp <https://github.com/rbturnbull/torchapp>`_.
 
 .. end-credits
 
