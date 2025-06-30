@@ -34,13 +34,39 @@ Install using pip:
 
     pip install git+https://github.com/unimelbmdap/collectra.git
 
-
-
 .. end-quickstart
 
-Architecture 
+System Design
 ==================================
 
+Collectra fulfills the following user stories:
+***********************************************
+
+As a user, I can:
+
+1. Basic File Processing
+
+    - Upload a specified photo or a collection of photos from a folder. 
+        - If the photo/photos do not have an acommpanying annotation file, it will generate a blank grapto file.        
+    - Upload a single or a list of ``.grapto`` files.
+
+2. Workflow Management
+
+    - Select pre-built task templates and chain them together to create a workflow.
+    - Have each workflow run saved as a ``.grapto`` file.    
+    - Have both the workflow chain and the list of ``.grapto`` files saved in a ``.collectra`` file.
+    - Save the best training model information in the ``.collectra`` file.
+
+3. Task & Engine Management
+    - Select a new task template from a list of available tasks and choose an engine to run the task.
+    - Run a detection workflow with a fined-tuned model as specified by the ``.collectra`` file. 
+
+.. image:: img/collectra_wf.png
+    :width: 500px
+    :alt: Collectra workflow
+
+Architecture
+*************
 Each project is saved as a ``.collectra`` file, describing the the workflow which includes:
 
 - A task: how to process a particular file
@@ -50,18 +76,17 @@ When a raw file is processed by the task, the output is saved as a ``.grapto`` f
 
 Both ``.collectra`` and ``.grapto`` files conform to the `RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.2/>`_
 
+A ``.collectra`` file contains the following data:
+- Definitions of the task and associated engine. If the engine is a trained model, the location of the model is also specified. 
+- A list of files to be processed.
+- A list of files that have been processed, with the output saved as ``.grapto`` files.
+
 Usage:
-**************
+=======
 
 .. code-block:: bash
 
     collectra train --workflow grapto.collectra --engine yolo_primary_label --training train --validation valid
-
-.. image:: img/collectra_wf.png
-    :width: 500px
-    :alt: Collectra workflow
-
-
  
 Credits
 ==================================
