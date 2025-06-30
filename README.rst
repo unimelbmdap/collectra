@@ -50,7 +50,8 @@ When a raw file is processed by the task, the output is saved as a ``.grapto`` f
 
 Both ``.collectra`` and ``.grapto`` files conform to the `RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.2/>`_
 
-Sample usage:
+Usage:
+**************
 
 .. code-block:: bash
 
@@ -59,6 +60,7 @@ Sample usage:
 .. image:: img/collectra_wf.png
     :width: 500px
     :alt: Collectra workflow
+
 
  
 Credits
