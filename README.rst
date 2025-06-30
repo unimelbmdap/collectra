@@ -42,6 +42,7 @@ Architecture
 ==================================
 
 Each project is saved as a ``.collectra`` file, describing the the workflow which includes:
+
 - A task: how to process a particular file
 - An engine: what is used to process the file
 
