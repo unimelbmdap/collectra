@@ -1,26 +1,43 @@
 import os, shutil
-from typer import Typer, Option
-from .workflow.models import Collectra, Grapto
+from typer import Typer, Option, Argument
 from typing_extensions import Annotated
+from typing import Optional, List
 from rich import print
 from pathlib import Path
-from rocrate.rocrate import ROCrate
+from .workflow.models import Collectra, Grapto
+from .workflow.utils import Engine, TaskType
 
-app = Typer()
+app = Typer()    
+
+HELP_TEXT = f"""
+    for each task, define the task type and the engine to use in the following format:\n
+    <task_type>,<engine>\n
+    Example: {TaskType.OBJECT_DETECT.value},{Engine.YOLO.value}\n
+"""
 
 @app.command()
-def init(
-    workflow_name: Annotated[str, Option(prompt="Workflow name")],
-    output: Annotated[Path, Option(prompt="Output directory for the workflow")],
+def create(
+    workflow: Annotated[str, Argument(help="name of the workflow")] = "default",
+    tasks: Annotated[Optional[List[str]], Option("--task", "-t", help=HELP_TEXT, case_sensitive=False)] = [],           
+    output: Annotated[Path, Option("--output", "-o", help="Output directory for the workflow")] = Path.cwd(),        
 ):
     """
-    Initiate a collectra workflow
-    """        
-    Collectra.build(
-        name=workflow_name, 
-        version="1.0",
-        output=output
-    )    
+    Build a collectra workflow
+    """
+    workflow_p = Path(f"{output}/{workflow}.collectra")
+    if workflow_p.exists() and workflow != "default":        
+        print(f"Workflow file already exists: {workflow} - skipping initialisation. To edit use `collectra edit` command.")        
+    else:
+        if workflow == "default":
+            # Override the default workflow folder
+            shutil.rmtree(workflow_p, ignore_errors=True)
+        os.makedirs(workflow_p.parent, exist_ok=True)
+        Collectra.create(
+            name=workflow, 
+            version="1.0",
+            output=output,
+            tasks=tasks
+        )               
 
 @app.command()
 def generate_grapto(
@@ -37,14 +54,14 @@ def generate_grapto(
     )
 
 def upload_grapto(
+        collectra_file: Annotated[Path, Option(prompt="path to workflow")],
         grapto_files: list[Path] = None,
-        grapto_file: Path = None,
+        grapto_file: Path = None,        
 ):
     """
     Upload grapto files to Collectra
-    """
-    collectra_file = Path("sample_data/flow.collectra")
-    workflow = ROCrate(collectra_file)    
+    """    
+    workflow = Collectra.load_workflow(collectra_file)    
     if grapto_files:
         for file in grapto_files:            
             workflow.add_file(
