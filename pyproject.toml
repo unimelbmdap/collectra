@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "Collectra"
-version = "0.1.0a1"
+version = "0.1.0"
 description = "Builds pipelines to extract data from collection images."
 authors = ["Robert Turnbull <robert.turnbull@unimelb.edu.au>", "James Quang <james.quang@unimelb.edu.au>"]
 license = "Apache-2.0"
@@ -18,7 +18,7 @@ classifiers = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.13"
+python = ">=3.10,<4"
 rocrate = "^0.14.0"
 typer = "^0.16.0"
 
