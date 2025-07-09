@@ -21,6 +21,7 @@ classifiers = [
 python = ">=3.10,<4"
 rocrate = "^0.14.0"
 typer = "^0.16.0"
+grapto = {git = "git@github.com:unimelbmdap/MuseumsVictoria.git"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=6.2.5"
