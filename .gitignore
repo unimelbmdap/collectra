@@ -3,6 +3,8 @@ wandb/*
 wandb*/*
 outputs/*
 *.out
+data/
+.DS_Store
 
 
 # From https://github.com/github/gitignore/blob/main/Python.gitignore
