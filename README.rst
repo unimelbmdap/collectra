@@ -73,9 +73,14 @@ When a raw file is processed by the task, the output is saved as a ``.grapto`` f
 Both ``.collectra`` and ``.grapto`` files conform to the `RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.2/>`_
 
 A ``.collectra`` file contains the following data:
-- Definitions of the task and associated engine. If the engine is a trained model, the location of the model is also specified. 
-- A list of files to be processed.
-- A list of files that have been processed, with the output saved as ``.grapto`` files.
+- Definitions of the task and associated engine. 
+- If the engine is a trained model, the location of the model is also specified. 
+
+Input:
+- A list of files to be processed, which can be either raw images or existing ``.grapto`` files.
+
+Output:
+- A list of ``.grapto`` files, which are the processed outputs of the input files.
 
 Usage:
 =======
@@ -83,6 +88,7 @@ Usage:
 .. code-block:: bash
 
     collectra train --workflow grapto.collectra --engine yolo_primary_label --training train --validation valid
+
  
 Credits
 ==================================

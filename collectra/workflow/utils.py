@@ -3,6 +3,7 @@ from typing import List
 from enum import StrEnum
 from rich import print
 from rocrate.rocrate import ROCrate
+from rocrate.model.contextentity import ContextEntity
 from pathlib import Path
 
 class TaskType(StrEnum):

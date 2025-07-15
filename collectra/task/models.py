@@ -1,4 +1,3 @@
-
 # Object Detector class for object detection tasks 
 class ObjectProcessor:
     def __init__(self, model_name: str, model_path: str):
