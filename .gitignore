@@ -5,6 +5,9 @@ outputs/*
 *.out
 data/
 .DS_Store
+output/
+glabels/
+*.cache
 
 
 # From https://github.com/github/gitignore/blob/main/Python.gitignore
