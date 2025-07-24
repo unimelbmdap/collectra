@@ -73,28 +73,28 @@ A file created by the Collectra application is an RO-Crate compliant (`RO-Crate 
   {
     "@context": "https://w3id.org/ro/crate/1.1/context",
     "@graph": [
-        {
-            "@id": "./",
-            "@type": "Dataset",
-            "datePublished": "2025-07-18T06:06:44+00:00"
+      {
+        "@id": "./",
+        "@type": "Dataset",
+        "datePublished": "2025-07-18T06:06:44+00:00"
+      },
+      {
+        "@id": "ro-crate-metadata.json",
+        "@type": "CreativeWork",
+        "about": {
+          "@id": "./"
         },
-        {
-            "@id": "ro-crate-metadata.json",
-            "@type": "CreativeWork",
-            "about": {
-                "@id": "./"
-            },
-            "conformsTo": {
-                "@id": "https://w3id.org/ro/crate/1.1"
-            }
-        },
-        {
-            "@id": "task_id",
-            "@type": "Task",
-            "description": "a task description",
-            "engine": "an attached engine",                
-            "task_type": "a task type"
-        }            
+        "conformsTo": {
+          "@id": "https://w3id.org/ro/crate/1.1"
+        }
+      },
+      {
+        "@id": "task_id",
+        "@type": "Task",
+        "description": "a task description",
+        "engine": "an attached engine",                
+        "task_type": "a task type"
+      }            
     ]
   }
 
