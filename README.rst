@@ -40,6 +40,7 @@ Design Requirements
 ===============
 
 Collectra caters to two user group:
+
 - Operator
 - Builder
 
