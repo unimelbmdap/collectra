@@ -73,37 +73,16 @@ def delete(
         print(f"[red]Error removing task[/red]: {e}")
 
 @app.command()
-def configure(
-    workflow: Path = Argument(help="path to workflow"),
-    task: str = Argument(help="task to configure"),
-    engine: str = Argument(help="engine to use for the task"),    
-):
-    wf = Collectra.load_workflow(workflow)
-    for e in wf.crate.get_entities():
-        if e.type == "Task" and e.id == task:
-            print()
-            wf.crate.add_or_update_jsonld({
-                "@id": e.id,
-                "@type": "Task",
-                "description": e["description"],
-                "task_type": e["task_type"],
-                "engine": engine,                
-            })   
-            wf.crate.write(workflow)         
-            return
-
-@app.command()
 def run(
     workflow: Path = Argument(help="path to workflow"),
+    input: Annotated[Path, Option("--input", "-i", help="Input directory of files")] = Path.cwd() / "data"/ "images",
+    output: Annotated[Path, Option("--output", "-o", help="Output directory for processed files")] = Path.cwd() / "data" / "output",
 ):
     """
     Execute a Collectra workflow
-    """
-    if not workflow.exists():
-        print(f"Error: The specified workflow does not exist: {workflow}")
-        return
+    """    
     wf = Collectra.load_workflow(workflow)
-    wf.run()
+    wf.run(input=input, output=output)
 
 
 def upload_grapto(

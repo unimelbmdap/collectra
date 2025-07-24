@@ -15,7 +15,7 @@ class TaskRepo:
   def convert_annotation(config: dict = {}):
     path = Path(config.get("input"))
     output = Path(config.get("output"))
-    function = config.get("engine")
+    function = config.get("engine") or "via"
     run_grapto(
       path=path,
       output=output,
@@ -72,10 +72,11 @@ class Task(ContextEntity):
     } 
 
 class TaskModel:
-  def __init__(self, task_type: str, task_type_choice: TaskTypeChoice, config: Task = {}):
+  def __init__(self, task_type: str, task_type_choice: TaskTypeChoice, task: Task = None, config: dict = {}):
     self.task_type = task_type
     self.task_type_choice = task_type_choice
     self.config = config
+    self.task = task
 
   def __str__(self):
     return f"{self.task_type}"
@@ -87,15 +88,15 @@ class TaskModel:
     description = self.task_type_choice.description if self.task_type_choice.description else f"{self.task_type_choice.function.__name__}"
     return description
   
-  def run(self):    
+  def run(self):        
     configuration_print = f"""
       [bold green]---[/bold green]
       Running task: {self.task_type}
       Engine: {self.engine()}
-      Input: {self.config.get("input")}
-      Output: {self.config.get("output")}
-    """
-    print(configuration_print)
+      Input: {self.config["input"]}
+      Output: {self.config["output"]}
+    """      
+    print(configuration_print)              
     self.task_type_choice.run(self.config)
   
   @staticmethod
@@ -108,9 +109,9 @@ class TaskModel:
     return TaskModel(task_type, TASK_TYPE_CHOICES[task_type])
   
   @staticmethod
-  def build_task(task: Task) -> TaskModel:
-    task_type = task["task_type"]
-    return TaskModel(task_type, TASK_TYPE_CHOICES[task_type], config=task)
+  def build_task(task: Task, config: dict = {}) -> TaskModel:        
+    task_type = task["task_type"]    
+    return TaskModel(task_type, TASK_TYPE_CHOICES[task_type], task, config=config)
 
 class TaskManager:
   @staticmethod
@@ -142,6 +143,3 @@ class TrainObjectDetection:
     # )
     # metrics = model.val() 
     shutil.rmtree("tmp", ignore_errors=True)
-
-# trainer = TrainObjectDetection(model_name="yolo11n.pt")
-# trainer.run()   

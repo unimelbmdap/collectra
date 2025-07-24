@@ -23,15 +23,19 @@ class Collectra(BaseROCrate):
         super().__init__(name, version, output, crate)        
         print(f"Collectra workflow initialized: {self.name} version {self.version}")
         self.file_name = self.output / f"{self.name}.{FileType.COLLECTRA.value}"
+        self.task_chain = []        
     
-    def run(self):
-        task_chain = []        
+    def run(self, input: Path, output: Path):        
+        config = {
+            "input": input,
+            "output": output
+        }
         for e in self.crate.get_entities():
-            if e.type == "Task":
-                task = TaskModel.build_task(e)                
-                task_chain.append(task)
-        print(f"[purple]Built task chain[/purple]: ", task_chain)
-        for task in task_chain:
+            if e.type == "Task":                
+                task = TaskModel.build_task(e, config)                
+                self.task_chain.append(task)
+        print(f"[purple]Built task chain[/purple]: ", self.task_chain)
+        for task in self.task_chain:
             task.run()
 
     def add_task(self, task: str):
