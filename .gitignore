@@ -8,6 +8,8 @@ data/
 output/
 glabels/
 *.cache
+*.collectra
+tmp/
 
 
 # From https://github.com/github/gitignore/blob/main/Python.gitignore

@@ -9,15 +9,6 @@ from rocrate.model.contextentity import ContextEntity
 from .utils import FileType, BaseROCrate, Task, make_default_crate  
 from ..task.models import Task, TaskModel
 
-class ImageFile(ContextEntity):
-    """
-    Represents an image file in the Collectra workflow.
-    This class extends ContextEntity to include properties specific to image files.
-    """
-    def __init__(self, name: str, version: str, output: Path):
-        super().__init__(name, version, output)
-        print(f"ImageFile initialized: {self.name} version {self.version}")
-
 class Collectra(BaseROCrate):    
     def __init__(self, name: str, version: str, output: Path, crate: ROCrate = ROCrate()):        
         super().__init__(name, version, output, crate)        

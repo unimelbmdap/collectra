@@ -7,6 +7,7 @@ from rocrate.model.contextentity import ContextEntity
 from rocrate.rocrate import ROCrate
 from ultralytics import YOLO
 from PIL import Image, ImageOps
+from ..engine.models import TrainObjectDetection
 
 # TODO: Move this to a task library module ----
 
@@ -25,10 +26,11 @@ class TaskRepo:
   @staticmethod
   def detect_objects(config: dict = {}):
     engine = TrainObjectDetection(
-      data= Path(config.get("input")),
+      data=Path(config.get("input")),
       model_name=config.get("engine", "yolo11n.pt"),
       output=Path(config.get("output")),
     )
+    print(f"[bold green]Running object detection with engine[/bold green]: {engine.model}")
     engine.run()     
 
 class TaskTypeChoice:
@@ -117,29 +119,3 @@ class TaskManager:
   @staticmethod
   def create_temp_workdir(dir_name: Path):
     os.makedirs(dir_name, exist_ok=True)
-
-class TrainObjectDetection:
-  
-  def __init__(self, data: Path, model_name: str | Path = "yolo11n.pt", output: Path = Path("output")):    
-    self.data = data
-    self.model = model_name
-    self.output = output    
-
-  def run(self):
-    os.makedirs("tmp", exist_ok=True)
-    for file in self.data.glob("*.grapto"):
-      crate = ROCrate(file)
-      for e in crate.data_entities:
-        print(type(e))
-        
-    # model = YOLO(model_path / self.model)
-    # train_results = model.train(
-    #   data=Path("glabels/yolo_config.yml"),
-    #   epochs=50,
-    #   imgsz=640,
-    #   device="0",
-    #   verbose=True,
-    #   project=train_path
-    # )
-    # metrics = model.val() 
-    shutil.rmtree("tmp", ignore_errors=True)
