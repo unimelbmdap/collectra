@@ -70,31 +70,32 @@ Architecture
 A file created by the Collectra application is an RO-Crate compliant (`RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.1/>`_) file that describes a workflow. It has the following structure:
 
 .. code-block:: json
+  
   {
     "@context": "https://w3id.org/ro/crate/1.1/context",
-    "@graph": [
-      {
-        "@id": "./",
-        "@type": "Dataset",
-        "datePublished": "2025-07-18T06:06:44+00:00"
-      },
-      {
-        "@id": "ro-crate-metadata.json",
-        "@type": "CreativeWork",
-        "about": {
-          "@id": "./"
+    "@graph": "@graph": [
+        {
+            "@id": "./",
+            "@type": "Dataset",
+            "datePublished": "2025-07-18T06:06:44+00:00"
         },
-        "conformsTo": {
-          "@id": "https://w3id.org/ro/crate/1.1"
-        }
-      },
-      {
-        "@id": "task_id",
-        "@type": "Task",
-        "description": "a task description",
-        "engine": "an attached engine",                
-        "task_type": "a task type"
-      }            
+        {
+            "@id": "ro-crate-metadata.json",
+            "@type": "CreativeWork",
+            "about": {
+                "@id": "./"
+            },
+            "conformsTo": {
+                "@id": "https://w3id.org/ro/crate/1.1"
+            }
+        },
+        {
+            "@id": "task_id",
+            "@type": "Task",
+            "description": "a task description",
+            "engine": "an attached engine",                
+            "task_type": "a task type"
+        }            
     ]
   }
 
