@@ -938,7 +938,7 @@ typer = ">=0.16.0,<0.17.0"
 type = "git"
 url = "ssh://git@github.com/unimelbmdap/MuseumsVictoria.git"
 reference = "HEAD"
-resolved_reference = "ad332e872ba16c3dbdc956cb234b193fd12b9dad"
+resolved_reference = "f6647a7f0f4dcaed276eaea86e4476deef218a40"
 
 [[package]]
 name = "h11"

@@ -1,10 +1,12 @@
+from __future__ import annotations
 import os
 from typing import List
 from pathlib import Path
 from rich import print
 from rocrate.rocrate import ROCrate
 from rocrate.model.contextentity import ContextEntity
-from .utils import FileType, BaseROCrate, Task, verify_tasks, generate_new_crate  
+from .utils import FileType, BaseROCrate, Task, generate_new_crate  
+from ..task.models import Task, TaskModel
 
 class ImageFile(ContextEntity):
     """
@@ -16,8 +18,8 @@ class ImageFile(ContextEntity):
         print(f"ImageFile initialized: {self.name} version {self.version}")
 
 class Collectra(BaseROCrate):    
-    def __init__(self, name: str, version: str, output: Path):        
-        super().__init__(name, version, output)
+    def __init__(self, name: str, version: str, output: Path, crate: ROCrate = None):        
+        super().__init__(name, version, output, crate)        
         print(f"Collectra workflow initialized: {self.name} version {self.version}")
 
     def generate_crate(self, obj: BaseROCrate, type: FileType, tasks: List[Task] = []) -> ROCrate:
@@ -29,15 +31,25 @@ class Collectra(BaseROCrate):
         crate = ROCrate()
         file_name = self.output / f"{self.name}.{type.value}"        
         for task in tasks:
-            task_type = task.get_task_type()
-            engine = task.get_engine()
-            crate.add_file("yolo/engine", dest_path="model/", properties={
-                "task_type": f"{task_type.value}",
-                "engine": f"{engine.value}"
-            })
+            task = TaskModel.get_task(task) 
+            task_crate = Task(crate, task.task_type, properties = {
+                "description": task.describe(),
+                "task_type": task.task_type,                
+            })           
+            crate.add(task_crate)
         crate.write(file_name)                
-        return crate
+        self.crate = crate
     
+    def run(self):
+        task_chain = []        
+        for e in self.crate.get_entities():
+            if e.type == "Task":
+                task = TaskModel.build_task(e)                
+                task_chain.append(task)
+        print(f"[purple]Built task chain[/purple]: ", task_chain)
+        for task in task_chain:
+            task.run()
+
     @staticmethod
     def create(
         name="default",
@@ -50,25 +62,20 @@ class Collectra(BaseROCrate):
         If no tasks are provided, an empty workflow is created.
         """
         collectra = Collectra(name, version, output)        
-        os.makedirs(collectra.output, exist_ok=True)        
-        tasks = verify_tasks(tasks)              
-        return collectra.generate_crate(collectra, FileType.COLLECTRA, tasks=tasks)    
-
-    @staticmethod
-    def add_to_workflow(
-        workflow: ROCrate,
-        name: str,
-        version: str,
-        output: Path = None
-    ) -> ROCrate:
-        collectra = Collectra(name, version, output)        
-        return generate_new_crate(collectra, FileType.COLLECTRA, workflow)  
+        os.makedirs(collectra.output, exist_ok=True)                              
+        return collectra.generate_crate(collectra, FileType.COLLECTRA, tasks)        
 
     @staticmethod
     def load_workflow(
         workflow_file: Path
-    ) -> ROCrate:
-        return ROCrate(workflow_file)           
+    ) -> Collectra:
+        collectra = Collectra(
+            name=workflow_file.stem,
+            version="1.0",
+            output=workflow_file.parent,
+            crate = ROCrate(workflow_file)
+        )                      
+        return collectra
 
 class Grapto(BaseROCrate):  
     def __init__(self, name: str, version: str, output: Path):        

@@ -37,10 +37,11 @@ class Task:
         return self.task_type
 
 class BaseROCrate:
-    def __init__(self, name: str, version: str, output: Path):
+    def __init__(self, name: str, version: str, output: Path, crate: ROCrate = None):
         self.name = name
         self.version = version
-        self.output = output     
+        self.output = output
+        self.crate = crate     
 
 def verify_tasks(tasks: List[str]) -> List[Task]:
     verified_tasks: List[Task] = []

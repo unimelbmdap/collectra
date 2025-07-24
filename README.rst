@@ -46,12 +46,14 @@ Collectra caters to two user group:
 User Stories
 ***************
 Operator:
+
 - I want to be able to download a ``.collectra`` file and run it to process a set of files.
 - I want to be able to fine tune the machine learning engine attached to a machine learning task
 - I want to be able to share the ``.collectra`` file with other operators.
 - I want to have a GUI that opens up when I open the workflow to perform the above tasks. All save actions are version controlled.
 
 Builder:
+
 - I want to be able to create/edit a task template and engine, which can be used by operators.
 - I want to be able to create/edit workflow by chaining together existing task templates and engines.
 - I want to be able to save the workflow as a ``.collectra`` file, which can be used by operators.
