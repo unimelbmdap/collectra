@@ -5,7 +5,7 @@ from pathlib import Path
 from rich import print
 from rocrate.rocrate import ROCrate
 from rocrate.model.contextentity import ContextEntity
-from .utils import FileType, BaseROCrate, Task, generate_new_crate  
+from .utils import FileType, BaseROCrate, Task, make_default_crate  
 from ..task.models import Task, TaskModel
 
 class ImageFile(ContextEntity):
@@ -21,24 +21,6 @@ class Collectra(BaseROCrate):
     def __init__(self, name: str, version: str, output: Path, crate: ROCrate = None):        
         super().__init__(name, version, output, crate)        
         print(f"Collectra workflow initialized: {self.name} version {self.version}")
-
-    def generate_crate(self, obj: BaseROCrate, type: FileType, tasks: List[Task] = []) -> ROCrate:
-        """
-        Generate a ROCrate for the Collectra workflow.
-        This method creates the necessary directories and files for the workflow.
-        """
-        os.makedirs(self.output, exist_ok=True)        
-        crate = ROCrate()
-        file_name = self.output / f"{self.name}.{type.value}"        
-        for task in tasks:
-            task = TaskModel.get_task(task) 
-            task_crate = Task(crate, task.task_type, properties = {
-                "description": task.describe(),
-                "task_type": task.task_type,                
-            })           
-            crate.add(task_crate)
-        crate.write(file_name)                
-        self.crate = crate
     
     def run(self):
         task_chain = []        
@@ -51,19 +33,29 @@ class Collectra(BaseROCrate):
             task.run()
 
     @staticmethod
-    def create(
+    def make(
         name="default",
         version="1.0",
         output: Path = Path.cwd(),
         tasks: List[str] = None
-    ):
+    ) -> Collectra:
         """
         Create a Collectra workflow with the specified name, version, output directory, and tasks.
         If no tasks are provided, an empty workflow is created.
         """
-        collectra = Collectra(name, version, output)        
-        os.makedirs(collectra.output, exist_ok=True)                              
-        return collectra.generate_crate(collectra, FileType.COLLECTRA, tasks)        
+        crate = ROCrate()
+        collectra = Collectra(name, version, output, crate)        
+        os.makedirs(collectra.output, exist_ok=True)                          
+        file_name = collectra.output / f"{collectra.name}.{FileType.COLLECTRA.value}"        
+        for task in tasks:
+            task = TaskModel.get_task(task) 
+            task_crate = Task(collectra.crate, task.task_type, properties = {
+                "description": task.describe(),
+                "task_type": task.task_type,                
+            })           
+            collectra.crate.add(task_crate)
+        collectra.crate.write_zip(file_name)                        
+        return collectra        
 
     @staticmethod
     def load_workflow(
@@ -90,4 +82,4 @@ class Grapto(BaseROCrate):
     ):
         grapto = Grapto(name, version, output)                     
         os.makedirs(grapto.output, exist_ok=True)        
-        return generate_new_crate(grapto, FileType.GRAPTO)
+        return make_default_crate(grapto, FileType.GRAPTO)

@@ -62,7 +62,7 @@ def verify_tasks(tasks: List[str]) -> List[Task]:
             continue        
     return verified_tasks
 
-def generate_new_crate(obj: BaseROCrate, type: FileType) -> ROCrate:
+def make_default_crate(obj: BaseROCrate, type: FileType) -> ROCrate:
     os.makedirs(obj.output, exist_ok=True)        
     crate = ROCrate()
     file_name = obj.output / f"{obj.name}.{type.value}"        

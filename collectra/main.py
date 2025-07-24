@@ -42,19 +42,34 @@ def make(
     """
     workflow_p = Path(f"{output}/{workflow}.collectra")
     if workflow_p.exists() and workflow != "default":
-        print(
-            f"Workflow file already exists: {workflow} - skipping initialisation. To edit use `collectra edit` command."
-        )
-    else:
-        print(f"Creating workflow: {workflow} in {output}")
-        if workflow == "default":
-            shutil.rmtree(workflow_p, ignore_errors=True)
-        os.makedirs(workflow_p.parent, exist_ok=True)
-        Collectra.create(name=workflow, version="1.0", output=output, tasks=tasks)
-
+        print(f"Workflow file already exists: {workflow} - skipping initialisation. To edit use `collectra edit` command.")
+        return    
+    print(f"Creating workflow: {workflow} in {output}")
+    if workflow == "default":
+        shutil.rmtree(workflow_p, ignore_errors=True)
+    os.makedirs(workflow_p.parent, exist_ok=True)
+    Collectra.make(name=workflow, version="1.0", output=output, tasks=tasks)
 
 @app.command()
-def execute(
+def add(
+    workflow: Annotated[Path, Argument(help="path to workflow")],
+    task: Annotated[
+        str, Argument(help="task to add in the format <task_type>,<engine>")
+    ],
+):
+    """
+    Add a task to the Collectra workflow
+    """
+    if not workflow.exists():
+        print(f"Error: The specified workflow does not exist: {workflow}")
+        return
+    wf = Collectra.load_workflow(workflow)
+    task_type, engine = task.split(",")
+    wf.add_task(task_type=task_type, engine=engine)
+    wf.write(workflow)
+
+@app.command()
+def run(
     workflow: Path = Argument(help="path to workflow"),
 ):
     """

@@ -67,9 +67,7 @@ class Task(ContextEntity):
         "@id": self.id,
         "@type": "Task",
         "description": "",
-        "engine": "",
-        "input": "",
-        "output": "",
+        "engine": "",        
         "task_type": "",        
     } 
 
