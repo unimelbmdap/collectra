@@ -15,7 +15,7 @@ class TaskRepo:
   def convert_annotation(config: dict = {}):
     path = Path(config.get("input"))
     output = Path(config.get("output"))
-    function = config.get("engine") or "via"
+    function = config.get("engine", "via")
     run_grapto(
       path=path,
       output=output,
@@ -26,7 +26,7 @@ class TaskRepo:
   def detect_objects(config: dict = {}):
     engine = TrainObjectDetection(
       data= Path(config.get("input")),
-      model_name=config.get("model_name", "yolo11n.pt"),
+      model_name=config.get("engine", "yolo11n.pt"),
       output=Path(config.get("output")),
     )
     engine.run()     
@@ -93,8 +93,8 @@ class TaskModel:
       [bold green]---[/bold green]
       Running task: {self.task_type}
       Engine: {self.engine()}
-      Input: {self.config["input"]}
-      Output: {self.config["output"]}
+      Input: {self.config.get("input")}
+      Output: {self.config.get("output")}
     """      
     print(configuration_print)              
     self.task_type_choice.run(self.config)
