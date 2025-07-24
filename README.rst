@@ -39,7 +39,7 @@ Install using pip:
 Design Requirements 
 ===============
 
-Collectra caters to two user group:
+Collectra caters to two user groups:
 
 - Operator
 - Builder
@@ -66,24 +66,45 @@ Builder:
 
 Architecture
 *************
-Each project is saved as a ``.collectra`` file, describing the the workflow which includes:
+
+A file created by the Collectra application is an RO-Crate compliant (`RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.1/>`_) file that describes a workflow. It has the following structure:
+
+.. code-block:: json
+    {
+        "@context": "https://w3id.org/ro/crate/1.1/context",
+        "@graph": [
+            {
+                "@id": "./",
+                "@type": "Dataset",
+                "datePublished": "2025-07-18T06:06:44+00:00"
+            },
+            {
+                "@id": "ro-crate-metadata.json",
+                "@type": "CreativeWork",
+                "about": {
+                    "@id": "./"
+                },
+                "conformsTo": {
+                    "@id": "https://w3id.org/ro/crate/1.1"
+                }
+            },
+            {
+                "@id": "task_id",
+                "@type": "Task",
+                "description": "a task description",
+                "engine": "an attached engine",                
+                "task_type": "a task type",
+            },
+            ...
+        ]
+    }
+
+All defined task will be saved in the ``ro-crate-metadata.json``
 
 - A task: how to process a particular file
 - An engine: what is used to process the file
 
-When a raw file is processed by the task, the output is saved as a ``.grapto`` file.
-
-Both ``.collectra`` and ``.grapto`` files conform to the `RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.2/>`_
-
-A ``.collectra`` file contains the following data:
-- Definitions of the task and associated engine. 
-- If the engine is a trained model, the location of the model is also specified. 
-
-Input:
-- A list of files to be processed, which can be either raw images or existing ``.grapto`` files.
-
-Output:
-- A list of ``.grapto`` files, which are the processed outputs of the input files.
+When a raw file is processed by the task, the output is saved as a ``.something`` file where .something is the file extension defined by the the workflow editor and user
 
 Usage:
 =======
