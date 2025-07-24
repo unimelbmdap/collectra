@@ -109,6 +109,7 @@ Usage:
 =======
 
 Builder
+********
 
 Make a new workflow
 
@@ -116,6 +117,13 @@ Make a new workflow
 
     collectra make --workflow hespi.collectra -t object_detect,yolo -t convert_annotation,via
 
+Add/remove a task to the workflow
+
+.. code-block:: bash
+
+    collectra add --workflow hespi.collectra --task object_detect,yolo
+
+    collectra remove --workflow hespi.collectra --task convert_annotation,via
 
 Train/Validate/Test a workflow ML engine
 
