@@ -70,7 +70,8 @@ Architecture
 A file created by the Collectra application is an RO-Crate compliant (`RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.1/>`_) file that describes a workflow. It has the following structure:
 
 .. literalinclude:: sample-collectra.json
-    :language: JSON
+  :language: JSON
+
 
 All defined task will be saved in the ``ro-crate-metadata.json``
 
