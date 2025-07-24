@@ -93,7 +93,7 @@ A file created by the Collectra application is an RO-Crate compliant (`RO-Crate 
                 "@type": "Task",
                 "description": "a task description",
                 "engine": "an attached engine",                
-                "task_type": "a task type",
+                "task_type": "a task type"
             }     
         ]
     }
