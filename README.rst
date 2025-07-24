@@ -70,7 +70,7 @@ Architecture
 A file created by the Collectra application is an RO-Crate compliant (`RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.1/>`_) file that describes a workflow. It has the following structure:
 
 .. code-block:: json
-  
+
   {
     "@context": "https://w3id.org/ro/crate/1.1/context",
     "@graph": "@graph": [
@@ -99,21 +99,39 @@ A file created by the Collectra application is an RO-Crate compliant (`RO-Crate 
     ]
   }
 
-
-All defined task will be saved in the ``ro-crate-metadata.json``
-
-- A task: how to process a particular file
-- An engine: what is used to process the file
+All defined task will be saved in the workflow, with the following properties: 
+- task_type: how to process a particular file
+- engine: what is used to process the file
 
 When a raw file is processed by the task, the output is saved as a ``.something`` file where .something is the file extension defined by the the workflow editor and user
 
 Usage:
 =======
 
+Builder
+
+Make a new workflow
+
 .. code-block:: bash
 
-    collectra train --workflow grapto.collectra --engine yolo_primary_label --training train --validation valid
+    collectra make --workflow hespi.collectra -t object_detect,yolo -t convert_annotation,via
 
+
+Train/Validate/Test a workflow ML engine
+
+.. code-block:: bash
+
+    collectra train --workflow hespi.collectra --engine yolo --input train --validation valid --output train_output
+
+    collectra validate --workflow hespi.collectra --engine yolo --input valid --output valid_output
+
+    collectra test --workflow hespi.collectra --engine yolo --output test_output
+
+Compile and build the workflow
+
+.. code-block:: bash
+
+    collectra build --workflow hespi.collectra
  
 Credits
 ==================================

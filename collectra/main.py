@@ -18,7 +18,7 @@ HELP_TEXT = f"""
 
 
 @app.command()
-def create(
+def make(
     workflow: Annotated[str, Argument(help="name of the workflow")] = "default",
     tasks: Annotated[
         Optional[List[str]],
