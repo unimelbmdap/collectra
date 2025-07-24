@@ -39,34 +39,58 @@ def make(
     - If the tasks are provided, it creates a workflow with the specified tasks
     - The tasks should be in the format: <task_type>,<engine>
     - Example: object_detect,yolo
-    """
-    workflow_p = Path(f"{output}/{workflow}.collectra")
-    if workflow_p.exists() and workflow != "default":
-        print(f"Workflow file already exists: {workflow} - skipping initialisation. To edit use `collectra edit` command.")
-        return    
-    print(f"Creating workflow: {workflow} in {output}")
-    if workflow == "default":
-        shutil.rmtree(workflow_p, ignore_errors=True)
-    os.makedirs(workflow_p.parent, exist_ok=True)
+    """    
     Collectra.make(name=workflow, version="1.0", output=output, tasks=tasks)
 
 @app.command()
 def add(
     workflow: Annotated[Path, Argument(help="path to workflow")],
-    task: Annotated[
-        str, Argument(help="task to add in the format <task_type>,<engine>")
-    ],
+    tasks: Annotated[
+        Optional[List[str]],
+        Option("--task", "-t", help=HELP_TEXT, case_sensitive=False),
+    ] = [],
 ):
     """
     Add a task to the Collectra workflow
-    """
-    if not workflow.exists():
-        print(f"Error: The specified workflow does not exist: {workflow}")
-        return
+    """    
     wf = Collectra.load_workflow(workflow)
-    task_type, engine = task.split(",")
-    wf.add_task(task_type=task_type, engine=engine)
-    wf.write(workflow)
+    wf.add_tasks(tasks)    
+    wf.save()    
+
+@app.command()
+def delete(
+    workflow: Annotated[Path, Argument(help="path to workflow")],
+    task: Annotated[str, Option("--task", "-t", help="task to remove")],
+):
+    """
+    Remove a task from the Collectra workflow
+    """    
+    wf = Collectra.load_workflow(workflow)
+    try:
+        wf.delete(task)
+        wf.save()        
+    except ValueError as e:
+        print(f"[red]Error removing task[/red]: {e}")
+
+@app.command()
+def configure(
+    workflow: Path = Argument(help="path to workflow"),
+    task: str = Argument(help="task to configure"),
+    engine: str = Argument(help="engine to use for the task"),    
+):
+    wf = Collectra.load_workflow(workflow)
+    for e in wf.crate.get_entities():
+        if e.type == "Task" and e.id == task:
+            print()
+            wf.crate.add_or_update_jsonld({
+                "@id": e.id,
+                "@type": "Task",
+                "description": e["description"],
+                "task_type": e["task_type"],
+                "engine": engine,                
+            })   
+            wf.crate.write(workflow)         
+            return
 
 @app.command()
 def run(
@@ -80,31 +104,6 @@ def run(
         return
     wf = Collectra.load_workflow(workflow)
     wf.run()
-
-
-@app.command()
-def configure(
-    workflow: Path = Argument(help="path to workflow"),
-    task: str = Argument(help="task to configure"),
-    engine: str = Argument(help="engine to use for the task"),
-    input: Path = Argument(help="input path for the task"),
-    output: Annotated[Path, Argument(help="output path for the task")] = "",
-):
-    wf = Collectra.load_workflow(workflow)
-    for e in wf.crate.get_entities():
-        if e.type == "Task" and e.id == task:
-            print()
-            wf.crate.add_or_update_jsonld({
-                "@id": e.id,
-                "@type": "Task",
-                "description": e["description"],
-                "task_type": e["task_type"],
-                "engine": engine,
-                "input": str(input),
-                "output": str(output),
-            })   
-            wf.crate.write(workflow)         
-            return
 
 
 def upload_grapto(
