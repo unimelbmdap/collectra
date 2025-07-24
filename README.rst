@@ -36,26 +36,26 @@ Install using pip:
 
 .. end-quickstart
 
-System Design
-==================================
+Design Requirements 
+===============
 
-Collectra fulfills the following user stories:
-***********************************************
+Collectra caters to two user group:
+- Operator
+- Builder
 
-1. Basic File Processing
-    - Upload a specified photo or a collection of photos from a folder. 
-        - If the photo/photos do not have an acommpanying annotation file, it will generate a blank grapto file.        
-    - Upload a single or a list of ``.grapto`` files.
+User Stories
+***************
+Operator:
+- I want to be able to download a ``.collectra`` file and run it to process a set of files.
+- I want to be able to fine tune the machine learning engine attached to a machine learning task
+- I want to be able to share the ``.collectra`` file with other operators.
+- I want to have a GUI that opens up when I open the workflow to perform the above tasks. All save actions are version controlled.
 
-2. Workflow Management
-    - Select pre-built task templates and chain them together to create a workflow.
-    - Have each workflow run saved as a ``.grapto`` file.    
-    - Have both the workflow chain and the list of ``.grapto`` files saved in a ``.collectra`` file.
-    - Save the best training model information in the ``.collectra`` file.
-
-3. Task & Engine Management
-    - Select a new task template from a list of available tasks and choose an engine to run the task.
-    - Run a detection workflow with a fined-tuned model as specified by the ``.collectra`` file. 
+Builder:
+- I want to be able to create/edit a task template and engine, which can be used by operators.
+- I want to be able to create/edit workflow by chaining together existing task templates and engines.
+- I want to be able to save the workflow as a ``.collectra`` file, which can be used by operators.
+- I want to have a GUI that can open any workflow. All save actions are version controlled.
 
 .. image:: img/collectra_wf.png
     :width: 500px
