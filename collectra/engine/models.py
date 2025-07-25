@@ -4,10 +4,11 @@ from rocrate.rocrate import ROCrate
 import os, shutil, random
 from rich import print
 from ultralytics import YOLO
-from rocrate.model.contextentity import ContextEntity
+from rocrate.model import DataEntity
 from grapto.main import run as run_grapto
+from urllib.parse import unquote
 
-class Engine(ContextEntity):
+class Engine(DataEntity):
   def __init__(self, crate, identifier=None, properties=None):
     super(Engine, self).__init__(crate, identifier, properties)
   
@@ -18,10 +19,10 @@ class Engine(ContextEntity):
         "name": "",
         "version": "",
         "description": "",
-        "source": "",
-    }
+        "source": "",        
+    }  
 
-class TrainingParameters(ContextEntity):
+class TrainingParameters(DataEntity):
   def __init__(self, crate, identifier=None, properties=None):
     super(TrainingParameters, self).__init__(crate, identifier, properties)
   
@@ -56,8 +57,14 @@ class BaseEngine:
         "version": self.version,
         "source": self.source,
         "description": self.description,
+    })    
+    crate.add_file(None, f"{self.name}-{self.source}", properties={
+      "name": f"{self.name}-{self.source}",
+      "description": self.description,
+      "version": self.version,
+      "source": self.source,
     })
-    crate.add(engine_crate)     
+    # crate.add(engine_crate)     
     return engine_crate
   
   def run(self, config: dict = {}):
@@ -65,26 +72,27 @@ class BaseEngine:
     print(f"[bold green]Running engine[/bold green]: {self.name} source {self.source}")    
     pass
     
-class SheetComponent(BaseEngine):
+class YoloEngine(BaseEngine):
   def __init__(self, name: str | Path = "yolo11n.pt"):  
-    super(SheetComponent, self).__init__(name)          
+    super(YoloEngine, self).__init__(name)       
+    self.dir = Path("tmp")   
 
   def run(self, config: dict = {}):
-    data=Path(config.get("input")),        
+    data=Path(config.get("output"))    
     print(f"[bold green]Training object detection model[/bold green]: {self.name}")
-    os.makedirs("tmp", exist_ok=True)
+    os.makedirs(self.dir, exist_ok=True)
     list_of_files = []    
     for file in data.glob("*.grapto"):
       crate = ROCrate(file)
       for e in crate.data_entities:
-        e.write(Path("tmp"))
+        e.write(Path(self.dir))
         list_of_files.append(f"./{file.stem}.jpg")                
       print(f"[bold green]Processing file[/bold green]: {file}")
       bounding_box = ""
       for e in crate.contextual_entities:
         if e.type == "ImageBoundingBox":
           bounding_box += f"{e.get("class_id")} {e.get("x_center")} {e.get("y_center")} {e.get("width_relative")} {e.get("height_relative")}\n"
-      bounding_box_file = Path("tmp") / f"{file.stem}.txt"
+      bounding_box_file = Path(self.dir) / f"{file.stem}.txt"
       bounding_box_file.write_text(bounding_box)      
 
     number_of_classes = 0
@@ -102,11 +110,10 @@ class SheetComponent(BaseEngine):
 
     yolo_config = f"train: train.txt\nval: val.txt\nnc: {number_of_classes}\nnames: {classes}"
 
-    Path("tmp/yolo_config.yml").write_text(yolo_config)
+    Path(f"{self.dir}/yolo_config.yml").write_text(yolo_config)
 
     random.seed(448)
-    random.shuffle(list_of_files)
-    print(list_of_files)
+    random.shuffle(list_of_files)    
 
     # Randomly split 80% for training and 20% for validation
     train_files = list_of_files[:int(len(list_of_files) * 0.8)]
@@ -118,13 +125,20 @@ class SheetComponent(BaseEngine):
     model = YOLO(self.name)
     train_results = model.train(
       data=Path("tmp/yolo_config.yml"),
-      epochs=50,
+      epochs=3,
       imgsz=640,
       device="cpu",
-      verbose=True,      
+      verbose=True,    
+      project=self.dir  
     )
+    crate = config.get("crate")
+    if crate:
+      crate.add_file(Path(self.dir) / "train" / "weights" / "best.pt", properties = {
+        "name": f"{self.name}-best.pt",
+        "description": "Best model weights after training",        
+      })
     metrics = model.val() 
-    shutil.rmtree("tmp", ignore_errors=True)
+    # shutil.rmtree(self.dir, ignore_errors=True)
 
 class VIAEngine(BaseEngine):
   
@@ -144,7 +158,7 @@ class VIAEngine(BaseEngine):
 class EngineManager:
 
   ENGINE_DEFINITIONS: dict = {
-    "yolo": SheetComponent("yolo11n.pt"),
+    "yolo11n.pt": YoloEngine("yolo11n.pt"),
     "via": VIAEngine("via"),
   }
   
