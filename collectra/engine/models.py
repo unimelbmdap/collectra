@@ -1,9 +1,11 @@
+from __future__ import annotations
 from pathlib import Path
 from rocrate.rocrate import ROCrate
 import os, shutil, random
 from rich import print
 from ultralytics import YOLO
 from rocrate.model.contextentity import ContextEntity
+from grapto.main import run as run_grapto
 
 class Engine(ContextEntity):
   def __init__(self, crate, identifier=None, properties=None):
@@ -29,21 +31,50 @@ class TrainingParameters(ContextEntity):
         "@type": "TrainingParameters",        
     }
 
-class EngineRepo:
-  pass
-    
-class TrainObjectDetection:
-  
-  def __init__(self, data: Path, model_name: str | Path = "yolo11n.pt", output: Path = Path("output")):    
-    self.data = data
-    self.model = model_name
-    self.output = output    
+class BaseEngine:
+  def __init__(self, name: str, version: str = "", source: str = "default", description: str = "", config: dict = {}):
+    self.name = name
+    self.version = version
+    self.source = source
+    self.description = description
+    self.config = config
 
-  def run(self):
-    print(f"[bold green]Training object detection model[/bold green]: {self.model}")
+  def __str__(self):
+    return f"{self.name}"
+  
+  def describe(self):
+    return f"{self.name} version {self.version} from {self.source}. {self.description}"
+
+  def to_crate(self, crate: ROCrate) -> Engine:
+    """
+    Convert the EngineModel to a ROCrate entity.
+    :param crate: The ROCrate instance to add the engine to.
+    :return: The created Engine entity.
+    """
+    engine_crate = Engine(crate, identifier=f"{self.name}-{self.source}", properties={
+        "name": self.name,
+        "version": self.version,
+        "source": self.source,
+        "description": self.description,
+    })
+    crate.add(engine_crate)     
+    return engine_crate
+  
+  def run(self, config: dict = {}):
+    print("Found config: ", config)
+    print(f"[bold green]Running engine[/bold green]: {self.name} source {self.source}")    
+    pass
+    
+class YOLOEngine(BaseEngine):
+  def __init__(self, name: str | Path = "yolo11n.pt"):  
+    super(YOLOEngine, self).__init__(name)          
+
+  def run(self, config: dict = {}):
+    data=Path(config.get("input")),        
+    print(f"[bold green]Training object detection model[/bold green]: {self.name}")
     os.makedirs("tmp", exist_ok=True)
     list_of_files = []    
-    for file in self.data.glob("*.grapto"):
+    for file in data.glob("*.grapto"):
       crate = ROCrate(file)
       for e in crate.data_entities:
         e.write(Path("tmp"))
@@ -59,7 +90,7 @@ class TrainObjectDetection:
     number_of_classes = 0
     classes = []
     
-    for file in self.data.glob("*.grapto"):
+    for file in data.glob("*.grapto"):
       crate = ROCrate(file)
       for e in crate.contextual_entities:
         if e.type == "ClassMapping":
@@ -84,7 +115,7 @@ class TrainObjectDetection:
     Path("tmp/train.txt").write_text("\n".join(train_files))
     Path("tmp/val.txt").write_text("\n".join(val_files))  
 
-    model = YOLO(self.model)
+    model = YOLO(self.name)
     train_results = model.train(
       data=Path("tmp/yolo_config.yml"),
       epochs=50,
@@ -94,3 +125,42 @@ class TrainObjectDetection:
     )
     metrics = model.val() 
     shutil.rmtree("tmp", ignore_errors=True)
+
+class VIAEngine(BaseEngine):
+  
+  def __init__(self, name: str = "via"):
+    super(VIAEngine, self).__init__(name)
+
+  def run(self, config: dict = {}):
+    path = Path(config.get("input"))
+    output = Path(config.get("output"))
+    function = config.get("engine", "via")
+    run_grapto(
+      path=path,
+      output=output,
+      function=function
+    )
+
+class EngineManager:
+
+  ENGINE_DEFINITIONS: dict = {
+    "yolo": YOLOEngine("yolo11n.pt"),
+    "via": VIAEngine("via"),
+  }
+  
+  @staticmethod
+  def get(name: str) -> BaseEngine:
+    """
+    Get an engine by name.
+    :param name: The name of the engine.
+    :return: An instance of BaseEngine.
+    """
+    if name not in EngineManager.ENGINE_DEFINITIONS:
+      raise ValueError(f"Unknown engine: {name}")
+    return EngineManager.ENGINE_DEFINITIONS[name]
+
+  @staticmethod
+  def build(engine: str):
+    if engine not in EngineManager.ENGINE_DEFINITIONS:
+      raise ValueError(f"Unknown engine: {engine}")
+    return EngineManager.ENGINE_DEFINITIONS[engine]    

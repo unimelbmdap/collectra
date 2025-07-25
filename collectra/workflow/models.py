@@ -5,9 +5,8 @@ from typing import List
 from pathlib import Path
 from rich import print
 from rocrate.rocrate import ROCrate
-from rocrate.model.contextentity import ContextEntity
-from .utils import FileType, BaseROCrate, Task, make_default_crate  
-from ..task.models import Task, TaskModel, Engine
+from .utils import FileType, BaseROCrate, make_default_crate  
+from ..task.models import TaskManager
 
 class Collectra(BaseROCrate):    
     def __init__(self, name: str, version: str, output: Path, crate: ROCrate = ROCrate()):        
@@ -19,24 +18,18 @@ class Collectra(BaseROCrate):
     def run(self, input: Path, output: Path):        
         config = {
             "input": input,
-            "output": output
+            "output": output,
+            "crate": self.crate,
         }
+        manager = TaskManager()        
         for e in self.crate.get_entities():
             if e.type == "Task":                
-                task = TaskModel.build_task(e, config)                
-                self.task_chain.append(task)
-        print(f"[purple]Built task chain[/purple]: ", self.task_chain)
-        for task in self.task_chain:
-            task.run()
+                manager.chain(e, config)                
+        manager.run()
 
     def add_task(self, task: str):
         try:
-            task = TaskModel.get_task(task)
-            task_crate = Task(self.crate, task.task_type, properties = {
-                "description": task.describe(),
-                "task_type": task.task_type,                
-            })
-            self.crate.add(task_crate)
+            TaskManager.build(task, self.crate)
         except ValueError as e:
             print(f"[red]Error adding task[/red]: {e}")
             return

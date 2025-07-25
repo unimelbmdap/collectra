@@ -1,58 +1,41 @@
 from __future__ import annotations
-import os
+import uuid
+from typing import List
 from pathlib import Path
 from rich import print
-from grapto.main import run as run_grapto
 from rocrate.model.contextentity import ContextEntity
-from ..engine.models import TrainObjectDetection
+from ..engine.models import YOLOEngine, BaseEngine, EngineManager
+from rocrate.rocrate import ROCrate
 
 # TODO: Move this to a task library module ----
 
-class TaskRepo:    
-  @staticmethod
-  def convert_annotation(config: dict = {}):
-    path = Path(config.get("input"))
-    output = Path(config.get("output"))
-    function = config.get("engine", "via")
-    run_grapto(
-      path=path,
-      output=output,
-      function=function
-    )
+class TaskRepo:      
   
   @staticmethod
   def detect_objects(config: dict = {}):
-    engine = TrainObjectDetection(
-      data=Path(config.get("input")),
-      model_name=config.get("engine", "yolo11n.pt"),
-      output=Path(config.get("output")),
+    engine = YOLOEngine(
+      
     )
     print(f"[bold green]Running object detection with engine[/bold green]: {engine.model}")
-    engine.run()     
+    engine.run()      
 
-class TaskTypeChoice:
-  def __init__(self, task_type: str, description: str, function: callable):
+class TaskDefinition:
+  def __init__(self, task_type: str, description: str):
     self.task_type = task_type
     self.description = description
-    self.function = function
-  
-  def run(self, configs: dict = {}):
-    self.function(configs)
   
   def __str__(self):
-    return f"{self.task_type}: {self.description}"  
+    return f"{self.task_type}: {self.description}"
 
-TASK_TYPE_CHOICES: dict = {
-    "convert_annotation": TaskTypeChoice(
-      task_type="convert_annotation",
-      description="Convert annotations from one format to another",
-      function=TaskRepo.convert_annotation
-    ),
-    "detect_objects": TaskTypeChoice(
-      task_type="detect_objects",
-      description="Detect objects in images using a specified engine",
-      function=TaskRepo.detect_objects
-    )
+TASK_DEFINITIONS: dict = {
+  "convert_annotation": TaskDefinition(
+    task_type="convert_annotation",
+    description="Convert annotations from one format to another",
+  ),
+  "detect_objects": TaskDefinition(
+    task_type="detect_objects",
+    description="Detect objects in images using a specified engine",
+  )
 }
 
 #---------------------------------------------
@@ -70,49 +53,93 @@ class Task(ContextEntity):
     } 
 
 class TaskModel:
-  def __init__(self, task_type: str, task_type_choice: TaskTypeChoice, task: Task = None, config: dict = {}):
-    self.task_type = task_type
-    self.task_type_choice = task_type_choice
-    self.config = config
-    self.task = task
+  def __init__(self, task_definition: TaskDefinition, config: dict = {}):    
+    self.id = uuid.uuid4()    
+    self.task_definition = task_definition    
+    self.config = config    
+    self.engine = None
+  
+  def to_crate(self, crate: ROCrate):
+    """
+    Convert the TaskModel to a ROCrate entity.
+    :param crate: The ROCrate instance to add the task to.
+    :return: The created Task entity.
+    """
+    if not self.engine:
+      raise ValueError("Engine must be set before converting to crate.")
+    task_crate = Task(crate, identifier=self.id, properties={
+        "description": self.describe(),
+        "task_type": self.task_definition.task_type,                
+    })    
+    task_crate["engine"] = [self.engine.to_crate(crate)]
+    crate.add(task_crate)
+    return task_crate
+
+  def add_engine(self, engine: BaseEngine):
+    """
+    Add an engine to the task.
+    :param engine: The EngineModel instance to add.
+    """    
+    self.engine = engine
+  
+  def run(self):
+    if not self.engine:
+      raise ValueError("Engine must be set before running the task.")
+    print(f"[bold green]Running task[/bold green]: {self.task_definition.task_type}")
+    print(f"Using engine: {self.engine.name} {self.engine.version}")
+    self.engine.run(self.config)
 
   def __str__(self):
-    return f"{self.task_type}"
-  
-  def engine(self):
-    return self.config.get("engine")
+    return f"{self.task_definition.task_type}"
 
   def describe(self):
-    description = self.task_type_choice.description if self.task_type_choice.description else f"{self.task_type_choice.function.__name__}"
-    return description
+    description = self.task_definition.description if self.task_definition.description else "No description available."
+    return description       
+
+class TaskManager:
+
+  def __init__(self, task_chain: List[TaskModel] = []):
+    self.task_chain = task_chain    
+
+  def run(self):
+    for task in self.task_chain:
+      task.run()
   
-  def run(self):        
-    configuration_print = f"""
-      [bold green]---[/bold green]
-      Running task: {self.task_type}
-      Engine: {self.engine()}
-      Input: {self.config.get("input")}
-      Output: {self.config.get("output")}
-    """      
-    print(configuration_print)              
-    self.task_type_choice.run(self.config)
-  
+  def chain(self, task: Task, config: dict = {}) -> TaskModel:
+    if not task:
+      return None         
+    task_type = task["task_type"]
+    engine = task["engine"][0]
+    engine_model = EngineManager.get(engine["name"])
+    # engine_model = BaseEngine(
+    #   name=engine["name"],
+    #   version=engine["version"],
+    #   source=engine.get("source", "default"),
+    #   description=engine.get("description", ""),
+    #   config=engine.get("config", {})
+    # )    
+    task = TaskModel(TASK_DEFINITIONS[task_type], config=config)
+    task.add_engine(engine_model)
+    self.task_chain.append(task)
+    return task    
+
   @staticmethod
-  def get_task(task: str) -> TaskModel:          
+  def build(task: str, crate: ROCrate = None) -> TaskModel:
+    """
+    Build a Task from a string string.
+    :param task: The task string in the format "<task_type>,<engine>".
+    :param crate: The ROCrate instance to add the task to.
+    :raises ValueError: If the task format is invalid or the task type is not recognized
+    :return: An instance of EngineModel.
+    """
     if "," not in task:
       raise ValueError(f"[bold red]Invalid task format[/bold red]: {task}. Must be in the format <task_type>,<engine>.")
     task_type, engine = task.split(",")
-    if task_type not in TASK_TYPE_CHOICES:
-      raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {list(TASK_TYPE_CHOICES.keys())}.")
-    
-    return TaskModel(task_type, TASK_TYPE_CHOICES[task_type])
-  
-  @staticmethod
-  def build_task(task: Task, config: dict = {}) -> TaskModel:        
-    task_type = task["task_type"]    
-    return TaskModel(task_type, TASK_TYPE_CHOICES[task_type], task, config=config)
-
-class TaskManager:
-  @staticmethod
-  def create_temp_workdir(dir_name: Path):
-    os.makedirs(dir_name, exist_ok=True)
+    if task_type not in TASK_DEFINITIONS:
+      raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {list(TASK_DEFINITIONS.keys())}.")
+    engine = EngineManager.build(engine)
+    task: TaskModel = TaskModel(TASK_DEFINITIONS[task_type])
+    task.add_engine(engine)
+    print(engine)
+    task.to_crate(crate)
+    return task
