@@ -65,9 +65,9 @@ class BaseEngine:
     print(f"[bold green]Running engine[/bold green]: {self.name} source {self.source}")    
     pass
     
-class YOLOEngine(BaseEngine):
+class SheetComponent(BaseEngine):
   def __init__(self, name: str | Path = "yolo11n.pt"):  
-    super(YOLOEngine, self).__init__(name)          
+    super(SheetComponent, self).__init__(name)          
 
   def run(self, config: dict = {}):
     data=Path(config.get("input")),        
@@ -144,7 +144,7 @@ class VIAEngine(BaseEngine):
 class EngineManager:
 
   ENGINE_DEFINITIONS: dict = {
-    "yolo": YOLOEngine("yolo11n.pt"),
+    "yolo": SheetComponent("yolo11n.pt"),
     "via": VIAEngine("via"),
   }
   

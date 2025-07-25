@@ -4,7 +4,7 @@ from typing import List
 from pathlib import Path
 from rich import print
 from rocrate.model.contextentity import ContextEntity
-from ..engine.models import YOLOEngine, BaseEngine, EngineManager
+from ..engine.models import SheetComponent, BaseEngine, EngineManager
 from rocrate.rocrate import ROCrate
 
 # TODO: Move this to a task library module ----
@@ -13,7 +13,7 @@ class TaskRepo:
   
   @staticmethod
   def detect_objects(config: dict = {}):
-    engine = YOLOEngine(
+    engine = SheetComponent(
       
     )
     print(f"[bold green]Running object detection with engine[/bold green]: {engine.model}")
@@ -111,13 +111,6 @@ class TaskManager:
     task_type = task["task_type"]
     engine = task["engine"][0]
     engine_model = EngineManager.get(engine["name"])
-    # engine_model = BaseEngine(
-    #   name=engine["name"],
-    #   version=engine["version"],
-    #   source=engine.get("source", "default"),
-    #   description=engine.get("description", ""),
-    #   config=engine.get("config", {})
-    # )    
     task = TaskModel(TASK_DEFINITIONS[task_type], config=config)
     task.add_engine(engine_model)
     self.task_chain.append(task)
