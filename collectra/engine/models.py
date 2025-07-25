@@ -3,6 +3,34 @@ from rocrate.rocrate import ROCrate
 import os, shutil, random
 from rich import print
 from ultralytics import YOLO
+from rocrate.model.contextentity import ContextEntity
+
+class Engine(ContextEntity):
+  def __init__(self, crate, identifier=None, properties=None):
+    super(Engine, self).__init__(crate, identifier, properties)
+  
+  def _empty(self):
+    return {
+        "@id": self.id,
+        "@type": "Engine",
+        "name": "",
+        "version": "",
+        "description": "",
+        "source": "",
+    }
+
+class TrainingParameters(ContextEntity):
+  def __init__(self, crate, identifier=None, properties=None):
+    super(TrainingParameters, self).__init__(crate, identifier, properties)
+  
+  def _empty(self):
+    return {
+        "@id": self.id,
+        "@type": "TrainingParameters",        
+    }
+
+class EngineRepo:
+  pass
     
 class TrainObjectDetection:
   

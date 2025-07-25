@@ -1,12 +1,9 @@
 from __future__ import annotations
-import os, shutil
+import os
 from pathlib import Path
 from rich import print
 from grapto.main import run as run_grapto
 from rocrate.model.contextentity import ContextEntity
-from rocrate.rocrate import ROCrate
-from ultralytics import YOLO
-from PIL import Image, ImageOps
 from ..engine.models import TrainObjectDetection
 
 # TODO: Move this to a task library module ----
@@ -68,8 +65,7 @@ class Task(ContextEntity):
     return {
         "@id": self.id,
         "@type": "Task",
-        "description": "",
-        "engine": "",        
+        "description": "",                
         "task_type": "",        
     } 
 
@@ -108,6 +104,7 @@ class TaskModel:
     task_type, engine = task.split(",")
     if task_type not in TASK_TYPE_CHOICES:
       raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {list(TASK_TYPE_CHOICES.keys())}.")
+    
     return TaskModel(task_type, TASK_TYPE_CHOICES[task_type])
   
   @staticmethod

@@ -7,7 +7,7 @@ from rich import print
 from rocrate.rocrate import ROCrate
 from rocrate.model.contextentity import ContextEntity
 from .utils import FileType, BaseROCrate, Task, make_default_crate  
-from ..task.models import Task, TaskModel
+from ..task.models import Task, TaskModel, Engine
 
 class Collectra(BaseROCrate):    
     def __init__(self, name: str, version: str, output: Path, crate: ROCrate = ROCrate()):        
