@@ -4,25 +4,10 @@ from typing import List
 from pathlib import Path
 from rich import print
 from rocrate.model.contextentity import ContextEntity
-from .engine import YoloEngine, Engine, EngineManager
+from .engine import *
 from rocrate.rocrate import ROCrate
 from enum import Enum
 from abc import ABC, abstractmethod
-
-class TaskRepo:      
-  @staticmethod
-  def detect_objects(config: dict = {}):
-    engine = YoloEngine()
-    print(f"[bold green]Running object detection with engine[/bold green]: {engine.model}")
-    engine.run()      
-
-class TaskDefinition:
-  def __init__(self, task_type: str, description: str):
-    self.task_type = task_type
-    self.description = description
-  
-  def __str__(self):
-    return f"{self.task_type}: {self.description}"
 
 #---------------------------------------------
 
@@ -41,12 +26,14 @@ class TaskEntity(ContextEntity):
 
 class Task(ABC):
 
-  def __init__(self, task_definition: TaskDefinition, config: dict = {}):    
-    self.id = uuid.uuid4()    
-    self.task_definition = task_definition    
+  def __init__(self, task_type: str, config: dict = {}, engine: Engine = None):
+    self.id = uuid.uuid4()   
+    self.task_type: str = task_type         
     self.config = config    
     self.engine = None
-
+    if self.validate_engine(engine):
+      self.engine = engine
+  
   def __str__(self) -> str:
     return f"{self.task_definition.task_type}"       
   
@@ -65,12 +52,22 @@ class Task(ABC):
     task_crate["engine"] = [self.engine.to_crate(crate)]
     crate.add(task_crate)
     return task_crate
-
+  
+  def validate_engine(self, engine: Engine) -> bool:
+        valid_engine = isinstance(engine, self.VALID_ENGINES)
+        if not valid_engine:
+            print(
+              f"Invalid engine type: {type(engine).__name__}. "
+              f"Valid engines are: {[e.__name__ for e in self.VALID_ENGINES]}."
+            )
+        return valid_engine
+            
   def add_engine(self, engine: Engine) -> None:
     """
     Add an engine to the task.
     :param engine: The EngineModel instance to add.
-    """    
+    """ 
+    self.validate_engine(engine)   
     self.engine = engine
   
   @abstractmethod
@@ -86,14 +83,24 @@ class Task(ABC):
     pass
 
   @abstractmethod
-  def check_valid_engine(self, engine: Engine) -> None:
-    pass
-
-  @abstractmethod
   def describe(self) -> str:
     pass
 
-  
+class DetectObject(Task):
+
+    VALID_ENGINES = (
+        YOLOEngine,
+        DETECTRON2Engine,
+    )                 
+
+class ClassifyImage(Task):
+
+    VALID_ENGINES = (
+        ImageClassifier,
+    )
+        
+
+
 
   
 

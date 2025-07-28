@@ -1,13 +1,13 @@
 from .base import Task, TaskDefinition, TaskEntity, TaskType
-from .detect_object import DetectObject
+
 from typing import List
 from rocrate.rocrate import ROCrate
 from enum import Enum
 
 TaskType: dict = {
   "detect_object": DetectObject,
-  "classify_image": ClassifyImageTask,
-  "ocr": OCRTask
+  "classify_image": ClassifyImage,
+  "ocr": OCRecognition
 }
 
 class TaskType(Enum):
