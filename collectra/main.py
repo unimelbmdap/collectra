@@ -6,7 +6,7 @@ from rich import print
 from pathlib import Path
 from .workflow.models import Collectra
 from .workflow.utils import Engine, TaskType
-from .task.models import Task
+from .task.base import TaskEntity
 
 app = Typer()
 
@@ -73,6 +73,10 @@ def delete(
         print(f"[red]Error removing task[/red]: {e}")
 
 @app.command()
+def train():    
+    print("[red]Training is not implemented yet[/red]")
+
+@app.command()
 def run(
     workflow: Path = Argument(help="path to workflow"),
     input: Annotated[Path, Option("--input", "-i", help="Input directory of files")] = Path.cwd() / "data"/ "images",
@@ -84,58 +88,14 @@ def run(
     wf = Collectra.load_workflow(workflow)
     wf.run(input=input, output=output)
 
-
-def upload_grapto(
-    collectra_file: Annotated[Path, Option(prompt="path to workflow")],
-    grapto_files: list[Path] = None,
-    grapto_file: Path = None,
-):
-    """
-    Upload grapto files to Collectra
-    """
-    workflow = Collectra.load_workflow(collectra_file)
-    if grapto_files:
-        for file in grapto_files:
-            workflow.add_file(
-                file,
-                dest_path=f"{file.name}",
-                properties={
-                    "name": file.stem,
-                    "encodingFormat": "grapto",
-                },
-            )
-        if collectra_file.is_file():
-            os.remove(collectra_file)
-        if collectra_file.is_dir():
-            shutil.rmtree(collectra_file)
-        workflow.write(collectra_file)
-    elif grapto_file:
-        print(f"Uploading singular grapto file: {grapto_file}")
-    else:
-        print("No grapto files provided for upload.")
-
-
 @app.command()
-def upload_graptos(
-    grapto_input: Annotated[
-        Path, Option(prompt="Path to the grapto files or a singular grapto file")
-    ],
+def view(
+    workflow: Annotated[Path, Argument(help="path to workflow")],
 ):
     """
-    Upload grapto files to Collectra
-    """
-    graptos_str = str(grapto_input).strip()
-    if not grapto_input.exists():
-        print(f"Error: The specified path does not exist: {graptos_str}")
-        return
-    if grapto_input.is_dir():
-        grapto_files = list(grapto_input.glob("*.grapto"))
-        if graptos_str.endswith(".grapto") and not grapto_files:
-            # Edge case where the directory is named like a grapto file
-            upload_grapto(grapto_file=grapto_input)
-        else:
-            upload_grapto(grapto_files=grapto_files)
+    View the Collectra workflow
+    """    
+    wf = Collectra.load_workflow(workflow)    
+    print(wf)
 
 
-if __name__ == "__main__":
-    app()

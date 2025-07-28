@@ -6,7 +6,7 @@ from pathlib import Path
 from rich import print
 from rocrate.rocrate import ROCrate
 from .utils import FileType, BaseROCrate, make_default_crate  
-from ..task.models import TaskManager
+from ..task.base import TaskManager
 
 class Collectra(BaseROCrate):    
     def __init__(self, name: str, version: str, output: Path, crate: ROCrate = ROCrate()):        
@@ -29,7 +29,7 @@ class Collectra(BaseROCrate):
 
     def add_task(self, task: str):
         try:
-            TaskManager.build(task, self.crate)
+            TaskManager.get(task, self.crate)
         except ValueError as e:
             print(f"[red]Error adding task[/red]: {e}")
             return

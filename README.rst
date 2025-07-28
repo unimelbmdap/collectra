@@ -121,7 +121,7 @@ Add/remove a task to the workflow
 
 .. code-block:: bash
 
-    collectra add --workflow hespi.collectra --task object_detect,yolo
+    collectra add --workflow hespi.collectra --task detect_objects,yolo
 
     collectra remove --workflow hespi.collectra --task convert_annotation,via
 
@@ -129,11 +129,11 @@ Train/Validate/Test a workflow ML engine
 
 .. code-block:: bash
 
-    collectra train --workflow hespi.collectra --engine yolo --input train --validation valid --output train_output
+    collectra train --workflow hespi.collectra --task detect_objects --input train --validation valid --output train_output
 
-    collectra validate --workflow hespi.collectra --engine yolo --input valid --output valid_output
+    collectra validate --workflow hespi.collectra --task detect_objects --input valid --output valid_output
 
-    collectra test --workflow hespi.collectra --engine yolo --output test_output
+    collectra test --workflow hespi.collectra --task detect_objects --output test_output
 
 Compile and build the workflow
 
