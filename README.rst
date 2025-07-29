@@ -136,6 +136,7 @@ A file created by the Collectra application is an RO-Crate compliant (`RO-Crate 
     }
 
 All defined task will be saved in the workflow, with the following properties: 
+
 - task_type: how to process a particular file
 - engine: what is used to process the file
 
