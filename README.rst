@@ -174,9 +174,6 @@ Train/Validate/Test a workflow ML engine
 
 Compile and build the workflow
 
-.. code-block:: bash
-
-    collectra build hespi.collectra
  
 Credits
 ==================================
