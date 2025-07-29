@@ -67,6 +67,8 @@ Builder:
 Architecture
 *************
 
+(`Collectra top-level architecture diagram <https://excalidraw.com/#json=KYcVyuFJIo4Jk7dngu3bV,NMmp8pk4D0VGQr7l2KgR3A>`_)
+
 A file created by the Collectra application is an RO-Crate compliant (`RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.1/>`_) file that describes a workflow. It has the following structure:
 
 .. code-block:: json
@@ -115,31 +117,31 @@ Make a new workflow
 
 .. code-block:: bash
 
-    collectra make --workflow hespi.collectra -t object_detect,yolo -t convert_annotation,via
+    collectra make hespi.collectra -t object_detect,yolo -t convert_annotation,via
 
 Add/remove a task to the workflow
 
 .. code-block:: bash
 
-    collectra add --workflow hespi.collectra --task detect_objects,yolo
+    collectra add hespi.collectra --task detect_objects,yolo
 
-    collectra remove --workflow hespi.collectra --task convert_annotation,via
+    collectra remove hespi.collectra --task convert_annotation,via
 
 Train/Validate/Test a workflow ML engine
 
 .. code-block:: bash
 
-    collectra train --workflow hespi.collectra --task detect_objects --input train --validation valid --output train_output
+    collectra train hespi.collectra --task detect_objects --input train --validation valid --output train_output
 
-    collectra validate --workflow hespi.collectra --task detect_objects --input valid --output valid_output
+    collectra validate hespi.collectra --task detect_objects --input valid --output valid_output
 
-    collectra test --workflow hespi.collectra --task detect_objects --output test_output
+    collectra test hespi.collectra --task detect_objects --output test_output
 
 Compile and build the workflow
 
 .. code-block:: bash
 
-    collectra build --workflow hespi.collectra
+    collectra build hespi.collectra
  
 Credits
 ==================================
