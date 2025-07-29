@@ -5,7 +5,7 @@ from typing import List
 from pathlib import Path
 from rich import print
 from rocrate.rocrate import ROCrate
-from .utils import FileType, BaseROCrate  
+from .utils import BaseROCrate  
 from .service import TaskManager
 from .task import TaskEntity
 
@@ -16,7 +16,7 @@ class Collectra(BaseROCrate):
     def __init__(self, name: str, version: str, output: Path, file_format: str = None, crate: ROCrate = ROCrate()):        
         super().__init__(name, version, output, crate)        
         print(f"Collectra workflow initialized: {self.name} version {self.version}")
-        self.file_name = self.output / f"{self.name}.{FileType.COLLECTRA.value}"         
+        self.file_name = self.output / f"{self.name}.collectra"         
         if file_format:
             self.crate.update_jsonld({
                 "@id": "./",
