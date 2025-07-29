@@ -1,10 +1,8 @@
 from __future__ import annotations
-import os, shutil, random
 from rich import print
 from abc import ABC, abstractmethod
 from pathlib import Path
 from rocrate.rocrate import ROCrate
-from rocrate.model import File
 from rocrate.model import DataEntity
 from ultralytics import YOLO
 
@@ -60,12 +58,15 @@ class Engine(ABC):
   def detect(self, data: Path) -> None:
     pass
 
+  @abstractmethod
+  def preprocess(self, data: Path, file_format: str) -> None:
+    pass
+
 class YOLOEngine(Engine):
 
   DEFAULT_CONFIG: dict = {    
-    "epochs": 1,
-    "imgsz": 640,
-    "device": "cpu",
+    "epochs": 50,
+    "imgsz": 640,    
     "verbose": True,
   }
 
@@ -116,16 +117,7 @@ class YOLOEngine(Engine):
     file_format = config.get("file_format", "grapto").replace(".", "")
     self.dir = Path(config.get("tmp_dir", "tmp"))
     print(f"[bold green]Training object detection model[/bold green]: {self.name}")    
-    self.preprocess(data, file_format=file_format)            
-    random.seed(448)   
-    train_config = {
-      "data": f"{self.dir}/{self.yolo_config_path}",
-      "epochs": config.get("epochs", self.DEFAULT_CONFIG["epochs"]),
-      "imgsz": config.get("imgsz", self.DEFAULT_CONFIG["imgsz"]),
-      "device": config.get("device", self.DEFAULT_CONFIG["device"]),
-      "verbose": config.get("verbose", self.DEFAULT_CONFIG["verbose"]),   
-      "project": self.dir
-    }    
+    self.preprocess(data, file_format=file_format)                    
     train_results = self.model.train(
       data=Path(f"{self.dir}/{self.yolo_config_path}"),
       epochs=1,
@@ -198,5 +190,8 @@ class ImageClassifier(Engine):
     def validate(self):
       print(f"[bold green]Validating image classifier[/bold green]: {self.name}")
       # Implement the logic to validate the image classifier
+      pass
+
+    def preprocess(self, data, file_format):
       pass
 
