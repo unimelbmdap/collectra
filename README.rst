@@ -165,7 +165,7 @@ Train an ML task
 
 - ``-t`` is the task type to train, which must be defined in the workflow
 - ``-i`` is the input data to train the task
-- By default, the logs are saved to output/logs.txt
+- By default, the logs are saved to ``output/logs.txt``
 
 Compile and build the workflow
 
