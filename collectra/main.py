@@ -1,20 +1,11 @@
-import os, shutil
 from typer import Typer, Option, Argument
 from typing_extensions import Annotated
 from typing import Optional, List
 from rich import print
 from pathlib import Path
 from .models.workflow import Collectra
-from .models.utils import Engine, TaskType
-from .models.task import TaskEntity
 
 app = Typer()
-
-HELP_TEXT = f"""
-    for each task, define the task type and the engine to use in the following format:\n
-    <task_type>,<engine>\n
-    Example: {TaskType.OBJECT_DETECT.value},{Engine.YOLO.value}\n
-"""
 
 
 @app.command()
@@ -23,7 +14,7 @@ def make(
     file_format: Annotated[str, Option("--file-format", "-f", help="File format for the workflow, e.g., grapto, json, yaml")] = "grapto",
     tasks: Annotated[
         Optional[List[str]],
-        Option("--task", "-t", help=HELP_TEXT, case_sensitive=False),
+        Option("--task", "-t", case_sensitive=False),
     ] = [],
     output: Annotated[
         Path, Option("--output", "-o", help="Output directory for the workflow")
