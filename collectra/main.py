@@ -6,7 +6,7 @@ from rich import print
 from pathlib import Path
 from .workflow.models import Collectra
 from .workflow.utils import Engine, TaskType
-from .models.base import TaskEntity
+from .models.task import TaskEntity
 
 app = Typer()
 

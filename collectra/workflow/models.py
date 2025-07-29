@@ -6,7 +6,7 @@ from pathlib import Path
 from rich import print
 from rocrate.rocrate import ROCrate
 from .utils import FileType, BaseROCrate, make_default_crate  
-from ..models.base import TaskManager
+from ..models.task import TaskManager
 
 class Collectra(BaseROCrate):    
     def __init__(self, name: str, version: str, output: Path, crate: ROCrate = ROCrate()):        

@@ -1,4 +1,4 @@
-from .base import Task, TaskDefinition, TaskEntity, TaskType
+from .task import Task, TaskDefinition, TaskEntity, TaskType
 
 from typing import List
 from rocrate.rocrate import ROCrate

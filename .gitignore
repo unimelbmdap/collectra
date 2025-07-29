@@ -10,7 +10,8 @@ glabels/
 *.cache
 *.collectra
 tmp/
-
+test_data/
+*.pt
 
 # From https://github.com/github/gitignore/blob/main/Python.gitignore
 # Byte-compiled / optimized / DLL files
