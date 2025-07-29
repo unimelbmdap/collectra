@@ -15,6 +15,7 @@ def test_yolo_engine_run():
         "file_format": "hespi"
     }
     engine = YOLOEngine(name="yolo11n.pt")
+    os.makedirs(Collectra.TEMPORARY_DIR, exist_ok=True)
     engine.preprocess(Path(config.get("input")), "hespi")
     yolo_config_file = Path(Collectra.TEMPORARY_DIR) / "yolo_config.yml"
     train_file = Path(Collectra.TEMPORARY_DIR) / "train.txt"

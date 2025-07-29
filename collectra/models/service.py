@@ -110,6 +110,9 @@ class TaskManager:
     file_format = crate.dereference("./").get("file_format", "grapto").replace(".", "")
     for e in crate.data_entities:
       if e.type == "Task":
+        if e.get("task_type") != task:
+          print(f"[bold red]Skipping not matched task[/bold red]: {e.get('task_type')}")
+          continue
         ValidTask = TaskManager.VALID_TASKS.get(e.get("task_type"))
         if not ValidTask:
           print(f"[bold red]Invalid task type[/bold red]: {e.get('task_type')}")
