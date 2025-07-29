@@ -60,14 +60,14 @@ Builder:
 - I want to be able to save the workflow as a ``.collectra`` file, which can be used by operators.
 - I want to have a GUI that can open any workflow. All save actions are version controlled.
 
+Architecture
+*************
+
 .. image:: img/collectra_wf.png
     :width: 500px
     :alt: Collectra workflow
 
-Architecture
-*************
-
-(`Collectra top-level architecture diagram <https://excalidraw.com/#json=KYcVyuFJIo4Jk7dngu3bV,NMmp8pk4D0VGQr7l2KgR3A>`_)
+`Collectra top-level architecture diagram <https://excalidraw.com/#json=KYcVyuFJIo4Jk7dngu3bV,NMmp8pk4D0VGQr7l2KgR3A>`_
 
 A file created by the Collectra application is an RO-Crate compliant (`RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.1/>`_) file that describes a workflow. It has the following structure:
 
