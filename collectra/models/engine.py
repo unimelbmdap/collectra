@@ -68,6 +68,7 @@ class YOLOEngine(Engine):
     "epochs": 50,
     "imgsz": 640,    
     "verbose": True,
+    "device": "cpu"
   }
 
   def __init__(self, name: str | Path = "yolo11n.pt"):
@@ -81,6 +82,10 @@ class YOLOEngine(Engine):
     val_files = []
     number_of_classes = 0
     classes = []    
+    try:
+      self.dir
+    except AttributeError:
+      self.dir = Path("tmp")    
     for file in data.glob(f"*.{file_format}"):
       try:
         crate = ROCrate(file)
@@ -190,6 +195,9 @@ class ImageClassifier(Engine):
     def validate(self):
       print(f"[bold green]Validating image classifier[/bold green]: {self.name}")
       # Implement the logic to validate the image classifier
+      pass
+
+    def to_crate(self, crate: ROCrate) -> EngineEntity:
       pass
 
     def preprocess(self, data, file_format):
