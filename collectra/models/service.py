@@ -48,7 +48,7 @@ class TaskManager:
     List all available tasks.
     :return: A list of task names.
     """
-    return list(TaskManager.TASK_DEFINITIONS.keys())
+    return list(TaskManager.VALID_TASKS.keys())
   
   def chain(self, task: TaskEntity, config: dict = {}) -> Task:
     if not task:
@@ -81,6 +81,19 @@ class TaskManager:
     task.to_crate(crate)
     return task
   
+  @staticmethod
+  def get(task: str, crate: ROCrate = None) -> Task:
+    """
+    Get a Task from a string string.
+    :param task: The task string in the format "<task_type>,<engine>".
+    :param crate: The ROCrate instance to add the task to.
+    :raises ValueError: If the task format is invalid or the task type is not recognized
+    :return: An instance of Task.
+    """
+    if "," not in task:
+      raise ValueError(f"[bold red]Invalid task format[/bold red]: {task}. Must be in the format <task_type>,<engine>.")
+    return TaskManager.build(task, crate)
+
   @staticmethod
   def train(task: str, config: dict = {}) -> Task:    
     """

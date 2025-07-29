@@ -69,7 +69,7 @@ def delete(
     """    
     wf = Collectra.load_workflow(workflow)
     try:
-        wf.delete(task)
+        wf.delete_task(task)
         wf.save()        
     except ValueError as e:
         print(f"[red]Error removing task[/red]: {e}")

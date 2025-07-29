@@ -16,8 +16,7 @@ class Collectra(BaseROCrate):
     def __init__(self, name: str, version: str, output: Path, file_format: str = None, crate: ROCrate = ROCrate()):        
         super().__init__(name, version, output, crate)        
         print(f"Collectra workflow initialized: {self.name} version {self.version}")
-        self.file_name = self.output / f"{self.name}.{FileType.COLLECTRA.value}"
-        self.task_chain = []   
+        self.file_name = self.output / f"{self.name}.{FileType.COLLECTRA.value}"         
         if file_format:
             self.crate.update_jsonld({
                 "@id": "./",
@@ -76,7 +75,7 @@ class Collectra(BaseROCrate):
             return        
         self.crate.write(self.file_name)
     
-    def delete(self, task: str):
+    def delete_task(self, task: str):
         """
         Remove a task from the Collectra workflow.
         :param task: The ID of the task to remove.
