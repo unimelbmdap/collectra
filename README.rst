@@ -152,25 +152,20 @@ Make a new workflow
 
 .. code-block:: bash
 
-    collectra make hespi.collectra -t object_detect,yolo -t convert_annotation,via
+    collectra make wf1 -t detect_object,yolo,yolo11n.pt -f hespi
 
-Add/remove a task to the workflow
+- ``-f`` is the file format of the workflow, which is used to determine how to process the files in the workflow
+- ``-t`` is the task, which is used to determine how to process the files in the workflow. It must in the format of task_type,engine_type,engine_file_path
 
-.. code-block:: bash
-
-    collectra add hespi.collectra --task detect_objects,yolo
-
-    collectra remove hespi.collectra --task convert_annotation,via
-
-Train/Validate/Test a workflow ML engine
+Train an ML task
 
 .. code-block:: bash
 
-    collectra train hespi.collectra --task detect_objects --input train --validation valid --output train_output
+    collectra train wf1.collectra -t detect_object -i test_data
 
-    collectra validate hespi.collectra --task detect_objects --input valid --output valid_output
-
-    collectra test hespi.collectra --task detect_objects --output test_output
+- ``-t`` is the task type to train, which must be defined in the workflow
+- ``-i`` is the input data to train the task
+- By default, the logs are saved to output/logs.txt
 
 Compile and build the workflow
 
