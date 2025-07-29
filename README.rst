@@ -74,32 +74,66 @@ A file created by the Collectra application is an RO-Crate compliant (`RO-Crate 
 .. code-block:: json
 
   {
-    "@context": "https://w3id.org/ro/crate/1.1/context",
-    "@graph": "@graph": [
-        {
-            "@id": "./",
-            "@type": "Dataset",
-            "datePublished": "2025-07-18T06:06:44+00:00"
-        },
-        {
-            "@id": "ro-crate-metadata.json",
-            "@type": "CreativeWork",
-            "about": {
-                "@id": "./"
+        "@context": "https://w3id.org/ro/crate/1.1/context",
+        "@graph": [
+            {
+                "@id": "./",
+                "@type": "Dataset",
+                "datePublished": "2025-07-29T08:16:24+00:00",
+                "file_format": "hespi",
+                "hasPart": [                    
+                    {
+                        "@id": "648bfb1e-bcf0-41e4-8eed-3ce7c912a6b6"
+                    },
+                    {
+                        "@id": "best.pt-training-params"
+                    },
+                    {
+                        "@id": "best.pt"
+                    }
+                ]
             },
-            "conformsTo": {
-                "@id": "https://w3id.org/ro/crate/1.1"
+            {
+                "@id": "ro-crate-metadata.json",
+                "@type": "CreativeWork",
+                "about": {
+                    "@id": "./"
+                },
+                "conformsTo": {
+                    "@id": "https://w3id.org/ro/crate/1.1"
+                }
+            },            
+            {
+                "@id": "648bfb1e-bcf0-41e4-8eed-3ce7c912a6b6",
+                "@type": "Task",
+                "engine": [
+                    {
+                        "@id": "best.pt"
+                    }
+                ],
+                "task_type": "detect_object"
+            },
+            {
+                "@id": "best.pt-training-params",
+                "@type": "TrainingParameters",
+                "device": "cpu",
+                "epochs": 1,
+                "imgsz": 640,
+                "verbose": true
+            },
+            {
+                "@id": "best.pt",
+                "@type": "File",
+                "engine_type": "yolo",
+                "name": "best.pt",
+                "trainingParameters": [
+                    {
+                        "@id": "best.pt-training-params"
+                    }
+                ]
             }
-        },
-        {
-            "@id": "task_id",
-            "@type": "Task",
-            "description": "a task description",
-            "engine": "an attached engine",                
-            "task_type": "a task type"
-        }            
-    ]
-  }
+        ]
+    }
 
 All defined task will be saved in the workflow, with the following properties: 
 - task_type: how to process a particular file
