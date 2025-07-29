@@ -25,7 +25,7 @@ class EngineManager:
   def get(engine: EngineEntity) -> Engine:    
     EngineClass = EngineManager.ENGINE_TYPES.get(engine.get("engine_type"))    
     if not EngineClass:
-      raise ValueError(f"[bold red]Invalid engine type[/bold red]: {engine.get("engine_type")}. Must be one of {list(EngineManager.ENGINE_TYPES.keys())}.")
+      raise ValueError(f"[bold red]Invalid engine type[/bold red]: {engine.get('engine_type')}. Must be one of {list(EngineManager.ENGINE_TYPES.keys())}.")
     engine.write(Path(f"tmp"))
     return EngineClass, Path(f"tmp/{engine.id}")
 
@@ -132,5 +132,4 @@ class TaskManager:
         engine = ValidEngine(name=new_engine_path)        
         task.add_engine(engine, crate)
         task_crate = task.to_crate(crate)        
-        print("[green]New engine added:[/green]", task_crate.get("engine")[0].id)        
-  
+        print(f"[green]New engine added:[/green] {task_crate.get('engine')[0].id}")        
