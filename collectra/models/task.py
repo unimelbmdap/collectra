@@ -69,7 +69,7 @@ class Task(ABC):
     """ 
     validated = self.validate_engine(engine)    
     if crate and self.engine:
-      old_engine_id = f"{self.engine.name.stem.replace("tmp/", "")}{self.engine.name.suffix}"
+      old_engine_id = f"{self.engine.name.stem.replace('tmp/', '')}{self.engine.name.suffix}"
       old_engine = crate.dereference(old_engine_id)            
       crate.delete(old_engine)
       print(f"[bold red]Deleted old engine[/bold red]: {old_engine_id}")
