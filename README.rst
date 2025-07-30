@@ -37,41 +37,104 @@ Install using pip:
 
 .. end-quickstart
 
-System Design
-==================================
+Design Requirements 
+===============
 
-Collectra fulfills the following user stories:
-***********************************************
+Collectra caters to two user groups:
 
-1. Basic File Processing
-    - Upload a specified photo or a collection of photos from a folder. 
-        - If the photo/photos do not have an acommpanying annotation file, it will generate a blank grapto file.        
-    - Upload a single or a list of ``.grapto`` files.
+- Operator
+- Builder
 
-2. Workflow Management
-    - Select pre-built task templates and chain them together to create a workflow.
-    - Have each workflow run saved as a ``.grapto`` file.    
-    - Have both the workflow chain and the list of ``.grapto`` files saved in a ``.collectra`` file.
-    - Save the best training model information in the ``.collectra`` file.
+User Stories
+***************
+Operator:
 
-3. Task & Engine Management
-    - Select a new task template from a list of available tasks and choose an engine to run the task.
-    - Run a detection workflow with a fined-tuned model as specified by the ``.collectra`` file. 
+- I want to be able to download a ``.collectra`` file and run it to process a set of files.
+- I want to be able to fine tune the machine learning engine attached to a machine learning task
+- I want to be able to share the ``.collectra`` file with other operators.
+- I want to have a GUI that opens up when I open the workflow to perform the above tasks. All save actions are version controlled.
+
+Builder:
+
+- I want to be able to create/edit a task template and engine, which can be used by operators.
+- I want to be able to create/edit workflow by chaining together existing task templates and engines.
+- I want to be able to save the workflow as a ``.collectra`` file, which can be used by operators.
+- I want to have a GUI that can open any workflow. All save actions are version controlled.
+
+Architecture
+*************
 
 .. image:: img/collectra_wf.png
     :width: 500px
     :alt: Collectra workflow
 
-Architecture
-*************
-Each project is saved as a ``.collectra`` file, describing the the workflow which includes:
+`Collectra top-level architecture diagram <https://excalidraw.com/#json=KYcVyuFJIo4Jk7dngu3bV,NMmp8pk4D0VGQr7l2KgR3A>`_
 
-- A task: how to process a particular file
-- An engine: what is used to process the file
+A file created by the Collectra application is an RO-Crate compliant (`RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.1/>`_) file that describes a workflow. It has the following structure:
 
-When a raw file is processed by the task, the output is saved as a ``.grapto`` file.
+.. code-block:: json
 
-Both ``.collectra`` and ``.grapto`` files conform to the `RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.2/>`_
+  {
+        "@context": "https://w3id.org/ro/crate/1.1/context",
+        "@graph": [
+            {
+                "@id": "./",
+                "@type": "Dataset",
+                "datePublished": "2025-07-29T08:16:24+00:00",
+                "file_format": "hespi",
+                "hasPart": [                    
+                    {
+                        "@id": "648bfb1e-bcf0-41e4-8eed-3ce7c912a6b6"
+                    },
+                    {
+                        "@id": "best.pt-training-params"
+                    },
+                    {
+                        "@id": "best.pt"
+                    }
+                ]
+            },
+            {
+                "@id": "ro-crate-metadata.json",
+                "@type": "CreativeWork",
+                "about": {
+                    "@id": "./"
+                },
+                "conformsTo": {
+                    "@id": "https://w3id.org/ro/crate/1.1"
+                }
+            },            
+            {
+                "@id": "648bfb1e-bcf0-41e4-8eed-3ce7c912a6b6",
+                "@type": "Task",
+                "engine": [
+                    {
+                        "@id": "best.pt"
+                    }
+                ],
+                "task_type": "detect_object"
+            },
+            {
+                "@id": "best.pt-training-params",
+                "@type": "TrainingParameters",
+                "device": "cpu",
+                "epochs": 1,
+                "imgsz": 640,
+                "verbose": true
+            },
+            {
+                "@id": "best.pt",
+                "@type": "File",
+                "engine_type": "yolo",
+                "name": "best.pt",
+                "trainingParameters": [
+                    {
+                        "@id": "best.pt-training-params"
+                    }
+                ]
+            }
+        ]
+    }
 
 A ``.collectra`` file contains the following data:
 
@@ -79,8 +142,21 @@ A ``.collectra`` file contains the following data:
 - A list of files to be processed.
 - A list of files that have been processed, with the output saved as ``.grapto`` files.
 
+All defined task will be saved in the workflow, with the following properties: 
+
+- task_type: how to process a particular file
+- engine: what is used to process the file
+
+When a raw file is processed by the task, the output is saved as a ``.something`` file where .something is the file extension defined by the the workflow editor and user
+
+
 Usage:
 =======
+
+Builder
+********
+
+Make a new workflow
 
 .. code-block:: bash
 
@@ -115,7 +191,25 @@ We also need to provide a way to publish grapto on PyPI so someone can install i
 
 Someone running grapto this way doesn't have to know about collectra.
 
-Credits
+=======
+    collectra make wf1 -t detect_object,yolo,yolo11n.pt -f hespi
+
+- ``-f`` is the file format of the workflow, which is used to determine how to process the files in the workflow
+- ``-t`` is the task, which is used to determine how to process the files in the workflow. It must in the format of task_type,engine_type,engine_file_path
+
+Train an ML task
+
+.. code-block:: bash
+
+    collectra train wf1.collectra -t detect_object -i test_data
+
+- ``-t`` is the task type to train, which must be defined in the workflow
+- ``-i`` is the input data to train the task
+- By default, the logs are saved to ``output/logs.txt``
+
+Compile and build the workflow
+
+ Credits
 ==================================
 
 .. start-credits

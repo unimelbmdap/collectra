@@ -1,113 +1,106 @@
-import os, shutil
 from typer import Typer, Option, Argument
 from typing_extensions import Annotated
 from typing import Optional, List
 from rich import print
 from pathlib import Path
-from .workflow.models import Collectra, Grapto
-from .workflow.utils import Engine, TaskType
+from .models.workflow import Collectra
 
-app = Typer()    
+app = Typer()
 
-HELP_TEXT = f"""
-    for each task, define the task type and the engine to use in the following format:\n
-    <task_type>,<engine>\n
-    Example: {TaskType.OBJECT_DETECT.value},{Engine.YOLO.value}\n
-"""
 
 @app.command()
-def create(
+def make(
     workflow: Annotated[str, Argument(help="name of the workflow")] = "default",
-    tasks: Annotated[Optional[List[str]], Option("--task", "-t", help=HELP_TEXT, case_sensitive=False)] = [],           
-    output: Annotated[Path, Option("--output", "-o", help="Output directory for the workflow")] = Path.cwd(),        
+    file_format: Annotated[str, Option("--file-format", "-f", help="File format for the workflow, e.g., grapto, json, yaml")] = "grapto",
+    tasks: Annotated[
+        Optional[List[str]],
+        Option("--task", "-t", case_sensitive=False),
+    ] = [],
+    output: Annotated[
+        Path, Option("--output", "-o", help="Output directory for the workflow")
+    ] = Path.cwd(),
 ):
     """
     Build a collectra workflow
-    """
-    workflow_p = Path(f"{output}/{workflow}.collectra")
-    if workflow_p.exists() and workflow != "default":        
-        print(f"Workflow file already exists: {workflow} - skipping initialisation. To edit use `collectra edit` command.")        
-    else:
-        if workflow == "default":
-            # Override the default workflow folder
-            shutil.rmtree(workflow_p, ignore_errors=True)
-        os.makedirs(workflow_p.parent, exist_ok=True)
-        Collectra.create(
-            name=workflow, 
-            version="1.0",
-            output=output,
-            tasks=tasks
-        )               
-
-@app.command()
-def generate_grapto(
-    grapto_name: Annotated[str, Option(prompt="Grapto name")],
-    output: Annotated[Path, Option(prompt="Output directory for the grapto")],
-):
-    """
-    Generate a grapto for Collectra
-    """
-    Grapto.generate_grapto(
-        name=grapto_name, 
-        version="1.0",
-        output=output
-    )
-
-def upload_grapto(
-        collectra_file: Annotated[Path, Option(prompt="path to workflow")],
-        grapto_files: list[Path] = None,
-        grapto_file: Path = None,        
-):
-    """
-    Upload grapto files to Collectra
+    - Checks if the workflow already exists in the output directory
+    - If it exists, skips the initialisation
+    - If it does not exist, creates a new workflow with the specified tasks
+    - If the workflow is 'default', it overrides the default workflow folder
+    - If the output directory does not exist, it creates it
+    - If the tasks are not provided, it creates an empty workflow
+    - If the tasks are provided, it creates a workflow with the specified tasks
+    - The tasks should be in the format: <task_type>,<engine_type>,<engine>
+    - <engine> should be a valid Path to an engine file
+    - Example: object_detect,yolo,yolo11n.pt
     """    
-    workflow = Collectra.load_workflow(collectra_file)    
-    if grapto_files:
-        for file in grapto_files:            
-            workflow.add_file(
-                file,                
-                dest_path=f"{file.name}",                 
-                properties={
-                    "name": file.stem,
-                    "encodingFormat": "grapto",                
-                }
-            )
-        if collectra_file.is_file():
-            os.remove(collectra_file)
-        if collectra_file.is_dir():
-            shutil.rmtree(collectra_file)
-        workflow.write(collectra_file)
-    elif grapto_file:
-        print(f"Uploading singular grapto file: {grapto_file}")
-    else:
-        print("No grapto files provided for upload.")
+    Collectra.make(name=workflow, version="1.0", output=output, tasks=tasks, file_format=file_format)
 
 @app.command()
-def upload_graptos(
-    grapto_input: Annotated[Path, Option(prompt="Path to the grapto files or a singular grapto file")],    
+def add(
+    workflow: Annotated[Path, Argument(help="path to workflow")],
+    tasks: Annotated[
+        Optional[List[str]],
+        Option("--task", "-t", help=HELP_TEXT, case_sensitive=False),
+    ] = [],
 ):
     """
-    Upload grapto files to Collectra
-    """
-    graptos_str = str(grapto_input).strip()
-    if not grapto_input.exists():
-        print(f"Error: The specified path does not exist: {graptos_str}")
-        return  
-    if grapto_input.is_dir():        
-        grapto_files = list(grapto_input.glob("*.grapto"))
-        if graptos_str.endswith('.grapto') and not grapto_files:
-            # Edge case where the directory is named like a grapto file                                
-            upload_grapto(grapto_file=grapto_input)                    
-        else:                
-            upload_grapto(grapto_files=grapto_files)
+    Add a task to the Collectra workflow
+    """    
+    wf = Collectra.load_workflow(workflow)
+    wf.add_tasks(tasks)    
+    wf.save()    
 
 @app.command()
-def set():
+def delete(
+    workflow: Annotated[Path, Argument(help="path to workflow")],
+    task: Annotated[str, Option("--task", "-t", help="task to remove")],
+):
     """
-    Set a configuration for Collectra
-    """
-    print("Setting configuration...")       
+    Remove a task from the Collectra workflow
+    """    
+    wf = Collectra.load_workflow(workflow)
+    try:
+        wf.delete_task(task)
+        wf.save()        
+    except ValueError as e:
+        print(f"[red]Error removing task[/red]: {e}")
 
-if __name__ == "__main__":
-    app()
+@app.command()
+def train(
+    workflow: Annotated[Path, Argument(help="path to workflow")],
+    task: Annotated[str, Option("--task", "-t", help="task to train")],
+    input: Annotated[Path, Option("--input", "-i", help="Input directory of files")] = Path.cwd() / "data" / "images",
+    output: Annotated[Path, Option("--output", "-o", help="Output directory for log files")] = Path.cwd() / "output",    
+):
+    """
+    Train a specific task in the Collectra workflow
+    """    
+    wf = Collectra.load_workflow(workflow)
+    try:
+        wf.train(task, input=input, output=output)        
+    except ValueError as e:
+        print(f"[red]Error training task[/red]: {e}")    
+
+@app.command()
+def run(
+    workflow: Path = Argument(help="path to workflow"),
+    input: Annotated[Path, Option("--input", "-i", help="Input directory of files")] = Path.cwd() / "data"/ "images",
+    output: Annotated[Path, Option("--output", "-o", help="Output directory for processed files")] = Path.cwd() / "data" / "output",
+):
+    """
+    Execute a Collectra workflow
+    """    
+    wf = Collectra.load_workflow(workflow)
+    wf.run(input=input, output=output)
+
+@app.command()
+def view(
+    workflow: Annotated[Path, Argument(help="path to workflow")],
+):
+    """
+    View the Collectra workflow
+    """    
+    wf = Collectra.load_workflow(workflow)    
+    print(wf)
+
 
