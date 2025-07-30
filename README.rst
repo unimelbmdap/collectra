@@ -23,7 +23,8 @@
 
 .. start-quickstart
 
-Builds pipelines to extract data from collection images.
+Pipeline package builder to extract data from collection images.
+
 
 Installation
 ==================================
@@ -73,6 +74,7 @@ When a raw file is processed by the task, the output is saved as a ``.grapto`` f
 Both ``.collectra`` and ``.grapto`` files conform to the `RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.2/>`_
 
 A ``.collectra`` file contains the following data:
+
 - Definitions of the task and associated engine. If the engine is a trained model, the location of the model is also specified. 
 - A list of files to be processed.
 - A list of files that have been processed, with the output saved as ``.grapto`` files.
@@ -82,8 +84,37 @@ Usage:
 
 .. code-block:: bash
 
-    collectra train --workflow grapto.collectra --engine yolo_primary_label --training train --validation valid
- 
+    collectra train --workflow grapto.collectra --task detect_primary_label --training train/*.grapto --validation valid/*.grapto
+
+Collectra goes to the task. The task goes to the engine. 
+The engine knows how to train and saves the model in the engine entity in the grapto.collectra RO-Crate.
+
+The weights can by default be saved inside the RO-Crate. Otherwise, you can specify a path to save the weights outside the RO-Crate.
+
+.. code-block:: bash
+
+    collectra run input.jpg output.grapto --workflow grapto.collectra 
+
+.. code-block:: bash
+
+    collectra install --workflow grapto.collectra
+
+Also, because grapto.collectra can install an executable as well, you can run the following command to process an image:
+
+.. code-block:: bash
+
+    grapto input.jpg output.grapto
+
+
+We also need to provide a way to publish grapto on PyPI so someone can install it with pip.
+
+.. code-block:: bash
+
+    pip install grapto
+    grapto input.jpg output.grapto
+
+Someone running grapto this way doesn't have to know about collectra.
+
 Credits
 ==================================
 
