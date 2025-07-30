@@ -89,7 +89,7 @@ def test_eval(tmpdir):
 def test_cluster(tmpdir):
     for index in range(1,3):
         output_cluster = tmpdir/'output_cluster'
-        result = run_app(f"cluster --workflow {DUMMY_WORKFLOW} --image label{index} {TEST_FILES_STR} --output {output_cluster}")
+        result = run_app(f"cluster --workflow {DUMMY_WORKFLOW} --item label{index} {TEST_FILES_STR} --output {output_cluster}")
         assert result.exit_code == 0
         assert output_cluster.exists()
         output_cluster_log = output_cluster/'cluster.html' # CHANGE THIS AS NEEDED
@@ -101,7 +101,7 @@ def test_cluster(tmpdir):
 def test_extract(tmpdir):
     for index in range(1,3):
         output_extract = tmpdir/'output_extract'
-        result = run_app(f"extract --workflow {DUMMY_WORKFLOW} --image label{index} {TEST_FILES_STR} --output {output_extract}")
+        result = run_app(f"extract --workflow {DUMMY_WORKFLOW} --item label{index} {TEST_FILES_STR} --output {output_extract}")
         assert result.exit_code == 0
         assert output_extract.exists()
         output_extract_log = output_extract/'extract.html' # CHANGE THIS AS NEEDED
