@@ -5,6 +5,7 @@ from pathlib import Path
 from rocrate.rocrate import ROCrate
 from rocrate.model import DataEntity
 from ultralytics import YOLO
+from tqdm import tqdm
 
 class EngineEntity(DataEntity):
   def __init__(self, crate, identifier=None, properties=None):
@@ -86,7 +87,7 @@ class YOLOEngine(Engine):
       self.dir
     except AttributeError:
       self.dir = Path("tmp")    
-    for file in data.glob(f"*.{file_format}"):
+    for file in tqdm(data.glob(f"*.{file_format}")):
       try:
         crate = ROCrate(file)
         if number_of_classes == 0:        
@@ -97,15 +98,14 @@ class YOLOEngine(Engine):
               number_of_classes = len(classes)                    
               break                      
         
-        bounding_box = ""
-        print(f"[bold green]Processing file[/bold green]: {file}")
+        bounding_box = ""        
         for e in crate.data_entities:
           if e.type == "File":
-            e.write(Path(self.dir))
+            e.write(Path(self.dir))          
             if e.get("for_validation"):              
-              val_files.append(f"./{file.stem}.jpg")
+              val_files.append(f"./{e.id}")
             else:
-              train_files.append(f"./{file.stem}.jpg")        
+              train_files.append(f"./{e.id}")        
           if e.type == "BoundingBox":
             bounding_box += f"{e.get('class_id')} {e.get('x_center')} {e.get('y_center')} {e.get('width_relative')} {e.get('height_relative')}\n"        
         bounding_box_file = Path(self.dir) / f"{file.stem}.txt"
@@ -125,7 +125,7 @@ class YOLOEngine(Engine):
     self.preprocess(data, file_format=file_format)                    
     train_results = self.model.train(
       data=Path(f"{self.dir}/{self.yolo_config_path}"),
-      epochs=1,
+      epochs=config.get("epochs", self.DEFAULT_CONFIG["epochs"]),
       imgsz=config.get("imgsz", self.DEFAULT_CONFIG["imgsz"]),
       device=config.get("device", self.DEFAULT_CONFIG["device"]),
       verbose=config.get("verbose", self.DEFAULT_CONFIG["verbose"]),   

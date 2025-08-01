@@ -100,9 +100,9 @@ class Collectra(BaseROCrate):
                 if model_path.exists():
                     os.remove(model_path)
                     print(f"[green]Removed temporary engine file[/green]: {model_path}")
-        if self.TEMPORARY_DIR.exists():
-            rmtree(self.TEMPORARY_DIR, ignore_errors=True)
-            print(f"[green]Removed temporary directory[/green]: {self.TEMPORARY_DIR}")
+        # if self.TEMPORARY_DIR.exists():
+        #     rmtree(self.TEMPORARY_DIR, ignore_errors=True)
+        #     print(f"[green]Removed temporary directory[/green]: {self.TEMPORARY_DIR}")
 
     @staticmethod
     def make(

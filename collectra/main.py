@@ -40,7 +40,7 @@ def add(
     workflow: Annotated[Path, Argument(help="path to workflow")],
     tasks: Annotated[
         Optional[List[str]],
-        Option("--task", "-t", help=HELP_TEXT, case_sensitive=False),
+        Option("--task", "-t", case_sensitive=False),
     ] = [],
 ):
     """
@@ -103,4 +103,6 @@ def view(
     wf = Collectra.load_workflow(workflow)    
     print(wf)
 
+if __name__ == "__main__":
+    app()
 
