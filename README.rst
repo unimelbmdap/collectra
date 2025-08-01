@@ -47,19 +47,20 @@ Collectra caters to two user groups:
 
 User Stories
 ***************
-Operator:
 
-- I want to be able to download a ``.collectra`` file and run it to process a set of files.
-- I want to be able to fine tune the machine learning engine attached to a machine learning task
-- I want to be able to share the ``.collectra`` file with other operators.
-- I want to have a GUI that opens up when I open the workflow to perform the above tasks. All save actions are version controlled.
+As an Operator, I can:
 
-Builder:
+- Download a ``.collectra`` file and run it to process a set of files.
+- Fine tune the machine learning engine attached to a machine learning task.
+- Share the ``.collectra`` file with other operators and run it as a package.
+- Have a GUI that opens up when I open the workflow to perform the above tasks. All save actions are version controlled.
 
-- I want to be able to create/edit a task template and engine, which can be used by operators.
-- I want to be able to create/edit workflow by chaining together existing task templates and engines.
-- I want to be able to save the workflow as a ``.collectra`` file, which can be used by operators.
-- I want to have a GUI that can open any workflow. All save actions are version controlled.
+As a Builder, I can:
+
+- Create/edit a task template and engine, which can be used by operators.
+- Create/edit workflow by chaining together existing task templates and engines.
+- Save the workflow as a ``.collectra`` file, which can be used by operators.
+- Have a GUI that can open any workflow. All save actions are version controlled.
 
 Architecture
 *************
@@ -139,8 +140,6 @@ A file created by the Collectra application is an RO-Crate compliant (`RO-Crate 
 A ``.collectra`` file contains the following data:
 
 - Definitions of the task and associated engine. If the engine is a trained model, the location of the model is also specified. 
-- A list of files to be processed.
-- A list of files that have been processed, with the output saved as ``.grapto`` files.
 
 All defined task will be saved in the workflow, with the following properties: 
 
@@ -149,23 +148,31 @@ All defined task will be saved in the workflow, with the following properties:
 
 When a raw file is processed by the task, the output is saved as a ``.something`` file where .something is the file extension defined by the the workflow editor and user
 
-
 Usage:
 =======
 
 Builder
 ********
 
-Make a new workflow
+Make a new workflow, .e.g. "grapto.collectra"
+
+.. code-block:: bash
+
+    collectra make grapto.collectra -t detect_primary_label,yolo,yolo11n.pt -f grapto
+
+- ``-t`` is the task, which is used to determine how to process the files in the workflow. It must in the format of task_type,engine_type,engine_file_path
+- ``-f`` is the file format of the workflow, which is used to determine how to process the files in the workflow
+
+Train an ML task in the workflow
 
 .. code-block:: bash
 
     collectra train --workflow grapto.collectra --task detect_primary_label --training train/*.grapto --validation valid/*.grapto
 
-Collectra goes to the task. The task goes to the engine. 
-The engine knows how to train and saves the model in the engine entity in the grapto.collectra RO-Crate.
-
-The weights can by default be saved inside the RO-Crate. Otherwise, you can specify a path to save the weights outside the RO-Crate.
+- Collectra goes to the task. The task goes to the engine. 
+- The engine knows how to train and saves the model in the engine entity in the grapto.collectra RO-Crate.
+- The weights can by default be saved inside the RO-Crate. 
+- Otherwise, you can specify a path to save the weights outside the RO-Crate. If an external weight file is trained, it will be saved in the RO-Crate and replace the existing weights.
 
 .. code-block:: bash
 
@@ -175,40 +182,20 @@ The weights can by default be saved inside the RO-Crate. Otherwise, you can spec
 
     collectra install --workflow grapto.collectra
 
-Also, because grapto.collectra can install an executable as well, you can run the following command to process an image:
+Also, because .collectra workflow can be installed as an executable, you can run the following command to process an image:
 
 .. code-block:: bash
 
     grapto input.jpg output.grapto
 
-
-We also need to provide a way to publish grapto on PyPI so someone can install it with pip.
+- A .collectra workflow can be published on PyPI so someone can install it with pip. 
+- Someone running workflow this way doesn't have to know about collectra.
 
 .. code-block:: bash
 
     pip install grapto
     grapto input.jpg output.grapto
 
-Someone running grapto this way doesn't have to know about collectra.
-
-.. code-block:: bash
-    
-    collectra make wf1 -t detect_object,yolo,yolo11n.pt -f hespi
-
-- ``-f`` is the file format of the workflow, which is used to determine how to process the files in the workflow
-- ``-t`` is the task, which is used to determine how to process the files in the workflow. It must in the format of task_type,engine_type,engine_file_path
-
-Train an ML task
-
-.. code-block:: bash
-
-    collectra train wf1.collectra -t detect_object -i test_data
-
-- ``-t`` is the task type to train, which must be defined in the workflow
-- ``-i`` is the input data to train the task
-- By default, the logs are saved to ``output/logs.txt``
-
-Compile and build the workflow
 
  Credits
 ==================================
@@ -217,11 +204,11 @@ Compile and build the workflow
 
 Robert Turnbull
 
-For more information contact: <robert.turnbull@unimelb.edu.au>
+For more information contact: `<robert.turnbull@unimelb.edu.au>`_
 
 James Quang
 
-For more information contact: <james.quang@unimelb.edu.au>
+For more information contact: `<james.quang@unimelb.edu.au>`_
 
 Created using `torchapp <https://github.com/rbturnbull/torchapp>`_.
 
