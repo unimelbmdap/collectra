@@ -192,6 +192,7 @@ We also need to provide a way to publish grapto on PyPI so someone can install i
 Someone running grapto this way doesn't have to know about collectra.
 
 .. code-block:: bash
+    
     collectra make wf1 -t detect_object,yolo,yolo11n.pt -f hespi
 
 - ``-f`` is the file format of the workflow, which is used to determine how to process the files in the workflow
