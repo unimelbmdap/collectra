@@ -6,6 +6,7 @@ from rocrate.rocrate import ROCrate
 from rocrate.model import DataEntity
 from ultralytics import YOLO
 from tqdm import tqdm
+import platform
 
 class EngineEntity(DataEntity):
   def __init__(self, crate, identifier=None, properties=None):
@@ -124,14 +125,21 @@ class YOLOEngine(Engine):
     print(f"[bold green]Training object detection model[/bold green]: {self.name}")    
     self.preprocess(data, file_format=file_format)   
     print(f"{self.dir}/{self.yolo_config_path}")                 
-    train_results = self.model.train(
-      data=Path(f"{self.dir}/{self.yolo_config_path}"),
-      epochs=config.get("epochs", self.DEFAULT_CONFIG["epochs"]),
-      imgsz=config.get("imgsz", self.DEFAULT_CONFIG["imgsz"]),
-      # device=config.get("device", self.DEFAULT_CONFIG["device"]),      
-      verbose=config.get("verbose", self.DEFAULT_CONFIG["verbose"]),   
-      project=self.dir  
-    )            
+    if platform.system() == "Darwin":
+      train_results = self.model.train(
+        data=Path(f"{self.dir}/{self.yolo_config_path}"),
+        epochs=config.get("epochs", self.DEFAULT_CONFIG["epochs"]),              
+        verbose=config.get("verbose", self.DEFAULT_CONFIG["verbose"]),   
+        device="mps",
+        project=self.dir  
+      )            
+    else:
+      train_results = self.model.train(
+        data=Path(f"{self.dir}/{self.yolo_config_path}"),
+        epochs=config.get("epochs", self.DEFAULT_CONFIG["epochs"]),              
+        verbose=config.get("verbose", self.DEFAULT_CONFIG["verbose"]),           
+        project=self.dir  
+      )
     new_model_path = Path(self.dir) / "train" / "weights" / "best.pt"    
     metrics = self.model.val()     
     logs = Path(config.get("output", Path.cwd()) / "logs.txt")
