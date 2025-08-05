@@ -122,12 +122,13 @@ class YOLOEngine(Engine):
     file_format = config.get("file_format", "grapto").replace(".", "")
     self.dir = Path(config.get("tmp_dir", "tmp"))
     print(f"[bold green]Training object detection model[/bold green]: {self.name}")    
-    self.preprocess(data, file_format=file_format)                    
+    self.preprocess(data, file_format=file_format)   
+    print(f"{self.dir}/{self.yolo_config_path}")                 
     train_results = self.model.train(
       data=Path(f"{self.dir}/{self.yolo_config_path}"),
       epochs=config.get("epochs", self.DEFAULT_CONFIG["epochs"]),
       imgsz=config.get("imgsz", self.DEFAULT_CONFIG["imgsz"]),
-      device=config.get("device", self.DEFAULT_CONFIG["device"]),
+      # device=config.get("device", self.DEFAULT_CONFIG["device"]),      
       verbose=config.get("verbose", self.DEFAULT_CONFIG["verbose"]),   
       project=self.dir  
     )            
