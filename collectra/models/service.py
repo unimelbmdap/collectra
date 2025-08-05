@@ -130,7 +130,7 @@ class TaskManager:
         print(f"[bold green]Using config[/bold green]: {config}")        
         print(f"[bold green]Using engine path[/bold green]: {engine_path}")
         engine = ValidEngine(name=engine_path)
-        task = ValidTask(task_type=e.get("task_type"), config=config, engine=engine, id=e.id)        
+        task: Task = ValidTask(task_type=e.get("task_type"), config=config, engine=engine, id=e.id)        
         new_engine_path = task.train()       
         engine = ValidEngine(name=new_engine_path)        
         task.add_engine(engine, crate)

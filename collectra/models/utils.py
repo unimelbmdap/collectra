@@ -1,8 +1,8 @@
-import os
 from typing import List
 from rich import print
 from rocrate.rocrate import ROCrate
 from pathlib import Path
+from tqdm import tqdm
 
 class BaseROCrate:
     def __init__(self, name: str, version: str, output: Path, crate: ROCrate = None):
@@ -10,3 +10,22 @@ class BaseROCrate:
         self.version = version
         self.output = output
         self.crate = crate     
+
+
+def get_all_files(data: List[str], file_format: str) -> List[str]:
+    """
+    Get all files from the provided paths with the specified file format.
+    :param data: List of potential file/file paths to search.
+    :param file_format: File format to filter by (e.g., '.jpg', '.png').
+    :return: List of file paths that match the specified format.
+    """
+    files = []
+    for path in tqdm(data, desc="Collecting files"):
+        path = Path(path)
+        if path.is_dir():
+            sub_files = [Path(file) for file in path.glob(f"**/*{file_format}")]
+            files.extend(sub_files)
+        elif path.is_file() and path.suffix == file_format:
+            files.append(Path(path))
+    return files
+

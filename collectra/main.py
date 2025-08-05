@@ -67,16 +67,16 @@ def delete(
 
 @app.command()
 def train(
-    workflow: Annotated[Path, Argument(help="path to workflow")],
+    workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
     task: Annotated[str, Option("--task", "-t", help="task to train")],
-    input: Annotated[Path, Option("--input", "-i", help="Input directory of files")] = Path.cwd() / "data" / "images",
-    output: Annotated[Path, Option("--output", "-o", help="Output directory for log files")] = Path.cwd() / "output",    
+    input: Annotated[List[str], Argument(help="Input directory of files")],
+    output: Annotated[Path, Option("--output", "-o", help="Output directory for log files")] = Path.cwd() / "output",          
 ):
     """
     Train a specific task in the Collectra workflow
     """    
     wf = Collectra.load_workflow(workflow)
-    try:
+    try:        
         wf.train(task, input=input, output=output)        
     except ValueError as e:
         print(f"[red]Error training task[/red]: {e}")    

@@ -7,6 +7,8 @@ from rocrate.model import DataEntity
 from ultralytics import YOLO
 from tqdm import tqdm
 import platform
+from .utils import get_all_files
+from typing import List
 
 class EngineEntity(DataEntity):
   def __init__(self, crate, identifier=None, properties=None):
@@ -79,7 +81,8 @@ class YOLOEngine(Engine):
     self.type: str = "yolo"
     self.yolo_config_path: str = "yolo_config.yml"
 
-  def preprocess(self, data: Path, file_format: str):
+  def preprocess(self, data: List[str], file_format: str):
+    files = get_all_files(data, file_format)
     train_files = []
     val_files = []
     number_of_classes = 0
@@ -88,7 +91,7 @@ class YOLOEngine(Engine):
       self.dir
     except AttributeError:
       self.dir = Path("tmp")    
-    for file in tqdm(data.glob(f"*.{file_format}")):
+    for file in tqdm(files, desc="Processing files for YOLO training"):
       try:
         crate = ROCrate(file)
         if number_of_classes == 0:        
@@ -119,7 +122,7 @@ class YOLOEngine(Engine):
     Path(f"{self.dir}/{self.yolo_config_path}").write_text(yolo_config)
 
   def train(self, config: dict = {}) -> Path:
-    data=Path(config.get("input", "data"))      
+    data=config.get("input", "data")
     file_format = config.get("file_format", "grapto").replace(".", "")
     self.dir = Path(config.get("tmp_dir", "tmp"))
     print(f"[bold green]Training object detection model[/bold green]: {self.name}")    

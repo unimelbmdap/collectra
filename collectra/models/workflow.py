@@ -35,7 +35,7 @@ class Collectra(BaseROCrate):
                 manager.chain(e, config)                
         manager.run()
     
-    def train(self, task: str,  input: Path, output: Path):
+    def train(self, task: str,  input: List[str], output: Path):
         config = {
             "input": input,
             "output": output,
