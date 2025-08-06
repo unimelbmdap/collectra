@@ -124,30 +124,37 @@ class YOLOEngine(Engine):
   def train(self, config: dict = {}) -> Path:
     data=config.get("input", "data")
     file_format = config.get("file_format", "grapto").replace(".", "")
-    self.dir = Path(config.get("tmp_dir", "tmp"))
+    self.dir = Path(config.get("tmp_dir", "tmp")) / config.get("task")
+    self.dir.mkdir(parents=True, exist_ok=True)
     print(f"[bold green]Training object detection model[/bold green]: {self.name}")    
-    self.preprocess(data, file_format=file_format)   
-    print(f"{self.dir}/{self.yolo_config_path}")                 
-    if platform.system() == "Darwin":
-      train_results = self.model.train(
-        data=Path(f"{self.dir}/{self.yolo_config_path}"),
-        epochs=config.get("epochs", self.DEFAULT_CONFIG["epochs"]),              
-        verbose=config.get("verbose", self.DEFAULT_CONFIG["verbose"]),   
-        device="mps",
-        project=self.dir  
-      )            
-    else:
-      train_results = self.model.train(
-        data=Path(f"{self.dir}/{self.yolo_config_path}"),
-        epochs=config.get("epochs", self.DEFAULT_CONFIG["epochs"]),              
-        verbose=config.get("verbose", self.DEFAULT_CONFIG["verbose"]),           
-        project=self.dir  
-      )
-    new_model_path = Path(self.dir) / "train" / "weights" / "best.pt"    
-    metrics = self.model.val()     
-    logs = Path(config.get("output", Path.cwd()) / "logs.txt")
-    logs.parent.mkdir(parents=True, exist_ok=True)
-    logs.write_text(f"Training results: {train_results} \n Validation metrics: {metrics}")
+    self.preprocess(data, file_format=file_format)     
+    train_results = "No training performed"
+    metrics = "No validation performed"     
+    new_model_path = None  
+    if config.get("test", False):
+      print("[bold yellow]Test mode enabled[/bold yellow]: Training will not be performed.")
+    else:                  
+      if platform.system() == "Darwin":
+        train_results = self.model.train(
+          data=Path(f"{self.dir}/{self.yolo_config_path}"),
+          epochs=config.get("epochs", self.DEFAULT_CONFIG["epochs"]),              
+          verbose=config.get("verbose", self.DEFAULT_CONFIG["verbose"]),   
+          device="mps",
+          project=self.dir  
+        )            
+      else:
+        train_results = self.model.train(
+          data=Path(f"{self.dir}/{self.yolo_config_path}"),
+          epochs=config.get("epochs", self.DEFAULT_CONFIG["epochs"]),              
+          verbose=config.get("verbose", self.DEFAULT_CONFIG["verbose"]),           
+          project=self.dir  
+        )
+        new_model_path = Path(self.dir) / "train" / "weights" / "best.pt"    
+        metrics = self.model.val()        
+    if config.get("output"):      
+      logs = Path(config.get("output") / "yolo.log")
+      logs.parent.mkdir(parents=True, exist_ok=True)        
+      logs.write_text(f"{config.get("task")}Training results: {train_results} \n Validation metrics: {metrics}")
     return new_model_path      
     
   def to_crate(self, crate: ROCrate) -> EngineEntity:

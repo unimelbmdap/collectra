@@ -16,7 +16,7 @@ class Collectra(BaseROCrate):
     def __init__(self, name: str, version: str, output: Path, file_format: str = None, crate: ROCrate = ROCrate()):        
         super().__init__(name, version, output, crate)        
         print(f"Collectra workflow initialized: {self.name} version {self.version}")
-        self.file_name = self.output / f"{self.name}.collectra"         
+        self.file_name = self.output / f"{self.name}"         
         if file_format:
             self.crate.update_jsonld({
                 "@id": "./",
@@ -35,18 +35,25 @@ class Collectra(BaseROCrate):
                 manager.chain(e, config)                
         manager.run()
     
-    def train(self, task: str,  input: List[str], output: Path):
+    def train(self, task: str,  input: List[str], output: Path, **args):
         config = {
             "input": input,
             "output": output,
             "crate": self.crate,
             "tmp_dir": self.TEMPORARY_DIR,
-        }
+            "test": args.get("test", False),
+            "task": str(task),
+        }        
         TaskManager.train(task, config)          
         self.save(compressed=True)  
         self.cleanup()      
 
     def add_task(self, task: str):
+        """
+        Add a task to the Collectra workflow.
+        :param task: The task definition in the format "<task_type>,<engine>".
+        :return: The created TaskEntity or None if an error occurred.
+        """        
         try:
             return TaskManager.build(task, self.crate)
         except ValueError as e:
@@ -109,7 +116,7 @@ class Collectra(BaseROCrate):
         name="default",
         version="1.0",
         output: Path = Path.cwd(),
-        tasks: List[str] = None,
+        tasks: List[str] = [],
         file_format: str = "grapto",
     ) -> Collectra:
         """
@@ -117,7 +124,7 @@ class Collectra(BaseROCrate):
         If no tasks are provided, an empty workflow is created.
         """
         print(f"Creating workflow: {name} in {output}")
-        workflow_p = Path(f"{output}/{name}.collectra")
+        workflow_p = Path(f"{output}/{name}")
         if workflow_p.exists() and name != "default":
             print(f"[red]Workflow file already exists[/red]: {name} - skipping initialisation. To edit use `collectra edit` command.")
             return            

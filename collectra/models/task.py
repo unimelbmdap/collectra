@@ -26,7 +26,7 @@ class Task(ABC):
   VALID_ENGINES: Tuple = ()  
 
   def __init__(self, task_type: str, config: dict = {}, engine: Engine = None, id: str = None):
-    self.id = uuid.uuid4() if id is None else id
+    self.id = id if id else uuid.uuid4()
     self.task_type: str = task_type         
     self.config = config    
     self.engine = None    

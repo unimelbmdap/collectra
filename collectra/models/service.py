@@ -1,5 +1,6 @@
 from .task import Task, TaskEntity, DetectObject, ClassifyImage
 from .engine import Engine, EngineEntity, YOLOEngine, ImageClassifier, DETECTRON2Engine
+import typer
 from rich import print
 from typing import List
 from rocrate.rocrate import ROCrate
@@ -70,19 +71,20 @@ class TaskManager:
     :raises ValueError: If the task format is invalid or the task type is not recognized
     :return: An instance of EngineModel.
     """
+    typer.echo(f"building task string: {task}")
     if "," not in task:
-      raise ValueError(f"[bold red]Invalid task format[/bold red]: {task}. Must be in the format <task_type>,<engine>.")
-    task_type, engine_type, engine = task.split(",")
+      raise ValueError(f"[bold red]Invalid task format[/bold red]: {task}. Must be in the format <task_type>,<task_name>,<engine_type>,<engine>.")
+    task_type,task_name,engine_type,engine = task.split(",")
     ValidTask = TaskManager.VALID_TASKS.get(task_type)
     if not ValidTask:
       raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {list(TaskManager.VALID_TASKS.keys())}.")
     ValidEngine = EngineManager.build(engine_type, engine)
-    task = DetectObject(task_type=task_type, engine=ValidEngine)                
+    task = DetectObject(task_type=task_type, engine=ValidEngine, id=task_name)                
     task.to_crate(crate)
     return task
   
   @staticmethod
-  def get(task: str, crate: ROCrate = None) -> Task:
+  def get(task: str, config: dict) -> Task:
     """
     Get a Task from a string string.
     :param task: The task string in the format "<task_type>,<engine>".
@@ -90,9 +92,27 @@ class TaskManager:
     :raises ValueError: If the task format is invalid or the task type is not recognized
     :return: An instance of Task.
     """
-    if "," not in task:
-      raise ValueError(f"[bold red]Invalid task format[/bold red]: {task}. Must be in the format <task_type>,<engine>.")
-    return TaskManager.build(task, crate)
+    crate: ROCrate = config.get("crate")
+    task: TaskEntity = crate.dereference(task)
+    if task.type != "Task":
+      raise ValueError(f"[bold red]Task not found[/bold red]: {task}. Must be a valid TaskEntity.")    
+    task_type: str = task.get("task_type")
+    ValidTask = TaskManager.VALID_TASKS.get(task_type)
+    if not ValidTask:
+      raise ValueError(f"[bold red]Invalid task type[/bold red]: {task.get('task_type')}. Must be one of {list(TaskManager.VALID_TASKS.keys())}.")    
+    engine: EngineEntity = task.get("engine")[0]
+    training_params = dict(engine.get("trainingParameters")[0]) | {}
+    config = {
+      **config,
+      **training_params,      
+    }
+    ValidEngine, engine_path = EngineManager.get(engine)
+    engine = ValidEngine(name=engine_path)    
+    task = ValidTask(task_type=task_type, config=config, engine=engine, id=task.id)
+    print(f"[bold green]Found task[/bold green]: {Task}")
+    print(f"[bold green]Found engine[/bold green]: {ValidEngine}")    
+    print(f"[bold green]Using engine path[/bold green]: {engine_path}")
+    return task, ValidEngine
 
   @staticmethod
   def train(task: str, config: dict = {}) -> Task:    
@@ -103,36 +123,21 @@ class TaskManager:
     :raises ValueError: If the task format is invalid or the task type is not recognized
     :return: An instance of Task.
     """
-    crate = config.get("crate")
+    crate: ROCrate = config.get("crate")
     os.makedirs(config.get("tmp_dir", "tmp"), exist_ok=True)    
+    print(f"[bold green]Using config[/bold green]: {config}")
     if crate is None:
-      raise ValueError("[bold red]Crate must be provided[/bold red] when getting a task.")
-    file_format = crate.dereference("./").get("file_format", "grapto").replace(".", "")
-    for e in crate.data_entities:
-      if e.type == "Task":
-        if e.get("task_type") != task:
-          print(f"[bold red]Skipping not matched task[/bold red]: {e.get('task_type')}")
-          continue
-        ValidTask = TaskManager.VALID_TASKS.get(e.get("task_type"))
-        if not ValidTask:
-          print(f"[bold red]Invalid task type[/bold red]: {e.get('task_type')}")
-          continue        
-        engine = e.get("engine")[0]
-        training_params = dict(engine.get("trainingParameters")[0]) | {}
-        config = {
-          **config,
-          **training_params,
-          "file_format": file_format,
-        }
-        ValidEngine, engine_path = EngineManager.get(engine)                
-        print(f"[bold green]Found task[/bold green]: {ValidTask}")
-        print(f"[bold green]Found engine[/bold green]: {ValidEngine}")            
-        print(f"[bold green]Using config[/bold green]: {config}")        
-        print(f"[bold green]Using engine path[/bold green]: {engine_path}")
-        engine = ValidEngine(name=engine_path)
-        task: Task = ValidTask(task_type=e.get("task_type"), config=config, engine=engine, id=e.id)        
-        new_engine_path = task.train()       
-        engine = ValidEngine(name=new_engine_path)        
-        task.add_engine(engine, crate)
-        task_crate = task.to_crate(crate)        
-        print(f"[green]New engine added:[/green] {task_crate.get('engine')[0].id}")        
+      raise ValueError("[bold red]Crate must be provided[/bold red] when getting a task.")       
+    config = {
+      **config,
+      "file_format": crate.dereference("./").get("file_format", "grapto").replace(".", "")     
+    }       
+    task, ValidEngine = TaskManager.get(task, config)           
+    new_engine_path = task.train()       
+    if new_engine_path:
+      engine = ValidEngine(name=new_engine_path)        
+      task.add_engine(engine, crate)
+      print(f"[green]New engine added:[/green] {task_crate.get('engine')[0].id}")      
+    print(f"[bold green]Training completed[/bold green]: {task.id}")    
+    task_crate = task.to_crate(crate)              
+    return task_crate                

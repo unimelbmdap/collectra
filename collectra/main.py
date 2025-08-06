@@ -10,44 +10,27 @@ app = Typer()
 
 @app.command()
 def make(
-    workflow: Annotated[str, Argument(help="name of the workflow")] = "default",
+    workflow: Annotated[str, Option("--workflow", "-w", help="name of the workflow")] = "default",
     file_format: Annotated[str, Option("--file-format", "-f", help="File format for the workflow, e.g., grapto, json, yaml")] = "grapto",
-    tasks: Annotated[
-        Optional[List[str]],
-        Option("--task", "-t", case_sensitive=False),
-    ] = [],
     output: Annotated[
         Path, Option("--output", "-o", help="Output directory for the workflow")
-    ] = Path.cwd(),
+    ] = Path.cwd(),        
 ):
     """
-    Build a collectra workflow
-    - Checks if the workflow already exists in the output directory
-    - If it exists, skips the initialisation
-    - If it does not exist, creates a new workflow with the specified tasks
-    - If the workflow is 'default', it overrides the default workflow folder
-    - If the output directory does not exist, it creates it
-    - If the tasks are not provided, it creates an empty workflow
-    - If the tasks are provided, it creates a workflow with the specified tasks
-    - The tasks should be in the format: <task_type>,<engine_type>,<engine>
-    - <engine> should be a valid Path to an engine file
-    - Example: object_detect,yolo,yolo11n.pt
-    """    
-    Collectra.make(name=workflow, version="1.0", output=output, tasks=tasks, file_format=file_format)
+    Create a new Collectra workflow with the specified name and file format.
+    """        
+    Collectra.make(name=workflow, version="1.0", output=output, file_format=file_format)
 
 @app.command()
 def add(
-    workflow: Annotated[Path, Argument(help="path to workflow")],
-    tasks: Annotated[
-        Optional[List[str]],
-        Option("--task", "-t", case_sensitive=False),
-    ] = [],
+    workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
+    task: Annotated[str, Option("--task", "-t", help="task to add. It should be a valid task: task_type,task_name,engine_type,engine_name")],    
 ):
     """
     Add a task to the Collectra workflow
     """    
     wf = Collectra.load_workflow(workflow)
-    wf.add_tasks(tasks)    
+    wf.add_task(task)
     wf.save()    
 
 @app.command()
@@ -58,32 +41,27 @@ def delete(
     """
     Remove a task from the Collectra workflow
     """    
-    wf = Collectra.load_workflow(workflow)
-    try:
-        wf.delete_task(task)
-        wf.save()        
-    except ValueError as e:
-        print(f"[red]Error removing task[/red]: {e}")
+    wf = Collectra.load_workflow(workflow)    
+    wf.delete_task(task)
+    wf.save()            
 
 @app.command()
 def train(
     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
     task: Annotated[str, Option("--task", "-t", help="task to train")],
     input: Annotated[List[str], Argument(help="Input directory of files")],
-    output: Annotated[Path, Option("--output", "-o", help="Output directory for log files")] = Path.cwd() / "output",          
+    output: Annotated[Path, Option("--output", "-o", help="Output directory for log files")] = None,
+    test: Annotated[bool, Option("--test", "-te", help="Enable test mode")] = 0,
 ):
     """
     Train a specific task in the Collectra workflow
     """    
     wf = Collectra.load_workflow(workflow)
-    try:        
-        wf.train(task, input=input, output=output)        
-    except ValueError as e:
-        print(f"[red]Error training task[/red]: {e}")    
+    wf.train(task, input=input, output=output, test=test)    
 
 @app.command()
 def run(
-    workflow: Path = Argument(help="path to workflow"),
+    workflow: Annotated[Path, Argument(help="path to workflow")],
     input: Annotated[Path, Option("--input", "-i", help="Input directory of files")] = Path.cwd() / "data"/ "images",
     output: Annotated[Path, Option("--output", "-o", help="Output directory for processed files")] = Path.cwd() / "data" / "output",
 ):
