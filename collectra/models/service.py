@@ -137,7 +137,21 @@ class TaskManager:
     if new_engine_path:
       engine = ValidEngine(name=new_engine_path)        
       task.add_engine(engine, crate)
-      print(f"[green]New engine added:[/green] {task_crate.get('engine')[0].id}")      
+      print(f"[green]New engine added:[/green] {task.engine}")      
     print(f"[bold green]Training completed[/bold green]: {task.id}")    
     task_crate = task.to_crate(crate)              
-    return task_crate                
+    return task_crate
+
+  @staticmethod
+  def eval(task: str, config: dict = {}):
+    crate: ROCrate = config.get("crate")
+    os.makedirs(config.get("tmp_dir", "tmp"), exist_ok=True)
+    print(f"[bold green]Using config[/bold green]: {config}")
+    if crate is None:
+      raise ValueError("[bold red]Crate must be provided[/bold red] when getting a task.")
+    config = {
+      **config,
+      "file_format": crate.dereference("./").get("file_format", "grapto").replace(".", "")
+    }
+    task, ValidEngine = TaskManager.get(task, config)
+    task.eval()            

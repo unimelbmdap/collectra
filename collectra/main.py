@@ -57,29 +57,32 @@ def train(
     Train a specific task in the Collectra workflow
     """    
     wf = Collectra.load_workflow(workflow)
-    wf.train(task, input=input, output=output, test=test)    
+    wf.train(task, input_files=input, output_path=output, test=test)    
 
 @app.command()
-def run(
-    workflow: Annotated[Path, Argument(help="path to workflow")],
-    input: Annotated[Path, Option("--input", "-i", help="Input directory of files")] = Path.cwd() / "data"/ "images",
-    output: Annotated[Path, Option("--output", "-o", help="Output directory for processed files")] = Path.cwd() / "data" / "output",
+def eval(
+    workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
+    task: Annotated[str, Option("--task", "-t", help="task to evaluate")],
+    input: Annotated[List[str], Argument(help="Input directory of files")],
+    output: Annotated[Path, Option("--output", "-o", help="Output directory for log files")] = None,
+    test: Annotated[bool, Option("--test", "-te", help="Enable test mode")] = 0,
 ):
     """
-    Execute a Collectra workflow
+    Evaluate a specific task in the Collectra workflow
     """    
     wf = Collectra.load_workflow(workflow)
-    wf.run(input=input, output=output)
+    wf.eval(task, input_files=input, output_path=output, test=test)
 
 @app.command()
 def view(
-    workflow: Annotated[Path, Argument(help="path to workflow")],
+    workflow: Annotated[Path, Option("-w", "--workflow", help="path to workflow")],
 ):
     """
     View the Collectra workflow
     """    
     wf = Collectra.load_workflow(workflow)    
-    print(wf)
+    for e in wf.crate.get_entities():
+        print(f"[bold green]Entity:[/bold green] {e.id}")        
 
 if __name__ == "__main__":
     app()

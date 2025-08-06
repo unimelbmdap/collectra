@@ -146,16 +146,16 @@ def test_train(tmpdir):
 #     assert 'obj-detection1' in output_obj1_log_text # CHANGE THIS AS NEEDED
     
 
-# def test_cluster(tmpdir):
-#     for index in range(1,3):
-#         output_cluster = tmpdir/'output_cluster'
-#         result = run_app(f"cluster --workflow {DUMMY_WORKFLOW} --item label{index} {TEST_FILES_STR} --output {output_cluster}")
-#         assert result.exit_code == 0
-#         assert output_cluster.exists()
-#         output_cluster_log = output_cluster/'cluster.html' # CHANGE THIS AS NEEDED
-#         assert output_cluster_log.exists()
-#         output_cluster_log_text =  output_cluster_log.read_text()
-#         assert f'label{index}' in output_cluster_log_text # CHANGE THIS AS NEEDED
+def test_cluster(tmpdir):
+    for index in range(1,3):
+        output_cluster = Path(tmpdir) / 'output_cluster'
+        result = run_app(f"cluster --workflow {DUMMY_WORKFLOW} --item label{index} {TEST_FILES_STR} --output {output_cluster}")
+        assert result.exit_code == 0
+        assert output_cluster.exists()
+        output_cluster_log = output_cluster/'cluster.html' # CHANGE THIS AS NEEDED
+        assert output_cluster_log.exists()
+        output_cluster_log_text =  output_cluster_log.read_text()
+        assert f'label{index}' in output_cluster_log_text # CHANGE THIS AS NEEDED
         
 
 # def test_extract(tmpdir):

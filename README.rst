@@ -196,6 +196,11 @@ Also, because .collectra workflow can be installed as an executable, you can run
     pip install grapto
     grapto input.jpg output.grapto
 
+Function of tmp directory:
+***************************
+
+The 'tmp' directory is used to store temporary files during the workflow execution. By default, it is created in the same directory as the workflow file ``tmp``, but the user can specify a different location.
+If there are multiple runs in the same directory, a subdirectory with a timestamp is created to avoid conflicts.
 
  Credits
 ==================================
