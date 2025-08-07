@@ -49,53 +49,67 @@ def load_class_from_string(path: str):
     return cls
 
 
-def read_collectra(path:Path|str) -> nx.DiGraph:
-    path = Path(path)
-    with path.open("r") as f:
-        data = yaml.safe_load(f)
+@dataclass()
+class CollectraWorkflow():
+    path:Path
+    dag:nx.DiGraph = field(init=False, default=None)
 
-    G = nx.DiGraph()
+    def __post_init__(self):
+        self.read_yaml()
 
-    items = dict()
+    def read_yaml(self) -> nx.DiGraph:
+        path = Path(self.path)
+        with path.open("r") as f:
+            data = yaml.safe_load(f)
 
-    for name, kwargs in data.items():
-        type_ = kwargs.pop("type", None)
-        assert type_ is not None, f"Type is required for {name}"
+        self.dag = nx.DiGraph()
 
-        cls = load_class_from_string(type_)
-        item = cls(name=name, **kwargs)
-        assert isinstance(item, CollectraNode)
-        items[name] = item
+        items = dict()
 
-        if name not in G:
-            G.add_node(name, item=item)
-                    
-        node = G.nodes[name]
-        node["item"] = item
+        for name, kwargs in data.items():
+            type_ = kwargs.pop("type", None)
+            assert type_ is not None, f"Type is required for {name}"
 
-        # Set colour and attributes of node in networkx
-        item.set_node_attributes(node)
+            cls = load_class_from_string(type_)
+            item = cls(name=name, **kwargs)
+            assert isinstance(item, CollectraNode)
+            items[name] = item
 
-        for input_name in item.input:
-            G.add_edge(input_name, name)
+            if name not in self.dag:
+                self.dag.add_node(name, item=item)
+                        
+            node = self.dag.nodes[name]
+            node["item"] = item
 
-        for output_name in item.output:
-            G.add_edge(name, output_name)
+            # Set colour and attributes of node in networkx
+            item.set_node_attributes(node)
 
-    return G
+            for input_name in item.input:
+                self.dag.add_edge(input_name, name)
 
+            for output_name in item.output:
+                self.dag.add_edge(name, output_name)
 
-def render_collectra(path:Path|str, output:Path|str|None=None) -> str:
-    G = read_collectra(path)
-    dot_string = nx.nx_pydot.to_pydot(G).to_string()
-    if output:
-        import graphviz
+        return self.dag
 
+    def dot(self) -> str:
+        return nx.nx_pydot.to_pydot(self.dag).to_string()
+
+    def render(self, output:Path|str) -> str:
         output = Path(output)
         output.parent.mkdir(parents=True, exist_ok=True)
 
-        graph = graphviz.Source(dot_string)
-        format = output.suffix[1:] if output.suffix else "svg"
-        graph.render(str(output.with_suffix('')), format=format, cleanup=True)
+        dot_string = self.dot()
+        suffix = output.suffix.lower()
+        if suffix == ".dot":
+            with output.open("w") as f:
+                f.write(dot_string)
+        else:
+            import graphviz
 
-    return dot_string
+            graph = graphviz.Source(dot_string)
+            format = suffix[1:] if suffix else "svg"
+            graph.render(str(output.with_suffix('')), format=format, cleanup=True)
+
+        return dot_string
+
