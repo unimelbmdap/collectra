@@ -5,7 +5,7 @@ import importlib
 from dataclasses import dataclass, field
 
 @dataclass(kw_only=True)
-class CollectraItem():
+class CollectraNode():
     name: str
     input: list[str] = field(default_factory=list)
     output: list[str] = field(default_factory=list)
@@ -21,7 +21,7 @@ class CollectraItem():
 
 
 @dataclass(kw_only=True)
-class CollectraTask(CollectraItem):
+class CollectraTask(CollectraNode):
     def set_node_attributes(self, node):
         node["color"] = "dodgerblue"
         node["shape"] = "box"
@@ -29,6 +29,16 @@ class CollectraTask(CollectraItem):
 
 @dataclass(kw_only=True)
 class TextProcessor(CollectraTask):
+    pass
+
+
+@dataclass(kw_only=True)
+class ObjectDetection(CollectraTask):
+    pass
+
+
+@dataclass(kw_only=True)
+class OCR(CollectraTask):
     pass
 
 
@@ -54,7 +64,7 @@ def read_collectra(path:Path|str) -> nx.DiGraph:
 
         cls = load_class_from_string(type_)
         item = cls(name=name, **kwargs)
-        assert isinstance(item, CollectraItem)
+        assert isinstance(item, CollectraNode)
         items[name] = item
 
         if name not in G:

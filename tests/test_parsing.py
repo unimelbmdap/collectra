@@ -23,4 +23,25 @@ def test_basic_render(tmpdir):
     assert "processor2" in svg  # Check if the SVG contains the expected node
 
 
+def test_object_detection():
+    object_detection_yaml_path = TEST_DATA / "object_detection.yaml"
+    graph = read_collectra(object_detection_yaml_path)
+    assert len(graph.nodes) == 9
+
+
+
+def test_object_detection_render(tmpdir):
+    object_detection_yaml_path = TEST_DATA / "object_detection.yaml"
+    output_path = tmpdir / "object_detection.svg"
+
+    dot_string = render_collectra(object_detection_yaml_path, output_path)
+
+    assert "digraph" in dot_string  # Check if the output is a valid DOT string
+    assert "input_image -> primary_label_detection;" in dot_string
+
+    assert output_path.exists()
+    svg = output_path.read_text(encoding='utf-8')
+    assert "<svg" in svg  # Check if the output file is a valid SVG
+    assert "primary_label" in svg  # Check if the SVG contains the expected node
+
 
