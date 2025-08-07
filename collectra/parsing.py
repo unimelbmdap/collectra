@@ -21,7 +21,14 @@ class CollectraItem():
 
 
 @dataclass(kw_only=True)
-class TextProcessor(CollectraItem):
+class CollectraTask(CollectraItem):
+    def set_node_attributes(self, node):
+        node["color"] = "dodgerblue"
+        node["shape"] = "box"
+
+
+@dataclass(kw_only=True)
+class TextProcessor(CollectraTask):
     pass
 
 
@@ -50,12 +57,12 @@ def read_collectra(path:Path|str) -> nx.DiGraph:
         assert isinstance(item, CollectraItem)
         items[name] = item
 
-        if name in G:
-            node = G.nodes[name]
-            node["item"] = item
-        else:
-            node = G.add_node(name, item=item)
-        
+        if name not in G:
+            G.add_node(name, item=item)
+                    
+        node = G.nodes[name]
+        node["item"] = item
+
         # Set colour and attributes of node in networkx
         item.set_node_attributes(node)
 
