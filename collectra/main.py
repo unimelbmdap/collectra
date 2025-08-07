@@ -4,6 +4,7 @@ from typing import Optional, List
 from rich import print
 from pathlib import Path
 from .models.workflow import Collectra
+from .parsing import CollectraWorkflow
 
 app = Typer()
 
@@ -103,6 +104,21 @@ def view(
     wf = Collectra.load_workflow(workflow)    
     print(wf)
 
+
+@app.command()
+def render(
+    workflow: Annotated[Path, Argument(help="path to workflow")],
+    output: Annotated[Path, Argument(help="path to output file")],
+):
+    """
+    Render the Collectra workflow to a file
+    """
+    workflow = CollectraWorkflow(workflow)
+    workflow.render(output)
+
+    print(f"[green]Workflow rendered to {output}[/green]")
+
+    
 if __name__ == "__main__":
     app()
 
