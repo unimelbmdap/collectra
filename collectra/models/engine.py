@@ -364,8 +364,7 @@ class YOLOEngine(Engine):
     # Prepare training parameters
     train_params = {
       "data": Path(f"{self.dir}/{self.yolo_config_path}"),
-      # "epochs": config.get("epochs", self.DEFAULT_CONFIG["epochs"]),
-      "epochs": 1,
+      "epochs": int(config.get("epochs", self.DEFAULT_CONFIG["epochs"])),      
       "verbose": config.get("verbose", self.DEFAULT_CONFIG["verbose"]),
       "project": self.dir      
     }

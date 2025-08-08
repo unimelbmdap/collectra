@@ -2,7 +2,7 @@ from .task import Task, TaskEntity, DetectObject, ClassifyImage
 from .engine import Engine, EngineEntity, YOLOEngine, ImageClassifier, DETECTRON2Engine
 import typer
 from rich import print
-from typing import List
+from typing import List, Union
 from rocrate.rocrate import ROCrate
 from pathlib import Path
 import os
@@ -84,6 +84,26 @@ class TaskManager:
     return task
   
   @staticmethod
+  def edit(task: str, crate: ROCrate, param: str, value: Union[str, int, float]) -> Task:
+    """
+    Edit a Task's parameter.
+    """
+    task = crate.dereference(task)
+    print(task)
+    if task.type != "Task":
+      raise ValueError(f"[bold red]Task not found[/bold red]: {task}. Must be a valid TaskEntity.")
+    engine = task.get("engine")[0]
+    if not engine or not engine.type == "File":
+      raise ValueError(f"[bold red]Engine not found[/bold red] for task: {task.id}. Must be a valid EngineEntity.")
+    training_params = engine.get("trainingParameters")[0]
+    if not training_params or not training_params.type == "TrainingParameters":
+      raise ValueError(f"[bold red]No training parameters found[/bold red] for task: {task.id}.")
+    if param not in training_params:
+      raise ValueError(f"[bold red]Parameter not found[/bold red]: {param}. Must be one of {list(training_params.keys())}.")
+    training_params[param] = int(value) if isinstance(value, str) and value.isdigit() else value
+    return task
+  
+  @staticmethod
   def get(task: str, config: dict) -> Task:
     """
     Get a Task from a string string.
@@ -135,7 +155,7 @@ class TaskManager:
     task, ValidEngine = TaskManager.get(task, config)           
     new_engine_path = task.train()       
     if new_engine_path:
-      engine = ValidEngine(name=new_engine_path)        
+      engine = ValidEngine(name=new_engine_path, config=config)        
       task.add_engine(engine, crate)
       print(f"[green]New engine added:[/green] {task.engine}")      
     print(f"[bold green]Training completed[/bold green]: {task.id}")    
@@ -155,3 +175,5 @@ class TaskManager:
     }
     task, ValidEngine = TaskManager.get(task, config)
     task.eval()            
+
+  

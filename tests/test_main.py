@@ -31,6 +31,16 @@ def run_app(command:str):
 def dummy_workflow(tmpdir):
     return Path(tmpdir) / "dummy_workflow"
 
+def make_workflow(dummy_workflow):
+    result = run_app(f"make -f hespi -w {dummy_workflow}")
+    assert result.exit_code == 0
+    assert dummy_workflow.exists(), "Workflow file should be created"
+    task_string = ",".join(DUMMY_TASK_INPUT.values())
+    result = run_app(f"add -w {dummy_workflow} -t {task_string}")
+    assert result.exit_code == 0, f"Add task {task_string} should succeed"
+    myworkflow = Collectra.load_workflow(dummy_workflow)
+    return myworkflow
+
 def test_detect_object_task_and_engine_add():
     """
     Test the training functionality of the DetectObject task with a YOLOEngine.
@@ -77,13 +87,7 @@ def test_add_task(dummy_workflow):
     """
     Test the add command to ensure it adds tasks to the workflow.
     """
-    result = run_app(f"make -f hespi -w {dummy_workflow}")
-    assert result.exit_code == 0
-    assert dummy_workflow.exists(), "Workflow file should be created"
-    task_string = ",".join(DUMMY_TASK_INPUT.values())
-    result = run_app(f"add -w {dummy_workflow} -t {task_string}")
-    assert result.exit_code == 0, f"Add task {task_string} should succeed"
-    myworkflow = Collectra.load_workflow(dummy_workflow)
+    myworkflow = make_workflow(dummy_workflow)    
     task = myworkflow.crate.dereference(DUMMY_TASK_INPUT["task_name"])
     assert task is not None, "Task should exists in the workflow"
     assert task.get("task_type") == DUMMY_TASK_INPUT["task_type"], "Task type should be 'detect_object'"
@@ -91,11 +95,7 @@ def test_add_task(dummy_workflow):
     assert task.get("engine")[0].get("engine_type") == DUMMY_TASK_INPUT["engine_type"], "Engine type should be 'yolo'"
 
 def test_train(tmpdir, dummy_workflow):    
-    result = run_app(f"make -f hespi -w {dummy_workflow}")
-    assert result.exit_code == 0, "Make command should succeed"
-    task_string = ",".join(DUMMY_TASK_INPUT.values())
-    result = run_app(f"add -w {dummy_workflow} -t {task_string}")
-    assert result.exit_code == 0, f"Add task {task_string} should succeed"
+    make_workflow(dummy_workflow)    
     task_string2 = ",".join(DUMMY_TASK_INPUT2.values())
     result = run_app(f"add -w {dummy_workflow} -t {task_string2}")
     assert result.exit_code == 0, f"Add task {task_string2} should succeed"
@@ -122,17 +122,10 @@ def test_train(tmpdir, dummy_workflow):
 
 
 def test_eval(tmpdir, dummy_workflow):
-
-    result = run_app(f"make -f hespi -w {dummy_workflow}")
-    assert result.exit_code == 0, "Make command should succeed"
-    task_string = ",".join(DUMMY_TASK_INPUT.values())
-    result = run_app(f"add -w {dummy_workflow} -t {task_string}")
-    assert result.exit_code == 0, f"Add task {task_string} should succeed"
-
+    make_workflow(dummy_workflow)    
     result = run_app(f"eval --workflow {dummy_workflow} --task obj-detection1 {TEST_FILES_STR} -te 1")
     assert result.exit_code == 0
-    assert "Evaluation obj-detection1" in result.stdout.strip()
-    
+    assert "Evaluation obj-detection1" in result.stdout.strip()    
     output_obj1 = Path(tmpdir) /'output_obj1'
     result = run_app(f"eval --workflow {dummy_workflow} --task obj-detection1 --output {output_obj1} {TEST_FILES_STR} -te 1")
     assert result.exit_code == 0
@@ -140,8 +133,15 @@ def test_eval(tmpdir, dummy_workflow):
     output_obj1_log = output_obj1 / 'eval.log' # CHANGE THIS AS NEEDED
     assert output_obj1_log.exists()
     output_obj1_log_text =  output_obj1_log.read_text()
-    assert 'obj-detection1' in output_obj1_log_text # CHANGE THIS AS NEEDED
-    
+    assert 'obj-detection1' in output_obj1_log_text # CHANGE THIS AS NEEDED    
+
+def test_edit(dummy_workflow):
+    make_workflow(dummy_workflow)
+    result = run_app(f"edit --workflow {dummy_workflow} --task obj-detection1 --param epochs --value 1")
+    assert result.exit_code == 0
+    result = run_app(f"view -w {dummy_workflow}")
+    assert result.exit_code == 0
+    assert "'epochs': 1" in result.stdout.strip(), "Task parameter 'epochs' should be updated to 1"
 
 # def test_cluster(tmpdir, dummy_workflow):
 #     for index in range(1,3):

@@ -34,6 +34,20 @@ def add(
     wf.save()    
 
 @app.command()
+def edit(
+    workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
+    task: Annotated[str, Option("--task", "-t", help="task to edit")],
+    param: Annotated[str, Option("--param", "-p", help="parameter to edit")],
+    value: Annotated[str, Option("--value", "-v", help="new value for the parameter")],
+):
+    """
+    Edit a specific task in the Collectra workflow
+    """
+    wf = Collectra.load_workflow(workflow)
+    wf.edit_task(task, param, value)
+    wf.save()
+
+@app.command()
 def delete(
     workflow: Annotated[Path, Argument(help="path to workflow")],
     task: Annotated[str, Option("--task", "-t", help="task to remove")],
@@ -82,7 +96,8 @@ def view(
     """    
     wf = Collectra.load_workflow(workflow)    
     for e in wf.crate.get_entities():
-        print(f"[bold green]Entity:[/bold green] {e.id}")        
+        print(f"[bold green]Entity:[/bold green] {e.id}") 
+        print(e.properties())
 
 if __name__ == "__main__":
     app()

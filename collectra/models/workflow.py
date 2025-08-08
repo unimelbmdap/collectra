@@ -407,6 +407,27 @@ class Collectra(BaseROCrate):
             # Handle validation errors gracefully
             print(f"[red]Error adding task[/red]: {e}")
             return None
+    
+    def edit_task(self, task: str, param: str, value: str) -> Optional[TaskEntity]:
+        """Edit a specific task in the Collectra workflow.
+        
+        Modifies the specified parameter of the given task with the new value.
+        This allows dynamic updates to task configurations without recreating them.
+        
+        Args:
+            task: The task identifier to edit
+            param: The parameter to modify
+            value: The new value for the parameter
+            
+        """
+        try:
+            # Use TaskManager to build and validate the task
+            return TaskManager.edit(task, self.crate, param, value)
+        except ValueError as e:
+            # Handle validation errors gracefully
+            print(f"[red]Error editing task[/red]: {e}")
+            return None
+        
 
     def add_tasks(self, tasks: List[str]) -> List[TaskEntity]:
         """Add multiple tasks to the Collectra workflow.
