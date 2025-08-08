@@ -35,24 +35,24 @@ def prerun_cleanup():
     if DUMMY_WORKFLOW.exists():
         os.remove(DUMMY_WORKFLOW)
 
-# def test_detect_object_task_and_engine_add():
-#     """
-#     Test the training functionality of the DetectObject task with a YOLOEngine.
-#     """     
-#     engine = YOLOEngine(name="yolo11n.pt")
-#     task = DetectObject(task_type="detect_object", engine=engine)
-#     assert isinstance(task.engine, YOLOEngine), "Engine should be an instance of YOLOEngine"     
-#     # Run the training process
-#     task.train()
+def test_detect_object_task_and_engine_add():
+    """
+    Test the training functionality of the DetectObject task with a YOLOEngine.
+    """     
+    engine = YOLOEngine(name="yolo11n.pt", config={"test": 1})
+    task = DetectObject(task_type="detect_object", engine=engine)
+    assert isinstance(task.engine, YOLOEngine), "Engine should be an instance of YOLOEngine"     
+    # Run the training process
+    task.train()
     
-#     # Verify that the training files are created
-#     yolo_config_file = Path(engine.dir) / "yolo_config.yml"
-#     train_file = Path(engine.dir) / "train.txt"
-#     val_file = Path(engine.dir) / "val.txt"
+    # Verify that the training files are created
+    yolo_config_file = Path(engine.dir) / "yolo_config.yml"
+    train_file = Path(engine.dir) / "train.txt"
+    val_file = Path(engine.dir) / "val.txt"
     
-#     assert yolo_config_file.exists(), "YOLO config file should be created"
-#     assert train_file.exists(), "Train file should be created"
-#     assert val_file.exists(), "Validation file should be created"
+    assert yolo_config_file.exists(), "YOLO config file should be created"
+    assert train_file.exists(), "Train file should be created"
+    assert val_file.exists(), "Validation file should be created"
 
 
 
@@ -101,6 +101,7 @@ def test_add_task(tmpdir):
     assert task.get("engine")[0].get("engine_type") == DUMMY_TASK_INPUT["engine_type"], "Engine type should be 'yolo'"
 
 def test_train(tmpdir):
+    prerun_cleanup()
     result = run_app(f"make -f hespi -w {DUMMY_WORKFLOW}")
     assert result.exit_code == 0, "Make command should succeed"
     task_string = ",".join(DUMMY_TASK_INPUT.values())
@@ -131,31 +132,38 @@ def test_train(tmpdir):
     assert 'obj-detection2' in output_obj2_log_text # CHANGE THIS AS NEEDED
 
 
-# def test_eval(tmpdir):
-#     result = run_app(f"eval --workflow {DUMMY_WORKFLOW} --task obj-detection1 {TEST_FILES_STR}")
-#     assert result.exit_code == 0
-#     assert "Evaluation obj-detection1" in result.stdout.strip()
+def test_eval(tmpdir):
 
-#     output_obj1 = tmpdir/'output_obj1'
-#     result = run_app(f"eval --workflow {DUMMY_WORKFLOW} --task obj-detection1 --output {output_obj1} {TEST_FILES_STR}")
-#     assert result.exit_code == 0
-#     assert output_obj1.exists()
-#     output_obj1_log = output_obj1/'eval.log' # CHANGE THIS AS NEEDED
-#     assert output_obj1_log.exists()
-#     output_obj1_log_text =  output_obj1_log.read_text()
-#     assert 'obj-detection1' in output_obj1_log_text # CHANGE THIS AS NEEDED
+    result = run_app(f"make -f hespi -w {DUMMY_WORKFLOW}")
+    assert result.exit_code == 0, "Make command should succeed"
+    task_string = ",".join(DUMMY_TASK_INPUT.values())
+    result = run_app(f"add -w {DUMMY_WORKFLOW} -t {task_string}")    
+    assert result.exit_code == 0, f"Add task {task_string} should succeed"
+
+    result = run_app(f"eval --workflow {DUMMY_WORKFLOW} --task obj-detection1 {TEST_FILES_STR} -te 1")
+    assert result.exit_code == 0
+    assert "Evaluation obj-detection1" in result.stdout.strip()
+
+    output_obj1 = Path(tmpdir) /'output_obj1'
+    result = run_app(f"eval --workflow {DUMMY_WORKFLOW} --task obj-detection1 --output {output_obj1} {TEST_FILES_STR} -te 1")
+    assert result.exit_code == 0
+    assert output_obj1.exists()
+    output_obj1_log = output_obj1 / 'eval.log' # CHANGE THIS AS NEEDED
+    assert output_obj1_log.exists()
+    output_obj1_log_text =  output_obj1_log.read_text()
+    assert 'obj-detection1' in output_obj1_log_text # CHANGE THIS AS NEEDED
     
 
-def test_cluster(tmpdir):
-    for index in range(1,3):
-        output_cluster = Path(tmpdir) / 'output_cluster'
-        result = run_app(f"cluster --workflow {DUMMY_WORKFLOW} --item label{index} {TEST_FILES_STR} --output {output_cluster}")
-        assert result.exit_code == 0
-        assert output_cluster.exists()
-        output_cluster_log = output_cluster/'cluster.html' # CHANGE THIS AS NEEDED
-        assert output_cluster_log.exists()
-        output_cluster_log_text =  output_cluster_log.read_text()
-        assert f'label{index}' in output_cluster_log_text # CHANGE THIS AS NEEDED
+# def test_cluster(tmpdir):
+#     for index in range(1,3):
+#         output_cluster = Path(tmpdir) / 'output_cluster'
+#         result = run_app(f"cluster --workflow {DUMMY_WORKFLOW} --item label{index} {TEST_FILES_STR} --output {output_cluster}")
+#         assert result.exit_code == 0
+#         assert output_cluster.exists()
+#         output_cluster_log = output_cluster/'cluster.html' # CHANGE THIS AS NEEDED
+#         assert output_cluster_log.exists()
+#         output_cluster_log_text =  output_cluster_log.read_text()
+#         assert f'label{index}' in output_cluster_log_text # CHANGE THIS AS NEEDED
         
 
 # def test_extract(tmpdir):

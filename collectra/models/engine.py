@@ -299,6 +299,25 @@ class YOLOEngine(Engine):
     self._save_results(merged_config, train_results, metrics)
     return new_model_path
   
+  def val(self, config: dict) -> None:
+    """
+    Validate the YOLO model performance.        
+    """    
+    merged_config = {**self.config, **config}
+    self._setup_training_environment(merged_config)
+    
+    print(f"[bold green]Training object detection model[/bold green]: {self.name}")
+    self._prepare_data(merged_config)
+    val_result = "Validation results"
+    if merged_config.get("test", False):
+      print("[bold yellow]Test mode enabled[/bold yellow]: Validation will not be performed.")
+      val_results = "Test mode: No training performed."
+      metrics = "Test mode: No metrics available."
+      self._save_results(merged_config, val_results, metrics, eval=True)
+      return None    
+    metrics = val_results = self._execute_validation(merged_config)
+    self._save_results(merged_config, val_results, metrics, eval=True)
+  
   def _setup_training_environment(self, config: dict) -> None:
     """
     Setup the training environment and create necessary directories.
@@ -326,8 +345,8 @@ class YOLOEngine(Engine):
     """
     data = config.get("input", "data")
     file_format = config.get("file_format", "grapto").replace(".", "")
-    self.preprocess(data, file_format=file_format)
-  
+    self.preprocess(data, file_format=file_format)   
+
   def _execute_training(self, config: dict):
     """
     Execute the actual YOLO model training process.
@@ -346,7 +365,7 @@ class YOLOEngine(Engine):
     train_params = {
       "data": Path(f"{self.dir}/{self.yolo_config_path}"),
       # "epochs": config.get("epochs", self.DEFAULT_CONFIG["epochs"]),
-      "epochs": 50,
+      "epochs": 1,
       "verbose": config.get("verbose", self.DEFAULT_CONFIG["verbose"]),
       "project": self.dir      
     }
@@ -396,8 +415,8 @@ class YOLOEngine(Engine):
         Validation metrics object from YOLO validation
     """
     return self.model.val()
-  
-  def _save_results(self, config: dict, train_results, metrics) -> None:
+
+  def _save_results(self, config: dict, train_results, metrics, eval=False) -> None:
     """
     Save training results, logs, and model artifacts to output directory.
     
@@ -417,20 +436,22 @@ class YOLOEngine(Engine):
     
     # Create output directory
     output = Path(config.get("output"))
-    output.mkdir(parents=True, exist_ok=True)
-    
-    # Save training log with results and metrics
-    log = output / "yolo.log"
-    log.write_text(f"{config.get('task')}\n Training results: {train_results} \n Validation metrics: {metrics}")
+    output.mkdir(parents=True, exist_ok=True)        
 
     # Copy training artifacts to output directory
     train_results1 = Path(self.dir) / "train"
     train_results2 = Path(self.dir) / "train2"
-    
-    if train_results1.exists():
-      shutil.copytree(train_results1, output / "train", dirs_exist_ok=True)
-    if train_results2.exists():
-      shutil.copytree(train_results2, output / "train2", dirs_exist_ok=True)      
+    validation_results = Path(self.dir) / "val"
+    log = output / "yolo.log" if not eval else output / "eval.log"
+
+    if train_results1.exists() and train_results2.exists():
+      shutil.copytree(train_results1, output / "train", dirs_exist_ok=True)    
+      shutil.copytree(train_results2, output / "train2", dirs_exist_ok=True)          
+      
+    if validation_results.exists():
+      shutil.copytree(validation_results, output / "val", dirs_exist_ok=True)      
+
+    log.write_text(f"{config.get('task')}\n Training results: {train_results} \n Validation metrics: {metrics}")
     
   def to_crate(self, crate: ROCrate) -> EngineEntity:
     """
@@ -470,27 +491,7 @@ class YOLOEngine(Engine):
     crate.add(training_params)
     engine_crate["trainingParameters"] = [training_params]
     
-    return engine_crate
-
-  def val(self, config: dict) -> None:
-    """
-    Validate the YOLO model performance.        
-    """
-    merged_config = {**self.config, **config}
-    merged_config = {**self.config, **config}
-    self._setup_training_environment(merged_config)
-    
-    print(f"[bold green]Training object detection model[/bold green]: {self.name}")
-    self._prepare_data(merged_config)
-    val_result = "Validation results"
-    if merged_config.get("test", False):
-      print("[bold yellow]Test mode enabled[/bold yellow]: Validation will not be performed.")
-      val_results = "Test mode: No training performed."
-      metrics = "Test mode: No metrics available."
-      self._save_results(merged_config, val_results, metrics)
-      return None    
-    metrics = val_results = self._execute_validation(merged_config)
-    self._save_results(merged_config, val_results, metrics)
+    return engine_crate  
 
   def detect(self, data: Path) -> None:
     """

@@ -209,7 +209,7 @@ class WorkflowExecutor:
         # Delegate training execution to TaskManager
         TaskManager.train(task, training_config)
 
-    def evaluate_workflow(
+    def eval_workflow(
         self,
         crate: ROCrate,
         task: str,
@@ -241,7 +241,8 @@ class WorkflowExecutor:
         }
         
         # Delegate evaluation execution to TaskManager
-        TaskManager.evaluate(task, evaluation_config)    
+        print(f"Evaluation {task}")
+        TaskManager.eval(task, evaluation_config)    
 
 class Collectra(BaseROCrate):
     """Main workflow class with improved object-oriented design.
@@ -365,7 +366,7 @@ class Collectra(BaseROCrate):
             **kwargs: Additional evaluation parameters (e.g., test=True)
         """
         # Execute evaluation through the specialized executor
-        self._executor.evaluate_workflow(
+        self._executor.eval_workflow(
             self.crate, task, input_files, output_path, **kwargs
         )
         
