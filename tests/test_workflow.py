@@ -14,7 +14,6 @@ def run_app(command:str):
     app = workflow.app()
     return runner.invoke(app, command.split())
 
-
 def test_version():
     def assert_version_ok(result):
         assert result.exit_code == 0

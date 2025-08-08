@@ -26,7 +26,7 @@ class Task(ABC):
   VALID_ENGINES: Tuple = ()  
 
   def __init__(self, task_type: str, config: dict = {}, engine: Engine = None, id: str = None):
-    self.id = uuid.uuid4() if id is None else id
+    self.id = id if id else uuid.uuid4()
     self.task_type: str = task_type         
     self.config = config    
     self.engine = None    
@@ -86,7 +86,7 @@ class Task(ABC):
     pass
 
   @abstractmethod
-  def validate(self) -> None:
+  def eval(self) -> None:
     pass
   
 
@@ -107,10 +107,10 @@ class DetectObject(Task):
       raise ValueError("Engine must be set before training the task.")
     return self.engine.train(self.config)
   
-  def validate(self) -> None:
+  def eval(self) -> None:
     if not self.engine:
       raise ValueError("Engine must be set before validating the task.")
-    self.engine.validate(self.config)
+    self.engine.val(self.config)
 
 
 class ClassifyImage(Task):
@@ -133,10 +133,10 @@ class ClassifyImage(Task):
     return self.engine.train(self.config)
 
 
-  def validate(self) -> None:
+  def eval(self) -> None:
     if not self.engine:
       raise ValueError("Engine must be set before validating the task.")
-    self.engine.validate(self.config)
+    self.engine.val(self.config)
         
   
 
