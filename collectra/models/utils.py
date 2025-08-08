@@ -25,7 +25,9 @@ def get_all_files(data: List[str], file_format: str) -> List[str]:
         if path.is_dir():
             sub_files = [Path(file) for file in path.glob(f"**/*{file_format}")]
             files.extend(sub_files)
-        elif path.is_file() and path.suffix == file_format:
-            files.append(Path(path))
+        elif path.is_file() and path.suffix.replace(".", "") == file_format:            
+            files.append(Path(path))            
+    if len(files) == 0:
+        raise Exception(f"No files found with format '{file_format}'")        
     return files
 

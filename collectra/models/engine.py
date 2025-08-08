@@ -274,6 +274,11 @@ class YOLOEngine(Engine):
     else:
       val_files.extend(train_files)
       yolo_config = f"val: val.txt\nnc: {number_of_classes}\nnames: {classes}"
+
+    if len(val_files) == 0:
+      print("[bold red]Warning - No validation files found[/bold red]. Using training files for validation.")
+      val_files = train_files
+
     Path(f"{self.dir}/val.txt").write_text("\n".join(val_files))    
     Path(f"{self.dir}/{self.yolo_config_path}").write_text(yolo_config)
 
