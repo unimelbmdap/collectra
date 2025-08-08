@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 from shutil import rmtree
+import shutil
 from typing import List, Optional, Union
 from pathlib import Path
 from rich import print
@@ -96,6 +97,14 @@ class WorkflowFileManager:
         else:
             # Write workflow as uncompressed directory structure
             crate.write(file_path)
+        
+        run_folder = Path.cwd() / "runs" 
+        yolo_pt_file = Path.cwd() / "yolo11n.pt"
+
+        if run_folder.exists():
+            shutil.rmtree(run_folder)
+        if yolo_pt_file.exists():        
+            os.remove(yolo_pt_file)
 
     def cleanup_temporary_files(self, tasks: List[TaskEntity] = None) -> None:
         """Clean up temporary files and directories.

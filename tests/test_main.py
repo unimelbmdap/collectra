@@ -31,32 +31,24 @@ def run_app(command:str):
 def dummy_workflow(tmpdir):
     return Path(tmpdir) / "dummy_workflow"
 
-# def test_detect_object_task_and_engine_add():
-#     """
-#     Test the training functionality of the DetectObject task with a YOLOEngine.
-#     """     
-#     engine = YOLOEngine(name="yolo11n.pt", config={"test": 1})
-#     task = DetectObject(task_type="detect_object", engine=engine)
-#     assert isinstance(task.engine, YOLOEngine), "Engine should be an instance of YOLOEngine"     
-#     # Run the training process
-#     task.train()
+def test_detect_object_task_and_engine_add():
+    """
+    Test the training functionality of the DetectObject task with a YOLOEngine.
+    """     
+    engine = YOLOEngine(name="yolo11n.pt", config={"test": 1})
+    task = DetectObject(task_type="detect_object", engine=engine)
+    assert isinstance(task.engine, YOLOEngine), "Engine should be an instance of YOLOEngine"     
+    # Run the training process
+    task.train()
     
-#     # Verify that the training files are created
-#     yolo_config_file = Path(engine.dir) / "yolo_config.yml"
-#     train_file = Path(engine.dir) / "train.txt"
-#     val_file = Path(engine.dir) / "val.txt"
+    # Verify that the training files are created
+    yolo_config_file = Path(engine.dir) / "yolo_config.yml"
+    train_file = Path(engine.dir) / "train.txt"
+    val_file = Path(engine.dir) / "val.txt"
     
-#     assert yolo_config_file.exists(), "YOLO config file should be created"
-#     assert train_file.exists(), "Train file should be created"
-#     assert val_file.exists(), "Validation file should be created"
-
-#     run_folder = Path.cwd() / "runs" 
-#     yolo_pt_file = Path.cwd() / "yolo11n.pt"
-
-#     if run_folder.exists():
-#         shutil.rmtree(run_folder)
-#     if yolo_pt_file.exists():        
-#         os.remove(yolo_pt_file)
+    assert yolo_config_file.exists(), "YOLO config file should be created"
+    assert train_file.exists(), "Train file should be created"
+    assert val_file.exists(), "Validation file should be created"
 
 # def test_version():
 #     def assert_version_ok(result):
