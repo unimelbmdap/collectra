@@ -251,7 +251,17 @@ class WorkflowExecutor:
         
         # Delegate evaluation execution to TaskManager
         print(f"Evaluation {task}")
-        TaskManager.eval(task, evaluation_config)    
+        TaskManager.eval(task, evaluation_config)  
+
+    def cluster_workflow(
+        self,
+        crate: ROCrate,
+        item: str,
+        input_files: List[str],
+        output_path: Path,
+    ) -> None:
+        """Cluster items in the workflow."""
+        pass
 
 class Collectra(BaseROCrate):
     """Main workflow class with improved object-oriented design.
@@ -384,6 +394,17 @@ class Collectra(BaseROCrate):
         
         # Clean up any temporary files created during evaluation
         self.cleanup()  
+    
+    def cluster(
+        self, item: str, input_files: List[str], output_path: Path
+    ) -> None:
+        """
+            Cluster items in the workflow.
+            TODO: Update comments after implementation
+        """
+        self._executor.cluster_workflow(
+            self.crate, item, input_files, output_path
+        )
 
     def add_task(self, task: str) -> Optional[TaskEntity]:
         """Add a single task to the Collectra workflow.

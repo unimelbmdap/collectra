@@ -86,6 +86,19 @@ def eval(
     """    
     wf = Collectra.load_workflow(workflow)
     wf.eval(task, input_files=input, output_path=output, test=test)
+    
+@app.command()
+def cluster(
+    workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
+    item: Annotated[str, Option("--item", "-i", help="item to cluster")],
+    input: Annotated[List[str], Argument(help="Input directory of files")],
+    output: Annotated[Path, Option("--output", "-o", help="Output directory for log files")] = None,
+):
+    """
+    Cluster items in the Collectra workflow
+    """
+    wf = Collectra.load_workflow(workflow)
+    wf.cluster(item, input_files=input, output_path=output)
 
 @app.command()
 def view(

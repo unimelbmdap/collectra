@@ -150,15 +150,17 @@ def test_cluster(tmpdir, dummy_workflow):
     result = run_app(f"train -w {dummy_workflow} -t {DUMMY_TASK_INPUT['task_name']} --output {output_obj1} {TEST_FILES_STR}")
     assert result.exit_code == 0
 
-    # for index in range(1,3):
-    #     output_cluster = Path(tmpdir) / 'output_cluster'
-    #     result = run_app(f"cluster --workflow {dummy_workflow} --item label{index} {TEST_FILES} --output {output_cluster}")
-    #     assert result.exit_code == 0
-    #     assert output_cluster.exists()
-    #     output_cluster_log = output_cluster/'cluster.html' # CHANGE THIS AS NEEDED
-    #     assert output_cluster_log.exists()
-    #     output_cluster_log_text =  output_cluster_log.read_text()
-    #     assert f'label{index}' in output_cluster_log_text # CHANGE THIS AS NEEDED
+    labels = ["label1", "label2", "label3"]
+
+    for label in labels:
+        output_cluster = Path(tmpdir) / 'output_cluster'
+        result = run_app(f"cluster --workflow {dummy_workflow} --item {label} {TEST_FILES} --output {output_cluster}")
+        assert result.exit_code == 0
+        # assert output_cluster.exists()
+        # output_cluster_log = output_cluster/'cluster.html' # CHANGE THIS AS NEEDED
+        # assert output_cluster_log.exists()
+        # output_cluster_log_text =  output_cluster_log.read_text()
+        # assert f'label{index}' in output_cluster_log_text # CHANGE THIS AS NEEDED
         
 
 # def test_extract(tmpdir):
