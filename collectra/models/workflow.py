@@ -261,7 +261,14 @@ class WorkflowExecutor:
         output_path: Path,
     ) -> None:
         """Cluster items in the workflow."""
-        pass
+        clustering_config = {
+            "input": input_files,                    # Input data files for clustering
+            "output": output_path,                   # Output location for clustering results
+            "crate": crate,                          # Workflow definition
+            "tmp_dir": self.config.temporary_dir,    # Temporary files location
+            "item": str(item),                       # Item to cluster
+        }
+        TaskManager.cluster(item, clustering_config)
 
 class Collectra(BaseROCrate):
     """Main workflow class with improved object-oriented design.

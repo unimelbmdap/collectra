@@ -111,7 +111,11 @@ class DetectObject(Task):
     if not self.engine:
       raise ValueError("Engine must be set before validating the task.")
     self.engine.val(self.config)
-
+  
+  def cluster(self) -> None:
+    if not self.engine:
+      raise ValueError("Engine must be set before clustering the task.")
+    self.engine.cluster(self.config)
 
 class ClassifyImage(Task):
 

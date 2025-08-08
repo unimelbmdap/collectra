@@ -173,7 +173,21 @@ class TaskManager:
       **config,
       "file_format": crate.dereference("./").get("file_format", "grapto").replace(".", "")
     }
-    task, ValidEngine = TaskManager.get(task, config)
-    task.eval()            
+    task, _ = TaskManager.get(task, config)
+    task.eval()        
+
+  @staticmethod
+  def cluster(task: str, config: dict = {}):
+    crate: ROCrate = config.get("crate")
+    os.makedirs(config.get("tmp_dir", "tmp"), exist_ok=True)
+    print(f"[bold green]Using config[/bold green]: {config}")
+    if crate is None:
+      raise ValueError("[bold red]Crate must be provided[/bold red] when getting a task.")
+    config = {
+      **config,
+      "file_format": crate.dereference("./").get("file_format", "grapto").replace(".", "")
+    }
+    task, _ = TaskManager.get(task, config)
+    task.cluster()    
 
   

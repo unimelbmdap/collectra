@@ -285,7 +285,7 @@ class YOLOEngine(Engine):
   def train(self, config: dict = {}) -> Path:
     """Train the YOLO model with given configuration."""
     merged_config = {**self.config, **config}
-    self._setup_training_environment(merged_config)
+    self._setup_environment(merged_config)
     
     print(f"[bold green]Training object detection model[/bold green]: {self.name}")
     self._prepare_data(merged_config)
@@ -309,11 +309,10 @@ class YOLOEngine(Engine):
     Validate the YOLO model performance.        
     """    
     merged_config = {**self.config, **config}
-    self._setup_training_environment(merged_config)
+    self._setup_environment(merged_config)
     
     print(f"[bold green]Training object detection model[/bold green]: {self.name}")
-    self._prepare_data(merged_config)
-    val_result = "Validation results"
+    self._prepare_data(merged_config)    
     if merged_config.get("test", False):
       print("[bold yellow]Test mode enabled[/bold yellow]: Validation will not be performed.")
       val_results = "Test mode: No training performed."
@@ -323,7 +322,29 @@ class YOLOEngine(Engine):
     metrics = val_results = self._execute_validation(merged_config)
     self._save_results(merged_config, val_results, metrics, eval=True)
   
-  def _setup_training_environment(self, config: dict) -> None:
+  def detect(self, data: Path) -> None:
+    """
+    Run object detection inference on provided data.
+    
+    This method performs object detection on input images or video
+    using the trained YOLO model. Results typically include bounding
+    boxes, confidence scores, and class predictions.
+    
+    Args:
+        data (Path): Path to the input data (images/video) for detection
+    """
+    print(f"[bold green]Running object detection[/bold green]: {self.name}")
+    # TODO: Implement YOLO detection logic and result handling
+    pass
+  
+  def cluster(self, config) -> None:
+    merged_config = {**self.config, **config}
+    self._setup_environment(merged_config)
+    self._prepare_data(merged_config)
+    
+
+
+  def _setup_environment(self, config: dict) -> None:
     """
     Setup the training environment and create necessary directories.
     
@@ -497,20 +518,6 @@ class YOLOEngine(Engine):
     
     return engine_crate  
 
-  def detect(self, data: Path) -> None:
-    """
-    Run object detection inference on provided data.
-    
-    This method performs object detection on input images or video
-    using the trained YOLO model. Results typically include bounding
-    boxes, confidence scores, and class predictions.
-    
-    Args:
-        data (Path): Path to the input data (images/video) for detection
-    """
-    print(f"[bold green]Running object detection[/bold green]: {self.name}")
-    # TODO: Implement YOLO detection logic and result handling
-    pass
 
 class DETECTRON2Engine(Engine):
     """
