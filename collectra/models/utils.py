@@ -4,6 +4,18 @@ from rocrate.rocrate import ROCrate
 from pathlib import Path
 from tqdm import tqdm
 
+
+def get_class_path(obj_or_class):
+    """Get the full dotted path: package.module.ClassName"""
+    if hasattr(obj_or_class, '__class__'):
+        # It's an instance
+        cls = obj_or_class.__class__
+    else:
+        # It's already a class
+        cls = obj_or_class
+    
+    return f"{cls.__module__}.{cls.__name__}"
+
 class BaseROCrate:
     def __init__(self, name: str, version: str, output: Path, crate: ROCrate = None):
         self.name = name

@@ -270,7 +270,7 @@ class WorkflowExecutor:
         }
         TaskManager.cluster(item, clustering_config)
 
-class Collectra(BaseROCrate):
+class Collectra():
     """Main workflow class with improved object-oriented design.
     
     Collectra is the primary interface for creating, managing, and executing
@@ -289,8 +289,7 @@ class Collectra(BaseROCrate):
         name: str,
         version: str,
         output: Path,
-        file_format: Optional[str] = None,
-        crate: Optional[ROCrate] = None,
+        file_format: Optional[str] = None,        
     ):
         """Initialize a new Collectra workflow instance.
         
@@ -298,16 +297,12 @@ class Collectra(BaseROCrate):
             name: Unique name for the workflow
             version: Version string for workflow versioning
             output: Directory path for workflow output files
-            file_format: Optional file format specification (defaults to 'grapto')
-            crate: Optional existing ROCrate instance (creates new if None)
-        """
-        # Initialize ROCrate if not provided
-        if crate is None:
-            crate = ROCrate()
-
-        # Initialize parent BaseROCrate class
-        super().__init__(name, version, output, crate)
-
+            file_format: Optional file format specification (defaults to name of the workflow)            
+        """        
+        self.name = name
+        self.version = version
+        self.output = output
+        file_format = file_format or name  # Default to workflow name if not specified        
         # Create and validate configuration
         self._config = WorkflowConfig(name, version, output, file_format)
         self._config.validate()

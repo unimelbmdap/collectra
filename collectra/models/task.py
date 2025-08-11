@@ -23,18 +23,30 @@ class TaskEntity(DataEntity):
   
 class Task(ABC):
 
-  VALID_ENGINES: Tuple = ()  
+  VALID_ENGINES: dict = {}
+  VALID_INPUTS = []
+  VALID_OUTPUTS = []
 
-  def __init__(self, task_type: str, config: dict = {}, engine: Engine = None, id: str = None):
-    self.id = id if id else uuid.uuid4()
-    self.task_type: str = task_type         
-    self.config = config    
-    self.engine = None    
-    if self.validate_engine(engine):      
-      self.engine = engine
+  def __init__(self, id: str = None, engine_path: str = None, engine_type: str = None, inputs: list = [], outputs: list = [], config: dict = {}):
+    self.id = id if id else uuid.uuid4()            
+    self.engine = self.validate_engine(engine_path, engine_type)            
+    self.inputs = inputs if len(inputs) > 0 else self.VALID_INPUTS
+    self.outputs = outputs if len(outputs) > 0 else self.VALID_OUTPUTS        
+    self.config = config
+
+  def get_metadata(self) -> dict:
+    """
+    Get metadata of the task.
+    :return: A dictionary containing task metadata.
+    """
+    return {
+        "id": self.id,        
+        "engine": self.engine.name if self.engine else None,
+        "config": self.config,
+    }
   
   def __str__(self) -> str:
-    return f"{self.task_type}"       
+    return f"{self.id} of type {self.__class__.__name__}"       
 
   def to_crate(self, crate: ROCrate) -> ROCrate:
     """
@@ -49,15 +61,13 @@ class Task(ABC):
       task_crate["engine"] = [self.engine.to_crate(crate)]
     crate.add(task_crate)
     return task_crate
-  
-  def validate_engine(self, engine: Engine) -> bool:        
-        valid_engine: bool = isinstance(engine, self.VALID_ENGINES)
-        if not valid_engine:
-            print(
-              f"Invalid engine type: {type(engine).__name__}. "
-              f"Valid engines are: {[e.__name__ for e in self.VALID_ENGINES]}."
-            )        
-        return valid_engine
+
+  def validate_engine(self, engine_path: str, engine_type: str) -> bool:    
+    if engine_type not in self.VALID_ENGINES:
+        print(f"[bold red]Invalid engine type[/bold red]: {engine_type}. Must be one of {list(self.VALID_ENGINES.keys())}.")
+        return None
+    engine = self.VALID_ENGINES.get(engine_type)(engine_path)            
+    return engine
   
   def slug(self) -> str:
     return self.task_type
@@ -92,10 +102,17 @@ class Task(ABC):
 
 class DetectObject(Task):
 
-  VALID_ENGINES: Tuple = (
-      YOLOEngine,
-      DETECTRON2Engine,
-  )  
+  VALID_ENGINES: dict = {
+      "yolo": YOLOEngine,
+      "detectron2": DETECTRON2Engine,
+  }      
+
+  VALID_INPUTS = ["specimen_sheet"]
+  VALID_OUTPUTS = ["primary_specimen_label", "handwritten_data",
+                   "annotation_label", "stamp", "swing_tag",
+                   "accession_number", "small_database_label",
+                   "medium_database_label", "full_database_label",
+                   "swatch", "scale"]
 
   def run(self) -> None:
     if not self.engine:
