@@ -14,6 +14,7 @@ app = Typer()
 @app.command()
 def make(
     workflow: Annotated[str, Option("--workflow", "-w", help="name of the workflow")] = "default",
+    version: Annotated[str, Option("--version", "-v", help="version of the workflow")] = "1.0",
     file_format: Annotated[str, Option("--file-format", "-f", help="File format for the workflow, e.g., grapto, json, yaml")] = None,
     output: Annotated[
         Path, Option("--output", "-o", help="Output directory for the workflow")
@@ -24,7 +25,7 @@ def make(
     """            
     Collectra.make(
         name=workflow,
-        version="1.0",
+        version=version,
         output=output,
         file_format=file_format,
     )

@@ -55,7 +55,7 @@ class Collectra:
         ):
         self.name = name
         self.version = version
-        self.file_format = file_format or name  # Default to workflow name if not specified
+        self.file_format = file_format or name.lower()  # Default to workflow name if not specified
         self.workdir = workdir
         self.description = description
         self.tasks: list[Task] = []  # Initialize an empty list for tasks
@@ -99,7 +99,7 @@ class Collectra:
     
         for task in self.tasks:
             config[task.id] = {
-                "type": task.__class__.__name__,
+                "type": f"{task.__class__.__module__}.{task.__class__.__name__}",
                 "engine": str(task.engine.name),
                 "engine_type": task.engine.type,
                 "inputs": task.inputs,

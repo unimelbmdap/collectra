@@ -2,8 +2,6 @@ import typer, yaml, zipfile, os, json
 from rich import print
 from pathlib import Path
 from rocrate.model.data_entity import DataEntity
-from rocrate.model.contextentity import ContextEntity
-from rocrate.model.file import File
 from rocrate.rocrate import ROCrate
 from tqdm import tqdm
 from typing_extensions import Annotated
@@ -197,6 +195,8 @@ def convert(
         with open(json_file, 'r') as f:
             data = json.load(f)     
 
+        graph = data.get("@graph")
+
         for item in graph:
             if item.get("@type") == "File":
                 for_validation = item.get("for_validation", False)
@@ -215,8 +215,7 @@ def convert(
             "type": "Image",
             "path": str(image_file.name),
         }        
-
-        graph = data.get("@graph")
+        
         bounding_boxes = []
         classes = []
         for item in graph:
@@ -262,9 +261,11 @@ def convert(
         
         # Save the config to a YAML file
         config_file = images / specimen_path / "results.yaml"
-        config_file.parent.mkdir(parents=True, exist_ok=True)
+        config_file.parent.mkdir(parents=True, exist_ok=True)        
         with open(config_file, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False)        
+            for key in config:
+                f.write(yaml.dump({key: config[key]}, default_flow_style=False, sort_keys=False))
+                f.write("\n")               
         image_dest = images / specimen_path / image_file.name
         image_dest.parent.mkdir(parents=True, exist_ok=True)
         with open(image_dest, 'wb') as img_f:
