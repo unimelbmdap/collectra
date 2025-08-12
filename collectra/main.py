@@ -4,32 +4,34 @@ from typing import Optional, List
 from rich import print
 from pathlib import Path
 # from .models.workflow import Collectra
-from .models.pipeline import Collectra
+from .pipeline import Collectra
 from .parsing import CollectraWorkflow
-import zipfile
+import zipfile, pprint
 
 app = Typer()
 
 
 @app.command()
 def make(
-    workflow: Annotated[str, Option("--workflow", "-w", help="name of the workflow")] = "default",
+    pipeline: Annotated[str, Option("--workflow", "-w", help="name of the workflow")] = "default",
     version: Annotated[str, Option("--version", "-v", help="version of the workflow")] = "1.0",
-    file_format: Annotated[str, Option("--file-format", "-f", help="File format for the workflow, e.g., grapto, json, yaml")] = None,
+    file_format: Annotated[str, Option("--file-format", "-f", help="File format for the workflow, e.g., grapto, json, yaml")] = None,    
     output: Annotated[
         Path, Option("--output", "-o", help="Output directory for the workflow")
-    ] = Path.cwd(),        
+    ] = Path.cwd(),
+    as_dir: Annotated[bool, Option("--as-dir", "-d", help="Create the workflow as a directory instead of a file")] = False,
 ):
     """
     Create a new Collectra workflow with the specified name and file format.
     """            
     Collectra.make(
-        name=workflow,
+        name=pipeline,
         version=version,
         output=output,
         file_format=file_format,
+        as_dir=as_dir,
     )
-    print(f"[green]Workflow '{workflow}' created successfully![/green]")
+    print(f"[green]Success[/green] Workflow '{pipeline}' created at {output}")
 
 @app.command()
 def render(
@@ -40,18 +42,24 @@ def render(
     Render the Collectra workflow to a file
     """
     pipeline = Collectra.load(workflow)
-    print(pipeline.tasks)
+    print(f"Rendering workflow [green]{workflow}[/green] to {output}")
+    pprint.pprint(pipeline.get_metadata())
+    pprint.pprint(pipeline.tasks)
+
 
 @app.command()
 def add(
     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
-    task: Annotated[str, Option("--task", "-t", help="task to add. It should be a valid task: task_type,task_name,engine_type,engine_name")],    
+    task: Annotated[str, Option("--task", "-t", help="task to add. It should be a valid task: task_type,task_name,engine_type,engine_name")],            
+    output: Annotated[Path, Option("--output", "-o", help="Output directory for the workflow")] = Path.cwd(),
+    as_dir: Annotated[bool, Option("--as-dir", "-d", help="Create the workflow as a directory instead of a file")] = False,
 ):
     """
     Add a task to the Collectra workflow
     """    
     pipeline = Collectra.load(workflow)    
-    pipeline.add(task)
+    pipeline.add(task)    
+    Collectra.save(pipeline, output=output, as_dir=as_dir)    
 
 # @app.command()
 # def edit(

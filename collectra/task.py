@@ -4,9 +4,8 @@ import uuid
 from typing import Tuple
 from rich import print
 from rocrate.model.data_entity import DataEntity
-from .engine import *
 from rocrate.rocrate import ROCrate
-
+from .engine import *
 
 #---------------------------------------------
 
@@ -100,7 +99,7 @@ class Task(ABC):
     pass
   
 
-class DetectObject(Task):
+class ObjectDetection(Task):
 
   VALID_ENGINES: dict = {
       "yolo": YOLOEngine,
@@ -134,7 +133,7 @@ class DetectObject(Task):
       raise ValueError("Engine must be set before clustering the task.")
     self.engine.cluster(self.config)
 
-class ClassifyImage(Task):
+class TextClassification(Task):
 
   VALID_ENGINES: Tuple = (
       ImageClassifier,

@@ -1,4 +1,4 @@
-from .task import Task, TaskEntity, DetectObject, ClassifyImage
+from .task import Task, TaskEntity, ObjectDetection, TextClassification
 from .engine import Engine, EngineEntity, YOLOEngine, ImageClassifier, DETECTRON2Engine
 import typer
 from rich import print
@@ -33,8 +33,8 @@ class EngineManager:
 class TaskManager:  
 
   VALID_TASKS: dict = {
-    "detect_object": DetectObject,
-    "classify_image": ClassifyImage,
+    "detect_object": ObjectDetection,
+    "classify_image": TextClassification,
   }  
 
   def __init__(self, task_chain: List[Task] = []):
@@ -79,7 +79,7 @@ class TaskManager:
     if not ValidTask:
       raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {list(TaskManager.VALID_TASKS.keys())}.")
     ValidEngine = EngineManager.build(engine_type, engine)
-    task = DetectObject(task_type=task_type, engine=ValidEngine, id=task_name)                
+    task = ObjectDetection(task_type=task_type, engine=ValidEngine, id=task_name)                
     task.to_crate(crate)
     return task
   

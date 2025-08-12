@@ -2,7 +2,7 @@ from rich import print
 from pathlib import Path
 from typing import Optional
 import yaml, os, zipfile, shutil
-from .task import Task, DetectObject, ClassifyImage
+from .task import Task, ObjectDetection, TextClassification
 
 class TaskManager:
     """
@@ -10,8 +10,8 @@ class TaskManager:
     """
 
     VALID_TASKS = {
-        "detect_object": DetectObject,
-        "classify_image": ClassifyImage,
+        "object_detection": ObjectDetection,
+        "text_classification": TextClassification,
     }
 
     @staticmethod
@@ -48,19 +48,19 @@ class Collectra:
             self,
             name: str,
             version: str,            
-            file_format: Optional[str] = None,
-            workdir: Optional[Path] = Path("tmp"),
+            file_format: Optional[str] = None,            
             description: Optional[str] = "Collectra workflow configuration",
-            config: Optional[dict] = None        
+            config: Optional[dict] = None, 
+            **kwargs       
         ):
         self.name = name
         self.version = version
-        self.file_format = file_format or name.lower()  # Default to workflow name if not specified
-        self.workdir = workdir
+        self.file_format = file_format or name.lower()  # Default to workflow name if not specified        
         self.description = description
         self.tasks: list[Task] = []  # Initialize an empty list for tasks
         if config:
             self.load_config(config)
+        self.as_dir = kwargs.get("as_dir", False)
 
     def load_config(self, config: dict):
         """
@@ -91,8 +91,7 @@ class Collectra:
             "metadata": {
                 "name": self.name,
                 "version": self.version,            
-                "file_format": self.file_format,
-                "workdir": str(self.workdir),
+                "file_format": self.file_format,                
                 "description": self.description,            
             }
         }
@@ -117,8 +116,7 @@ class Collectra:
         return {
             "name": self.name,
             "version": self.version,
-            "file_format": self.file_format,
-            "workdir": str(self.workdir),
+            "file_format": self.file_format      
         }    
     
     def add(self, task: str):
@@ -129,7 +127,6 @@ class Collectra:
         :param task: The task string in the format "<task_type>,<task_name>,<engine_type>,<engine_name>".
         """
         self.tasks.append(TaskManager.build(task))
-        Collectra.save(self)
     
     def train(self, task_id: str, config: dict = {}):
         """
@@ -151,27 +148,31 @@ class Collectra:
         print(f"[red]Task with ID {task_id} not found.[/red]")
     
     @staticmethod
-    def save(pipeline: 'Collectra', output: Path = Path.cwd()):
+    def save(pipeline: 'Collectra', **kwargs):
         """
-        Save the current pipeline configuration to the specified output directory.
-        
+        Save the current pipeline configuration to the specified output directory.        
         This method serializes the pipline configuration and writes it to a file.
         """        
-        output_folder = Path(f"{pipeline.name}")
-        output_folder.mkdir(parents=True, exist_ok=True)        
-        output_file = output_folder / "pipeline.yaml"   
-        config_file = pipeline.get_yaml()              
+        as_dir = kwargs.get("as_dir", pipeline.as_dir)        
+        output_dir = kwargs.get("output", Path.cwd())
+        output_folder = output_dir / f"{pipeline.name}"
+        output_folder.mkdir(parents=True, exist_ok=True)
+        output_file = output_folder / "pipeline.yaml"
+        config_file = pipeline.get_yaml()
         with open(output_file, 'w') as f:
-            yaml.dump(config_file, f, default_flow_style=False, sort_keys=False)        
-        # with zipfile.ZipFile(f"{pipeline.file_format}.{pipeline.name}", 'w', zipfile.ZIP_DEFLATED) as zipf:            
-        #     for root, dirs, files in os.walk(output_folder):
-        #         for file in files:
-        #             print(file)
-        #             zipf.write(os.path.join(root, file), 
-        #                     os.path.relpath(os.path.join(root, file), 
-        #                                     os.path.join(output_folder, '..')))        
-        print(f"Workflow saved to {output_file}")    
-        # shutil.rmtree(output_folder, ignore_errors=True)  # Clean up temporary files
+            yaml.dump(config_file, f, default_flow_style=False, sort_keys=False)
+        if not as_dir:
+            with zipfile.ZipFile(output_dir / f"{pipeline.name}.collectra", 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for root, dirs, files in os.walk(output_folder):
+                    for file in files:
+                        print(file)
+                        zipf.write(os.path.join(root, file), 
+                                os.path.relpath(os.path.join(root, file), 
+                                                os.path.join(output_folder, '..')))        
+                if not pipeline.as_dir:  
+                    # If the pipeline was originally created as a directory, don't delete it          
+                    shutil.rmtree(output_folder, ignore_errors=True)  # Clean up temporary files
+        print(f"Workflow {pipeline.name}.collectra saved to {output_dir}")            
     
     @staticmethod
     def make(
@@ -179,47 +180,55 @@ class Collectra:
         version: str = "1.0",
         output: Path = Path.cwd(),
         file_format: Optional[str] = None,
+        **kwargs
     ):
         """
         Create a new Collectra workflow instance.
         
         This method initializes a new workflow with default parameters.
         """
-        pipeline = Collectra(name=name, version=version, file_format=file_format)        
+        pipeline = Collectra(name=name, version=version, file_format=file_format, **kwargs)        
         Collectra.save(pipeline, output=output)
     
-    @staticmethod
-    def load_yaml(path: Path) -> 'Collectra':
-        """
-        Load an existing Collectra workflow from a YAML file.
-        
-        This method reads the workflow configuration from the specified path.
-        """        
-        with open(path, 'r') as f:
-            data = yaml.safe_load(f)
-            metadata = data.get("metadata")
-            data.pop("metadata", None)  # Remove metadata from the main data dictionary            
-            return Collectra(**metadata, config=data)
-
     @staticmethod
     def load(pipeline: Path) -> 'Collectra':
         """
         Load an existing Collectra workflow from a YAML file.
         
         This method reads the workflow configuration from the specified path.
-        """
-        tmp_path = Path(f"tmp")
+        """        
+        pipeline_file = pipeline / "pipeline.yaml"                         
+        tmp_path = Path("tmp")
         try:                        
-            pipeline_file = f"{pipeline.stem}/pipeline.yaml"
-            return Collectra.load_yaml(pipeline_file)                                    
-            # with zipfile.ZipFile(path, 'r') as zipf:
-            #     zipf.extract(member=pipeline_file, path=tmp_path)
-            #     with open(tmp_path / pipeline_file, 'r') as f:
-            #         data = yaml.safe_load(f)
-            #         return Collectra(**data["metadata"])
+            if pipeline.is_dir():            
+                if not pipeline_file.exists():
+                    raise FileNotFoundError(f"[red]Pipeline file not found:[/red] {pipeline_file}")
+                return Collectra.load_yaml(pipeline_file, as_dir=True)
+            
+            if not pipeline.suffix == ".collectra":
+                raise ValueError(f"[red]Invalid file format[/red]: {pipeline.suffix}. Must be a .collectra file.")
+                        
+            with zipfile.ZipFile(pipeline, 'r') as zipf:
+                zipf.extractall(member=pipeline_file, path=tmp_path)  # Extract to a temporary directory
+                return Collectra.load(tmp_path / pipeline_file)  # Load from the extracted file   
         except Exception as e:
             print(f"Error loading workflow from {pipeline}: {e}")
         finally:
             shutil.rmtree(tmp_path, ignore_errors=True)  # Clean up temporary files 
+    
+    @staticmethod
+    def load_yaml(path: Path, **kwargs) -> 'Collectra':
+        """
+        Load an existing Collectra workflow from a YAML file.
+        
+        This method reads the workflow configuration from the specified path.
+        """        
+        as_dir = kwargs.get("as_dir", False)
+        print(f"Loading workflow from {path} as_dir={as_dir}")
+        with open(path, 'r') as f:
+            data = yaml.safe_load(f)
+            metadata = data.get("metadata")
+            data.pop("metadata", None)  # Remove metadata from the main config dictionary            
+            return Collectra(**metadata, config=data, as_dir=as_dir)  # Create a Collectra instance with the loaded data
     
 
