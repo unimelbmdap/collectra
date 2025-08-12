@@ -45,7 +45,10 @@ class Task(ABC):
     }
   
   def __str__(self) -> str:
-    return f"{self.id} of type {self.__class__.__name__}"       
+    return f"{self.id} of {self.__class__.__name__}"  
+
+  def __repr__(self) -> str:
+    return f"{self.id} of {self.__class__.__name__}"  
 
   def to_crate(self, crate: ROCrate) -> ROCrate:
     """
@@ -70,6 +73,13 @@ class Task(ABC):
   
   def slug(self) -> str:
     return self.task_type
+  
+  def get_engine(self) -> Engine:
+    """
+    Get the engine associated with the task.
+    :return: The Engine instance if set, otherwise None.
+    """
+    return self.engine
             
   def add_engine(self, engine: Engine, crate: ROCrate = None) -> bool:
     """
@@ -85,6 +95,19 @@ class Task(ABC):
     if validated:
         self.engine: Engine = engine
     return validated
+
+  def delete(self):
+    if isinstance(self.engine, Engine):
+      self.engine.delete()
+
+  def set_config(self, config: dict) -> None:
+    """
+    Set the configuration for the task.
+    :param config: A dictionary containing configuration parameters.
+    """
+    if not isinstance(config, dict):
+      raise ValueError("Config must be a dictionary.")
+    self.config.update(config)
 
   @abstractmethod
   def run(self) -> None:
@@ -121,6 +144,7 @@ class ObjectDetection(Task):
   def train(self) -> None:
     if not self.engine:
       raise ValueError("Engine must be set before training the task.")
+    print(self.config)
     return self.engine.train(self.config)
   
   def eval(self) -> None:

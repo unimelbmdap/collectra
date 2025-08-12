@@ -44,7 +44,7 @@ def render(
     pipeline = Collectra.load(workflow)
     print(f"Rendering workflow [green]{workflow}[/green] to {output}")
     pprint.pprint(pipeline.get_metadata())
-    pprint.pprint(pipeline.tasks)
+    pprint.pprint(f"List of tasks: {pipeline.tasks}")
 
 
 @app.command()
@@ -58,8 +58,9 @@ def add(
     Add a task to the Collectra workflow
     """    
     pipeline = Collectra.load(workflow)    
-    pipeline.add(task)    
-    Collectra.save(pipeline, output=output, as_dir=as_dir)    
+    add_outcome = pipeline.add(task)    
+    if add_outcome:
+        pipeline.save(output=output, as_dir=as_dir)    
 
 # @app.command()
 # def edit(
@@ -92,7 +93,7 @@ def train(
     pipeline: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
     task: Annotated[str, Option("--task", "-t", help="task to train")],
     input: Annotated[List[str], Argument(help="Input directory of files")],
-    output: Annotated[Path, Option("--output", "-o", help="Output directory for log files")] = None,    
+    output: Annotated[Path, Option("--output", "-o", help="Output directory for log files")] = Path.cwd() / "tmp",    
 ):
     """
     Train a specific task in the Collectra workflow

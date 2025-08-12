@@ -4,6 +4,14 @@ from rocrate.rocrate import ROCrate
 from pathlib import Path
 from tqdm import tqdm
 
+def success_msg(message: str):
+    return f"[green]Success[/green]: {message}"
+
+def error_msg(message: str):
+    return f"[red]Error[/red]: {message}"
+
+def processing_msg(message: str):
+    return f"[dark_orange]Processing[/dark_orange]: {message}"
 
 def get_class_path(obj_or_class):
     """Get the full dotted path: package.module.ClassName"""

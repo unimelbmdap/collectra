@@ -50,6 +50,7 @@ def get_all_files(paths: List[str]) -> List[Path]:
 @app.command()
 def convert(
     paths: Annotated[List[str], typer.Argument(help="List of files to convert")],
+    file_format: Annotated[str, typer.Option("--file-format", "-f", help="File format to convert to")] = "hespi"
 ):
     files = get_all_files(paths)       
     specimen = Path("specimen")
@@ -126,14 +127,15 @@ def convert(
                 print(config[class_name])
                 print(f"Error processing class {class_name}: {e}")                
         
-        # Save the config to a YAML file           
-        config_file = images / image_file.stem / "results.yaml"
-        config_file.parent.mkdir(parents=True, exist_ok=True)        
+        # Save the config to a YAML file        
+        file_root = images / f"{image_file.stem}.{file_format}"
+        config_file = file_root / "results.yaml"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
         with open(config_file, 'w') as f:
             for key in config:
                 f.write(yaml.dump({key: config[key]}, default_flow_style=False, sort_keys=False))
                 f.write("\n")
-        image_dest = images / image_file.stem / image_file.name
+        image_dest = file_root / image_file.name        
         copy_file(image_file, image_dest)        
     
     if specimen.exists():

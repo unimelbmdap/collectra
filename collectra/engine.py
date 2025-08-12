@@ -10,7 +10,8 @@ import platform
 from .utils import get_all_files
 from typing import List
 from datetime import datetime
-import shutil
+import shutil, os, yaml, zipfile
+from .utils import processing_msg, error_msg
 
 class EngineEntity(DataEntity):
   """
@@ -110,7 +111,23 @@ class Engine(ABC):
     Returns:
         str: String representation showing the engine name
     """
-    return f"{self.name}"  
+    return f"{self.name.name}"  
+
+  def __str__(self) -> str:
+    """
+    Return string representation of the engine.
+    
+    Returns:
+        str: String representation showing the engine name
+    """
+    return f"{self.name.name}"  
+
+  def get_path(self) -> Path:
+    return self.name
+
+  def delete(self) -> None:
+    if self.name and self.name.exists():
+      os.remove(self.name)
 
   @abstractmethod
   def to_crate(self, crate: ROCrate) -> EngineEntity:
@@ -197,97 +214,18 @@ class YOLOEngine(Engine):
         config (dict, optional): Configuration parameters for the engine.
                                 Defaults to empty dict.
     """
-    super().__init__(name, config)
+    super().__init__(name, config)    
+    print(processing_msg(f"LoadingYOLO engine with path {self.name}"))    
     self.model: YOLO = YOLO(self.name, verbose=True)
     self.type: str = "yolo"
     self.yolo_config_path: str = "yolo_config.yml"
     self.dir: Path = None  # Working directory for training files
 
-  def preprocess(self, data: Path, file_format: str, validation: bool = False) -> None:
-    """
-    Preprocess data for YOLO training from ROCrate format.
-    
-    This method processes ROCrate files containing images and bounding box
-    annotations, converts them to YOLO format, and creates the necessary
-    configuration files for training.
-    
-    Args:
-        data (Path): Path to the input data directory or files
-        file_format (str): Format of the input files (e.g., 'grapto')
-        
-    The method performs the following operations:
-    1. Extracts all files matching the specified format
-    2. Processes ROCrate files to extract class mappings and bounding boxes
-    3. Separates files into training and validation sets
-    4. Converts bounding box annotations to YOLO format
-    5. Creates YOLO configuration files (train.txt, val.txt, yolo_config.yml)
-    """
-    files = get_all_files(data, file_format)
-    train_files = []  # List of training image files
-    val_files = []    # List of validation image files
-    number_of_classes = 0
-    classes = []      # List of class names
-    
-    # Set default working directory if not already set
-    if self.dir is None:
-      self.dir = Path("tmp")    
-      
-    # Process each ROCrate file
-    for file in tqdm(files, desc="Processing files for YOLO training"):
-      try:
-        crate = ROCrate(file)
-        
-        # Extract class mapping information (only once)
-        if number_of_classes == 0:        
-          for e in crate.data_entities:
-            if e.type == "ClassMapping":
-              print(f"[bold green]Found class mapping[/bold green]: {e.get('classes')}")
-              classes = e.get("classes") or []
-              number_of_classes = len(classes)                    
-              break                      
-        
-        # Process bounding box annotations
-        bounding_box = ""        
-        for e in crate.data_entities:
-          # Extract and categorize image files
-          if e.type == "File":
-            e.write(Path(self.dir))          
-            if e.get("for_validation"):              
-              val_files.append(f"./{e.id}")
-            else:
-              train_files.append(f"./{e.id}")
-          # Convert bounding boxes to YOLO format          
-          if e.type == "BoundingBox":
-            bounding_box += f"{e.get('class_id')} {e.get('x_center')} {e.get('y_center')} {e.get('width_relative')} {e.get('height_relative')}\n"
-        
-        # Save bounding box annotations in YOLO format
-        bounding_box_file = Path(self.dir) / f"{file.stem}.txt"
-        bounding_box_file.write_text(bounding_box)                             
-      except Exception as e:
-        print(f"[bold red]Error processing file[/bold red]: {file} - {e}")
-    
-    # Create YOLO dataset configuration
-    yolo_config = ""
-    if not validation:
-      yolo_config = f"train: train.txt\nval: val.txt\nnc: {number_of_classes}\nnames: {classes}"        
-      Path(f"{self.dir}/train.txt").write_text("\n".join(train_files))
-    else:
-      val_files.extend(train_files)
-      yolo_config = f"val: val.txt\nnc: {number_of_classes}\nnames: {classes}"
-
-    if len(val_files) == 0:
-      print("[bold red]Warning - No validation files found[/bold red]. Using training files for validation.")
-      val_files = train_files
-
-    Path(f"{self.dir}/val.txt").write_text("\n".join(val_files))    
-    Path(f"{self.dir}/{self.yolo_config_path}").write_text(yolo_config)
-
   def train(self, config: dict = {}) -> Path:
     """Train the YOLO model with given configuration."""
     merged_config = {**self.config, **config}
-    self._setup_environment(merged_config)
-    
-    print(f"[bold green]Training object detection model[/bold green]: {self.name}")
+    print(processing_msg(f"[bold green]Training object detection model[/bold green]: {self.name}"))
+    self._setup_environment(merged_config)        
     self._prepare_data(merged_config)
     
     if merged_config.get("test", False):
@@ -303,14 +241,119 @@ class YOLOEngine(Engine):
     
     self._save_results(merged_config, train_results, metrics)
     return new_model_path
+
+  def _setup_environment(self, config: dict) -> None:
+    """
+    Setup the training environment and create necessary directories.
+    
+    This method creates a unique timestamped directory for the training
+    session to avoid conflicts with concurrent training runs.
+    
+    Args:
+        config (dict): Configuration dictionary containing directory settings
+    """
+    # Create unique directory with timestamp to avoid conflicts
+    self.dir = Path(config.get("output")) / f"{config.get('task')}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"    
+    print(processing_msg(f"Setting up training environment in {self.dir}"))    
+    self.dir.mkdir(parents=True, exist_ok=True)
+  
+  def _prepare_data(self, config: dict) -> None:
+    """
+    Prepare and preprocess training data.
+    
+    Extracts input data path and file format from configuration,
+    then calls the preprocessing method to convert data to YOLO format.
+    
+    Args:
+        config (dict): Configuration dictionary containing input settings
+    """
+    data = config.get("input", None)
+    if not data:
+      raise ValueError(error_msg("Input data path is required for training. Found none"))    
+    file_format = config.get("file_format", None)
+    if not file_format:
+      raise ValueError(error_msg("File format is required for training. Found none"))
+    file_format = file_format.replace(".", "")    
+    self.preprocess(data, file_format=file_format)   
+
+  def _prepare_assets(self, file: Path, is_file = True) -> None:
+    results_yaml = self.dir / "results.yaml" if is_file else file / "results.yaml"    
+    if not results_yaml.exists():      
+      print(error_msg(f"Results YAML file not found in {file} - Skipping {file}..."))
+      return
+    with open(results_yaml, "r") as f:
+      data = yaml.safe_load(f)
+      image = data.get('specimen_sheet', {}).get('path', None)
+      if not image:
+        print(error_msg(f"Invalid input for {file}. Skipping this..."))
+        return        
+      shutil.copy(file / image, self.dir / image)    
+
+  def preprocess(self, data: Path, file_format: str, validation: bool = False) -> None:    
+    files = get_all_files(data, file_format)
+    train_files = []  # List of training image files
+    val_files = []    # List of validation image files
+    number_of_classes = 0
+    classes = []      # List of class names
+
+    for file in tqdm(files, desc="Processing files for YOLO training"):
+      if file.is_file():
+        with zipfile.ZipFile(file, 'r') as zip_ref:
+          zip_ref.extractall(path=self.dir)                  
+          self._prepare_assets(file)  
+        residual_yaml = self.dir / "results.yaml"
+        if residual_yaml.exists():
+          os.remove(residual_yaml)                  
+      if file.is_dir():
+        self._prepare_assets(file, is_file=False)        
+
+    raise ValueError("till here")      
+
+    # Process each ROCrate file
+    # for file in tqdm(files, desc="Processing files for YOLO training"):
+    #   try:
+    #     # TODO: Extract class mapping information (only once)                               
+    #     # TODO: Process bounding box annotations
+    #     # bounding_box += f"{e.get('class_id')} {e.get('x_center')} {e.get('y_center')} {e.get('width_relative')} {e.get('height_relative')}\n"
+    #     bounding_box = ""        
+    #     for e in crate.data_entities:
+    #       # Extract and categorize image files
+    #       if e.type == "File":
+    #         e.write(Path(self.dir))          
+    #         if e.get("for_validation"):              
+    #           val_files.append(f"./{e.id}")
+    #         else:
+    #           train_files.append(f"./{e.id}")
+    #       # Convert bounding boxes to YOLO format          
+    #       if e.type == "BoundingBox":                    
+    #     # Save bounding box annotations in YOLO format
+    #     bounding_box_file = Path(self.dir) / f"{file.stem}.txt"
+    #     bounding_box_file.write_text(bounding_box)                             
+    #   except Exception as e:
+    #     print(f"[bold red]Error processing file[/bold red]: {file} - {e}")
+    
+    # Create YOLO dataset configuration
+    # yolo_config = ""
+    # if not validation:
+    #   yolo_config = f"train: train.txt\nval: val.txt\nnc: {number_of_classes}\nnames: {classes}"        
+    #   Path(f"{self.dir}/train.txt").write_text("\n".join(train_files))
+    # else:
+    #   val_files.extend(train_files)
+    #   yolo_config = f"val: val.txt\nnc: {number_of_classes}\nnames: {classes}"
+
+    # if len(val_files) == 0:
+    #   print("[bold red]Warning - No validation files found[/bold red]. Using training files for validation.")
+    #   val_files = train_files
+
+    # Path(f"{self.dir}/val.txt").write_text("\n".join(val_files))    
+    # Path(f"{self.dir}/{self.yolo_config_path}").write_text(yolo_config)
   
   def val(self, config: dict) -> None:
     """
     Validate the YOLO model performance.        
     """    
     merged_config = {**self.config, **config}
-    self._setup_environment(merged_config)
-    
+    self._setup_environment(merged_config)    
     print(f"[bold green]Training object detection model[/bold green]: {self.name}")
     self._prepare_data(merged_config)    
     if merged_config.get("test", False):
@@ -341,37 +384,7 @@ class YOLOEngine(Engine):
     merged_config = {**self.config, **config}
     self._setup_environment(merged_config)
     self._prepare_data(merged_config)
-    
-
-
-  def _setup_environment(self, config: dict) -> None:
-    """
-    Setup the training environment and create necessary directories.
-    
-    This method creates a unique timestamped directory for the training
-    session to avoid conflicts with concurrent training runs.
-    
-    Args:
-        config (dict): Configuration dictionary containing directory settings
-    """
-    # Create unique directory with timestamp to avoid conflicts
-    self.dir = Path(config.get("tmp_dir", "tmp")) / f"{config.get('task')}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    print(self.dir)
-    self.dir.mkdir(parents=True, exist_ok=True)
-  
-  def _prepare_data(self, config: dict) -> None:
-    """
-    Prepare and preprocess training data.
-    
-    Extracts input data path and file format from configuration,
-    then calls the preprocessing method to convert data to YOLO format.
-    
-    Args:
-        config (dict): Configuration dictionary containing input settings
-    """
-    data = config.get("input", "data")
-    file_format = config.get("file_format", "grapto").replace(".", "")
-    self.preprocess(data, file_format=file_format)   
+      
 
   def _execute_training(self, config: dict):
     """

@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional
 import yaml, os, zipfile, shutil
 from .task import Task, ObjectDetection, TextClassification
+from .utils import error_msg, success_msg, processing_msg
 
 class TaskManager:
     """
@@ -28,10 +29,11 @@ class TaskManager:
                 raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {list(TaskManager.VALID_TASKS.keys())}.")
             task = TaskManager.VALID_TASKS.get(task_type)(task_name, engine_path=engine_path, engine_type=engine_type)
             return task
-        else:                                                    
-            loc_task = valid_tasks.index(task["type"])
+        else:
+            task_type = task["type"].replace("collectra.task.", "")                                                  
+            loc_task = valid_tasks.index(task_type)
             if loc_task == -1:
-                raise ValueError(f"[bold red]Invalid task type[/bold red]: {task['type']}. Must be one of {valid_tasks}.")
+                raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {valid_tasks}.")
             TaskClass = list(TaskManager.VALID_TASKS.values())[loc_task]            
             task = TaskClass(
                 id=task.get("id"),
@@ -57,10 +59,11 @@ class Collectra:
         self.version = version
         self.file_format = file_format or name.lower()  # Default to workflow name if not specified        
         self.description = description
-        self.tasks: list[Task] = []  # Initialize an empty list for tasks
+        self.tasks: list[Task] = []  # Initialize an empty list for tasks        
+        self.as_dir = kwargs.get("as_dir", False)
+        self.working_dir = Path.cwd() / kwargs.get("working_dir", name)
         if config:
             self.load_config(config)
-        self.as_dir = kwargs.get("as_dir", False)
 
     def load_config(self, config: dict):
         """
@@ -70,16 +73,19 @@ class Collectra:
         :param config: A dictionary containing the workflow configuration.
         """
         valid_tasks = [task_class.__name__ for task_class in TaskManager.VALID_TASKS.values()]
-        for task_id, task_info in config.items():
-            print(task_info)
+        for task_id, task_info in config.items():            
             task = {
                 "id": task_id,
                 **task_info
-            }
-            self.tasks.append(TaskManager.build(task, from_file=True, valid_tasks=valid_tasks))    
-            print(f"[green]Added task:[/green] {task_id} of type {task_info['type']} with engine {task_info['engine']}")    
-        print(f"[green]Loaded {len(self.tasks)} tasks from configuration.[/green]")
-            
+            }            
+            task["engine"] = Path(self.working_dir) / task["engine"] if task.get("engine") else None
+            task = TaskManager.build(task, from_file=True, valid_tasks=valid_tasks)
+            if not task:
+                print(error_msg(f"Failed to load task {task_id} of type {task_info['type']} and model {task_info['engine']}"))
+                continue
+            self.tasks.append(task)
+            print(success_msg(f"Loaded {task.id} of type {task.__class__.__name__} and model {task.engine}"))
+        print(success_msg(f"Loaded {len(self.tasks)} tasks from configuration!"))
 
     def get_yaml(self):
         """
@@ -119,14 +125,24 @@ class Collectra:
             "file_format": self.file_format      
         }    
     
-    def add(self, task: str):
+    def add(self, task: str) -> bool:
         """
         Add a task to the workflow.
         
         This method parses the task string and adds it to the workflow.
         :param task: The task string in the format "<task_type>,<task_name>,<engine_type>,<engine_name>".
         """
-        self.tasks.append(TaskManager.build(task))
+        print("[green]Adding task:[/green]", task)                
+        task = TaskManager.build(task)
+        for existing_task in self.tasks:
+            if existing_task.id == task.id:
+                print(error_msg(f"Task with ID {task.id} already exists in the workflow."))
+                print(f"Use [purple]collectra edit[/purple] command to modify the task.")
+                task.delete() # Remove the task if it already exists
+                return False    
+        self.tasks.append(task)
+        return True
+
     
     def train(self, task_id: str, config: dict = {}):
         """
@@ -134,45 +150,57 @@ class Collectra:
         
         This method retrieves the task by its ID and calls its train method.
         :param task_id: The ID of the task to be trained.
-        """
-        config = {
-            **config,
-            "file_format": self.file_format,
-        }
+        """        
         for task in self.tasks:
             if task.id == task_id:
-                print(f"[green]Training task:[/green] {task.id}")   
-                task.config.update(config)  # Update task config if provided             
+                print(processing_msg(f"Training task: {task.id}"))
+                task.set_config({
+                    **config,
+                    "file_format": self.file_format,
+                    "task": task.id
+                })                
                 task.train()
-                return
-        print(f"[red]Task with ID {task_id} not found.[/red]")
+                return        
+        print(f"{error_msg('Task not found')}: {task_id}")
     
-    @staticmethod
-    def save(pipeline: 'Collectra', **kwargs):
-        """
-        Save the current pipeline configuration to the specified output directory.        
-        This method serializes the pipline configuration and writes it to a file.
-        """        
-        as_dir = kwargs.get("as_dir", pipeline.as_dir)        
+    def save(self, **kwargs):
+        as_dir = kwargs.get("as_dir", self.as_dir)
         output_dir = kwargs.get("output", Path.cwd())
-        output_folder = output_dir / f"{pipeline.name}"
+        output_folder = output_dir / f"{self.name}"
         output_folder.mkdir(parents=True, exist_ok=True)
+        self.__save_pipeline_config(output_folder=output_folder)
+        self.__save_data_assests(output_folder=output_folder)
+        if not as_dir:
+            self.__save_to_zip(output_folder=output_folder, output_dir=output_dir)
+        print(success_msg(f"Workflow {self.name}.collectra saved to {output_dir}"))
+
+    def __save_data_assests(self, output_folder: Path):
+        for task in self.tasks:
+            engine_path = task.get_engine().get_path()
+            if not engine_path.is_file():
+                print(error_msg(f"Engine path does not point to a file: {engine_path}"))
+                continue
+            if engine_path != output_folder / engine_path.name:
+                shutil.copy(engine_path, output_folder / engine_path.name)
+                os.remove(engine_path)  # Remove the original file after copying
+                        
+    def __save_pipeline_config(self, output_folder: Path):
         output_file = output_folder / "pipeline.yaml"
-        config_file = pipeline.get_yaml()
+        config_file = self.get_yaml()
         with open(output_file, 'w') as f:
             yaml.dump(config_file, f, default_flow_style=False, sort_keys=False)
-        if not as_dir:
-            with zipfile.ZipFile(output_dir / f"{pipeline.name}.collectra", 'w', zipfile.ZIP_DEFLATED) as zipf:
-                for root, dirs, files in os.walk(output_folder):
-                    for file in files:
-                        print(file)
-                        zipf.write(os.path.join(root, file), 
-                                os.path.relpath(os.path.join(root, file), 
-                                                os.path.join(output_folder, '..')))        
-                if not pipeline.as_dir:  
-                    # If the pipeline was originally created as a directory, don't delete it          
-                    shutil.rmtree(output_folder, ignore_errors=True)  # Clean up temporary files
-        print(f"Workflow {pipeline.name}.collectra saved to {output_dir}")            
+
+    def __save_to_zip(self, output_folder: Path, output_dir: Path = Path.cwd()):
+        with zipfile.ZipFile(output_dir / f"{self.name}.collectra", 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zipf:
+            for root, dirs, files in os.walk(output_folder):
+                for file in files:                       
+                    print(processing_msg(f"Saving file to zip: {os.path.join(root, file)}"))                 
+                    zipf.write(os.path.join(root, file), 
+                            os.path.relpath(os.path.join(root, file), 
+                                            os.path.join(output_folder, '..')))      
+            if not self.as_dir:  
+                # If the pipeline was originally created as a directory, don't delete it          
+                shutil.rmtree(output_folder, ignore_errors=True)  # Clean up temporary files        
     
     @staticmethod
     def make(
@@ -205,14 +233,14 @@ class Collectra:
                     raise FileNotFoundError(f"[red]Pipeline file not found:[/red] {pipeline_file}")
                 return Collectra.load_yaml(pipeline_file, as_dir=True)
             
-            if not pipeline.suffix == ".collectra":
-                raise ValueError(f"[red]Invalid file format[/red]: {pipeline.suffix}. Must be a .collectra file.")
+            if not pipeline.suffix == ".collectra":                
+                raise ValueError(error_msg(f"Invalid file format: {pipeline.suffix}. Must be a .collectra file."))
                         
             with zipfile.ZipFile(pipeline, 'r') as zipf:
                 zipf.extractall(member=pipeline_file, path=tmp_path)  # Extract to a temporary directory
-                return Collectra.load(tmp_path / pipeline_file)  # Load from the extracted file   
+                return Collectra.load_yaml(tmp_path / pipeline_file)  # Load from the extracted file   
         except Exception as e:
-            print(f"Error loading workflow from {pipeline}: {e}")
+            print(error_msg(f"Error loading workflow from {pipeline}: {e}"))
         finally:
             shutil.rmtree(tmp_path, ignore_errors=True)  # Clean up temporary files 
     
@@ -224,7 +252,7 @@ class Collectra:
         This method reads the workflow configuration from the specified path.
         """        
         as_dir = kwargs.get("as_dir", False)
-        print(f"Loading workflow from {path} as_dir={as_dir}")
+        print(processing_msg(f"Loading workflow from {path} as_dir={as_dir}"))
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
             metadata = data.get("metadata")
