@@ -466,7 +466,7 @@ class YOLOModel(Model):
     This method organizes and saves all training outputs including:
     - Training logs with results and metrics
     - Model weights and training artifacts
-    - Validation results and plots
+    - Validation results and plots 
     
     Args:
         config (dict): Configuration dictionary containing output settings

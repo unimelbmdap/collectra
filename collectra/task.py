@@ -26,12 +26,12 @@ class Task(ABC):
   VALID_INPUTS = []
   VALID_OUTPUTS = []
 
-  def __init__(self, id: str = None, model_path: str = None, model_type: str = None, inputs: list = [], outputs: list = [], config: dict = {}):
+  def __init__(self, id: str = None, model_path: str = None, model_type: str = None, input: list = [], output: list = [], config: dict = {}):
     self.id = id if id else uuid.uuid4()            
     self.model = self.validate_model(model_path, model_type)   
     self.old_model = None         
-    self.inputs = inputs if len(inputs) > 0 else self.VALID_INPUTS
-    self.outputs = outputs if len(outputs) > 0 else self.VALID_OUTPUTS        
+    self.input = input if len(input) > 0 else self.VALID_INPUTS
+    self.output = output if len(output) > 0 else self.VALID_OUTPUTS        
     self.config = config
 
   def get_metadata(self) -> dict:

@@ -36,20 +36,20 @@ class TaskManager:
                 raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {valid_tasks}.")
             TaskClass = list(TaskManager.VALID_TASKS.values())[loc_task]            
 
-            inputs = task.get("inputs", None)
-            outputs = task.get("outputs", None)
+            input = task.get("input", None)
+            output = task.get("output", None)
 
-            if type(inputs) is str:
-                inputs = [inputs]
-            if type(outputs) is str:
-                outputs = [outputs]
+            if type(input) is str:
+                input = [input]
+            if type(output) is str:
+                output = [output]
 
             task = TaskClass(
                 id=task.get("id"),
                 model_path=task.get("model"),
                 model_type=task.get("model_type"),
-                inputs=inputs if inputs else [],
-                outputs=outputs if outputs else [],
+                input=input if input else [],
+                output=output if output else [],
             )
             print(success_msg(f"Loaded task {task.id} of type {task.__class__.__name__} and model {task.model}"))
             return task            
@@ -117,8 +117,8 @@ class Collectra:
                 "type": f"{task.__class__.__module__}.{task.__class__.__name__}",
                 "model": str(task.model.name),
                 "model_type": task.model.type,
-                "inputs": task.inputs if len(task.inputs) > 1 else task.inputs[0],
-                "outputs": task.outputs if len(task.outputs) > 1 else task.outputs[0],
+                "input": task.input if len(task.input) > 1 else task.input[0],
+                "output": task.output if len(task.output) > 1 else task.output[0],
             }
 
         return config
@@ -163,8 +163,8 @@ class Collectra:
                     **config,
                     "file_format": self.file_format,
                     "task": task.id,
-                    "inputs": task.inputs or [],
-                    "outputs": task.outputs or [],
+                    "input": task.input or [],
+                    "output": task.output or [],
                 })                
                 results = task.run()
                 if results:
@@ -202,8 +202,8 @@ class Collectra:
                     **config,
                     "file_format": self.file_format,
                     "task": task.id,
-                    "inputs": task.inputs or [],
-                    "outputs": task.outputs or [],
+                    "inputs": task.input or [],
+                    "outputs": task.output or [],
                 })                                                 
                 new_model_path: Path = task.train()                
                 if new_model_path:
