@@ -8,6 +8,7 @@ output/
 glabels/
 *.cache
 *.collectra
+images/
 tmp/
 *.pt
 .python-version
