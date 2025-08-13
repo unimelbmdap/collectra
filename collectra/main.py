@@ -93,7 +93,9 @@ def train(
     pipeline: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
     task: Annotated[str, Option("--task", "-t", help="task to train")],
     input: Annotated[List[str], Argument(help="Input directory of files")],
-    output: Annotated[Path, Option("--output", "-o", help="Output directory for log files")] = Path.cwd() / "tmp",    
+    output: Annotated[Path, Option("--output", "-o", help="Output directory for log files")] = Path.cwd() / "tmp",
+    epochs: Annotated[int, Option("--epochs", help="Number of epochs for training")] = 1,
+    imgsz: Annotated[int, Option("--imgsz", help="Image size for training")] = 640,
 ):
     """
     Train a specific task in the Collectra workflow
@@ -101,6 +103,8 @@ def train(
     config = {
         "input": input,
         "output": output,
+        "epochs": epochs,
+        "imgsz": imgsz,        
     }
     Collectra.load(pipeline).train(task_id=task, config=config)
 

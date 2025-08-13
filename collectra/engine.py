@@ -223,7 +223,7 @@ class YOLOEngine(Engine):
 
   def train(self, config: dict = {}) -> Path:
     """Train the YOLO model with given configuration."""
-    merged_config = {**self.config, **config}
+    merged_config = {**self.config, **config}    
     print(processing_msg(f"[bold green]Training object detection model[/bold green]: {self.name}"))
     self._setup_environment(merged_config)        
     self._prepare_data(merged_config)
@@ -237,8 +237,7 @@ class YOLOEngine(Engine):
     
     train_results = self._execute_training(merged_config)
     new_model_path = self._get_model_path()
-    metrics = self._validate_model()
-    
+    metrics = self._validate_model()    
     self._save_results(merged_config, train_results, metrics)
     return new_model_path
 
@@ -268,13 +267,15 @@ class YOLOEngine(Engine):
         config (dict): Configuration dictionary containing input settings
     """
     data = config.get("input", None)
+    inputs = config.get("inputs", [])
+    classes = config.get("outputs", [])
     if not data:
       raise ValueError(error_msg("Input data path is required for training. Found none"))    
     file_format = config.get("file_format", None)
     if not file_format:
       raise ValueError(error_msg("File format is required for training. Found none"))
     file_format = file_format.replace(".", "")    
-    self.preprocess(data, file_format=file_format)   
+    self.preprocess(data, inputs, classes, file_format=file_format)   
 
   def _prepare_assets(self, file: Path, is_file = True) -> dict:
     results_yaml = self.dir / "results.yaml" if is_file else file / "results.yaml"    
@@ -290,30 +291,8 @@ class YOLOEngine(Engine):
       shutil.copy(file / image, self.dir / image)        
     return data    
   
-  def _prepare_yolo_config(self, data_files: List[dict], validation: bool = False) -> List[str]:
-    classes = set()
-    train_files = []
-    val_files = []
-    for data in data_files:
-      for_validation = False
-      image = None      
-      for key, value in data.items():                       
-        if key == "collectra_results_metadata":
-          for_validation = value.get("validation", False) 
-          continue
-        if value.get("type", None) == "Image":
-          image = value.get("path", None)          
-          continue          
-        if value.get("type", None) == "ImageCrop":
-          classes.add(key)
-          continue
-      if for_validation:
-        val_files.append(f"./{image}")
-      else:
-        train_files.append(f"./{image}")        
-
-    # Create YOLO dataset configuration
-    classes = list(classes)
+  def _prepare_yolo_config(self, train_files: List[str], val_files: List[str], classes: List[str], validation: bool = False) -> None:    
+    # Create YOLO dataset configuration    
     yolo_config = ""
     if not validation:
       yolo_config = f"train: train.txt\nval: val.txt\nnc: {len(classes)}\nnames: {classes}"        
@@ -321,43 +300,49 @@ class YOLOEngine(Engine):
     else:
       val_files.extend(train_files)
       yolo_config = f"val: val.txt\nnc: {len(classes)}\nnames: {classes}"
-
     Path(f"{self.dir}/train.txt").write_text("\n".join(train_files))
     Path(f"{self.dir}/val.txt").write_text("\n".join(val_files))
-    Path(f"{self.dir}/yolo_config.yml").write_text(yolo_config)    
-
-    return classes
+    Path(f"{self.dir}/yolo_config.yml").write_text(yolo_config)        
 
   def _generate_annotation_str(self, item: dict) -> str:
     return f"{item['class_id']} {item['x_center']} {item['y_center']} {item['width_relative']} {item['height_relative']}\n"   
 
-  def _prepare_annotations(self, data_files: List[dict], classes: List[str]) -> None:
-    for data in data_files:
-      image = None
-      for key, value in data.items():
-        if value.get("type", None) == "Image":
-          image = Path(value.get("path", None))
-          break
-      if image is None:
-        continue
-      annotation_file = self.dir / f"{image.stem}.txt"
+  def _prepare_annotations(self, data_files: List[dict], classes: List[str]) -> tuple[List[str], List[str]]:    
+    train_files = []
+    val_files = []
+    for data in data_files:                      
+      for_validation = False
+      image = None      
       annotation_str = ""
-      for key, value in data.items():
-        if value.get("type", None) != "ImageCrop":
-          continue        
-        if "items" not in value:
-          value["class_id"] = classes.index(key)
-          annotation_str += self._generate_annotation_str(value) 
-          continue      
-        items = value.get("items", [])
-        for item in items:
-          if item.get("type", None) != "ImageCrop":
-            continue
-          item["class_id"] = classes.index(key)          
-          annotation_str += self._generate_annotation_str(item)         
+      for key, value in data.items():                       
+        if key == "collectra_results_metadata":
+          for_validation = value.get("validation", False)           
+        if value.get("type", None) == "Image":
+          image = value.get("path", None)     
+        if value.get("type", None) == "ImageCrop":
+          if "items" not in value:
+            value["class_id"] = classes.index(key)
+            annotation_str += self._generate_annotation_str(value) 
+            continue      
+          items = value.get("items", [])
+          for item in items:
+            if item.get("type", None) != "ImageCrop":
+              continue
+            item["class_id"] = classes.index(key)          
+            annotation_str += self._generate_annotation_str(item)    
+      if not image:
+        print(error_msg(f"Image not found in {data}. Skipping this..."))
+        continue
+      image = Path(image)           
+      annotation_file = self.dir / f"{image.stem}.txt"        
       annotation_file.write_text(annotation_str)  
+      if for_validation:
+        val_files.append(f"./{image}")
+      else:
+        train_files.append(f"./{image}")       
+    return train_files, val_files
 
-  def preprocess(self, data: Path, file_format: str, validation: bool = False) -> None:    
+  def preprocess(self, data: Path, inputs: list[str], classes: list[str], file_format: str, validation: bool = False) -> None:    
     files = get_all_files(data, file_format)    
     data_files = []        
     for file in tqdm(files, desc="Processing files for YOLO training"):
@@ -371,48 +356,9 @@ class YOLOEngine(Engine):
       if file.is_dir():
         data=self._prepare_assets(file, is_file=False)       
       data_files.append(data)
-
-    classes: List[str] = self._prepare_yolo_config(data_files, validation=validation)    
-    self._prepare_annotations(data_files, classes=classes)          
-
-    # Process each ROCrate file
-    # for file in tqdm(files, desc="Processing files for YOLO training"):
-    #   try:
-    #     # TODO: Extract class mapping information (only once)                               
-    #     # TODO: Process bounding box annotations
-    #     # bounding_box += f"{e.get('class_id')} {e.get('x_center')} {e.get('y_center')} {e.get('width_relative')} {e.get('height_relative')}\n"
-    #     bounding_box = ""        
-    #     for e in crate.data_entities:
-    #       # Extract and categorize image files
-    #       if e.type == "File":
-    #         e.write(Path(self.dir))          
-    #         if e.get("for_validation"):              
-    #           val_files.append(f"./{e.id}")
-    #         else:
-    #           train_files.append(f"./{e.id}")
-    #       # Convert bounding boxes to YOLO format          
-    #       if e.type == "BoundingBox":                    
-    #     # Save bounding box annotations in YOLO format
-    #     bounding_box_file = Path(self.dir) / f"{file.stem}.txt"
-    #     bounding_box_file.write_text(bounding_box)                             
-    #   except Exception as e:
-    #     print(f"[bold red]Error processing file[/bold red]: {file} - {e}")
     
-    # Create YOLO dataset configuration
-    # yolo_config = ""
-    # if not validation:
-    #   yolo_config = f"train: train.txt\nval: val.txt\nnc: {number_of_classes}\nnames: {classes}"        
-    #   Path(f"{self.dir}/train.txt").write_text("\n".join(train_files))
-    # else:
-    #   val_files.extend(train_files)
-    #   yolo_config = f"val: val.txt\nnc: {number_of_classes}\nnames: {classes}"
-
-    # if len(val_files) == 0:
-    #   print("[bold red]Warning - No validation files found[/bold red]. Using training files for validation.")
-    #   val_files = train_files
-
-    # Path(f"{self.dir}/val.txt").write_text("\n".join(val_files))    
-    # Path(f"{self.dir}/{self.yolo_config_path}").write_text(yolo_config)
+    train_files, val_files = self._prepare_annotations(data_files, classes=classes)          
+    self._prepare_yolo_config(train_files, val_files, classes, validation=validation)    
   
   def val(self, config: dict) -> None:
     """

@@ -35,12 +35,21 @@ class TaskManager:
             if loc_task == -1:
                 raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {valid_tasks}.")
             TaskClass = list(TaskManager.VALID_TASKS.values())[loc_task]            
+
+            inputs = task.get("inputs", None)
+            outputs = task.get("outputs", None)
+
+            if type(inputs) is str:
+                inputs = [inputs]
+            if type(outputs) is str:
+                outputs = [outputs]
+
             task = TaskClass(
                 id=task.get("id"),
                 engine_path=task.get("engine"),
                 engine_type=task.get("engine_type"),
-                inputs=task.get("inputs", []),
-                outputs=task.get("outputs", []),
+                inputs=inputs if inputs else [],
+                outputs=outputs if outputs else [],
             )
             return task            
 
@@ -160,9 +169,11 @@ class Collectra:
                     "task": task.id,
                     "inputs": task.inputs or [],
                     "outputs": task.outputs or [],
-                })                
-                task.train()
-                return        
+                })                                                 
+                new_model_path: Path = task.train()                
+                if new_model_path:
+                    new_model_path = (new_model_path)
+                    task.engine = task.validate_engine(new_model_path, task.engine.type)
         print(f"{error_msg('Task not found')}: {task_id}")
     
     def save(self, **kwargs):
@@ -171,12 +182,12 @@ class Collectra:
         output_folder = output_dir / f"{self.name}"
         output_folder.mkdir(parents=True, exist_ok=True)
         self.__save_pipeline_config(output_folder=output_folder)
-        self.__save_data_assests(output_folder=output_folder)
+        self.__save_data_assets(output_folder=output_folder)
         if not as_dir:
             self.__save_to_zip(output_folder=output_folder, output_dir=output_dir)
         print(success_msg(f"Workflow {self.name}.collectra saved to {output_dir}"))
 
-    def __save_data_assests(self, output_folder: Path):
+    def __save_data_assets(self, output_folder: Path):
         for task in self.tasks:
             engine_path = task.get_engine().get_path()
             if not engine_path.is_file():

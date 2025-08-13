@@ -64,7 +64,7 @@ class Task(ABC):
     crate.add(task_crate)
     return task_crate
 
-  def validate_engine(self, engine_path: str, engine_type: str) -> bool:    
+  def validate_engine(self, engine_path: str, engine_type: str) -> Engine:    
     if engine_type not in self.VALID_ENGINES:
         print(f"[bold red]Invalid engine type[/bold red]: {engine_type}. Must be one of {list(self.VALID_ENGINES.keys())}.")
         return None
@@ -81,19 +81,12 @@ class Task(ABC):
     """
     return self.engine
             
-  def add_engine(self, engine: Engine, crate: ROCrate = None) -> bool:
+  def add_engine(self, engine: Engine) -> bool:
     """
     Add an engine to the task.
     :param engine: The EngineModel instance to add.
     """ 
-    validated = self.validate_engine(engine)    
-    if crate and self.engine:
-      old_engine_id = f"{self.engine.name.stem.replace('tmp/', '')}{self.engine.name.suffix}"
-      old_engine = crate.dereference(old_engine_id)            
-      crate.delete(old_engine)
-      print(f"[bold red]Deleted old engine[/bold red]: {old_engine_id}")
-    if validated:
-        self.engine: Engine = engine
+    validated = self.validate_engine(engine)            
     return validated
 
   def delete(self):
