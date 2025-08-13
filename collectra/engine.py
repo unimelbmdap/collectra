@@ -276,7 +276,7 @@ class YOLOEngine(Engine):
     file_format = file_format.replace(".", "")    
     self.preprocess(data, file_format=file_format)   
 
-  def _prepare_assets(self, file: Path, is_file = True) -> None:
+  def _prepare_assets(self, file: Path, is_file = True) -> dict:
     results_yaml = self.dir / "results.yaml" if is_file else file / "results.yaml"    
     if not results_yaml.exists():      
       print(error_msg(f"Results YAML file not found in {file} - Skipping {file}..."))
@@ -287,27 +287,93 @@ class YOLOEngine(Engine):
       if not image:
         print(error_msg(f"Invalid input for {file}. Skipping this..."))
         return        
-      shutil.copy(file / image, self.dir / image)    
+      shutil.copy(file / image, self.dir / image)        
+    return data    
+  
+  def _prepare_yolo_config(self, data_files: List[dict], validation: bool = False) -> List[str]:
+    classes = set()
+    train_files = []
+    val_files = []
+    for data in data_files:
+      for_validation = False
+      image = None      
+      for key, value in data.items():                       
+        if key == "collectra_results_metadata":
+          for_validation = value.get("validation", False) 
+          continue
+        if value.get("type", None) == "Image":
+          image = value.get("path", None)          
+          continue          
+        if value.get("type", None) == "ImageCrop":
+          classes.add(key)
+          continue
+      if for_validation:
+        val_files.append(f"./{image}")
+      else:
+        train_files.append(f"./{image}")        
+
+    # Create YOLO dataset configuration
+    classes = list(classes)
+    yolo_config = ""
+    if not validation:
+      yolo_config = f"train: train.txt\nval: val.txt\nnc: {len(classes)}\nnames: {classes}"        
+      Path(f"{self.dir}/train.txt").write_text("\n".join(train_files))
+    else:
+      val_files.extend(train_files)
+      yolo_config = f"val: val.txt\nnc: {len(classes)}\nnames: {classes}"
+
+    Path(f"{self.dir}/train.txt").write_text("\n".join(train_files))
+    Path(f"{self.dir}/val.txt").write_text("\n".join(val_files))
+    Path(f"{self.dir}/yolo_config.yml").write_text(yolo_config)    
+
+    return classes
+
+  def _generate_annotation_str(self, item: dict) -> str:
+    return f"{item['class_id']} {item['x_center']} {item['y_center']} {item['width_relative']} {item['height_relative']}\n"   
+
+  def _prepare_annotations(self, data_files: List[dict], classes: List[str]) -> None:
+    for data in data_files:
+      image = None
+      for key, value in data.items():
+        if value.get("type", None) == "Image":
+          image = Path(value.get("path", None))
+          break
+      if image is None:
+        continue
+      annotation_file = self.dir / f"{image.stem}.txt"
+      annotation_str = ""
+      for key, value in data.items():
+        if value.get("type", None) != "ImageCrop":
+          continue        
+        if "items" not in value:
+          value["class_id"] = classes.index(key)
+          annotation_str += self._generate_annotation_str(value) 
+          continue      
+        items = value.get("items", [])
+        for item in items:
+          if item.get("type", None) != "ImageCrop":
+            continue
+          item["class_id"] = classes.index(key)          
+          annotation_str += self._generate_annotation_str(item)         
+      annotation_file.write_text(annotation_str)  
 
   def preprocess(self, data: Path, file_format: str, validation: bool = False) -> None:    
-    files = get_all_files(data, file_format)
-    train_files = []  # List of training image files
-    val_files = []    # List of validation image files
-    number_of_classes = 0
-    classes = []      # List of class names
-
+    files = get_all_files(data, file_format)    
+    data_files = []        
     for file in tqdm(files, desc="Processing files for YOLO training"):
       if file.is_file():
         with zipfile.ZipFile(file, 'r') as zip_ref:
-          zip_ref.extractall(path=self.dir)                  
+          data=zip_ref.extractall(path=self.dir)                  
           self._prepare_assets(file)  
         residual_yaml = self.dir / "results.yaml"
         if residual_yaml.exists():
           os.remove(residual_yaml)                  
       if file.is_dir():
-        self._prepare_assets(file, is_file=False)        
+        data=self._prepare_assets(file, is_file=False)       
+      data_files.append(data)
 
-    raise ValueError("till here")      
+    classes: List[str] = self._prepare_yolo_config(data_files, validation=validation)    
+    self._prepare_annotations(data_files, classes=classes)          
 
     # Process each ROCrate file
     # for file in tqdm(files, desc="Processing files for YOLO training"):

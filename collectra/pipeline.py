@@ -72,7 +72,7 @@ class Collectra:
         This method populates the workflow with tasks based on the provided configuration.
         :param config: A dictionary containing the workflow configuration.
         """
-        valid_tasks = [task_class.__name__ for task_class in TaskManager.VALID_TASKS.values()]
+        valid_tasks = [task_class.__name__ for task_class in TaskManager.VALID_TASKS.values()]        
         for task_id, task_info in config.items():            
             task = {
                 "id": task_id,
@@ -157,7 +157,9 @@ class Collectra:
                 task.set_config({
                     **config,
                     "file_format": self.file_format,
-                    "task": task.id
+                    "task": task.id,
+                    "inputs": task.inputs or [],
+                    "outputs": task.outputs or [],
                 })                
                 task.train()
                 return        

@@ -27,8 +27,7 @@ def copy_file(src_path, dest_path):
             dest_f.write(src_f.read())
 
 def create_bounding_box_item(bbox):
-    return {
-        "type": "ImageCrop",
+    return {        
         "image": "specimen_sheet",
         "x_center": float(bbox.get("x_center")),
         "y_center": float(bbox.get("y_center")),
@@ -107,10 +106,10 @@ def convert(
         for bounding_box in bounding_boxes:
             class_id = bounding_box.get("class_id")
             class_name = classes[int(class_id)]
-            item = create_bounding_box_item(bounding_box)
+            item = create_bounding_box_item(bounding_box)                        
             if class_name not in config:
-                config[class_name] = {"items": [item]}
-            else:
+                config[class_name] = {"type": "ImageCrop", "items": [item]}
+            else:                                                
                 config[class_name]["items"].append(item)
 
         for class_name in classes:
@@ -122,7 +121,7 @@ def convert(
                         **config[class_name],
                         **config[class_name]["items"][0]
                     }
-                    config[class_name].pop("items", None)
+                    config[class_name].pop("items", None)                
             except Exception as e:
                 print(config[class_name])
                 print(f"Error processing class {class_name}: {e}")                
