@@ -12,6 +12,8 @@ from typing import List
 from datetime import datetime
 import shutil, os, yaml, zipfile
 from .utils import processing_msg, error_msg
+import wandb
+from wandb.integration.ultralytics import add_wandb_callback
 
 class EngineEntity(DataEntity):
   """
@@ -417,6 +419,8 @@ class YOLOModel(Model):
     if platform.system() == "Darwin":
       train_params["device"] = "mps"
     
+    add_wandb_callback(self.model, enable_model_checkpointing=True)
+
     return self.model.train(**train_params)
 
   def _execute_validation(self, config: dict):

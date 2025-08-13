@@ -25,6 +25,7 @@ ultralytics = "^8.3.166"
 pydot = "^4.0.1"
 graphviz = "^0.21"
 roc-validator = "^0.7.3"
+wandb = "^0.21.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=6.2.5"
