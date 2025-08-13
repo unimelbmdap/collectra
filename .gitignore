@@ -3,14 +3,12 @@ wandb/*
 wandb*/*
 outputs/*
 *.out
-data/
 .DS_Store
 output/
 glabels/
 *.cache
 *.collectra
 tmp/
-test_data/
 *.pt
 .python-version
 
