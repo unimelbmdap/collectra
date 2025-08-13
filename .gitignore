@@ -12,6 +12,7 @@ glabels/
 tmp/
 test_data/
 *.pt
+.python-version
 
 # From https://github.com/github/gitignore/blob/main/Python.gitignore
 # Byte-compiled / optimized / DLL files
