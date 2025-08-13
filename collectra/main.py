@@ -108,6 +108,17 @@ def train(
     }
     Collectra.load(pipeline).train(task_id=task, config=config)
 
+@app.command()
+def run(
+    workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
+    task: Annotated[str, Option("--task", "-t", help="task to run")],
+    input: Annotated[List[str], Argument(help="Input directory of files")],
+):
+    config = {
+        "input": input,
+    }
+    Collectra.load(workflow).run(task_id=task, config=config)
+
 # @app.command()
 # def eval(
 #     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],

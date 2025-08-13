@@ -76,27 +76,27 @@ class TrainingParameters(DataEntity):
         "@type": "TrainingParameters",                        
     }
 
-class Engine(ABC):
+class Model(ABC):
   """
-  Abstract base class for all machine learning engines.
+  Abstract base class for all machine learning models.
   
   This class defines the common interface and behavior for all machine learning
-  engines in the Collectra system. It provides a standardized way to train,
+  models in the Collectra system. It provides a standardized way to train,
   validate, detect, and manage machine learning models.
   
   Attributes:
-      DEFAULT_CONFIG (dict): Default configuration parameters for the engine
+      DEFAULT_CONFIG (dict): Default configuration parameters for the model
   """
   
   DEFAULT_CONFIG: dict = {}
 
   def __init__(self, name: str | Path, config: dict = {}):
     """
-    Initialize an Engine instance.
-    
+    Initialize a Model instance.
+
     Args:
         name (str | Path): Name or path to the model file
-        config (dict, optional): Configuration parameters for the engine.
+        config (dict, optional): Configuration parameters for the model.
                                Defaults to empty dict.
     """
     self.name: Path = Path(name)
@@ -106,19 +106,19 @@ class Engine(ABC):
 
   def __str__(self) -> str:
     """
-    Return string representation of the engine.
-    
+    Return string representation of the model.
+
     Returns:
-        str: String representation showing the engine name
+        str: String representation showing the model name
     """
     return f"{self.name.name}"  
 
   def __str__(self) -> str:
     """
-    Return string representation of the engine.
-    
+    Return string representation of the model.
+
     Returns:
-        str: String representation showing the engine name
+        str: String representation showing the model name
     """
     return f"{self.name.name}"  
 
@@ -127,20 +127,7 @@ class Engine(ABC):
 
   def delete(self) -> None:
     if self.name and self.name.exists():
-      os.remove(self.name)
-
-  @abstractmethod
-  def to_crate(self, crate: ROCrate) -> EngineEntity:
-    """
-    Convert the engine to a ROCrate entity for metadata storage.
-    
-    Args:
-        crate (ROCrate): The ROCrate instance to add the engine to
-        
-    Returns:
-        EngineEntity: The created engine entity with metadata
-    """
-    pass
+      os.remove(self.name)  
   
   @abstractmethod
   def train(self, config: dict = {}) -> Path | None:
@@ -162,7 +149,7 @@ class Engine(ABC):
     Validate the trained model to assess its performance.
     
     This method should implement model validation logic specific to
-    the engine type and return or display validation metrics.
+    the model type and return or display validation metrics.
     """
     pass
 
@@ -187,9 +174,9 @@ class Engine(ABC):
     """
     pass
 
-class YOLOEngine(Engine):
+class YOLOModel(Model):
   """
-  This class provides a concrete implementation of the Engine abstract class
+  This class provides a concrete implementation of the Model abstract class
   for YOLO-based object detection models. It handles training, validation,
   detection, and data preprocessing specific to YOLO models.
   
@@ -206,16 +193,16 @@ class YOLOEngine(Engine):
 
   def __init__(self, name: str | Path = "yolo11n.pt", config: dict = {}):
     """
-    Initialize a YOLOEngine instance.
-    
+    Initialize a YOLOModel instance.
+
     Args:
         name (str | Path, optional): Path to the YOLO model file.
                                    Defaults to "yolo11n.pt".
-        config (dict, optional): Configuration parameters for the engine.
+        config (dict, optional): Configuration parameters for the model.
                                 Defaults to empty dict.
     """
-    super().__init__(name, config)    
-    print(processing_msg(f"LoadingYOLO engine with path {self.name}"))    
+    super().__init__(name, config)
+    print(processing_msg(f"Loading YOLO model with path {self.name}"))
     self.model: YOLO = YOLO(self.name, verbose=True)
     self.type: str = "yolo"
     self.yolo_config_path: str = "yolo_config.yml"
@@ -377,7 +364,7 @@ class YOLOEngine(Engine):
     metrics = val_results = self._execute_validation(merged_config)
     self._save_results(merged_config, val_results, metrics, eval=True)
   
-  def detect(self, data: Path) -> None:
+  def detect(self, config: dict = {}) -> None:
     """
     Run object detection inference on provided data.
     
@@ -387,10 +374,16 @@ class YOLOEngine(Engine):
     
     Args:
         data (Path): Path to the input data (images/video) for detection
-    """
+    """    
     print(f"[bold green]Running object detection[/bold green]: {self.name}")
-    # TODO: Implement YOLO detection logic and result handling
-    pass
+    results: List[dict] = []
+    for image in config.get("input", []):
+      results.append({
+        "image": image,
+        "results": self.model(image)
+      })      
+    return results  
+    
   
   def cluster(self, config) -> None:
     merged_config = {**self.config, **config}
@@ -486,21 +479,8 @@ class YOLOEngine(Engine):
     
     # Create output directory
     output = Path(config.get("output"))
-    output.mkdir(parents=True, exist_ok=True)        
-
-    # Copy training artifacts to output directory
-    train_results1 = Path(self.dir) / "train"
-    train_results2 = Path(self.dir) / "train2"
-    validation_results = Path(self.dir) / "val"
-    log = output / "yolo.log" if not eval else output / "eval.log"
-
-    if train_results1.exists() and train_results2.exists():
-      shutil.copytree(train_results1, output / "train", dirs_exist_ok=True)    
-      shutil.copytree(train_results2, output / "train2", dirs_exist_ok=True)          
-      
-    if validation_results.exists():
-      shutil.copytree(validation_results, output / "val", dirs_exist_ok=True)      
-
+    output.mkdir(parents=True, exist_ok=True)            
+    log = output / "yolo.log" if not eval else output / "eval.log"              
     log.write_text(f"{config.get('task')}\n Training results: {train_results} \n Validation metrics: {metrics}")
     
   def to_crate(self, crate: ROCrate) -> EngineEntity:
@@ -544,7 +524,7 @@ class YOLOEngine(Engine):
     return engine_crate  
 
 
-class DETECTRON2Engine(Engine):
+class DETECTRON2Engine(Model):
     """
     DETECTRON2 object detection engine implementation (placeholder).
     
@@ -642,7 +622,7 @@ class DETECTRON2Engine(Engine):
       pass
 
 
-class ImageClassifier(Engine):
+class ImageClassifier(Model):
     """
     Image classification engine implementation (placeholder).
     

@@ -1,5 +1,5 @@
-from .task import Task, TaskEntity, ObjectDetection, TextClassification
-from .engine import Engine, EngineEntity, YOLOEngine, ImageClassifier, DETECTRON2Engine
+from .task import Task, TaskEntity, ObjectDetectionYOLO, TextClassification
+from .model import Model, EngineEntity, YOLOModel, ImageClassifier, DETECTRON2Engine
 import typer
 from rich import print
 from typing import List, Union
@@ -10,20 +10,20 @@ import os
 class EngineManager:    
 
   ENGINE_TYPES: dict = {
-    "yolo": YOLOEngine,
+    "yolo": YOLOModel,
     "image_classifier": ImageClassifier,
     "detectron2": DETECTRON2Engine,  # Placeholder for future implementation
   }
 
   @staticmethod
-  def build(type: str, name: str) -> Engine:
+  def build(type: str, name: str) -> Model:
     EngineClass = EngineManager.ENGINE_TYPES.get(type)
     if not EngineClass:
       raise ValueError(f"[bold red]Invalid engine type[/bold red]: {type}. Must be one of {list(EngineManager.ENGINE_TYPES.keys())}.")
     return EngineClass(name)
   
   @staticmethod
-  def get(engine: EngineEntity) -> Engine:    
+  def get(engine: EngineEntity) -> Model:    
     EngineClass = EngineManager.ENGINE_TYPES.get(engine.get("engine_type"))    
     if not EngineClass:
       raise ValueError(f"[bold red]Invalid engine type[/bold red]: {engine.get('engine_type')}. Must be one of {list(EngineManager.ENGINE_TYPES.keys())}.")
@@ -33,7 +33,7 @@ class EngineManager:
 class TaskManager:  
 
   VALID_TASKS: dict = {
-    "detect_object": ObjectDetection,
+    "detect_object": ObjectDetectionYOLO,
     "classify_image": TextClassification,
   }  
 
@@ -79,7 +79,7 @@ class TaskManager:
     if not ValidTask:
       raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {list(TaskManager.VALID_TASKS.keys())}.")
     ValidEngine = EngineManager.build(engine_type, engine)
-    task = ObjectDetection(task_type=task_type, engine=ValidEngine, id=task_name)                
+    task = ObjectDetectionYOLO(task_type=task_type, engine=ValidEngine, id=task_name)                
     task.to_crate(crate)
     return task
   

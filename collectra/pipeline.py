@@ -2,7 +2,7 @@ from rich import print
 from pathlib import Path
 from typing import Optional
 import yaml, os, zipfile, shutil
-from .task import Task, ObjectDetection, TextClassification
+from .task import Task, ObjectDetectionYOLO, TextClassification
 from .utils import error_msg, success_msg, processing_msg
 
 class TaskManager:
@@ -11,7 +11,7 @@ class TaskManager:
     """
 
     VALID_TASKS = {
-        "object_detection": ObjectDetection,
+        "object_detection": ObjectDetectionYOLO,
         "text_classification": TextClassification,
     }
 
@@ -19,15 +19,15 @@ class TaskManager:
     def build(task: str, from_file: bool = False, valid_tasks: list = []) -> Task:
         """
         Build a Task from a string.
-        :param task: The task string in the format "<task>,<task_type>,<engine_path>,<engine_type>".        
+        :param task: The task string in the format "<task>,<task_type>,<model_path>,<model_type>".        
         :raises ValueError: If the task format is invalid or the task type is not recognized
         :return: An instance of Task.
         """
         if not from_file:
-            task_name, task_type, engine_path, engine_type = task.split(",")
+            task_name, task_type, model_path, model_type = task.split(",")
             if task_type not in TaskManager.VALID_TASKS:
                 raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {list(TaskManager.VALID_TASKS.keys())}.")
-            task = TaskManager.VALID_TASKS.get(task_type)(task_name, engine_path=engine_path, engine_type=engine_type)
+            task = TaskManager.VALID_TASKS.get(task_type)(task_name, model_path=model_path, model_type=model_type)            
             return task
         else:
             task_type = task["type"].replace("collectra.task.", "")                                                  
@@ -46,11 +46,12 @@ class TaskManager:
 
             task = TaskClass(
                 id=task.get("id"),
-                engine_path=task.get("engine"),
-                engine_type=task.get("engine_type"),
+                model_path=task.get("model"),
+                model_type=task.get("model_type"),
                 inputs=inputs if inputs else [],
                 outputs=outputs if outputs else [],
             )
+            print(success_msg(f"Loaded task {task.id} of type {task.__class__.__name__} and model {task.model}"))
             return task            
 
 class Collectra:
@@ -86,14 +87,14 @@ class Collectra:
             task = {
                 "id": task_id,
                 **task_info
-            }            
-            task["engine"] = Path(self.working_dir) / task["engine"] if task.get("engine") else None
+            }
+            task["model"] = Path(self.working_dir) / task["model"] if task.get("model") else None
             task = TaskManager.build(task, from_file=True, valid_tasks=valid_tasks)
             if not task:
-                print(error_msg(f"Failed to load task {task_id} of type {task_info['type']} and model {task_info['engine']}"))
+                print(error_msg(f"Failed to load task {task_id} of type {task_info['type']} and model {task_info['model']}"))
                 continue
             self.tasks.append(task)
-            print(success_msg(f"Loaded {task.id} of type {task.__class__.__name__} and model {task.engine}"))
+            print(success_msg(f"Loaded {task.id} of type {task.__class__.__name__} and model {task.model}"))
         print(success_msg(f"Loaded {len(self.tasks)} tasks from configuration!"))
 
     def get_yaml(self):
@@ -114,10 +115,10 @@ class Collectra:
         for task in self.tasks:
             config[task.id] = {
                 "type": f"{task.__class__.__module__}.{task.__class__.__name__}",
-                "engine": str(task.engine.name),
-                "engine_type": task.engine.type,
-                "inputs": task.inputs,
-                "outputs": task.outputs,
+                "model": str(task.model.name),
+                "model_type": task.model.type,
+                "inputs": task.inputs if len(task.inputs) > 1 else task.inputs[0],
+                "outputs": task.outputs if len(task.outputs) > 1 else task.outputs[0],
             }
 
         return config
@@ -139,7 +140,7 @@ class Collectra:
         Add a task to the workflow.
         
         This method parses the task string and adds it to the workflow.
-        :param task: The task string in the format "<task_type>,<task_name>,<engine_type>,<engine_name>".
+        :param task: The task string in the format "<task_type>,<task_name>,<model_type>,<model_name>".
         """
         print("[green]Adding task:[/green]", task)                
         task = TaskManager.build(task)
@@ -152,7 +153,39 @@ class Collectra:
         self.tasks.append(task)
         return True
 
-    
+    def run(self, task_id: str, config: dict = {}):
+        found_task = False
+        for task in self.tasks:
+            if task.id == task_id:
+                found_task = True
+                print(processing_msg(f"Detecting task: {task.id}"))
+                task.set_config({
+                    **config,
+                    "file_format": self.file_format,
+                    "task": task.id,
+                    "inputs": task.inputs or [],
+                    "outputs": task.outputs or [],
+                })                
+                results = task.run()
+                if results:
+                    for result in results:
+                        classification_results = result.get("results", [])
+                        if classification_results:
+                            for cls_result in classification_results:
+                                names = [cls_result.names[cls.item()] for cls in cls_result.boxes.cls.int()]
+                                print(names)
+                        output_yaml = {
+                            "specimen_sheet":{
+                                "type": "collectra.Image",
+                                "name": result.get("image")
+                            },
+                        }
+                        print(output_yaml)
+
+        if not found_task:
+            raise Exception(error_msg(f"Task with ID {task_id} not found in the workflow."))
+
+
     def train(self, task_id: str, config: dict = {}):
         """
         Train the specified task in the workflow.
@@ -160,8 +193,10 @@ class Collectra:
         This method retrieves the task by its ID and calls its train method.
         :param task_id: The ID of the task to be trained.
         """        
+        found_task = False
         for task in self.tasks:
             if task.id == task_id:
+                found_task = True
                 print(processing_msg(f"Training task: {task.id}"))
                 task.set_config({
                     **config,
@@ -172,36 +207,44 @@ class Collectra:
                 })                                                 
                 new_model_path: Path = task.train()                
                 if new_model_path:
-                    new_model_path = (new_model_path)
-                    task.engine = task.validate_engine(new_model_path, task.engine.type)
-        print(f"{error_msg('Task not found')}: {task_id}")
+                    task.old_model = task.model
+                    task.model = task.validate_model(new_model_path, task.model.type)                            
+                break
+        if not found_task:
+            raise Exception(error_msg(f"Task with ID {task_id} not found in the workflow."))            
+        self.save(as_dir=self.as_dir)  # Save the workflow after training
     
     def save(self, **kwargs):
         as_dir = kwargs.get("as_dir", self.as_dir)
         output_dir = kwargs.get("output", Path.cwd())
         output_folder = output_dir / f"{self.name}"
         output_folder.mkdir(parents=True, exist_ok=True)
-        self.__save_pipeline_config(output_folder=output_folder)
         self.__save_data_assets(output_folder=output_folder)
+        self.__save_pipeline_config(output_folder=output_folder)        
         if not as_dir:
             self.__save_to_zip(output_folder=output_folder, output_dir=output_dir)
         print(success_msg(f"Workflow {self.name}.collectra saved to {output_dir}"))
 
     def __save_data_assets(self, output_folder: Path):
-        for task in self.tasks:
-            engine_path = task.get_engine().get_path()
-            if not engine_path.is_file():
-                print(error_msg(f"Engine path does not point to a file: {engine_path}"))
+        for task in self.tasks:            
+            model_path = task.get_model().get_path()
+            if not model_path.is_file():
+                print(error_msg(f"Model path does not point to a file: {model_path}"))
                 continue
-            if engine_path != output_folder / engine_path.name:
-                shutil.copy(engine_path, output_folder / engine_path.name)
-                os.remove(engine_path)  # Remove the original file after copying
+            if model_path != output_folder / model_path.name:
+                shutil.copy(model_path, output_folder / model_path.name)                
+                os.remove(model_path)  # Remove the original file after copying
+                if task.old_model:
+                    os.remove(output_folder / task.old_model.name)  # Remove the old model if it exists
+                task.model.name = model_path.name  # Update the model name to the new path
                         
     def __save_pipeline_config(self, output_folder: Path):
         output_file = output_folder / "pipeline.yaml"
         config_file = self.get_yaml()
         with open(output_file, 'w') as f:
-            yaml.dump(config_file, f, default_flow_style=False, sort_keys=False)
+            for key in config_file:
+                f.write(yaml.dump({key: config_file[key]}, default_flow_style=False, sort_keys=False))
+                f.write("\n")            
 
     def __save_to_zip(self, output_folder: Path, output_dir: Path = Path.cwd()):
         with zipfile.ZipFile(output_dir / f"{self.name}.collectra", 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zipf:
