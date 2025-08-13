@@ -49,11 +49,12 @@ def get_all_files(paths: List[str]) -> List[Path]:
 @app.command()
 def convert(
     paths: Annotated[List[str], typer.Argument(help="List of files to convert")],
-    file_format: Annotated[str, typer.Option("--file-format", "-f", help="File format to convert to")] = "hespi"
+    file_format: Annotated[str, typer.Option("--file-format", "-f", help="File format to convert to")] = "hespi",
+    output: Annotated[str, typer.Option("--output", "-o", help="Output directory for converted files")] = "tests/images"
 ):
     files = get_all_files(paths)       
     specimen = Path("specimen")
-    images = Path("tests/images")
+    images = Path(output)
     
     ensure_directory(specimen)
     ensure_directory(images)
