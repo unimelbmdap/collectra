@@ -1,12 +1,10 @@
 from typer import Typer, Option, Argument
 from typing_extensions import Annotated
-from typing import Optional, List
+from typing import List
 from rich import print
 from pathlib import Path
-# from .models.workflow import Collectra
 from .pipeline import Collectra
-from .parsing import CollectraWorkflow
-import zipfile, pprint
+import pprint
 
 app = Typer()
 
