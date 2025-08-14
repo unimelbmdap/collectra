@@ -417,10 +417,9 @@ class YOLOModel(Model):
     
     # Use MPS device on macOS for GPU acceleration
     if platform.system() == "Darwin":
-      train_params["device"] = "mps"
-    with wandb.init(project=self.config.get("task"), job_type="train") as run:      
-      add_wandb_callback(self.model, enable_model_checkpointing=True)
-      return self.model.train(**train_params)
+      train_params["device"] = "mps"          
+    results = self.model.train(**train_params)
+    return results
 
   def _execute_validation(self, config: dict):
     """
