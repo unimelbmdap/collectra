@@ -342,8 +342,9 @@ class Collectra:
         print(processing_msg(f"Loading workflow from {path} as_dir={as_dir}"))
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
-            metadata = data.get("metadata")
-            data.pop("metadata", None)  # Remove metadata from the main config dictionary            
+            metadata = data.get("collectra_pipeline_metadata")
+            data.pop("collectra_pipeline_metadata", None)  # Remove metadata from the main config dictionary
             return Collectra(**metadata, config=data, as_dir=as_dir)  # Create a Collectra instance with the loaded data
     
 
+    
