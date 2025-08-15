@@ -4,6 +4,8 @@ from typing import Optional
 import yaml, os, zipfile, shutil
 from .task import Task, ObjectDetectionYOLO, TextClassification
 from .utils import error_msg, success_msg, processing_msg
+from datetime import datetime
+import pytz
 
 class TaskManager:
     """
@@ -104,7 +106,7 @@ class Collectra:
         This method serializes the workflow configuration into a YAML format.
         """     
         config = {
-            "metadata": {
+            "collectra_pipeline_metadata": {
                 "name": self.name,
                 "version": self.version,            
                 "file_format": self.file_format,                
@@ -164,23 +166,52 @@ class Collectra:
                     "file_format": self.file_format,
                     "task": task.id,
                     "input": task.input or [],
-                    "output": task.output or [],
+                    "output": task.output or [],                    
                 })                
                 results = task.run()
+                names = []
                 if results:
-                    for result in results:
-                        classification_results = result.get("results", [])
-                        if classification_results:
-                            for cls_result in classification_results:
-                                names = [cls_result.names[cls.item()] for cls in cls_result.boxes.cls.int()]
-                                print(names)
+                    for result in results:     
+                        image_file = Path(result.get("image"))      
                         output_yaml = {
-                            "specimen_sheet":{
-                                "type": "collectra.Image",
-                                "name": result.get("image")
+                            "collectra_results_metadata": {
+                                "timestamp": datetime.now(pytz.utc).isoformat(),
+                                "validation": False,
                             },
-                        }
-                        print(output_yaml)
+                            "specimen_sheet":{
+                                "type": "Image",
+                                "path": image_file.name,                                
+                            },                            
+                        }                 
+                        classification_results = result.get("results", [])                        
+                        if classification_results:                            
+                            for cls_result in classification_results:                                                            
+                                coordinates = cls_result.boxes.xywhn
+                                names = [cls_result.names[cls.item()] for cls in cls_result.boxes.cls.int()]
+                                for index in range(len(coordinates)):
+                                    x,y,w,h = coordinates[index]
+                                    output_yaml[names[index]] = { 
+                                        "type": "ImageCrop",
+                                        "image": "specimen_sheet",                                       
+                                        "x_center": float(x),
+                                        "y_center": float(y),
+                                        "width_relative": float(w),
+                                        "height_relative": float(h),
+                                    }                                                            
+                            path = Path(f"{image_file.stem}.{self.file_format}")
+                            os.makedirs(path, exist_ok=True)
+                            # Copy the image to the output directory                                                        
+                            shutil.copy(image_file, path / image_file.name)  
+                            with open(path / "results.yaml", 'w') as f:
+                                for key in output_yaml:
+                                    f.write(yaml.dump({key: output_yaml[key]}, default_flow_style=False, sort_keys=False))
+                                    f.write("\n")
+                            cls_result.save_crop(save_dir=path)   
+                            self.as_dir = config.get("as_dir", self.as_dir)  # Use the as_dir flag from the config if provided
+                            if not self.as_dir:
+                                shutil.make_archive(path, 'zip', path)  # Create a zip archive of the results     
+                                shutil.rmtree(path)  # Remove the directory after zipping
+                                os.rename(f"{path}.zip", path.parent / f"{path.name}")
 
         if not found_task:
             raise Exception(error_msg(f"Task with ID {task_id} not found in the workflow."))

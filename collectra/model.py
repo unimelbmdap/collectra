@@ -378,8 +378,8 @@ class YOLOModel(Model):
         data (Path): Path to the input data (images/video) for detection
     """    
     print(f"[bold green]Running object detection[/bold green]: {self.name}")
-    results: List[dict] = []
-    for image in config.get("input", []):
+    results: List[dict] = []    
+    for image in config.get("images", []):      
       results.append({
         "image": image,
         "results": self.model(image)

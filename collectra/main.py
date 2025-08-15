@@ -17,7 +17,7 @@ def make(
     output: Annotated[
         Path, Option("--output", "-o", help="Output directory for the workflow")
     ] = Path.cwd(),
-    as_dir: Annotated[bool, Option("--as-dir", "-d", help="Create the workflow as a directory instead of a file")] = False,
+    as_dir: Annotated[bool, Option("--as-dir", help="Create the workflow as a directory instead of a file")] = False,
 ):
     """
     Create a new Collectra workflow with the specified name and file format.
@@ -110,10 +110,12 @@ def train(
 def run(
     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
     task: Annotated[str, Option("--task", "-t", help="task to run")],
-    input: Annotated[List[str], Argument(help="Input directory of files")],
+    images: Annotated[List[str], Argument(help="Input directory of files")],
+    as_dir: Annotated[bool, Option("--as-dir", help="Run the task as a directory instead of a file")] = False,
 ):
     config = {
-        "input": input,
+        "images": images,
+        "as_dir": as_dir,
     }
     Collectra.load(workflow).run(task_id=task, config=config)
 
