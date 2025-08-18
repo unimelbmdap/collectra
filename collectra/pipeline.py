@@ -265,10 +265,13 @@ class Collectra:
                 print(error_msg(f"Model path does not point to a file: {model_path}"))
                 continue
             if model_path != output_folder / model_path.name:
-                shutil.copy(model_path, output_folder / model_path.name)                
+                print(processing_msg(f"Copying model {model_path} to {output_folder / model_path.name}"))
+                shutil.copy(model_path, output_folder / model_path.name)
+                print(processing_msg(f"Removing unneeded artifact: {model_path}"))
                 os.remove(model_path)  # Remove the original file after copying
-                if task.old_model:
-                    os.remove(output_folder / task.old_model.name)  # Remove the old model if it exists
+                if task.old_model and task.old_model.name.name != model_path.name:                    
+                    print(processing_msg(f"Removing old model file: {task.old_model.name}"))
+                    os.remove(task.old_model.name)  # Remove the old model if it exists
                 task.model.name = model_path.name  # Update the model name to the new path
                         
     def __save_pipeline_config(self, output_folder: Path):

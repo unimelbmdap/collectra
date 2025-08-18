@@ -266,14 +266,14 @@ class YOLOModel(Model):
     file_format = file_format.replace(".", "")    
     self.preprocess(data, inputs, classes, file_format=file_format)   
 
-  def _prepare_assets(self, file: Path, is_file = True) -> dict:
+  def _prepare_assets(self, file: Path, is_file: bool = True, inputs: list[str] = []) -> dict:
     results_yaml = self.dir / "results.yaml" if is_file else file / "results.yaml"    
     if not results_yaml.exists():      
       print(error_msg(f"Results YAML file not found in {file} - Skipping {file}..."))
       return
     with open(results_yaml, "r") as f:
       data = yaml.safe_load(f)
-      image = data.get('specimen_sheet', {}).get('path', None)
+      image = data.get(inputs[0], None).get('path', None)
       if not image:
         print(error_msg(f"Invalid input for {file}. Skipping this..."))
         return        
@@ -329,19 +329,19 @@ class YOLOModel(Model):
         train_files.append(f"./{image}")       
     return train_files, val_files
 
-  def preprocess(self, data: Path, inputs: list[str], classes: list[str], file_format: str, validation: bool = False) -> None:    
+  def preprocess(self, data: Path, inputs: list[str], classes: list[str], file_format: str, validation: bool = False) -> None:      
     files = get_all_files(data, file_format)    
     data_files = []        
     for file in tqdm(files, desc="Processing files for YOLO training"):
       if file.is_file():
         with zipfile.ZipFile(file, 'r') as zip_ref:
           data=zip_ref.extractall(path=self.dir)                  
-          self._prepare_assets(file)  
+          self._prepare_assets(file, inputs=inputs)  
         residual_yaml = self.dir / "results.yaml"
         if residual_yaml.exists():
           os.remove(residual_yaml)                  
       if file.is_dir():
-        data=self._prepare_assets(file, is_file=False)       
+        data=self._prepare_assets(file, is_file=False, inputs=inputs)       
       data_files.append(data)
     
     train_files, val_files = self._prepare_annotations(data_files, classes=classes)          
