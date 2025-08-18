@@ -408,10 +408,17 @@ class YOLOModel(Model):
     # Prepare training parameters
     train_params = {
       "data": Path(f"{self.dir}/{self.yolo_config_path}"),
-      "epochs": int(config.get("epochs", self.DEFAULT_CONFIG["epochs"])),      
-      "verbose": config.get("verbose", self.DEFAULT_CONFIG["verbose"]),
-      "project": self.dir      
+      "project": config.get("task", "yolo_training"),
+      "name": self.dir
     }
+    if config.get("epochs", None):
+      train_params["epochs"] = int(config.get("epochs", self.DEFAULT_CONFIG["epochs"]))
+    if config.get("imgsz", None):
+      train_params["imgsz"] = int(config.get("imgsz", self.DEFAULT_CONFIG["imgsz"]))
+    if config.get("verbose", None):
+      train_params["verbose"] = config.get("verbose", self.DEFAULT_CONFIG["verbose"])    
+    if config.get("lr0", None):
+      train_params["lr0"] = config.get("lr0", 0.01)
     
     # Use MPS device on macOS for GPU acceleration
     if platform.system() == "Darwin":
