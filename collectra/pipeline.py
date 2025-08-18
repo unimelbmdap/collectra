@@ -199,9 +199,9 @@ class Collectra:
                                         "y_center": float(y),
                                         "width_relative": float(w),
                                         "height_relative": float(h),
-                                    }                                                            
-                            path = Path(f"{image_file.stem}.{self.file_format}")
-                            os.makedirs(path, exist_ok=True)
+                                    }                                                                                                
+                            path = Path(f"output/{image_file.stem}.{self.file_format}")
+                            path.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists                            
                             # Copy the image to the output directory                                                        
                             shutil.copy(image_file, path / image_file.name)  
                             with open(path / "results.yaml", 'w') as f:
