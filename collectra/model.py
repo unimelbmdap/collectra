@@ -314,9 +314,7 @@ class YOLOModel(Model):
             annotation_str += self._generate_annotation_str(value) 
             continue      
           items = value.get("items", [])
-          for item in items:
-            if item.get("type", None) != "ImageCrop":
-              continue
+          for item in items:            
             item["class_id"] = classes.index(key)          
             annotation_str += self._generate_annotation_str(item)    
       if not image:

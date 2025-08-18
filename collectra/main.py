@@ -48,17 +48,17 @@ def render(
 @app.command()
 def add(
     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
-    task: Annotated[str, Option("--task", "-t", help="task to add. It should be a valid task: task_type,task_name,engine_type,engine_name")],            
-    output: Annotated[Path, Option("--output", "-o", help="Output directory for the workflow")] = Path.cwd(),
-    as_dir: Annotated[bool, Option("--as-dir", "-d", help="Create the workflow as a directory instead of a file")] = False,
+    task: Annotated[str, Option("--task", "-t", help="task to add. It should be a valid task: task_type,task_name,engine_type,engine_name")],
+    task_input: Annotated[str, Option("--input", "-i", help="valid input name for the task")],
+    task_output: Annotated[List[str], Option("--output", "-o", help="valid output name for the task")],
 ):
     """
-    Add a task to the Collectra workflow
+    Add a task to the Collectra workflowj
     """    
     pipeline = Collectra.load(workflow)    
     add_outcome = pipeline.add(task)    
     if add_outcome:
-        pipeline.save(output=output, as_dir=as_dir)    
+        pipeline.save()    
 
 # @app.command()
 # def edit(

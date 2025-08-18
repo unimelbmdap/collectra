@@ -1,6 +1,6 @@
 from rich import print
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 import yaml, os, zipfile, shutil
 from .task import Task, ObjectDetectionYOLO, TextClassification
 from .utils import error_msg, success_msg, processing_msg
@@ -137,7 +137,7 @@ class Collectra:
             "file_format": self.file_format      
         }    
     
-    def add(self, task: str) -> bool:
+    def add(self, task: str, task_input: str, task_output: List[str]) -> bool:
         """
         Add a task to the workflow.
         
@@ -145,7 +145,7 @@ class Collectra:
         :param task: The task string in the format "<task_type>,<task_name>,<model_type>,<model_name>".
         """
         print("[green]Adding task:[/green]", task)                
-        task = TaskManager.build(task)
+        task = TaskManager.build(task, task_input=task_input, task_output=task_output)
         for existing_task in self.tasks:
             if existing_task.id == task.id:
                 print(error_msg(f"Task with ID {task.id} already exists in the workflow."))
@@ -246,13 +246,13 @@ class Collectra:
         self.save(as_dir=self.as_dir)  # Save the workflow after training
     
     def save(self, **kwargs):
-        as_dir = kwargs.get("as_dir", self.as_dir)
+        self.as_dir = kwargs.get("as_dir", self.as_dir)
         output_dir = kwargs.get("output", Path.cwd())
         output_folder = output_dir / f"{self.name}"
         output_folder.mkdir(parents=True, exist_ok=True)
         self.__save_data_assets(output_folder=output_folder)
         self.__save_pipeline_config(output_folder=output_folder)        
-        if not as_dir:
+        if not self.as_dir:
             self.__save_to_zip(output_folder=output_folder, output_dir=output_dir)
         print(success_msg(f"Workflow {self.name}.collectra saved to {output_dir}"))
 
