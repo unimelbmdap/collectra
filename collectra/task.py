@@ -1,40 +1,73 @@
-from __future__ import annotations
 from abc import ABC, abstractmethod
 import uuid
-from typing import Tuple
+from typing import Dict, List
 from rich import print
-from rocrate.model.data_entity import DataEntity
-from rocrate.rocrate import ROCrate
-from .model import *
+from pathlib import Path
+from .model import Model, YOLOModel, ImageClassifier
 
-#---------------------------------------------
-
-class TaskEntity(DataEntity):
-  def __init__(self, crate, identifier=None, properties=None):
-    super(TaskEntity, self).__init__(crate, identifier, properties)
-  
-  def _empty(self):
-    return {
-        "@id": self.id,
-        "@type": "Task",                     
-        "task_type": "",        
-    } 
-  
 class Task(ABC):
 
-  VALID_MODELS: dict = {}
-  VALID_INPUTS = []
-  VALID_OUTPUTS = []
-
-  def __init__(self, id: str = None, model_path: str = None, model_type: str = None, input: list = [], output: list = [], config: dict = {}):
-    self.id = id if id else uuid.uuid4()            
-    self.model = self.validate_model(model_path, model_type)   
-    self.old_model = None         
-    self.input = input if len(input) > 0 else self.VALID_INPUTS
-    self.output = output if len(output) > 0 else self.VALID_OUTPUTS        
+  def __init__(self, 
+    id: str,     
+    input: List[str] = [], 
+    output: List[str] = [], 
+    config: Dict = {} 
+  ):
+    self.id = id if id else uuid.uuid4()                       
+    self.input = input 
+    self.output = output
     self.config = config
+  
+  def metadata(self) -> Dict:
+    """
+    Get metadata of the task.
+    :return: A dictionary containing task metadata.
+    """
+    return {
+        "id": self.id,                
+        "config": self.config,
+    }
+  
+  def __str__(self) -> str:
+    return f"{self.id} of {self.__class__.__name__}"  
 
-  def get_metadata(self) -> dict:
+  def __repr__(self) -> str:
+    return f"{self.id} of {self.__class__.__name__}"      
+
+  def set_config(self, config: Dict) -> None:
+    """
+    Set the configuration for the task.
+    :param config: A dictionary containing configuration parameters.
+    """
+    if not isinstance(config, Dict):
+      raise ValueError("Invalid config type.")
+    self.config.update(config)  
+
+  @abstractmethod
+  def run(self) -> None:
+    """
+    Run the task.
+    This method should be implemented by subclasses.
+    """
+    raise NotImplementedError("Subclasses must implement this method.")
+    
+
+class MachineLearningTask(Task):
+
+  VALID_MODEL = None
+
+  def __init__(self, 
+    id: str, 
+    model: str | Path,     
+    input: List[str] = [], 
+    output: List[str] = [], 
+    config: Dict = {} 
+  ):
+    super().__init__(id, input, output, config)            
+    self.old_model = None   
+    self.model = self.load(model)    
+
+  def metadata(self) -> Dict:
     """
     Get metadata of the task.
     :return: A dictionary containing task metadata.
@@ -43,88 +76,34 @@ class Task(ABC):
         "id": self.id,        
         "model": self.model.name if self.model else None,
         "config": self.config,
-    }
+    }             
   
-  def __str__(self) -> str:
-    return f"{self.id} of {self.__class__.__name__}"  
+  def load(self, model: str | Path) -> Model:  
+    if not self.VALID_MODEL or not model:
+      raise Exception("No valid model type defined for this task or model path is empty.")
+    return self.VALID_MODEL(model)      
 
-  def __repr__(self) -> str:
-    return f"{self.id} of {self.__class__.__name__}"  
-
-  def to_crate(self, crate: ROCrate) -> ROCrate:
-    """
-    Convert the TaskModel to a ROCrate entity.
-    :param crate: The ROCrate instance to add the task to.
-    :return: The created Task entity.
-    """    
-    task_crate: TaskEntity = TaskEntity(crate, identifier=self.id, properties={        
-        "task_type": self.task_type,                
-    })     
-    if self.model:   
-      task_crate["engine"] = [self.model.to_crate(crate)]
-    crate.add(task_crate)
-    return task_crate
-
-  def validate_model(self, model_path: str, model_type: str) -> Model:  
-    print(f"Validating model with path {model_path} and type {model_type}")  
-    if model_type not in self.VALID_MODELS:
-        raise Exception(f"[bold red]Invalid model type[/bold red]: {model_type}. Must be one of {list(self.VALID_MODELS.keys())}.")
-    model = self.VALID_MODELS.get(model_type)(model_path)
-    return model
-  
-  def slug(self) -> str:
-    return self.task_type
-
-  def get_model(self) -> Model:
+  def get_model(self) -> Model | None:
     """
     Get the model associated with the task.
     :return: The Engine instance if set, otherwise None.
     """
     return self.model
 
-  def add_model(self, model: Model) -> bool:
+  def add_model(self, model: Path) -> Model:
     """
     Add a model to the task.
     :param model: The EngineModel instance to add.
     """ 
-    validated = self.validate_model(model)            
-    return validated
+    return self.load(model)                
 
-  def delete(self):
-    if isinstance(self.model, Model):
-      self.model.delete()
-
-  def set_config(self, config: dict) -> None:
+  def delete_model(self) -> None:
     """
-    Set the configuration for the task.
-    :param config: A dictionary containing configuration parameters.
+    Delete the model associated with the task.
+    This method sets the model to None.
     """
-    if not isinstance(config, dict):
-      raise ValueError("Config must be a dictionary.")
-    self.config.update(config)
-
-  @abstractmethod
-  def run(self) -> None:
-    pass
-
-  @abstractmethod
-  def train(self) -> None:
-    pass
-
-  @abstractmethod
-  def eval(self) -> None:
-    pass
+    self.model = None
   
-
-class ObjectDetectionYOLO(Task):
-
-  VALID_MODELS: dict = {
-      "yolo": YOLOModel,
-      "detectron2": DETECTRON2Engine,
-  }      
-
-  VALID_INPUTS =  ["specimen_sheet"]  
-
   def run(self) -> None:    
     if not self.model:
       raise ValueError("Model must be set before running the task.")
@@ -132,44 +111,26 @@ class ObjectDetectionYOLO(Task):
   
   def train(self) -> None:
     if not self.model:
-      raise ValueError("Engine must be set before training the task.")
-    print(self.config)
-    return self.model.train(self.config)
+      raise ValueError("Model must be set before training the task.")
+    self.model.train(self.config)
   
   def eval(self) -> None:
     if not self.model:
-      raise ValueError("Engine must be set before validating the task.")
+      raise ValueError("Model must be set before validating the task.")
     self.model.val(self.config)
   
   def cluster(self) -> None:
-    if not self.model:
-      raise ValueError("Engine must be set before clustering the task.")
-    self.model.cluster(self.config)
-
-class TextClassification(Task):
-
-  VALID_MODELS: Tuple = (
-      ImageClassifier,
-  )
-
-  def __init__(self, task_type: str = "classify_image", config: dict = {}, model: Model = None):
-    super().__init__(task_type, config, model)
-  
-  def run(self) -> None:
-    if not self.model:
-      raise ValueError("Engine must be set before running the task.")
-    self.model.run(self.config)
-  
-  def train(self) -> Path:
-    if not self.model:
-      raise ValueError("Engine must be set before training the task.")
-    return self.model.train(self.config)
+    # if not self.model:
+    #   raise ValueError("Model must be set before clustering the task.")
+    # self.model.cluster(self.config)
+    pass
 
 
-  def eval(self) -> None:
-    if not self.model:
-      raise ValueError("Engine must be set before validating the task.")
-    self.model.val(self.config)
+class ObjectDetectionYOLO(MachineLearningTask):     
+  VALID_MODEL = YOLOModel
+
+class TextClassification(MachineLearningTask):
+  VALID_MODEL = ImageClassifier
         
   
 

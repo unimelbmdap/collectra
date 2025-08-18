@@ -4,7 +4,8 @@ from typing import List
 from rich import print
 from pathlib import Path
 from .pipeline import Collectra
-import pprint
+from .utils import success_msg, error_msg
+import pprint, shutil
 
 app = Typer()
 
@@ -13,7 +14,7 @@ app = Typer()
 def make(
     pipeline: Annotated[str, Option("--workflow", "-w", help="name of the workflow")] = "default",
     version: Annotated[str, Option("--version", "-v", help="version of the workflow")] = "1.0",
-    file_format: Annotated[str, Option("--file-format", "-f", help="File format for the workflow, e.g., grapto, json, yaml")] = None,    
+    file_format: Annotated[str, Option("--file-format", "-f", help="File format for the workflow, e.g., grapto, json, yaml")] = "",    
     output: Annotated[
         Path, Option("--output", "-o", help="Output directory for the workflow")
     ] = Path.cwd(),
@@ -29,7 +30,7 @@ def make(
         file_format=file_format,
         as_dir=as_dir,
     )
-    print(f"[green]Success[/green] Workflow '{pipeline}' created at {output}")
+    print(success_msg(f"Workflow '{pipeline}' created at {output}"))
 
 @app.command()
 def render(
@@ -39,52 +40,35 @@ def render(
     """
     Render the Collectra workflow to a file
     """
-    pipeline = Collectra.load(workflow)
-    print(f"Rendering workflow [green]{workflow}[/green] to {output}")
-    pprint.pprint(pipeline.get_metadata())
-    pprint.pprint(f"List of tasks: {pipeline.tasks}")
-
+    try:
+        print(f"Rendering workflow [green]{workflow}[/green] to {output}")
+        pipeline = Collectra.load(workflow)        
+        pprint.pprint(pipeline.get_metadata())
+        pprint.pprint(f"List of tasks: {pipeline.tasks}")
+        print(success_msg(f"Finished rendering from {pipeline}"))                 
+    except Exception as e:
+        print(error_msg(f"{e}"))    
+    finally:
+        tmp_path = Path("tmp")
+        if tmp_path.exists():
+            shutil.rmtree(tmp_path, ignore_errors=True)  # Clean up temporary files   
 
 @app.command()
 def add(
     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
     task: Annotated[str, Option("--task", "-t", help="task to add. It should be a valid task: task_type,task_name,engine_type,engine_name")],
-    task_input: Annotated[str, Option("--input", "-i", help="valid input name for the task")] = None,
-    task_output: Annotated[List[str], Option("--output", "-o", help="valid output name for the task")] = None,
+    task_input: Annotated[str, Option("--input", "-i", help="valid input name for the task")] = "",
+    task_output: Annotated[List[str], Option("--output", "-o", help="valid output name for the task")] = [],
 ):
     """
     Add a task to the Collectra workflowj
     """    
-    pipeline = Collectra.load(workflow)    
-    add_outcome = pipeline.add(task)    
-    if add_outcome:
-        pipeline.save()    
-
-# @app.command()
-# def edit(
-#     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
-#     task: Annotated[str, Option("--task", "-t", help="task to edit")],
-#     param: Annotated[str, Option("--param", "-p", help="parameter to edit")],
-#     value: Annotated[str, Option("--value", "-v", help="new value for the parameter")],
-# ):
-#     """
-#     Edit a specific task in the Collectra workflow
-#     """
-#     wf = Collectra.load_workflow(workflow)
-#     wf.edit_task(task, param, value)
-#     wf.save()
-
-# @app.command()
-# def delete(
-#     workflow: Annotated[Path, Argument(help="path to workflow")],
-#     task: Annotated[str, Option("--task", "-t", help="task to remove")],
-# ):
-#     """
-#     Remove a task from the Collectra workflow
-#     """    
-#     wf = Collectra.load_workflow(workflow)    
-#     wf.delete_task(task)
-#     wf.save()            
+    try:
+        pipeline = Collectra.load(workflow)            
+        if pipeline.add(task):
+            pipeline.save()         
+    except Exception as e:
+        print(error_msg(f"Failed to add task: {e}"))
 
 @app.command()
 def train(
@@ -120,60 +104,7 @@ def run(
         "as_dir": as_dir,
     }
     Collectra.load(workflow).run(task_id=task, config=config)
-
-# @app.command()
-# def eval(
-#     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
-#     task: Annotated[str, Option("--task", "-t", help="task to evaluate")],
-#     input: Annotated[List[str], Argument(help="Input directory of files")],
-#     output: Annotated[Path, Option("--output", "-o", help="Output directory for log files")] = None,
-#     test: Annotated[bool, Option("--test", "-te", help="Enable test mode")] = 0,
-# ):
-#     """
-#     Evaluate a specific task in the Collectra workflow
-#     """    
-#     wf = Collectra.load_workflow(workflow)
-#     wf.eval(task, input_files=input, output_path=output, test=test)
     
-# @app.command()
-# def cluster(
-#     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
-#     item: Annotated[str, Option("--item", "-i", help="item to cluster")],
-#     input: Annotated[List[str], Argument(help="Input directory of files")],
-#     output: Annotated[Path, Option("--output", "-o", help="Output directory for log files")] = None,
-# ):
-#     """
-#     Cluster items in the Collectra workflow
-#     """
-#     wf = Collectra.load_workflow(workflow)
-#     wf.cluster(item, input_files=input, output_path=output)
-
-# @app.command()
-# def view(
-#     workflow: Annotated[Path, Option("-w", "--workflow", help="path to workflow")],
-# ):
-#     """
-#     View the Collectra workflow
-#     """    
-#     wf = Collectra.load_workflow(workflow)    
-#     for e in wf.crate.get_entities():
-#         print(f"[bold green]Entity:[/bold green] {e.id}") 
-#         print(e.properties())
-
-
-# @app.command()
-# def render(
-#     workflow: Annotated[Path, Argument(help="path to workflow")],
-#     output: Annotated[Path, Argument(help="path to output file")],
-# ):
-#     """
-#     Render the Collectra workflow to a file
-#     """
-#     workflow = CollectraWorkflow(workflow)
-#     workflow.render(output)
-
-#     print(f"[green]Workflow rendered to {output}[/green]")
-
     
 if __name__ == "__main__":
     app()

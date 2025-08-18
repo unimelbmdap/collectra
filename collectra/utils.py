@@ -32,7 +32,7 @@ class BaseROCrate:
         self.crate = crate     
 
 
-def get_all_files(data: List[str], file_format: str) -> List[str]:
+def get_all_files(data: List[str], file_format: str) -> List[Path]:
     """
     Get all files from the provided paths with the specified file format.
     :param data: List of potential file/file paths to search.

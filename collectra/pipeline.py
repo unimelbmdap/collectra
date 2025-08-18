@@ -1,6 +1,7 @@
+
 from rich import print
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict
 import yaml, os, zipfile, shutil
 from .task import Task, ObjectDetectionYOLO, TextClassification
 from .utils import error_msg, success_msg, processing_msg
@@ -12,49 +13,50 @@ class TaskManager:
     Manages tasks in the Collectra workflow.
     """
 
-    VALID_TASKS = {
-        "object_detection": ObjectDetectionYOLO,
-        "text_classification": TextClassification,
-    }
+    VALID_TASKS = [ObjectDetectionYOLO, TextClassification]    
 
     @staticmethod
-    def build(task: str, from_file: bool = False, valid_tasks: list = []) -> Task:
+    def get_valid_tasks() -> List[str]:
+        """
+        Get a list of valid task names.
+        """
+        return [task.__name__ for task in TaskManager.VALID_TASKS]
+
+    @staticmethod
+    def build(task: str | Dict) -> Task:
         """
         Build a Task from a string.
         :param task: The task string in the format "<task>,<task_type>,<model_path>,<model_type>".        
         :raises ValueError: If the task format is invalid or the task type is not recognized
         :return: An instance of Task.
         """
-        if not from_file:
-            task_name, task_type, model_path, model_type = task.split(",")
-            if task_type not in TaskManager.VALID_TASKS:
-                raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {list(TaskManager.VALID_TASKS.keys())}.")
-            task = TaskManager.VALID_TASKS.get(task_type)(task_name, model_path=model_path, model_type=model_type)            
-            return task
-        else:
-            task_type = task["type"].replace("collectra.task.", "")                                                  
-            loc_task = valid_tasks.index(task_type)
-            if loc_task == -1:
+        valid_tasks = TaskManager.get_valid_tasks()
+        if isinstance(task, str):        
+            task_name, task_type, model_path = task.split(",")
+            if task_type not in valid_tasks:
                 raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {valid_tasks}.")
-            TaskClass = list(TaskManager.VALID_TASKS.values())[loc_task]            
-
+            task_class_index = valid_tasks.index(task_type)            
+            TaskClass = TaskManager.VALID_TASKS[task_class_index]
+            return TaskClass(
+                id=task_name, 
+                model=model_path
+            )            
+        else:
+            task_type = task["type"].replace("collectra.task.", "")  
+            if task_type not in valid_tasks:
+                raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {valid_tasks}.")
+            task_class_index = valid_tasks.index(task_type)
+            TaskClass = TaskManager.VALID_TASKS[task_class_index]               
             input = task.get("input", None)
-            output = task.get("output", None)
-
-            if type(input) is str:
-                input = [input]
-            if type(output) is str:
-                output = [output]
-
-            task = TaskClass(
+            input = [input] if isinstance(input, str) else input
+            output = task.get("output", None)                        
+            output = [output] if isinstance(output, str) else output
+            return TaskClass(
                 id=task.get("id"),
-                model_path=task.get("model"),
-                model_type=task.get("model_type"),
+                model=task.get("model"),                
                 input=input if input else [],
                 output=output if output else [],
-            )
-            print(success_msg(f"Loaded task {task.id} of type {task.__class__.__name__} and model {task.model}"))
-            return task            
+            )            
 
 class Collectra:
     
@@ -62,39 +64,32 @@ class Collectra:
             self,
             name: str,
             version: str,            
-            file_format: Optional[str] = None,            
-            description: Optional[str] = "Collectra workflow configuration",
+            file_format: str = "",            
+            description: str = "Collectra workflow configuration",
             config: Optional[dict] = None, 
             **kwargs       
         ):
-        self.name = name
-        self.version = version
-        self.file_format = file_format or name.lower()  # Default to workflow name if not specified        
-        self.description = description
+        self.name: str = name
+        self.version: str = version
+        self.file_format: str = file_format or name.lower()  # Default to workflow name if not specified        
+        self.description: str = description
         self.tasks: list[Task] = []  # Initialize an empty list for tasks        
-        self.as_dir = kwargs.get("as_dir", False)
-        self.working_dir = Path.cwd() / kwargs.get("working_dir", name)
+        self.as_dir: bool = kwargs.get("as_dir", False)
+        self.workflow_directory: Path = Path.cwd() / name
         if config:
             self.load_config(config)
 
-    def load_config(self, config: dict):
+    def load_config(self, config: Dict) -> None:
         """
         Load the configuration from a dictionary.
         
         This method populates the workflow with tasks based on the provided configuration.
         :param config: A dictionary containing the workflow configuration.
-        """
-        valid_tasks = [task_class.__name__ for task_class in TaskManager.VALID_TASKS.values()]        
-        for task_id, task_info in config.items():            
-            task = {
-                "id": task_id,
-                **task_info
-            }
-            task["model"] = Path(self.working_dir) / task["model"] if task.get("model") else None
-            task = TaskManager.build(task, from_file=True, valid_tasks=valid_tasks)
-            if not task:
-                print(error_msg(f"Failed to load task {task_id} of type {task_info['type']} and model {task_info['model']}"))
-                continue
+        """        
+        for id, info in config.items():            
+            task = {"id": id, **info}
+            task["model"] = self.workflow_directory / task["model"] if task.get("model") else None
+            task = TaskManager.build(task)            
             self.tasks.append(task)
             print(success_msg(f"Loaded {task.id} of type {task.__class__.__name__} and model {task.model}"))
         print(success_msg(f"Loaded {len(self.tasks)} tasks from configuration!"))
@@ -117,8 +112,7 @@ class Collectra:
         for task in self.tasks:
             config[task.id] = {
                 "type": f"{task.__class__.__module__}.{task.__class__.__name__}",
-                "model": str(task.model.name),
-                "model_type": task.model.type,                
+                "model": str(task.model.name),                               
             }
             if task.input:
                 config[task.id]["input"] = task.input if len(task.input) > 1 else task.input[0]            
@@ -147,14 +141,13 @@ class Collectra:
         :param task: The task string in the format "<task_type>,<task_name>,<model_type>,<model_name>".
         """
         print("[green]Adding task:[/green]", task)                
-        task = TaskManager.build(task)
+        built_task: Task = TaskManager.build(task)
         for existing_task in self.tasks:
-            if existing_task.id == task.id:
-                print(error_msg(f"Task with ID {task.id} already exists in the workflow."))
-                print(f"Use [purple]collectra edit[/purple] command to modify the task.")
-                task.delete() # Remove the task if it already exists
+            if existing_task.id == built_task.id:
+                print(error_msg(f"Task with ID {built_task.id} already exists in the workflow."))
+                print(f"Use [purple]collectra edit[/purple] command to modify the task.")                
                 return False    
-        self.tasks.append(task)
+        self.tasks.append(built_task)
         return True
 
     def run(self, task_id: str, config: dict = {}):
@@ -241,7 +234,7 @@ class Collectra:
                 new_model_path: Path = task.train()                
                 if new_model_path:
                     task.old_model = task.model
-                    task.model = task.validate_model(new_model_path, task.model.type)                            
+                    task.model = task.load(new_model_path, task.model.type)                            
                 break
         if not found_task:
             raise Exception(error_msg(f"Task with ID {task_id} not found in the workflow."))            
@@ -311,44 +304,44 @@ class Collectra:
         Collectra.save(pipeline, output=output)
     
     @staticmethod
-    def load(pipeline: Path) -> 'Collectra':
+    def load(pipeline: Path) -> "Collectra":
         """
         Load an existing Collectra workflow from a YAML file.
         
         This method reads the workflow configuration from the specified path.
-        """        
-        pipeline_file = pipeline / "pipeline.yaml"                         
-        tmp_path = Path("tmp")
-        try:                        
-            if pipeline.is_dir():            
-                if not pipeline_file.exists():
-                    raise FileNotFoundError(f"[red]Pipeline file not found:[/red] {pipeline_file}")
-                return Collectra.load_yaml(pipeline_file, as_dir=True)
-            
-            if not pipeline.suffix == ".collectra":                
-                raise ValueError(error_msg(f"Invalid file format: {pipeline.suffix}. Must be a .collectra file."))
-                        
-            with zipfile.ZipFile(pipeline, 'r') as zipf:
-                zipf.extractall(member=pipeline_file, path=tmp_path)  # Extract to a temporary directory
-                return Collectra.load_yaml(tmp_path / pipeline_file)  # Load from the extracted file   
-        except Exception as e:
-            print(error_msg(f"Error loading workflow from {pipeline}: {e}"))
-        finally:
-            shutil.rmtree(tmp_path, ignore_errors=True)  # Clean up temporary files 
-    
+        """               
+        if pipeline.is_dir():  # If the pipeline is a directory, load the YAML file directly
+            pipeline_file = pipeline / "pipeline.yaml"  # Get the pipeline configuration file
+            if not pipeline_file.exists():
+                raise FileNotFoundError(f"Pipeline file not found: {pipeline_file}")
+            return Collectra._load_yaml(pipeline_file, as_dir=True)
+
+        if not pipeline.suffix == ".collectra":
+            raise ValueError(f"Invalid file format: {pipeline.suffix}. Must be a .collectra file.")
+
+        pipeline_file = f"{pipeline.name.replace(pipeline.suffix, '')}/pipeline.yaml"  # Extract the pipeline configuration file name
+        with zipfile.ZipFile(pipeline, 'r') as zipf:
+            tmp_path = Path("tmp")  # Temporary directory to extract the pipeline
+            zipf.extractall(members=[pipeline_file], path=tmp_path)  # Extract to a temporary directory                
+        return Collectra._load_yaml(tmp_path / pipeline_file)  # Load from the extracted file                           
+
     @staticmethod
-    def load_yaml(path: Path, **kwargs) -> 'Collectra':
+    def _load_yaml(path: Path, as_dir: bool = False) -> 'Collectra':
         """
         Load an existing Collectra workflow from a YAML file.
         
         This method reads the workflow configuration from the specified path.
-        """        
-        as_dir = kwargs.get("as_dir", False)
-        print(processing_msg(f"Loading workflow from {path} as_dir={as_dir}"))
+
+        :param path: The path to the YAML file containing the workflow configuration.
+        :param as_dir: If True, the workflow is a directory instead of a file. A flag is saved in the Collectra instance.
+
+        """                                
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
-            metadata = data.get("collectra_pipeline_metadata")
-            data.pop("collectra_pipeline_metadata", None)  # Remove metadata from the main config dictionary
+            metadata = data.get("collectra_pipeline_metadata", None)
+            if not metadata:
+                raise ValueError(f"Invalid pipeline file: {path}. Missing 'collectra_pipeline_metadata' section.")
+            data.pop("collectra_pipeline_metadata", None)  # Remove metadata from the main config dictionary for easier loading
             return Collectra(**metadata, config=data, as_dir=as_dir)  # Create a Collectra instance with the loaded data
     
 

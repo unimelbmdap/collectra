@@ -1,82 +1,14 @@
-from __future__ import annotations
+import shutil, os, yaml, zipfile, platform
 from rich import print
 from abc import ABC, abstractmethod
 from pathlib import Path
-from rocrate.rocrate import ROCrate
-from rocrate.model import DataEntity
 from ultralytics import YOLO
 from tqdm import tqdm
-import platform
-from .utils import get_all_files
-from typing import List
+from typing import List, Dict
 from datetime import datetime
-import shutil, os, yaml, zipfile
+
+from .utils import get_all_files
 from .utils import processing_msg, error_msg
-import wandb
-from wandb.integration.ultralytics import add_wandb_callback
-
-class EngineEntity(DataEntity):
-  """
-  Represents an engine entity within a ROCrate structure.
-  
-  This class extends the DataEntity class to provide specialized
-  functionality for machine learning engine metadata storage.
-  """
-  
-  def __init__(self, crate, identifier=None, properties=None):
-    """
-    Initialize an EngineEntity instance.
-    
-    Args:
-        crate: The ROCrate instance this entity belongs to
-        identifier: Optional unique identifier for the entity
-        properties: Optional dictionary of properties for the entity
-    """
-    super(EngineEntity, self).__init__(crate, identifier, properties)
-  
-  def _empty(self):
-    """
-    Return the default empty structure for an engine entity.
-    
-    Returns:
-        dict: Default metadata structure for an engine entity
-    """
-    return {
-        "@id": self.id,
-        "@type": "Engine",
-        "name": "",            
-    }  
-
-class TrainingParameters(DataEntity):
-  """
-  Represents training parameters within a ROCrate structure.
-  
-  This class stores and manages training configuration parameters
-  for machine learning models within a ROCrate metadata framework.
-  """
-  
-  def __init__(self, crate, identifier=None, properties=None):
-    """
-    Initialize a TrainingParameters instance.
-    
-    Args:
-        crate: The ROCrate instance this entity belongs to
-        identifier: Optional unique identifier for the parameters
-        properties: Optional dictionary of training parameter properties
-    """
-    super(TrainingParameters, self).__init__(crate, identifier, properties)
-  
-  def _empty(self):
-    """
-    Return the default empty structure for training parameters.
-    
-    Returns:
-        dict: Default metadata structure for training parameters
-    """
-    return {
-        "@id": self.id,
-        "@type": "TrainingParameters",                        
-    }
 
 class Model(ABC):
   """
@@ -87,24 +19,22 @@ class Model(ABC):
   validate, detect, and manage machine learning models.
   
   Attributes:
-      DEFAULT_CONFIG (dict): Default configuration parameters for the model
+      DEFAULT_CONFIG (Dict): Default configuration parameters for the model
   """
   
-  DEFAULT_CONFIG: dict = {}
+  DEFAULT_CONFIG: Dict = {}
 
-  def __init__(self, name: str | Path, config: dict = {}):
+  def __init__(self, path: str | Path, config: Dict = {}):
     """
     Initialize a Model instance.
 
     Args:
-        name (str | Path): Name or path to the model file
+        model (str | Path): Name or path to the model file
         config (dict, optional): Configuration parameters for the model.
                                Defaults to empty dict.
-    """
-    self.name: Path = Path(name)
-    self.config: dict = {**self.DEFAULT_CONFIG, **config}
-    self.model = None
-    self.type = "generic"
+    """    
+    self.path: Path = Path(path)
+    self.config: Dict = {**self.DEFAULT_CONFIG, **config}        
 
   def __str__(self) -> str:
     """
@@ -113,24 +43,15 @@ class Model(ABC):
     Returns:
         str: String representation showing the model name
     """
-    return f"{self.name.name}"  
-
-  def __str__(self) -> str:
-    """
-    Return string representation of the model.
-
-    Returns:
-        str: String representation showing the model name
-    """
-    return f"{self.name.name}"  
+    return f"{self.path.name}"  
 
   def get_path(self) -> Path:
-    return self.name
+    return self.path
 
   def delete(self) -> None:
-    if self.name and self.name.exists():
-      os.remove(self.name)  
-  
+    if self.path and self.path.exists():
+      os.remove(self.path)
+
   @abstractmethod
   def train(self, config: dict = {}) -> Path | None:
     """
@@ -156,7 +77,7 @@ class Model(ABC):
     pass
 
   @abstractmethod
-  def detect(self, data: Path) -> None:
+  def detect(self, config: dict = {}) -> None:
     """
     Run inference/detection on the provided data.
     
@@ -193,22 +114,18 @@ class YOLOModel(Model):
     "verbose": True,   # Enable verbose output during training    
   }
 
-  def __init__(self, name: str | Path = "yolo11n.pt", config: dict = {}):
+  def __init__(self, path: str | Path, config: dict = {}):
     """
     Initialize a YOLOModel instance.
 
     Args:
-        name (str | Path, optional): Path to the YOLO model file.
-                                   Defaults to "yolo11n.pt".
-        config (dict, optional): Configuration parameters for the model.
-                                Defaults to empty dict.
+        name (str | Path, optional): Path to the YOLO model file.                                   
+        config (dict, optional): Configuration parameters for the model.                                
     """
-    super().__init__(name, config)
-    print(processing_msg(f"Loading YOLO model with path {self.name}"))
-    self.model: YOLO = YOLO(self.name, verbose=True)
-    self.type: str = "yolo"
-    self.yolo_config_path: str = "yolo_config.yml"
-    self.dir: Path = None  # Working directory for training files
+    super().__init__(path, config)
+    print(processing_msg(f"Loading YOLO model with path {path}"))
+    self.model = YOLO(path, verbose=True)    
+    self.yolo_config_path: str = "config.yml"    
 
   def train(self, config: dict = {}) -> Path:
     """Train the YOLO model with given configuration."""
@@ -330,7 +247,7 @@ class YOLOModel(Model):
     return train_files, val_files
 
   def preprocess(self, data: Path, inputs: list[str], classes: list[str], file_format: str, validation: bool = False) -> None:      
-    files = get_all_files(data, file_format)    
+    files: List[Path] = get_all_files(data, file_format)    
     data_files = []        
     for file in tqdm(files, desc="Processing files for YOLO training"):
       if file.is_file():
@@ -347,7 +264,7 @@ class YOLOModel(Model):
     train_files, val_files = self._prepare_annotations(data_files, classes=classes)          
     self._prepare_yolo_config(train_files, val_files, classes, validation=validation)    
   
-  def val(self, config: dict) -> None:
+  def val(self, config: dict = {}) -> None:
     """
     Validate the YOLO model performance.        
     """    
@@ -488,47 +405,6 @@ class YOLOModel(Model):
     output.mkdir(parents=True, exist_ok=True)            
     log = output / "yolo.log" if not eval else output / "eval.log"              
     log.write_text(f"{config.get('task')}\n Training results: {train_results} \n Validation metrics: {metrics}")
-    
-  def to_crate(self, crate: ROCrate) -> EngineEntity:
-    """
-    Convert the YOLO engine to a ROCrate entity for metadata storage.
-    
-    This method creates a ROCrate representation of the YOLO engine,
-    including the model file and training parameters, for use in
-    research data management and reproducibility.
-    
-    Args:
-        crate (ROCrate): The ROCrate instance to add the engine to
-        
-    Returns:
-        EngineEntity: The created engine entity with complete metadata
-        
-    Raises:
-        ValueError: If the model file does not exist
-    """            
-    model_path = Path(self.name)
-    
-    # Validate model file exists
-    if not model_path.exists():
-      raise ValueError(f"[bold red]Model file does not exist[/bold red]: {model_path}")
-    
-    # Add model file to ROCrate with metadata
-    engine_crate = crate.add_file(model_path, properties={
-      "name": f"{model_path}",    
-      "engine_type": self.type  
-    })
-    engine_crate["name"] = engine_crate.id
-    
-    # Create training parameters entity
-    training_params = TrainingParameters(crate, identifier=f"{engine_crate.id}-training-params", properties=self.DEFAULT_CONFIG)
-    
-    # Add entities to crate and link them               
-    crate.add(engine_crate)     
-    crate.add(training_params)
-    engine_crate["trainingParameters"] = [training_params]
-    
-    return engine_crate  
-
 
 class DETECTRON2Engine(Model):
     """
@@ -610,23 +486,6 @@ class DETECTRON2Engine(Model):
       print(f"[bold green]Preprocessing data for DETECTRON2[/bold green]: {data}")
       # TODO: Implement Detectron2 preprocessing logic here
       pass
-    
-    def to_crate(self, crate: ROCrate) -> EngineEntity:
-      """
-      Convert DETECTRON2 engine to ROCrate entity (placeholder implementation).
-      
-      This method should create a ROCrate representation of the Detectron2
-      engine including model files, configuration, and metadata.
-      
-      Args:
-          crate (ROCrate): The ROCrate instance to add the engine to
-          
-      Returns:
-          EngineEntity: The created engine entity with metadata
-      """
-      # TODO: Implement ROCrate conversion for Detectron2
-      pass
-
 
 class ImageClassifier(Model):
     """
@@ -695,23 +554,6 @@ class ImageClassifier(Model):
       """
       print(f"[bold green]Validating image classifier[/bold green]: {self.name}")
       # TODO: Implement image classifier validation logic
-      pass
-
-    def to_crate(self, crate: ROCrate) -> EngineEntity:
-      """
-      Convert image classifier to ROCrate entity (placeholder implementation).
-      
-      This method should create a ROCrate representation of the image
-      classification engine including model files, training parameters,
-      and classification metadata.
-      
-      Args:
-          crate (ROCrate): The ROCrate instance to add the engine to
-          
-      Returns:
-          EngineEntity: The created engine entity with metadata
-      """
-      # TODO: Implement ROCrate conversion for image classifier
       pass
 
     def preprocess(self, data: Path, file_format: str) -> None:

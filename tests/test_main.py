@@ -5,6 +5,7 @@ from collectra.models.task import DetectObject
 from collectra.models.engine import YOLOEngine, ImageClassifier
 from collectra.main import app
 from collectra.models.workflow import Collectra
+from typer.testing import CliRunner
 
 TEST_DATA = Path(__file__).parent/"testworkflow"
 TEST_FILES = [str(file) for file in TEST_DATA.glob("*.hespi")]
