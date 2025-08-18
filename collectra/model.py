@@ -408,8 +408,7 @@ class YOLOModel(Model):
     # Prepare training parameters
     train_params = {
       "data": Path(f"{self.dir}/{self.yolo_config_path}"),
-      "project": config.get("task", "yolo_training"),
-      "name": self.dir
+      "project": self.dir
     }
     if config.get("epochs", None):
       train_params["epochs"] = int(config.get("epochs", self.DEFAULT_CONFIG["epochs"]))

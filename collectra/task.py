@@ -123,12 +123,7 @@ class ObjectDetectionYOLO(Task):
       "detectron2": DETECTRON2Engine,
   }      
 
-  VALID_INPUTS =  ["specimen_sheet"]
-  VALID_OUTPUTS = ["primary_specimen_label", "handwritten_data",
-                   "annotation_label", "stamp", "swing_tag",
-                   "accession_number", "small_database_label",
-                   "medium_database_label", "full_database_label",
-                   "swatch", "scale", "institutional label", "swing tag", "annotation label", "handwritten data", "number"]
+  VALID_INPUTS =  ["specimen_sheet"]  
 
   def run(self) -> None:    
     if not self.model:

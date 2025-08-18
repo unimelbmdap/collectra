@@ -118,10 +118,12 @@ class Collectra:
             config[task.id] = {
                 "type": f"{task.__class__.__module__}.{task.__class__.__name__}",
                 "model": str(task.model.name),
-                "model_type": task.model.type,
-                "input": task.input if len(task.input) > 1 else task.input[0],
-                "output": task.output if len(task.output) > 1 else task.output[0],
+                "model_type": task.model.type,                
             }
+            if task.input:
+                config[task.id]["input"] = task.input if len(task.input) > 1 else task.input[0]            
+            if task.output:
+                config[task.id]["output"] = task.output if len(task.output) > 1 else task.output[0]                
 
         return config
 
