@@ -146,60 +146,65 @@ class Collectra:
     def run(self, task_id: str, config: dict = {}):
         found_task = False
         for task in self.tasks:
-            if task.id == task_id:
-                found_task = True
-                print(processing_msg(f"Detecting task: {task.id}"))
-                task.set_config({
-                    **config,
-                    "file_format": self.file_format,
-                    "task": task.id,
-                    "input": task.input or [],
-                    "output": task.output or [],                    
-                })                
-                results = task.run()
-                names = []
-                if results:
-                    for result in results:     
-                        image_file = Path(result.get("image"))  # type: ignore 
-                        output_yaml = {
-                            "collectra_results_metadata": {
-                                "timestamp": datetime.now(pytz.utc).isoformat(),
-                                "validation": False,
-                            },
-                            "specimen_sheet":{
-                                "type": "Image",
-                                "path": image_file.name,                                
-                            },                            
-                        }                 
-                        classification_results = result.get("results", [])                        
-                        if classification_results:                            
-                            for cls_result in classification_results:                                                            
-                                coordinates = cls_result.boxes.xywhn
-                                names = [cls_result.names[cls.item()] for cls in cls_result.boxes.cls.int()]
-                                for index in range(len(coordinates)):
-                                    x,y,w,h = coordinates[index]
-                                    output_yaml[names[index]] = { 
-                                        "type": "ImageCrop",
-                                        "image": "specimen_sheet",                                       
-                                        "x_center": float(x),
-                                        "y_center": float(y),
-                                        "width_relative": float(w),
-                                        "height_relative": float(h),
-                                    }                                                                                                
-                            path = Path(f"output/{image_file.stem}.{self.file_format}")
-                            path.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists                            
-                            # Copy the image to the output directory                                                        
-                            shutil.copy(image_file, path / image_file.name)  
-                            with open(path / "results.yaml", 'w') as f:
-                                for key in output_yaml:
-                                    f.write(yaml.dump({key: output_yaml[key]}, default_flow_style=False, sort_keys=False))
-                                    f.write("\n")
-                            cls_result.save_crop(save_dir=path)   
-                            self.as_dir = config.get("as_dir", self.as_dir)  # Use the as_dir flag from the config if provided
-                            if not self.as_dir:
-                                shutil.make_archive(path, 'zip', path)  # Create a zip archive of the results     
-                                shutil.rmtree(path)  # Remove the directory after zipping
-                                os.rename(f"{path}.zip", path.parent / f"{path.name}")
+            if found_task:
+                break
+            if task.id != task_id:
+                continue
+            found_task = True
+            print(processing_msg(f"Detecting task: {task.id}"))
+            task.set_config({
+                **config,
+                "file_format": self.file_format,
+                "task": task.id,
+                "input": task.input or [],
+                "output": task.output or [],                    
+            })                
+            results = task.run()
+            names = []
+            if not results:
+                continue
+            for result in results:     
+                image_file = Path(result.get("image"))  # type: ignore 
+                output_yaml = {
+                    "collectra_results_metadata": {
+                        "timestamp": datetime.now(pytz.utc).isoformat(),
+                        "validation": False,
+                    },
+                    "specimen_sheet":{
+                        "type": "Image",
+                        "path": image_file.name,                                
+                    },                            
+                }                 
+                classification_results = result.get("results", [])                        
+                if not classification_results:    
+                    continue                        
+                for cls_result in classification_results:                                                            
+                    coordinates = cls_result.boxes.xywhn
+                    names = [cls_result.names[cls.item()] for cls in cls_result.boxes.cls.int()]
+                    for index in range(len(coordinates)):
+                        x,y,w,h = coordinates[index]
+                        output_yaml[names[index]] = { 
+                            "type": "ImageCrop",
+                            "image": "specimen_sheet",                                       
+                            "x_center": float(x),
+                            "y_center": float(y),
+                            "width_relative": float(w),
+                            "height_relative": float(h),
+                        }                                                                                                
+                path = Path(f"output/{image_file.stem}.{self.file_format}")
+                path.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists                            
+                # Copy the image to the output directory                                                        
+                shutil.copy(image_file, path / image_file.name)  
+                with open(path / "results.yaml", 'w') as f:
+                    for key in output_yaml:
+                        f.write(yaml.dump({key: output_yaml[key]}, default_flow_style=False, sort_keys=False))
+                        f.write("\n")
+                cls_result.save_crop(save_dir=path)   
+                self.as_dir = config.get("as_dir", self.as_dir)  # Use the as_dir flag from the config if provided
+                if not self.as_dir:
+                    shutil.make_archive(path, 'zip', path)  # Create a zip archive of the results     
+                    shutil.rmtree(path)  # Remove the directory after zipping
+                    os.rename(f"{path}.zip", path.parent / f"{path.name}")
 
         if not found_task:
             raise Exception(error_msg(f"Task with ID {task_id} not found in the workflow."))
@@ -245,21 +250,27 @@ class Collectra:
         print(success_msg(f"Workflow {self.name}.collectra saved to {output_dir}"))
 
     def __save_data_assets(self, output_folder: Path):
-        for task in self.tasks:            
-            model_path = task.get_model().get_path()
+        for task in self.tasks: 
+            if not isinstance(task, MachineLearningTask):           
+                continue
+            model = task.get_model()                
+            if not model:
+                print(error_msg(f"Task {task.id} does not have a model associated with it. Skipping..."))
+                continue
+            model_path = model.get_path()
             if not model_path.is_file():
-                print(error_msg(f"Model path does not point to a file: {model_path}"))
+                print(error_msg(f"Model path does not point to a valid file: {model_path}. Skipping..."))
                 continue
             if model_path != output_folder / model_path.name:
                 print(processing_msg(f"Copying model {model_path} to {output_folder / model_path.name}"))
                 shutil.copy(model_path, output_folder / model_path.name)
                 print(processing_msg(f"Removing unneeded artifact: {model_path}"))
                 os.remove(model_path)  # Remove the original file after copying
-                if task.old_model and task.old_model.name.name != model_path.name:                    
-                    print(processing_msg(f"Removing old model file: {task.old_model.name}"))
-                    os.remove(task.old_model.name)  # Remove the old model if it exists
-                task.model.name = model_path.name  # Update the model name to the new path
-                        
+                if task.old_model and task.old_model.path.name != model_path.name:
+                    print(processing_msg(f"Removing old model file: {task.old_model.path}"))
+                    os.remove(task.old_model.path)  # Remove the old model if it exists
+                task.model.path = Path(model_path.name)  # Update the model path to the new path
+
     def __save_pipeline_config(self, output_folder: Path):
         output_file = output_folder / "pipeline.yaml"
         config_file = self.get_yaml()

@@ -86,7 +86,7 @@ class MachineLearningTask(Task):
   def get_model(self) -> Model | None:
     """
     Get the model associated with the task.
-    :return: The Engine instance if set, otherwise None.
+    :return: The Model instance if set, otherwise None.
     """
     return self.model
 
