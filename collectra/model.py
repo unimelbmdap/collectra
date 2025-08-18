@@ -77,7 +77,7 @@ class Model(ABC):
     pass
 
   @abstractmethod
-  def detect(self, config: dict = {}) -> None:
+  def detect(self, config: dict = {}) -> List[Dict]:
     """
     Run inference/detection on the provided data.
     
@@ -280,8 +280,8 @@ class YOLOModel(Model):
       return None    
     metrics = val_results = self._execute_validation(merged_config)
     self._save_results(merged_config, val_results, metrics, eval=True)
-  
-  def detect(self, config: dict = {}) -> None:
+
+  def detect(self, config: dict = {}) -> List[Dict]:
     """
     Run object detection inference on provided data.
     

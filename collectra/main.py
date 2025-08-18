@@ -43,7 +43,7 @@ def render(
     try:
         print(f"Rendering workflow [green]{workflow}[/green] to {output}")
         pipeline = Collectra.load(workflow)        
-        pprint.pprint(pipeline.get_metadata())
+        pprint.pprint(pipeline.metadata())
         pprint.pprint(f"List of tasks: {pipeline.tasks}")
         print(success_msg(f"Finished rendering from {pipeline}"))                 
     except Exception as e:

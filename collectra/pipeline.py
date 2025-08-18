@@ -3,7 +3,7 @@ from rich import print
 from pathlib import Path
 from typing import Optional, List, Dict
 import yaml, os, zipfile, shutil
-from .task import Task, ObjectDetectionYOLO, TextClassification
+from .task import Task, MachineLearningTask, ObjectDetectionYOLO, TextClassification
 from .utils import error_msg, success_msg, processing_msg
 from datetime import datetime
 import pytz
@@ -31,32 +31,25 @@ class TaskManager:
         :return: An instance of Task.
         """
         valid_tasks = TaskManager.get_valid_tasks()
+        input, output = [], []  # Initialize input and output as empty lists
+        task_name, task_type, model_path = "", "", ""  # Initialize variables for task name, type, and model path
         if isinstance(task, str):        
-            task_name, task_type, model_path = task.split(",")
-            if task_type not in valid_tasks:
-                raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {valid_tasks}.")
-            task_class_index = valid_tasks.index(task_type)            
-            TaskClass = TaskManager.VALID_TASKS[task_class_index]
-            return TaskClass(
-                id=task_name, 
-                model=model_path
-            )            
+            task_name, task_type, model_path = task.split(",")                                    
         else:
-            task_type = task["type"].replace("collectra.task.", "")  
-            if task_type not in valid_tasks:
-                raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {valid_tasks}.")
-            task_class_index = valid_tasks.index(task_type)
-            TaskClass = TaskManager.VALID_TASKS[task_class_index]               
-            input = task.get("input", None)
+            task_name, task_type, model_path = task.get("id"), task["type"].replace("collectra.task.", ""), task.get("model")
+            input, output = task.get("input", None), task.get("output", None)
             input = [input] if isinstance(input, str) else input
-            output = task.get("output", None)                        
             output = [output] if isinstance(output, str) else output
-            return TaskClass(
-                id=task.get("id"),
-                model=task.get("model"),                
-                input=input if input else [],
-                output=output if output else [],
-            )            
+        if task_type not in valid_tasks:
+            raise ValueError(f"[bold red]Invalid task type[/bold red]: {task_type}. Must be one of {valid_tasks}."  )
+        task_class_index = valid_tasks.index(task_type)    
+        TaskClass = TaskManager.VALID_TASKS[task_class_index]
+        return TaskClass(
+            id=task_name, 
+            model=model_path,
+            input=input if input else [],
+            output=output if output else [],
+        )        
 
 class Collectra:
     
@@ -110,18 +103,18 @@ class Collectra:
         }
     
         for task in self.tasks:
-            config[task.id] = {
-                "type": f"{task.__class__.__module__}.{task.__class__.__name__}",
-                "model": str(task.model.name),                               
-            }
-            if task.input:
-                config[task.id]["input"] = task.input if len(task.input) > 1 else task.input[0]            
+            task_key: str = str(task.id)
+            config[task_key] = { "type": f"{task.__class__.__module__}.{task.__class__.__name__}"}
+            if isinstance(task, MachineLearningTask):                
+                config[task_key]["model"] = str(task.model.path) if task.model else ""
+            if task.input:                   
+                config[task_key]["input"] = task.input if len(task.input) > 1 else task.input[0]  # type: ignore
             if task.output:
-                config[task.id]["output"] = task.output if len(task.output) > 1 else task.output[0]                
+                config[task_key]["output"] = task.output if len(task.output) > 1 else task.output[0] # type: ignore    
 
         return config
 
-    def get_metadata(self):
+    def metadata(self):
         """
         Retrieve the metadata of the current workflow.
         
@@ -133,7 +126,7 @@ class Collectra:
             "file_format": self.file_format      
         }    
     
-    def add(self, task: str, task_input: str = None, task_output: List[str] = []) -> bool:
+    def add(self, task: str, task_input: str = "", task_output: List[str] = []) -> bool:
         """
         Add a task to the workflow.
         
@@ -167,7 +160,7 @@ class Collectra:
                 names = []
                 if results:
                     for result in results:     
-                        image_file = Path(result.get("image"))      
+                        image_file = Path(result.get("image"))  # type: ignore 
                         output_yaml = {
                             "collectra_results_metadata": {
                                 "timestamp": datetime.now(pytz.utc).isoformat(),

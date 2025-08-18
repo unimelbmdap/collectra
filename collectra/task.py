@@ -44,7 +44,7 @@ class Task(ABC):
     self.config.update(config)  
 
   @abstractmethod
-  def run(self) -> None:
+  def run(self) -> List[Dict] | None:
     """
     Run the task.
     This method should be implemented by subclasses.
@@ -104,7 +104,7 @@ class MachineLearningTask(Task):
     """
     self.model = None
   
-  def run(self) -> None:    
+  def run(self) -> List[Dict]:    
     if not self.model:
       raise ValueError("Model must be set before running the task.")
     return self.model.detect(self.config)
