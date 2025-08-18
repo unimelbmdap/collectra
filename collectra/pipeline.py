@@ -137,7 +137,7 @@ class Collectra:
             "file_format": self.file_format      
         }    
     
-    def add(self, task: str, task_input: str, task_output: List[str]) -> bool:
+    def add(self, task: str, task_input: str = None, task_output: List[str] = []) -> bool:
         """
         Add a task to the workflow.
         
@@ -145,7 +145,7 @@ class Collectra:
         :param task: The task string in the format "<task_type>,<task_name>,<model_type>,<model_name>".
         """
         print("[green]Adding task:[/green]", task)                
-        task = TaskManager.build(task, task_input=task_input, task_output=task_output)
+        task = TaskManager.build(task)
         for existing_task in self.tasks:
             if existing_task.id == task.id:
                 print(error_msg(f"Task with ID {task.id} already exists in the workflow."))

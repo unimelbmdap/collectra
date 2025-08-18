@@ -49,8 +49,8 @@ def render(
 def add(
     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
     task: Annotated[str, Option("--task", "-t", help="task to add. It should be a valid task: task_type,task_name,engine_type,engine_name")],
-    task_input: Annotated[str, Option("--input", "-i", help="valid input name for the task")],
-    task_output: Annotated[List[str], Option("--output", "-o", help="valid output name for the task")],
+    task_input: Annotated[str, Option("--input", "-i", help="valid input name for the task")] = None,
+    task_output: Annotated[List[str], Option("--output", "-o", help="valid output name for the task")] = None,
 ):
     """
     Add a task to the Collectra workflowj
