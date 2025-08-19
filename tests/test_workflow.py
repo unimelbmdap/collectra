@@ -1,6 +1,6 @@
 import re
 from typer.testing import CliRunner
-from collectra.pipeline import Collectra
+from collectra.pipeline import CollectraManager
 
 from .test_main import (
     TEST_FILES_STR,
@@ -10,7 +10,7 @@ from .test_main import (
 runner = CliRunner()
 
 def run_app(command:str):
-    workflow = Collectra.load_workflow(DUMMY_WORKFLOW)
+    workflow = CollectraManager.load_workflow(DUMMY_WORKFLOW)
     app = workflow.app()
     return runner.invoke(app, command.split())
 

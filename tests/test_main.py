@@ -4,7 +4,7 @@ from typer.testing import CliRunner
 from collectra.task import ObjectDetectionYOLO
 from collectra.model import YOLOModel, ImageClassifier
 from collectra.main import app
-from collectra.pipeline import Collectra
+from collectra.pipeline import CollectraManager
 
 TEST_DATA = Path(__file__).parent/"testworkflow"
 TEST_FILES = [str(file) for file in TEST_DATA.glob("*.hespi")]
@@ -37,7 +37,7 @@ def make_workflow(dummy_workflow):
     task_string = ",".join(DUMMY_TASK_INPUT.values())
     result = run_app(f"add -w {dummy_workflow} -t {task_string}")
     assert result.exit_code == 0, f"Add task {task_string} should succeed"
-    myworkflow = Collectra.load_workflow(dummy_workflow)
+    myworkflow = CollectraManager.load_workflow(dummy_workflow)
     return myworkflow
 
 # def test_detect_object_task_and_engine_add():

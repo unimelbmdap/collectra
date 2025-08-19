@@ -1,6 +1,6 @@
 import pytest, os
 from collectra.model import YOLOModel
-from collectra.pipeline import Collectra
+from collectra.pipeline import CollectraManager
 from pathlib import Path
 import shutil
 
@@ -15,13 +15,13 @@ def test_yolo_model_run():
         "file_format": "hespi"
     }
     model = YOLOModel(name="yolo11n.pt")
-    os.makedirs(Collectra.TEMPORARY_DIR, exist_ok=True)
+    os.makedirs(CollectraManager.TEMPORARY_DIR, exist_ok=True)
     model.preprocess(Path(config.get("input")), "hespi")
-    yolo_config_file = Path(Collectra.TEMPORARY_DIR) / "yolo_config.yml"
-    train_file = Path(Collectra.TEMPORARY_DIR) / "train.txt"
-    val_file = Path(Collectra.TEMPORARY_DIR) / "val.txt"
+    yolo_config_file = Path(CollectraManager.TEMPORARY_DIR) / "yolo_config.yml"
+    train_file = Path(CollectraManager.TEMPORARY_DIR) / "train.txt"
+    val_file = Path(CollectraManager.TEMPORARY_DIR) / "val.txt"
     assert yolo_config_file.exists(), "YOLO config file should be created"
     assert train_file.exists(), "Train file should be created"
     assert val_file.exists(), "Validation file should be created"
-    shutil.rmtree(Collectra.TEMPORARY_DIR, ignore_errors=True)
+    shutil.rmtree(CollectraManager.TEMPORARY_DIR, ignore_errors=True)
     

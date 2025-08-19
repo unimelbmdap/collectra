@@ -3,7 +3,7 @@ from typing_extensions import Annotated
 from typing import List
 from rich import print
 from pathlib import Path
-from .pipeline import Collectra
+from .pipeline import CollectraManager
 from .utils import success_msg, error_msg
 import json
 
@@ -15,7 +15,7 @@ def make(
     pipeline: Annotated[str, Option("--workflow", "-w", help="name of the workflow")],
     version: Annotated[str, Option("--version", "-v", help="version of the workflow")],
     file_format: Annotated[str, Option("--file-format", "-f", help="File format for the workflow, e.g., grapto, json, yaml")] = "",    
-    output: Annotated[
+    out_dir: Annotated[
         Path, Option("--output", "-o", help="Output directory for the workflow")
     ] = Path.cwd(),
     as_dir: Annotated[bool, Option("--as-dir", help="Create the workflow as a directory instead of a file")] = False,
@@ -23,14 +23,14 @@ def make(
     """
     Create a new Collectra workflow with the specified name and file format.
     """            
-    Collectra.make(
+    CollectraManager.make(
         name=pipeline,
         version=version,        
         file_format=file_format,
-        out_dir=output,
+        out_dir=out_dir,
         as_dir=as_dir,        
     )
-    print(success_msg(f"Workflow '{pipeline}' created at {output}"))
+    print(success_msg(f"Workflow '{pipeline}' created at {out_dir}"))
 
 @app.command()
 def render(
@@ -42,7 +42,7 @@ def render(
     """
     try:
         print(f"Rendering workflow [green]{workflow}[/green] to {output}")
-        pipeline = Collectra.load(workflow)        
+        pipeline = CollectraManager.load(workflow)
         print(json.dumps(pipeline.metadata(), indent=2))
         if pipeline.tasks:
             print(f"Tasks in the pipeline:")        
@@ -62,7 +62,7 @@ def add(
     Add a task to the Collectra workflowj
     """    
     try:
-        Collectra.load(workflow).add(task, task_input, task_output).save()                    
+        CollectraManager.load(workflow).add(task, task_input, task_output).save()                    
     except Exception as e:
         print(error_msg(f"Failed to add task: {e}"))
 

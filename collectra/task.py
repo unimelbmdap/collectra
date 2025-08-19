@@ -134,11 +134,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
 
 class TextClassification(MachineLearningTask):
   VALID_MODEL = ImageClassifier
-        
-VALID_TASKS = [ 
-  ObjectDetectionYOLO, 
-  TextClassification,
-]
+      
 
 
   
