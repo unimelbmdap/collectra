@@ -5,15 +5,15 @@ from rich import print
 from pathlib import Path
 from .pipeline import Collectra
 from .utils import success_msg, error_msg
-import pprint, shutil
+import json
 
 app = Typer()
 
 
 @app.command()
 def make(
-    pipeline: Annotated[str, Option("--workflow", "-w", help="name of the workflow")] = "default",
-    version: Annotated[str, Option("--version", "-v", help="version of the workflow")] = "1.0",
+    pipeline: Annotated[str, Option("--workflow", "-w", help="name of the workflow")],
+    version: Annotated[str, Option("--version", "-v", help="version of the workflow")],
     file_format: Annotated[str, Option("--file-format", "-f", help="File format for the workflow, e.g., grapto, json, yaml")] = "",    
     output: Annotated[
         Path, Option("--output", "-o", help="Output directory for the workflow")
@@ -25,10 +25,10 @@ def make(
     """            
     Collectra.make(
         name=pipeline,
-        version=version,
-        output=output,
+        version=version,        
         file_format=file_format,
-        as_dir=as_dir,
+        out_dir=output,
+        as_dir=as_dir,        
     )
     print(success_msg(f"Workflow '{pipeline}' created at {output}"))
 
@@ -43,30 +43,26 @@ def render(
     try:
         print(f"Rendering workflow [green]{workflow}[/green] to {output}")
         pipeline = Collectra.load(workflow)        
-        pprint.pprint(pipeline.metadata())
-        pprint.pprint(f"List of tasks: {pipeline.tasks}")
-        print(success_msg(f"Finished rendering from {pipeline}"))                 
+        print(json.dumps(pipeline.metadata(), indent=2))
+        if pipeline.tasks:
+            print(f"Tasks in the pipeline:")        
+        for task in pipeline.tasks:
+            print(json.dumps(task.metadata(), indent=2))                      
     except Exception as e:
-        print(error_msg(f"{e}"))    
-    finally:
-        tmp_path = Path("tmp")
-        if tmp_path.exists():
-            shutil.rmtree(tmp_path, ignore_errors=True)  # Clean up temporary files   
+        print(error_msg(f"{e}"))             
 
 @app.command()
 def add(
     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
     task: Annotated[str, Option("--task", "-t", help="task to add. It should be a valid task: task_type,task_name,engine_type,engine_name")],
-    task_input: Annotated[str, Option("--input", "-i", help="valid input name for the task")] = "",
-    task_output: Annotated[List[str], Option("--output", "-o", help="valid output name for the task")] = [],
+    task_input: Annotated[List[str], Option("--input", "-i", help="valid input name for the task")] = [],
+    task_output: Annotated[List[str], Option(help="valid output name for the task")] = [],
 ):
     """
     Add a task to the Collectra workflowj
     """    
     try:
-        pipeline = Collectra.load(workflow)            
-        if pipeline.add(task):
-            pipeline.save()         
+        Collectra.load(workflow).add(task, task_input, task_output).save()                    
     except Exception as e:
         print(error_msg(f"Failed to add task: {e}"))
 

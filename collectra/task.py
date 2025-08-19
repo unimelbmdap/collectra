@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import uuid
-from typing import Dict, List
+from typing import Dict, List, Optional
 from rich import print
 from pathlib import Path
 from .model import Model, YOLOModel, ImageClassifier
@@ -11,12 +11,15 @@ class Task(ABC):
     id: str,     
     input: List[str] = [], 
     output: List[str] = [], 
-    config: Dict = {} 
+    config: Dict = {} ,
+    model: str | Path = ""
   ):
-    self.id = id if id else uuid.uuid4()                       
-    self.input = input 
+    self.id = id
+    self.input = input
     self.output = output
-    self.config = config
+    self.config = config    
+    self.model: str = str(model)
+    self.old_model: str = ""
   
   def metadata(self) -> Dict:
     """
@@ -26,6 +29,9 @@ class Task(ABC):
     return {
         "id": self.id,                
         "config": self.config,
+        "input": self.input,
+        "output": self.output,
+        "model": self.model,        
     }
   
   def __str__(self) -> str:
@@ -50,7 +56,13 @@ class Task(ABC):
     This method should be implemented by subclasses.
     """
     raise NotImplementedError("Subclasses must implement this method.")
-    
+  
+  def get_model(self) -> str:
+    """
+    Get the model associated with the task.
+    :return: The model path as a string.
+    """
+    return str(self.model)
 
 class MachineLearningTask(Task):
 
@@ -63,9 +75,7 @@ class MachineLearningTask(Task):
     output: List[str] = [], 
     config: Dict = {} 
   ):
-    super().__init__(id, input, output, config)            
-    self.old_model = None   
-    self.model = self.load(model)    
+    super().__init__(id, input, output, config, model=model)                
 
   def metadata(self) -> Dict:
     """
@@ -74,7 +84,7 @@ class MachineLearningTask(Task):
     """
     return {
         "id": self.id,        
-        "model": self.model.name if self.model else None,
+        "model": str(self.model) if self.model else None,
         "config": self.config,
     }             
   
@@ -82,13 +92,6 @@ class MachineLearningTask(Task):
     if not self.VALID_MODEL or not model:
       raise Exception("No valid model type defined for this task or model path is empty.")
     return self.VALID_MODEL(model)      
-
-  def get_model(self) -> Model | None:
-    """
-    Get the model associated with the task.
-    :return: The Model instance if set, otherwise None.
-    """
-    return self.model
 
   def add_model(self, model: Path) -> Model:
     """
@@ -102,7 +105,7 @@ class MachineLearningTask(Task):
     Delete the model associated with the task.
     This method sets the model to None.
     """
-    self.model = None
+    self.model = ""
   
   def run(self) -> List[Dict]:    
     if not self.model:
@@ -132,8 +135,10 @@ class ObjectDetectionYOLO(MachineLearningTask):
 class TextClassification(MachineLearningTask):
   VALID_MODEL = ImageClassifier
         
-  
-
+VALID_TASKS = [ 
+  ObjectDetectionYOLO, 
+  TextClassification,
+]
 
 
   

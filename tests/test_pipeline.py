@@ -35,3 +35,22 @@ class TestPipeline:
         result = self.call(f"render -w {self.dummy_workflow}")
         assert result.exit_code == 0, "Rendering should be successful for directory workflow"
         assert "Finished rendering" in result.output, "Output should contain rendering message for directory workflow"
+    
+    def test_pipeline_add_task(self):
+        """Test adding a task to the pipeline."""
+        self.make_workflow(self.dummy_workflow, "hespi")
+        result = self.call(f"add -w {self.dummy_workflow}.collectra -t label_detect,ObjectDetectionYOLO,yolo11n.pt")
+        assert result.exit_code == 0, "Adding task should be successful"
+        assert "Task with ID label_detect added to the workflow" in result.output, "Output should confirm task addition"
+        result = self.call(f"add -w {self.dummy_workflow}.collectra -t label_detect,ObjectDetectionYOLO,yolo11n.pt")
+        assert result.exit_code == 0, "Adding duplicate task should be successful"
+        assert "Task name is empty or already exists" in result.output, "Output should confirm duplicate task handling"        
+    
+    # def test_pipeline_train_task(self):
+    #     """Test training a task in the pipeline."""
+    #     self.make_workflow(self.dummy_workflow, "hespi")
+    #     result = self.call(f"add -w {self.dummy_workflow}.collectra -t label_detect,ObjectDetectionYOLO,yolo11n.pt")
+    #     assert result.exit_code == 0, "Adding task should be successful"
+    #     result = self.call(f"train -w {self.dummy_workflow}.collectra -t label_detect")
+    #     assert result.exit_code == 0, "Training task should be successful"
+    #     assert "Training task label_detect completed successfully" in result.output, "Output should confirm task training completion"
