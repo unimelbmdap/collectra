@@ -1,22 +1,22 @@
 import pytest, os
-from collectra.models.engine import YOLOEngine
-from collectra.models.workflow import Collectra
+from collectra.model import YOLOModel
+from collectra.pipeline import Collectra
 from pathlib import Path
 import shutil
 
-def test_yolo_engine_initialization():
-    engine = YOLOEngine(name="yolo11n.pt")
-    assert isinstance(engine, YOLOEngine), "Engine should be an instance of YOLOEngine"
-    assert engine.name == Path("yolo11n.pt"), "Engine name should match the provided name"    
+def test_yolo_model_initialization():
+    model = YOLOModel(name="yolo11n.pt")
+    assert isinstance(model, YOLOModel), "Model should be an instance of YOLOModel"
+    assert model.name == Path("yolo11n.pt"), "Model name should match the provided name"
 
-def test_yolo_engine_run():
+def test_yolo_model_run():
     config = {
         "input": "test_data",        
         "file_format": "hespi"
     }
-    engine = YOLOEngine(name="yolo11n.pt")
+    model = YOLOModel(name="yolo11n.pt")
     os.makedirs(Collectra.TEMPORARY_DIR, exist_ok=True)
-    engine.preprocess(Path(config.get("input")), "hespi")
+    model.preprocess(Path(config.get("input")), "hespi")
     yolo_config_file = Path(Collectra.TEMPORARY_DIR) / "yolo_config.yml"
     train_file = Path(Collectra.TEMPORARY_DIR) / "train.txt"
     val_file = Path(Collectra.TEMPORARY_DIR) / "val.txt"

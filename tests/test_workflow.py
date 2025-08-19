@@ -1,6 +1,6 @@
 import re
 from typer.testing import CliRunner
-from collectra import Collectra
+from collectra.pipeline import Collectra
 
 from .test_main import (
     TEST_FILES_STR,

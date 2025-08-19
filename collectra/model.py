@@ -292,14 +292,44 @@ class YOLOModel(Model):
     Args:
         data (Path): Path to the input data (images/video) for detection
     """    
-    print(f"[bold green]Running object detection[/bold green]: {self.name}")
-    results: List[dict] = []    
-    for image in config.get("images", []):      
-      results.append({
-        "image": image,
-        "results": self.model(image)
-      })      
-    return results  
+    print(f"[bold green]Running object detection[/bold green]: {self.name}")    
+    images : List[dict] = []
+    image_paths: List[Path] = []
+    for image in tqdm(config.get("images", []), desc="Collecting images"):
+      image_path = Path(image)
+      # if image_path.is_dir():
+      #     for img_file in tqdm(image_path.glob("*"), desc=f"Processing directory {image_path}"):
+      #         results.append({
+      #             "image": img_file,
+      #             "results": self.model(img_file)
+      #         })
+      # if image_path.is_file():
+      #     results.append({
+      #         "image": image,
+      #         "results": self.model(image)
+      #     })
+      if image_path.is_dir():
+        for img_file in tqdm(image_path.glob("*"), desc=f"Processing directory {image_path}"):
+          if img_file.suffix.lower() not in [".jpg", ".jpeg", ".png", ".bmp", ".tiff"]:
+            continue
+          image_paths.append(str(img_file))
+          images.append({
+              "image": img_file,
+              "results": None
+          })
+      if image_path.is_file() and image_path.suffix.lower() in [".jpg", ".jpeg", ".png", ".bmp", ".tiff"]:
+        image_paths.append(str(image_path))
+        images.append({
+            "image": image_path,
+            "results": None
+        })      
+
+    results = self.model(image_paths)
+
+    for index in range(len(results)):
+      images[index]["results"] = results[index]
+
+    return images
     
   
   def cluster(self, config) -> None:
