@@ -1,3 +1,4 @@
+import json
 from typer import Typer, Option, Argument
 from typing_extensions import Annotated
 from typing import List
@@ -5,10 +6,8 @@ from rich import print
 from pathlib import Path
 from .pipeline import CollectraManager
 from .utils import success_msg, error_msg
-import json
 
 app = Typer()
-
 
 @app.command()
 def make(
@@ -86,7 +85,7 @@ def train(
         "imgsz": imgsz,
         "lr0": lr0,
     }
-    Collectra.load(pipeline).train(task_id=task, config=config)
+    CollectraManager.load(pipeline).train(task_id=task, config=config)
 
 @app.command()
 def run(
@@ -95,13 +94,9 @@ def run(
     images: Annotated[List[str], Argument(help="Input directory of files")],
     as_dir: Annotated[bool, Option("--as-dir", help="Run the task as a directory instead of a file")] = False,
 ):
-    config = {
-        "images": images,
-        "as_dir": as_dir,
-    }
-    Collectra.load(workflow).run(task_id=task, config=config)
-    
-    
+    config = {"images": images, "as_dir": as_dir}
+    CollectraManager.load(workflow).run(task_id=task, config=config)
+        
 if __name__ == "__main__":
     app()
 
