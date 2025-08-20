@@ -52,9 +52,7 @@ class TaskManager:
             output=output,
         )        
 
-
 class CollectraManager:
-
     @staticmethod
     def make(
         name: str = "default",
@@ -62,7 +60,7 @@ class CollectraManager:
         file_format: str = "",
         out_dir: Path = Path.cwd(),
         **kwargs
-    ) -> "Collectra":
+    ):
         """
         Create a new Collectra workflow instance.
         
@@ -75,7 +73,7 @@ class CollectraManager:
             out_dir=out_dir / name,
             **kwargs
         )        
-        return pipeline.save()            
+        pipeline.save()            
 
     @staticmethod
     def load(pipeline: Path) -> "Collectra":
@@ -348,7 +346,7 @@ class Collectra:
     def _save_as_directory(self):     
         with tempfile.TemporaryDirectory() as tmpdirname:
             tmp_dir = Path(tmpdirname)
-            self.__save_data_assets(tmp_dir)
+            self._save_data_assets(tmp_dir)
             self._save_pipeline_config(tmp_dir)            
             os.makedirs(self.out_dir, exist_ok=True)  # Ensure the output directory exists
             for item in tmp_dir.iterdir():                                    
@@ -357,7 +355,7 @@ class Collectra:
     def _save_as_file(self):  
         with tempfile.TemporaryDirectory() as tmpdirname:            
             tmp_dir = Path(tmpdirname)
-            self.__save_data_assets(tmp_dir)
+            self._save_data_assets(tmp_dir)
             self._save_pipeline_config(tmp_dir)                       
             with zipfile.ZipFile(f"{self.out_dir}", 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zipf:
                 for root, _, files in os.walk(tmp_dir):
@@ -365,7 +363,7 @@ class Collectra:
                         print(processing_msg(f"Saving file to zip: {self.out_dir / file}"))
                         zipf.write(os.path.join(root, file), file)        
                         
-    def __save_data_assets(self, tmp_dir: Path):                    
+    def _save_data_assets(self, tmp_dir: Path):                    
         for task in self.tasks:
             new_model = False
             # First get the path of the model associated with the task
@@ -409,25 +407,7 @@ class Collectra:
         with open(pipeline_yaml, 'w') as f:
             for key in data:
                 f.write(yaml.dump({key: data[key]}, default_flow_style=False, sort_keys=False))
-                f.write("\n")             
-
-    def cleanup(self):
-        """
-        Clean up temporary files created during the workflow execution.
-        
-        This method removes the temporary directory used for storing intermediate files.
-        """
-        tmp_path = Path("tmp")
-        if tmp_path.exists():
-            shutil.rmtree(tmp_path, ignore_errors=True)  # Clean up temporary files   
-        # Remove any .pt files in the current directory
-        for file in os.listdir("."):
-            if file.endswith(".pt"):
-                print(processing_msg(f"Removing unneeded artifact: {file}"))
-                os.remove(file)
-        if not self.as_dir and self.out_dir.exists():
-            # If the pipeline was not originally created as a directory, delete it            
-            shutil.rmtree(self.out_dir, ignore_errors=True)                             
+                f.write("\n")                                    
     
 
     
