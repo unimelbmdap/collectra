@@ -367,6 +367,7 @@ class Collectra:
                         
     def __save_data_assets(self, tmp_dir: Path):                    
         for task in self.tasks:
+            new_model = False
             # First get the path of the model associated with the task
             model = task.get_model()
             if not model or not isinstance(task, MachineLearningTask):
@@ -375,15 +376,32 @@ class Collectra:
                 continue
             # Ensure the model path is a Path object
             task_model_path = f"{task.id}-best.pt"  # Default model path for the task
-            model_path = Path(model)                         
-            if not model_path.exists() or not model_path.is_file():
+            model_path = self.out_dir / model                         
+            if self.as_dir and (not model_path.exists() or not model_path.is_file()):
                 # If the model path does not exist or is not a file, print an error message and attempt to load it
                 print(error_msg(f"Model path does not point to a valid file or doesn't exist: {model_path}. Attempting to download..."))
                 # If the model path does not exist, attempt to load it
-                task.load(model_path)
-            if model_path != tmp_dir / task_model_path:                
+                task.load(model)
+                model_path = model
+                new_model = True                            
+            else:
+                zipf = zipfile.ZipFile(self.out_dir, 'r')                           
+                if not model in zipf.namelist():                    
+                    task.load(model)
+                    model_path = model
+                    new_model = True        
+                zipf.close()
+            if new_model:
                 shutil.move(model_path, tmp_dir / task_model_path)  # Move the model to the output directory
-                task.model = task_model_path  # Update the model path to the new path
+            else:
+                print(processing_msg(f"Model {model_path} already exists. Copying to temporary directory..."))
+                if self.as_dir:
+                    shutil.copy(model_path, tmp_dir / task_model_path)
+                else:
+                    zipf = zipfile.ZipFile(self.out_dir, 'r')
+                    zipf.extract(str(model), tmp_dir)  # Extract the model to the temporary directory                    
+                    zipf.close()
+            task.model = task_model_path  # Update the model path to the new path
 
     def _save_pipeline_config(self, tmp_dir: Path):
         pipeline_yaml = tmp_dir / "pipeline.yaml"
