@@ -116,17 +116,17 @@ class MachineLearningTask(Task):
     def run(self) -> List[Dict]:
         if not self.model:
             raise ValueError("Model must be set before running the task.")
-        return self.model.detect(self.config)
+        return self.load(self.model).detect(self.config)
 
-    def train(self) -> None:
+    def train(self) -> Path | None:
         if not self.model:
             raise ValueError("Model must be set before training the task.")
-        self.model.train(self.config)
+        return self.load(self.model).train(self.config)        
 
     def eval(self) -> None:
         if not self.model:
             raise ValueError("Model must be set before validating the task.")
-        self.model.val(self.config)
+        self.load(self.model).val(self.config)
 
     def cluster(self) -> None:
         # if not self.model:

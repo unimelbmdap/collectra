@@ -357,30 +357,27 @@ class Collectra:
         This method retrieves the task by its ID and calls its train method.
         :param task_id: The ID of the task to be trained.
         """
-        found_task = False
-        for task in self.tasks:
-            if task.id == task_id:
-                found_task = True
-                print(processing_msg(f"Training task: {task.id}"))
-                task.set_config(
-                    {
-                        **config,
-                        "file_format": self.file_format,
-                        "task": task.id,
-                        "inputs": task.input or [],
-                        "outputs": task.output or [],
-                    }
-                )
-                new_model_path: Path = task.train()
-                if new_model_path:
-                    task.old_model = task.model
-                    task.model = task.load(new_model_path, task.model.type)
-                break
-        if not found_task:
-            raise Exception(
-                error_msg(f"Task with ID {task_id} not found in the workflow.")
+        task_arr = [task for task in self.tasks if task.id == task_id]
+        if len(task_arr) == 0 or len(task_arr) > 1:
+            raise ValueError(
+                error_msg(f"Task with ID {task_id} has an issue in the pipeline: not found or duplicates.")
             )
-        self.save()  # Save the workflow after training
+        task = task_arr[0]        
+        if not isinstance(task, MachineLearningTask):
+            raise ValueError(
+                error_msg(f"Task with ID {task_id} is not a machine learning task.")
+            )        
+        print(processing_msg(f"Training task: {task.id}"))
+        task_config = {
+            **config,
+            "file_format": self.file_format,
+            "task": task.id,
+            "inputs": task.input or [],
+            "outputs": task.output or [],
+        }
+        task.set_config(task_config)                    
+        task.train()                
+        self.save()
 
     def save(self):
         if self.as_dir:
@@ -486,4 +483,4 @@ class Collectra:
                         {key: data[key]}, default_flow_style=False, sort_keys=False
                     )
                 )
-                f.write("\n")
+                f.write("\n")        
