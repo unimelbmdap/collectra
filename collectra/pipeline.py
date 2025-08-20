@@ -103,6 +103,8 @@ class CollectraManager:
             raise FileNotFoundError(f"Pipeline file not found: {pipeline_file}")
         with open(pipeline_file, 'r') as f:
             data = yaml.safe_load(f)
+            if not data:
+                raise ValueError(f"Pipeline file is empty or invalid: {pipeline_file}")
             return CollectraManager._parse_data(data, path, as_dir=True)  # Load the YAML file from the directory
 
     @staticmethod
@@ -116,6 +118,8 @@ class CollectraManager:
         pipeline_file = f"{path.name.replace(path.suffix, '')}/pipeline.yaml"        
         with zipfile.ZipFile(path, 'r') as zipf:                                            
             data = yaml.safe_load(zipf.read(pipeline_file))
+            if not data:
+                raise ValueError(f"Pipeline file is empty or invalid: {pipeline_file}")
             return CollectraManager._parse_data(data, path, as_dir=False)
 
     @staticmethod
@@ -125,8 +129,8 @@ class CollectraManager:
         :param data: the workflow configuration.
         :param as_dir: If True, the workflow is a directory instead of a file. A flag is saved in the Collectra instance.
 
-        """                                                    
-        metadata = data.get("collectra_pipeline_metadata", None)
+        """                                                            
+        metadata = data.get("collectra_pipeline_metadata", None)        
         if not metadata:
             raise ValueError(f"Invalid pipeline file. Missing 'collectra_pipeline_metadata' section.")
         data.pop("collectra_pipeline_metadata", None)  # Remove metadata from the main config dictionary for easier loading
@@ -169,7 +173,7 @@ class Collectra:
         if len(self.tasks) > 0:
             print(success_msg(f"Found {len(self.tasks)} tasks from configuration"))
 
-    def get_yaml(self):
+    def get_config(self):
         """
         Generate a YAML representation of the workflow configuration.
         
@@ -337,6 +341,7 @@ class Collectra:
         self.save()  # Save the workflow after training
     
     def save(self):
+        self.out_dir.mkdir(parents=True, exist_ok=True)
         if self.as_dir:
             self._save_as_directory()
         else:
@@ -369,12 +374,24 @@ class Collectra:
         # self.cleanup()
         # tmpsave.cleanup()        
     
-    def _save_as_directory(self):
-        pass
+    def _save_as_directory(self):     
+        for task in self.tasks:
+            model = task.get_model()
+            if not model:
+                print(error_msg(f"Task {task.id} does not have a model associated with it. Skipping..."))
+                continue
+            model_path = Path(model)
+            model_path_in_file = self.out_dir / model_path.name 
+            new_model_loaded = False
+            if isinstance(task, MachineLearningTask) and (not model_path_in_file.exists() or not model_path_in_file.is_file()):
+                print(error_msg(f"Model path does not point to a valid file or doesn't exist: {model_path_in_file}. Attempting to download..."))
+                task.load(model_path)                                                        
+            if model_path != model_path_in_file:
+                shutil.move(model_path, model_path_in_file)
+        self._save_pipeline_config()
 
-    def _save_as_file(self):
-        print(self.out_dir)
-        pass
+    def _save_as_file(self):        
+        self._save_pipeline_config()   
 
     def __save_data_assets(self):
         for task in self.tasks:             
@@ -394,13 +411,13 @@ class Collectra:
                     os.remove(task.old_model)  # Remove the old model if it exists
                 task.model = model_path.name  # Update the model path to the new path
 
-    def __save_pipeline_config(self):
-        output_file = self.out_dir / "pipeline.yaml"
-        config_file = self.get_yaml()
-        with open(output_file, 'w') as f:
-            for key in config_file:
-                f.write(yaml.dump({key: config_file[key]}, default_flow_style=False, sort_keys=False))
-                f.write("\n")            
+    def _save_pipeline_config(self):
+        pipeline_yaml = self.out_dir / "pipeline.yaml"
+        data = self.get_config()
+        with open(pipeline_yaml, 'w') as f:
+            for key in data:
+                f.write(yaml.dump({key: data[key]}, default_flow_style=False, sort_keys=False))
+                f.write("\n")         
 
     def __save_to_zip(self):
         with zipfile.ZipFile(f"{self.out_dir}.collectra", 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zipf:
