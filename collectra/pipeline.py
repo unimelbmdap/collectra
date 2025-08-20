@@ -115,7 +115,7 @@ class CollectraManager:
         :param path: The path to the zip file containing the workflow configuration.
         :return: An instance of Collectra with the loaded configuration.
         """
-        pipeline_file = f"{path.name.replace(path.suffix, '')}/pipeline.yaml"        
+        pipeline_file = "pipeline.yaml"        
         with zipfile.ZipFile(path, 'r') as zipf:                                            
             data = yaml.safe_load(zipf.read(pipeline_file))
             if not data:
@@ -173,19 +173,17 @@ class Collectra:
         if len(self.tasks) > 0:
             print(success_msg(f"Found {len(self.tasks)} tasks from configuration"))
 
-    def get_config(self):
+    def get_config(self, config: Dict = {}) -> Dict:
         """
         Generate a YAML representation of the workflow configuration.
         
         This method serializes the workflow configuration into a YAML format.
         """     
-        config = {
-            "collectra_pipeline_metadata": {
-                "name": self.name,
-                "version": self.version,            
-                "file_format": self.file_format,                
-                "description": self.description,            
-            }
+        config["collectra_pipeline_metadata"] = {            
+            "name": self.name,
+            "version": self.version,            
+            "file_format": self.file_format,                
+            "description": self.description,                        
         }
     
         for task in self.tasks:
@@ -340,95 +338,60 @@ class Collectra:
             raise Exception(error_msg(f"Task with ID {task_id} not found in the workflow."))            
         self.save()  # Save the workflow after training
     
-    def save(self):
-        self.out_dir.mkdir(parents=True, exist_ok=True)
+    def save(self):        
         if self.as_dir:
             self._save_as_directory()
         else:
-            self._save_as_file()              
-        # tmpsave = tempfile.TemporaryDirectory()
-        # out_dir = Path(tmpsave.name)
-        # for task in self.tasks:
-        #     model_path = task.get_model()                
-        #     if not model_path:
-        #         print(error_msg(f"Task {task.id} does not have a model associated with it. Skipping..."))
-        #         continue                                              
-        #     model_exists = False
-        #     if not self.as_dir:                    
-        #         zipf =  zipfile.ZipFile(f"{self.out_dir}.collectra", 'r')
-        #         model_exists = f"{out_dir.name}/{model_path}" in zipf.namelist()
-        #         zipf.close()                    
-        #     else:                    
-        #         model_exists = (out_dir / model_path).is_file()
-        #     new_model_path: Optional[Path] = None
-        #     if isinstance(task, MachineLearningTask) and not model_exists:
-        #         print(error_msg(f"Model path does not point to a valid file or doesn't exist. Attempting to download..."))
-        #         task.load(model_path)
-        #         new_model_path = Path(out_dir.name) / model_path                            
-
-        # self.out_dir.mkdir(parents=True, exist_ok=True)  
-        # self.__save_data_assets()
-        # self.__save_pipeline_config()        
-        # if not self.as_dir:
-        #     self.__save_to_zip()                 
-        # self.cleanup()
-        # tmpsave.cleanup()        
+            self._save_as_file()     
+        print(success_msg(f"Workflow '{self.name}' saved successfully at {self.out_dir}"))                     
     
     def _save_as_directory(self):     
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            tmp_dir = Path(tmpdirname)
+            self.__save_data_assets(tmp_dir)
+            self._save_pipeline_config(tmp_dir)            
+            os.makedirs(self.out_dir, exist_ok=True)  # Ensure the output directory exists
+            for item in tmp_dir.iterdir():                                    
+                shutil.move(item, self.out_dir / item.name)            
+
+    def _save_as_file(self):  
+        with tempfile.TemporaryDirectory() as tmpdirname:            
+            tmp_dir = Path(tmpdirname)
+            self.__save_data_assets(tmp_dir)
+            self._save_pipeline_config(tmp_dir)                       
+            with zipfile.ZipFile(f"{self.out_dir}", 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zipf:
+                for root, _, files in os.walk(tmp_dir):
+                    for file in files:                        
+                        print(processing_msg(f"Saving file to zip: {self.out_dir / file}"))
+                        zipf.write(os.path.join(root, file), file)        
+                        
+    def __save_data_assets(self, tmp_dir: Path):                    
         for task in self.tasks:
+            # First get the path of the model associated with the task
             model = task.get_model()
-            if not model:
-                print(error_msg(f"Task {task.id} does not have a model associated with it. Skipping..."))
+            if not model or not isinstance(task, MachineLearningTask):
+                # If the task does not have a model, skip it
+                print(error_msg(f"Task {task.id} does not have a model associated with it or this is not a machine learning task. Skipping..."))
                 continue
-            model_path = Path(model)
-            model_path_in_file = self.out_dir / model_path.name 
-            new_model_loaded = False
-            if isinstance(task, MachineLearningTask) and (not model_path_in_file.exists() or not model_path_in_file.is_file()):
-                print(error_msg(f"Model path does not point to a valid file or doesn't exist: {model_path_in_file}. Attempting to download..."))
-                task.load(model_path)                                                        
-            if model_path != model_path_in_file:
-                shutil.move(model_path, model_path_in_file)
-        self._save_pipeline_config()
+            # Ensure the model path is a Path object
+            task_model_path = f"{task.id}-best.pt"  # Default model path for the task
+            model_path = Path(model)                         
+            if not model_path.exists() or not model_path.is_file():
+                # If the model path does not exist or is not a file, print an error message and attempt to load it
+                print(error_msg(f"Model path does not point to a valid file or doesn't exist: {model_path}. Attempting to download..."))
+                # If the model path does not exist, attempt to load it
+                task.load(model_path)
+            if model_path != tmp_dir / task_model_path:                
+                shutil.move(model_path, tmp_dir / task_model_path)  # Move the model to the output directory
+                task.model = task_model_path  # Update the model path to the new path
 
-    def _save_as_file(self):        
-        self._save_pipeline_config()   
-
-    def __save_data_assets(self):
-        for task in self.tasks:             
-            model = task.get_model()                
-            if not model:
-                print(error_msg(f"Task {task.id} does not have a model associated with it. Skipping..."))
-                continue
-            actual_model_path = self.out_dir / model            
-            if isinstance(task, MachineLearningTask) and not actual_model_path.is_file():
-                print(error_msg(f"Model path does not point to a valid file or doesn't exist: {actual_model_path}. Attempting to download..."))
-                task.load(model)
-            if actual_model_path != self.out_dir / model:
-                print(processing_msg(f"Copying model {model_path} to {output_folder / model_path.name}"))
-                shutil.move(model_path, output_folder / model_path.name)                                
-                if task.old_model and Path(task.old_model).name != model_path.name:
-                    print(processing_msg(f"Removing old model file: {task.old_model}"))
-                    os.remove(task.old_model)  # Remove the old model if it exists
-                task.model = model_path.name  # Update the model path to the new path
-
-    def _save_pipeline_config(self):
-        pipeline_yaml = self.out_dir / "pipeline.yaml"
+    def _save_pipeline_config(self, tmp_dir: Path):
+        pipeline_yaml = tmp_dir / "pipeline.yaml"
         data = self.get_config()
         with open(pipeline_yaml, 'w') as f:
             for key in data:
                 f.write(yaml.dump({key: data[key]}, default_flow_style=False, sort_keys=False))
-                f.write("\n")         
-
-    def __save_to_zip(self):
-        with zipfile.ZipFile(f"{self.out_dir}.collectra", 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zipf:
-            for root, dirs, files in os.walk(self.out_dir):
-                for file in files:
-                    print(processing_msg(f"Saving file to zip: {os.path.join(root, file)}"))
-                    zipf.write(os.path.join(root, file),
-                            os.path.relpath(os.path.join(root, file),
-                                            os.path.join(self.out_dir, '..')))
-            if not self.as_dir:                           
-                shutil.rmtree(self.out_dir, ignore_errors=True)
+                f.write("\n")             
 
     def cleanup(self):
         """
