@@ -13,7 +13,7 @@ from .task import TaskEntity
 
 class WorkflowConfig:
     """Configuration class for workflow settings.
-    
+
     This class encapsulates all configuration parameters needed for a workflow,
     providing validation and centralized access to settings.
     """
@@ -25,39 +25,39 @@ class WorkflowConfig:
         self.name = name  # Unique name for the workflow
         self.version = version  # Version string for workflow versioning
         self.output = Path(output)  # Output directory for workflow artifacts
-        
+
         # File format configuration with sensible default
         self.file_format = file_format or "grapto"  # Default to grapto format
-        
+
         # Temporary directory for intermediate processing files
         self.temporary_dir = Path("tmp")  # Standard temp directory location
 
     def validate(self) -> bool:
         """Validate configuration parameters.
-        
+
         Ensures all required configuration values are present and valid.
         Raises ValueError for invalid configurations.
-        
+
         Returns:
             bool: True if all validations pass
-            
+
         Raises:
             ValueError: If name or version is empty/invalid
         """
         # Validate workflow name is not empty or None
         if not self.name:
             raise ValueError("Workflow name cannot be empty")
-            
+
         # Validate version string is present
         if not self.version:
             raise ValueError("Workflow version cannot be empty")
-            
+
         return True  # All validations passed
 
 
 class WorkflowFileManager:
     """Handles file operations for workflows.
-    
+
     This class manages all file system operations including saving workflows,
     managing temporary files, and cleanup operations. It encapsulates file
     handling logic to keep the main workflow class focused on business logic.
@@ -65,7 +65,7 @@ class WorkflowFileManager:
 
     def __init__(self, config: WorkflowConfig):
         """Initialize file manager with workflow configuration.
-        
+
         Args:
             config: WorkflowConfig instance containing file paths and settings
         """
@@ -73,10 +73,10 @@ class WorkflowFileManager:
 
     def save_workflow(self, crate: ROCrate, compressed: bool = True) -> None:
         """Save workflow to file system.
-        
+
         Saves the ROCrate workflow to disk, either as a compressed ZIP file
         or as an uncompressed directory structure.
-        
+
         Args:
             crate: ROCrate instance containing the workflow data
             compressed: If True, save as ZIP file; if False, save as directory
@@ -97,21 +97,21 @@ class WorkflowFileManager:
         else:
             # Write workflow as uncompressed directory structure
             crate.write(file_path)
-        
-        run_folder = Path.cwd() / "runs" 
+
+        run_folder = Path.cwd() / "runs"
         yolo_pt_file = Path.cwd() / "yolo11n.pt"
 
         if run_folder.exists():
             shutil.rmtree(run_folder)
-        if yolo_pt_file.exists():        
+        if yolo_pt_file.exists():
             os.remove(yolo_pt_file)
 
     def cleanup_temporary_files(self, tasks: List[TaskEntity] = None) -> None:
         """Clean up temporary files and directories.
-        
+
         Removes temporary files created during workflow execution, including
         task-specific engine files and the main temporary directory.
-        
+
         Args:
             tasks: Optional list of TaskEntity instances to clean up
         """
@@ -140,7 +140,7 @@ class WorkflowFileManager:
 
 class WorkflowExecutor:
     """Handles workflow execution logic.
-    
+
     This class manages the execution of workflows, including both inference
     (run) and training operations. It coordinates with TaskManager to execute
     individual tasks within the workflow.
@@ -148,7 +148,7 @@ class WorkflowExecutor:
 
     def __init__(self, config: WorkflowConfig):
         """Initialize executor with workflow configuration.
-        
+
         Args:
             config: WorkflowConfig instance containing execution settings
         """
@@ -156,10 +156,10 @@ class WorkflowExecutor:
 
     def run_workflow(self, crate: ROCrate, input_path: Path, output_path: Path) -> None:
         """Execute workflow with given input and output paths.
-        
+
         Runs the complete workflow by chaining all tasks in the ROCrate
         and executing them in sequence with the provided input/output paths.
-        
+
         Args:
             crate: ROCrate containing the workflow definition and tasks
             input_path: Path to input data for the workflow
@@ -167,20 +167,20 @@ class WorkflowExecutor:
         """
         # Prepare execution configuration with paths and crate reference
         execution_config = {
-            "input": input_path,      # Input data location
-            "output": output_path,    # Output destination
-            "crate": crate,           # Workflow definition
+            "input": input_path,  # Input data location
+            "output": output_path,  # Output destination
+            "crate": crate,  # Workflow definition
         }
 
         # Initialize task manager for workflow execution
         manager = TaskManager()
-        
+
         # Iterate through all entities in the crate to find tasks
         for entity in crate.get_entities():
             if entity.type == "Task":
                 # Chain each task with the execution configuration
                 manager.chain(entity, execution_config)
-                
+
         # Execute all chained tasks in sequence
         manager.run()
 
@@ -193,11 +193,11 @@ class WorkflowExecutor:
         **kwargs,
     ) -> None:
         """Train workflow with specified parameters.
-        
+
         Executes the training process for a specific task within the workflow.
         This involves setting up training configuration and delegating to
         TaskManager for the actual training execution.
-        
+
         Args:
             crate: ROCrate containing the workflow and task definitions
             task: String identifier for the specific task to train
@@ -205,16 +205,16 @@ class WorkflowExecutor:
             output_path: Path where training results will be saved
             **kwargs: Additional training parameters (e.g., test mode)
         """
-        # Prepare comprehensive training configuration        
+        # Prepare comprehensive training configuration
         training_config = {
-            "input": input_files,                    # Training data files
-            "output": output_path,                   # Training output location
-            "crate": crate,                          # Workflow definition
-            "tmp_dir": self.config.temporary_dir,    # Temporary files location
-            "test": kwargs.get("test", False),       # Test mode flag
-            "task": str(task),                       # Task identifier
+            "input": input_files,  # Training data files
+            "output": output_path,  # Training output location
+            "crate": crate,  # Workflow definition
+            "tmp_dir": self.config.temporary_dir,  # Temporary files location
+            "test": kwargs.get("test", False),  # Test mode flag
+            "task": str(task),  # Task identifier
         }
-        
+
         # Delegate training execution to TaskManager
         TaskManager.train(task, training_config)
 
@@ -227,11 +227,11 @@ class WorkflowExecutor:
         **kwargs,
     ) -> None:
         """Evaluate workflow with specified parameters.
-        
+
         Executes the evaluation process for a specific task within the workflow.
         This involves setting up evaluation configuration and delegating to
         TaskManager for the actual evaluation execution.
-        
+
         Args:
             crate: ROCrate containing the workflow and task definitions
             task: String identifier for the specific task to evaluate
@@ -241,17 +241,17 @@ class WorkflowExecutor:
         """
         # Prepare comprehensive evaluation configuration
         evaluation_config = {
-            "input": input_files,                    # Evaluation data files
-            "output": output_path,                   # Evaluation output location
-            "crate": crate,                          # Workflow definition
-            "tmp_dir": self.config.temporary_dir,    # Temporary files location
-            "test": kwargs.get("test", False),       # Test mode flag
-            "task": str(task),                       # Task identifier
+            "input": input_files,  # Evaluation data files
+            "output": output_path,  # Evaluation output location
+            "crate": crate,  # Workflow definition
+            "tmp_dir": self.config.temporary_dir,  # Temporary files location
+            "test": kwargs.get("test", False),  # Test mode flag
+            "task": str(task),  # Task identifier
         }
-        
+
         # Delegate evaluation execution to TaskManager
         print(f"Evaluation {task}")
-        TaskManager.eval(task, evaluation_config)  
+        TaskManager.eval(task, evaluation_config)
 
     def cluster_workflow(
         self,
@@ -262,21 +262,22 @@ class WorkflowExecutor:
     ) -> None:
         """Cluster items in the workflow."""
         clustering_config = {
-            "input": input_files,                    # Input data files for clustering
-            "output": output_path,                   # Output location for clustering results
-            "crate": crate,                          # Workflow definition
-            "tmp_dir": self.config.temporary_dir,    # Temporary files location
-            "item": str(item),                       # Item to cluster
+            "input": input_files,  # Input data files for clustering
+            "output": output_path,  # Output location for clustering results
+            "crate": crate,  # Workflow definition
+            "tmp_dir": self.config.temporary_dir,  # Temporary files location
+            "item": str(item),  # Item to cluster
         }
         TaskManager.cluster(item, clustering_config)
 
-class Collectra():
+
+class Collectra:
     """Main workflow class with improved object-oriented design.
-    
+
     Collectra is the primary interface for creating, managing, and executing
     machine learning workflows. It uses composition with specialized helper
     classes to handle configuration, file management, and execution logic.
-    
+
     The class provides methods for:
     - Creating and loading workflows
     - Adding and removing tasks
@@ -289,27 +290,27 @@ class Collectra():
         name: str,
         version: str,
         output: Path,
-        file_format: Optional[str] = None,        
+        file_format: Optional[str] = None,
     ):
         """Initialize a new Collectra workflow instance.
-        
+
         Args:
             name: Unique name for the workflow
             version: Version string for workflow versioning
             output: Directory path for workflow output files
-            file_format: Optional file format specification (defaults to name of the workflow)            
-        """        
+            file_format: Optional file format specification (defaults to name of the workflow)
+        """
         self.name = name
         self.version = version
         self.output = output
-        file_format = file_format or name  # Default to workflow name if not specified        
+        file_format = file_format or name  # Default to workflow name if not specified
         # Create and validate configuration
         self._config = WorkflowConfig(name, version, output, file_format)
         self._config.validate()
 
         # Initialize helper classes using composition pattern
         self._file_manager = WorkflowFileManager(self._config)  # File operations
-        self._executor = WorkflowExecutor(self._config)         # Execution logic
+        self._executor = WorkflowExecutor(self._config)  # Execution logic
 
         # Provide user feedback about initialization
         print(f"Collectra workflow initialized: {self.name} version {self.version}")
@@ -326,9 +327,9 @@ class Collectra():
     @property
     def config(self) -> WorkflowConfig:
         """Get workflow configuration.
-        
+
         Provides read-only access to the workflow configuration object.
-        
+
         Returns:
             WorkflowConfig: The current workflow configuration
         """
@@ -336,10 +337,10 @@ class Collectra():
 
     def run(self, input_path: Path, output_path: Path) -> None:
         """Execute the workflow for inference.
-        
+
         Runs the complete workflow on the provided input data and saves
         results to the specified output location.
-        
+
         Args:
             input_path: Path to input data for processing
             output_path: Path where results will be saved
@@ -351,10 +352,10 @@ class Collectra():
         self, task: str, input_files: List[str], output_path: Path, **kwargs
     ) -> None:
         """Train the workflow with specified data.
-        
+
         Executes the training process for a specific task, then automatically
         saves the updated workflow and cleans up temporary files.
-        
+
         Args:
             task: String identifier for the task to train
             input_files: List of file paths containing training data
@@ -365,10 +366,10 @@ class Collectra():
         self._executor.train_workflow(
             self.crate, task, input_files, output_path, **kwargs
         )
-        
+
         # Automatically save the updated workflow after training
         self.save(compressed=True)
-        
+
         # Clean up any temporary files created during training
         self.cleanup()
 
@@ -376,10 +377,10 @@ class Collectra():
         self, task: str, input_files: List[str], output_path: Path, **kwargs
     ) -> None:
         """Evaluate the workflow with specified data.
-        
+
         Executes the evaluation process for a specific task, then automatically
         saves the updated workflow and cleans up temporary files.
-        
+
         Args:
             task: String identifier for the task to evaluate
             input_files: List of file paths containing evaluation data
@@ -390,36 +391,32 @@ class Collectra():
         self._executor.eval_workflow(
             self.crate, task, input_files, output_path, **kwargs
         )
-        
+
         # Automatically save the updated workflow after evaluation
         self.save(compressed=True)
-        
+
         # Clean up any temporary files created during evaluation
-        self.cleanup()  
-    
-    def cluster(
-        self, item: str, input_files: List[str], output_path: Path
-    ) -> None:
+        self.cleanup()
+
+    def cluster(self, item: str, input_files: List[str], output_path: Path) -> None:
         """
-            Cluster items in the workflow.
-            TODO: Update comments after implementation
+        Cluster items in the workflow.
+        TODO: Update comments after implementation
         """
-        self._executor.cluster_workflow(
-            self.crate, item, input_files, output_path
-        )
+        self._executor.cluster_workflow(self.crate, item, input_files, output_path)
 
     def add_task(self, task: str) -> Optional[TaskEntity]:
         """Add a single task to the Collectra workflow.
-        
+
         Parses the task definition string and creates a new TaskEntity
         that is added to the workflow's ROCrate.
-        
+
         Args:
             task: The task definition in the format "<task_type>,<task_name>,<engine_type>,<engine>"
-            
+
         Returns:
             TaskEntity: The created task entity, or None if creation failed
-            
+
         Example:
             workflow.add_task("detect_object,my_detector,yolo,yolo11n.pt")
         """
@@ -430,18 +427,18 @@ class Collectra():
             # Handle validation errors gracefully
             print(f"[red]Error adding task[/red]: {e}")
             return None
-    
+
     def edit_task(self, task: str, param: str, value: str) -> Optional[TaskEntity]:
         """Edit a specific task in the Collectra workflow.
-        
+
         Modifies the specified parameter of the given task with the new value.
         This allows dynamic updates to task configurations without recreating them.
-        
+
         Args:
             task: The task identifier to edit
             param: The parameter to modify
             value: The new value for the parameter
-            
+
         """
         try:
             # Use TaskManager to build and validate the task
@@ -450,20 +447,19 @@ class Collectra():
             # Handle validation errors gracefully
             print(f"[red]Error editing task[/red]: {e}")
             return None
-        
 
     def add_tasks(self, tasks: List[str]) -> List[TaskEntity]:
         """Add multiple tasks to the Collectra workflow.
-        
+
         Convenience method for adding several tasks at once. Each task
         is processed individually using add_task().
-        
+
         Args:
             tasks: List of task definition strings
-            
+
         Returns:
             List[TaskEntity]: List of created task entities (may contain None for failed tasks)
-            
+
         Example:
             workflow.add_tasks([
                 "detect_object,detector1,yolo,yolo11n.pt",
@@ -479,11 +475,11 @@ class Collectra():
 
     def save(self, compressed: bool = True) -> None:
         """Save the current state of the Collectra workflow.
-        
+
         Persists the workflow to disk using the configured output directory.
         The workflow can be saved as either a compressed ZIP file or an
         uncompressed directory structure.
-        
+
         Args:
             compressed: If True, save as ZIP file; if False, save as directory
         """
@@ -492,30 +488,30 @@ class Collectra():
 
     def delete_task(self, task_id: str) -> bool:
         """Remove a task from the Collectra workflow.
-        
+
         Locates and removes the specified task from the workflow's ROCrate.
         Provides user feedback about the operation status.
-        
+
         Args:
             task_id: The unique identifier of the task to remove
-            
+
         Returns:
             bool: True if task was successfully removed, False otherwise
         """
         try:
             # Inform user of removal attempt
             print(f"[purple]Attempting to remove task[/purple]: {task_id}")
-            
+
             # Locate the task in the ROCrate
             task = self.crate.dereference(task_id)
-            
+
             # Remove the task from the ROCrate
             self.crate.delete(task)
-            
+
             # Confirm successful removal
             print(f"[green]Task removed successfully.[/green]")
             return True
-            
+
         except ValueError as e:
             # Handle errors gracefully (e.g., task not found)
             print(f"[red]Error removing task[/red]: {e}")
@@ -523,10 +519,10 @@ class Collectra():
 
     def cleanup(self, tasks: Optional[List[TaskEntity]] = None) -> None:
         """Cleanup temporary files created during workflow execution.
-        
+
         Removes temporary files and directories that were created during
         workflow operations. This helps maintain a clean workspace.
-        
+
         Args:
             tasks: Optional list of specific TaskEntity instances to clean up.
                   If None, performs general cleanup of temporary directories.
@@ -543,20 +539,20 @@ class Collectra():
         file_format: str = "grapto",
     ) -> Optional[Collectra]:
         """Create a new Collectra workflow with specified parameters.
-        
+
         Factory method for creating and initializing a new workflow.
         Handles directory creation, task initialization, and file saving.
-        
+
         Args:
             name: Name for the new workflow (defaults to 'default')
             version: Version string for the workflow (defaults to '1.0')
             output: Output directory path (defaults to current directory)
             tasks: Optional list of task definitions to add initially
             file_format: File format for the workflow (defaults to 'grapto')
-            
+
         Returns:
             Collectra: New workflow instance, or None if creation failed
-            
+
         Note:
             If a workflow with the same name exists (except 'default'),
             creation will be skipped to prevent accidental overwrites.
@@ -587,18 +583,18 @@ class Collectra():
             # Create new workflow instance
             collectra = Collectra(name, version, output, file_format=file_format)
             # collectra._save_dependencies()  # Save dependencies
-            
+
             # Add initial tasks if provided
             created_tasks = collectra.add_tasks(tasks)
-            
+
             # Save the workflow to disk
             collectra.save()
-            
+
             # Clean up any temporary files from task creation
             collectra.cleanup(created_tasks)
-            
+
             return collectra
-            
+
         except Exception as e:
             # Handle any errors during workflow creation
             print(f"[red]Error creating workflow[/red]: {e}")
@@ -607,16 +603,16 @@ class Collectra():
     @staticmethod
     def load_workflow(workflow_file: Path) -> Optional[Collectra]:
         """Load an existing workflow from a file.
-        
+
         Factory method for loading previously saved workflows from disk.
         Handles file validation and error recovery.
-        
+
         Args:
             workflow_file: Path to the saved workflow file (ZIP or directory)
-            
+
         Returns:
             Collectra: Loaded workflow instance, or None if loading failed
-            
+
         Note:
             The loaded workflow will use the filename (without extension)
             as the workflow name and the parent directory as output location.
@@ -631,16 +627,16 @@ class Collectra():
         try:
             # Load the ROCrate from the file
             crate = ROCrate(workflow_file)
-            
+
             # Create Collectra instance with loaded crate
             collectra = Collectra(
-                name=workflow_file.stem,        # Use filename as workflow name
-                version="1.0",                  # Default version for loaded workflows
-                output=workflow_file.parent,    # Use parent directory as output
-                crate=crate,                    # Use the loaded crate
-            )            
+                name=workflow_file.stem,  # Use filename as workflow name
+                version="1.0",  # Default version for loaded workflows
+                output=workflow_file.parent,  # Use parent directory as output
+                crate=crate,  # Use the loaded crate
+            )
             return collectra
-            
+
         except Exception as e:
             # Handle any errors during workflow loading
             print(f"[red]Error loading workflow[/red]: {e}")

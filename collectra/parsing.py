@@ -4,8 +4,9 @@ import networkx as nx
 import importlib
 from dataclasses import dataclass, field
 
+
 @dataclass(kw_only=True)
-class CollectraNode():
+class CollectraNode:
     name: str
     input: list[str] = field(default_factory=list)
     output: list[str] = field(default_factory=list)
@@ -50,9 +51,9 @@ def load_class_from_string(path: str):
 
 
 @dataclass()
-class CollectraWorkflow():
-    path:Path
-    dag:nx.DiGraph = field(init=False, default=None)
+class CollectraWorkflow:
+    path: Path
+    dag: nx.DiGraph = field(init=False, default=None)
 
     def __post_init__(self):
         self.read_yaml()
@@ -77,7 +78,7 @@ class CollectraWorkflow():
 
             if name not in self.dag:
                 self.dag.add_node(name, item=item)
-                        
+
             node = self.dag.nodes[name]
             node["item"] = item
 
@@ -95,7 +96,7 @@ class CollectraWorkflow():
     def dot(self) -> str:
         return nx.nx_pydot.to_pydot(self.dag).to_string()
 
-    def render(self, output:Path|str) -> str:
+    def render(self, output: Path | str) -> str:
         output = Path(output)
         output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -109,7 +110,6 @@ class CollectraWorkflow():
 
             graph = graphviz.Source(dot_string)
             format = suffix[1:] if suffix else "svg"
-            graph.render(str(output.with_suffix('')), format=format, cleanup=True)
+            graph.render(str(output.with_suffix("")), format=format, cleanup=True)
 
         return dot_string
-

@@ -4,16 +4,15 @@ from collectra.pipeline import CollectraManager
 from pathlib import Path
 import shutil
 
+
 def test_yolo_model_initialization():
     model = YOLOModel(name="yolo11n.pt")
     assert isinstance(model, YOLOModel), "Model should be an instance of YOLOModel"
     assert model.name == Path("yolo11n.pt"), "Model name should match the provided name"
 
+
 def test_yolo_model_run():
-    config = {
-        "input": "test_data",        
-        "file_format": "hespi"
-    }
+    config = {"input": "test_data", "file_format": "hespi"}
     model = YOLOModel(name="yolo11n.pt")
     os.makedirs(CollectraManager.TEMPORARY_DIR, exist_ok=True)
     model.preprocess(Path(config.get("input")), "hespi")
@@ -24,4 +23,3 @@ def test_yolo_model_run():
     assert train_file.exists(), "Train file should be created"
     assert val_file.exists(), "Validation file should be created"
     shutil.rmtree(CollectraManager.TEMPORARY_DIR, ignore_errors=True)
-    
