@@ -416,6 +416,11 @@ class Collectra:
                             processing_msg(f"Saving file to zip: {self.out_dir / file}")
                         )
                         zipf.write(os.path.join(root, file), file)
+            print(
+                success_msg(
+                    f"Workflow '{self.name}' saved successfully at {self.out_dir}"
+                )
+            )
 
     def _save_data_assets(self, tmp_dir: Path):
         for task in self.tasks:
