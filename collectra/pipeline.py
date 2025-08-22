@@ -1,10 +1,10 @@
 from rich import print
 from pathlib import Path
-from typing import Optional, List, Dict
 import yaml, os, zipfile, shutil
-from .tasks import Task, MachineLearningTask, ObjectDetectionYOLO, TextClassification
+from .tasks import Task, MachineLearningTask
 from .utils import error_msg, success_msg, processing_msg
 from datetime import datetime
+from dataclasses import dataclass, field
 import pytz, tempfile, importlib
 
 
@@ -14,32 +14,29 @@ class TaskManager:
 	"""
 
     @staticmethod
-    def build(task: Dict) -> Task:
+    def build(task: dict) -> Task:
         """
         Build a Task from a dictionary.
         :param task: The task dictionary containing the task details.
         :raises ValueError: If the task format is invalid or the task type is not recognized
         :return: An instance of Task.
         """        
-        task_name = task.get("name", "")
-        type: str = task.get("type", "")
-        model_path = task.get("model")
-        input = task.get("input", []) if isinstance(task.get("input"), list) else [task.get("input", "")]       
-        output = task.get("output", []) if isinstance(task.get("output"), list) else [task.get("output", "")]
+        task_name: str = task.get("name", "")        
+        type: str = task.get("type", "")        
+        task.pop("type", None)
+        task.pop("name", None)
         if not type:
             raise ValueError("Task type is required.")
         if not task_name or task_name == "":
             raise ValueError("Task name cannot be empty.")
         module_name, class_name = type.rsplit(".", 1)
         TaskClass = getattr(importlib.import_module(module_name), class_name)              
-        return TaskClass(
-            id=task_name,
-            model=model_path,
-            input=input,
-            output=output,
+        return TaskClass.build(            
+            name=task_name,
+            **task
         )
 
-
+@dataclass
 class CollectraManager:
     @staticmethod
     def make(
@@ -112,7 +109,7 @@ class CollectraManager:
 
     @staticmethod
     def _parse_data(
-        data: Dict = {}, path: Path | None = None, as_dir: bool = False
+        data: dict = {}, path: Path | None = None, as_dir: bool = False
     ) -> "Collectra":
         """
         Parse the workflow configuration data and create a Collectra instance.
@@ -125,12 +122,8 @@ class CollectraManager:
             raise ValueError(
                 f"Invalid pipeline file. Missing 'collectra_pipeline_metadata' section."
             )
-        data.pop(
-            "collectra_pipeline_metadata", None
-        )  # Remove metadata from the main config dictionary for easier loading
-        pipeline = Collectra(
-            **metadata, as_dir=as_dir, out_dir=path
-        )  # Create a Collectra instance with the loaded data        
+        data.pop("collectra_pipeline_metadata", None)  
+        pipeline = Collectra(**metadata, as_dir=as_dir, out_dir=path)
         pipeline.setup(data)
         return pipeline
 
@@ -156,26 +149,22 @@ class Collectra:
     def __str__(self) -> str:
         return f"{self.name} v{self.version}"
 
-    def setup(self, config: Dict) -> None:
+    def setup(self, config: dict) -> None:
         """
         Load the configuration from a dictionary.
         This method populates the workflow with tasks based on the provided configuration.
         :param config: A dictionary containing the workflow configuration.
         """        
         for name, info in config.items():
-            task = {"name": name, **info}            
-            self.tasks.append(
-                TaskManager.build(task)
-            )  # Build the task using the TaskManager
-            print(
-                success_msg(
-                    f"Loaded {task['name']} of type {task['type']} and model {task['model']}"
-                )
-            )
-        if len(self.tasks) > 0:
-            print(success_msg(f"Found {len(self.tasks)} tasks from configuration"))
+            task = {"name": name, **info}
+            task_instance = TaskManager.build(task)
+            self.tasks.append(task_instance)
+            print(success_msg(f"Loaded {task_instance.name}"))
+        
+        if len(self.tasks) == 0:
+            print(processing_msg("No tasks found in the workflow configuration."))
 
-    def get_config(self, config: Dict = {}) -> Dict:
+    def get_config(self, config: dict = {}) -> dict:
         """
         Generate a YAML representation of the workflow configuration.
 
@@ -189,12 +178,12 @@ class Collectra:
         }
 
         for task in self.tasks:
-            task_key: str = str(task.id)
+            task_key: str = str(task.name)
             config[task_key] = {
                 "type": f"{task.__class__.__module__}.{task.__class__.__name__}"
-            }
-            if isinstance(task, MachineLearningTask):
-                config[task_key]["model"] = str(task.model) if task.model else ""
+            }            
+            if task.config.get("model", ""):
+                config[task_key]["model"] = task.config.get("model", "")
             if task.input:
                 config[task_key]["input"] = task.input if len(task.input) > 1 else task.input[0]  # type: ignore
             if task.output:
@@ -220,7 +209,7 @@ class Collectra:
 
         This method returns a list of task IDs that are already present in the workflow.
         """
-        return [task.id for task in self.tasks]
+        return [task.name for task in self.tasks]
 
     def add(
         self, task: str, task_input: list[str] = [], task_output: list[str] = []
@@ -232,9 +221,9 @@ class Collectra:
         :param task_input: what kind of input the task accepts.
         :param task_output: what kind of output the task produces.
         """
-        existing_task_ids: List[str] = self._get_existing_task_ids()
+        existing_task_ids: list[str] = self._get_existing_task_ids()
         task_name, type, model_path = task.split(",")
-        task_obj: Dict = {
+        task_obj: dict = {
             "name": task_name,
             "type": type,
             "model": model_path,
@@ -254,15 +243,15 @@ class Collectra:
         for task in self.tasks:
             if found_task:
                 break
-            if task.id != task_id:
+            if task.name != task_id:
                 continue
             found_task = True
-            print(processing_msg(f"Detecting task: {task.id}"))
+            print(processing_msg(f"Detecting task: {task.name}"))
             task.set_config(
                 {
                     **config,
                     "file_format": self.file_format,
-                    "task": task.id,
+                    "task": task.name,
                     "input": task.input or [],
                     "output": task.output or [],
                 }
@@ -322,7 +311,7 @@ class Collectra:
                 )  # Use the as_dir flag from the config if provided
                 if not self.as_dir:
                     shutil.make_archive(
-                        path, "zip", path
+                        str(path), "zip", path
                     )  # Create a zip archive of the results
                     shutil.rmtree(path)  # Remove the directory after zipping
                     os.rename(f"{path}.zip", path.parent / f"{path.name}")
@@ -339,7 +328,7 @@ class Collectra:
         This method retrieves the task by its ID and calls its train method.
         :param task_id: The ID of the task to be trained.
         """
-        task_arr = [task for task in self.tasks if task.id == task_id]
+        task_arr = [task for task in self.tasks if task.name == task_id]
         if len(task_arr) == 0 or len(task_arr) > 1:
             raise ValueError(
                 error_msg(f"Task with ID {task_id} has an issue in the pipeline: not found or duplicates.")
@@ -349,11 +338,11 @@ class Collectra:
             raise ValueError(
                 error_msg(f"Task with ID {task_id} is not a machine learning task.")
             )        
-        print(processing_msg(f"Training task: {task.id}"))
+        print(processing_msg(f"Training task: {task.name}"))
         task_config = {
             **config,
             "file_format": self.file_format,
-            "task": task.id,
+            "task": task.name,
             "inputs": task.input or [],
             "outputs": task.output or [],
         }
@@ -410,12 +399,12 @@ class Collectra:
                 # If the task does not have a model, skip it
                 print(
                     error_msg(
-                        f"Task {task.id} does not have a model associated with it or this is not a machine learning task. Skipping..."
+                        f"Task {task.name} does not have a model associated with it or this is not a machine learning task. Skipping..."
                     )
                 )
                 continue
             # Ensure the model path is a Path object
-            task_model_path = f"{task.id}-best.pt"  # Default model path for the task
+            task_model_path = f"{task.name}-best.pt"  # Default model path for the task
             model_path = self.out_dir / model
             if self.as_dir and (not model_path.exists() or not model_path.is_file()):
                 # If the model path does not exist or is not a file, print an error message and attempt to load it

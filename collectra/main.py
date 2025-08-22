@@ -1,4 +1,4 @@
-import yaml
+import yaml, logging
 from typer import Typer, Option, Argument
 from typing_extensions import Annotated
 from typing import List
@@ -58,8 +58,8 @@ def render(
         print(f"Rendering workflow [green]{workflow}[/green] to {output}")
         pipeline = CollectraManager.load(workflow)                
         if pipeline.tasks:            
-            print(f"Tasks in the pipeline:\n")
-        for task in pipeline.tasks:                        
+            print(f"\n[yellow2]Tasks in the pipeline:[/yellow2]\n")
+        for task in pipeline.tasks:
             print(yaml.dump(task.metadata()))
     except Exception as e:
         print(error_msg(f"{e}"))

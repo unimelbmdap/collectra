@@ -4,24 +4,27 @@ from typing import Dict, List, Optional
 from rich import print
 from pathlib import Path
 from .models import Model, YOLOModel, ImageClassifier
+from dataclasses import dataclass, field
 
-
+@dataclass(kw_only=True)
 class Task(ABC):
 
-    def __init__(
-        self,
-        id: str,
-        input: List[str] = [],
-        output: List[str] = [],
-        config: Dict = {},
-        model: str | Path = "",
-    ):        
-        self.id = id        
-        self.input = input
-        self.output = output
-        self.config = config
-        self.model: str = str(model)
-        self.old_model: str = ""
+    name: str
+    input: list[str] = field(default_factory=list)
+    output: list[str] = field(default_factory=list)
+    config: dict[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def build(cls, name: str, **kwargs) -> "Task":
+        input = kwargs.pop("input", [])
+        output = kwargs.pop("output", [])        
+        return cls(name=name, input=input, output=output, config=kwargs)
+
+    def __post_init__(self):
+        if isinstance(self.input, str):
+            self.input = [self.input]
+        if isinstance(self.output, str):
+            self.output = [self.output]            
 
     def metadata(self) -> Dict:
         """
@@ -29,17 +32,17 @@ class Task(ABC):
         :return: A dictionary containing task metadata.
         """        
         return {
-            "id": self.id,            
+            "name": self.name,            
             "input": self.input if len(self.input) > 1 else self.input[0],
             "output": self.output,
-            "model": self.model,
+            "model": self.config.get("model", ""),
         }
 
     def __str__(self) -> str:
-        return f"{self.id} of {self.__class__.__name__}"
+        return f"{self.name} of {self.__class__.__name__}"
 
     def __repr__(self) -> str:
-        return f"{self.id} of {self.__class__.__name__}"
+        return f"{self.name} of {self.__class__.__name__}"
 
     def set_config(self, config: Dict) -> None:
         """
@@ -62,22 +65,15 @@ class Task(ABC):
         Get the model associated with the task.
         :return: The model path as a string.
         """
-        return str(self.model)
+        return str(self.config.get("model", ""))
 
-
+@dataclass(kw_only=True)
 class MachineLearningTask(Task):
 
     VALID_MODEL = None
 
-    def __init__(
-        self,
-        id: str,
-        model: str | Path,
-        input: List[str] = [],
-        output: List[str] = [],
-        config: Dict = {},
-    ):        
-        super().__init__(id, input, output, config, model=model)
+    def __post_init__(self):
+        super().__post_init__()                
 
     def load(self, model: str | Path) -> Model:
         if not self.VALID_MODEL or not model:
@@ -121,10 +117,10 @@ class MachineLearningTask(Task):
         # self.model.cluster(self.config)
         pass
 
-
+@dataclass(kw_only=True)
 class ObjectDetectionYOLO(MachineLearningTask):
     VALID_MODEL = YOLOModel
 
-
-class TextClassification(MachineLearningTask):
+@dataclass(kw_only=True)
+class ImageClassifier(MachineLearningTask):
     VALID_MODEL = ImageClassifier
