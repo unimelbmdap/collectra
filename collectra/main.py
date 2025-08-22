@@ -4,7 +4,7 @@ from typing_extensions import Annotated
 from typing import List
 from rich import print
 from pathlib import Path
-from .pipeline import Collectra
+from .pipeline import Collectra, CollectraManager
 from .utils import success_msg, error_msg
 
 app = Typer()
@@ -33,13 +33,14 @@ def make(
     """
     Create a new Collectra workflow with the specified name and file format.
     """
-    Collectra.make(
+    pipeline: Collectra = Collectra.make(
         name=pipeline,
         version=version,
         file_format=file_format,
         out_dir=out_dir,
         as_dir=as_dir,
     )
+    pipeline.save()
     print(success_msg(f"Workflow '{pipeline}' created at {out_dir}"))
 
 

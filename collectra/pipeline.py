@@ -38,13 +38,6 @@ class TaskManager:
 
 @dataclass(kw_only=True)
 class CollectraManager:
-
-    name: str
-    version: str
-    file_format: str
-    out_dir: Path
-    config: dict[str, str] = field(default_factory=dict)    
-
     @staticmethod
     def load(pipeline: Path) -> "Collectra":
         """
@@ -108,13 +101,12 @@ class CollectraManager:
                 f"Invalid pipeline file. Missing 'collectra_pipeline_metadata' section."
             )
         data.pop("collectra_pipeline_metadata", None)  
-        pipeline = Collectra(**metadata, as_dir=as_dir, out_dir=path)
+        pipeline = Collectra.make(**metadata, as_dir=as_dir, out_dir=path)
         pipeline.setup(data)
         return pipeline
 
 @dataclass(kw_only=True)
 class Collectra:
-    
     name: str
     version: str
     file_format: str
@@ -123,7 +115,7 @@ class Collectra:
     config: dict[str, str | bool] = field(default_factory=dict)
 
     def __post_init__(self):
-        self.out_dir: str = str(self.config.get("out_dir", Path.cwd() / self.name))
+        self.out_dir: str = f"{str(self.config.get("out_dir", Path.cwd()))}/{self.name}"
         self.as_dir: bool = self.config.get("as_dir", False)  # type: ignore
 
     @classmethod
@@ -133,14 +125,14 @@ class Collectra:
         version: str = "1.0",
         file_format: str = "",        
         **kwargs,
-    ):
+    ) -> "Collectra":
         """
         Create a new Collectra workflow instance.
 
         This method initializes a new workflow with default parameters.
         """
         pipeline = cls(name=name, version=version, file_format=file_format, config=kwargs)
-        pipeline.save()
+        return pipeline
 
     def __str__(self) -> str:
         return f"{self.name} v{self.version}"
@@ -355,7 +347,7 @@ class Collectra:
             success_msg(f"Workflow '{self.name}' saved successfully at {self.out_dir}")
         )
 
-    def _save_as_directory(self):
+    def _save_as_directory(self):        
         with tempfile.TemporaryDirectory() as tmpdirname:
             tmp_dir = Path(tmpdirname)
             self._save_data_assets(tmp_dir)
@@ -363,6 +355,7 @@ class Collectra:
             os.makedirs(
                 self.out_dir, exist_ok=True
             )  # Ensure the output directory exists
+            print(self.out_dir)
             for item in tmp_dir.iterdir():
                 shutil.move(item, Path(self.out_dir) / item.name)
 
