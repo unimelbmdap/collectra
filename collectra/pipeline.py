@@ -1,5 +1,6 @@
 from rich import print
 from pathlib import Path
+from typing import Any
 import yaml, os, zipfile, shutil
 from .tasks import Task, MachineLearningTask
 from .utils import error_msg, success_msg, processing_msg
@@ -36,29 +37,14 @@ class TaskManager:
             **task
         )
 
-@dataclass
+@dataclass(kw_only=True)
 class CollectraManager:
-    @staticmethod
-    def make(
-        name: str = "default",
-        version: str = "1.0",
-        file_format: str = "",
-        out_dir: Path = Path.cwd(),
-        **kwargs,
-    ):
-        """
-        Create a new Collectra workflow instance.
 
-        This method initializes a new workflow with default parameters.
-        """
-        pipeline = Collectra(
-            name=name,
-            version=version,
-            file_format=file_format,
-            out_dir=out_dir / name,
-            **kwargs,
-        )
-        pipeline.save()
+    name: str
+    version: str
+    file_format: str
+    out_dir: Path
+    config: dict[str, str] = field(default_factory=dict)    
 
     @staticmethod
     def load(pipeline: Path) -> "Collectra":
@@ -127,24 +113,42 @@ class CollectraManager:
         pipeline.setup(data)
         return pipeline
 
-
+dataclass(kw_only=True)
 class Collectra:
+    
+    name: str
+    version: str
+    file_format: str
+    description: str = "Collectra workflow configuration"    
+    config: dict[str, Any] = field(default_factory=dict)
 
-    def __init__(
-        self,
-        name: str,
-        version: str,
-        file_format: str,
-        description: str = "Collectra workflow configuration",
+    def __post_init__(self):
+        self.out_dir: str | Path = self.config.get("out_dir", Path.cwd() / self.name)
+        self.as_dir: bool = self.config.get("as_dir", False)
+
+    @classmethod
+    def build(
+        cls,
+        name: str = "default",
+        version: str = "1.0",
+        file_format: str = "",
+        out_dir: Path = Path.cwd(),
         **kwargs,
     ):
-        self.name: str = name
-        self.version: str = version
-        self.file_format: str = file_format
-        self.description: str = description
-        self.tasks: list[Task] = []
-        self.out_dir: Path = kwargs.get("out_dir", Path.cwd() / self.name)
-        self.as_dir: bool = kwargs.get("as_dir", False)
+        """
+        Create a new Collectra workflow instance.
+
+        This method initializes a new workflow with default parameters.
+        """
+
+        pipeline = cls(
+            name=name,
+            version=version,
+            file_format=file_format,
+            out_dir=out_dir / name,
+            config=kwargs
+        )
+        pipeline.save()
 
     def __str__(self) -> str:
         return f"{self.name} v{self.version}"
