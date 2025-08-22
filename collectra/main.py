@@ -4,7 +4,7 @@ from typing_extensions import Annotated
 from typing import List
 from rich import print
 from pathlib import Path
-from .pipeline import CollectraManager
+from .pipeline import Collectra
 from .utils import success_msg, error_msg
 
 app = Typer()
@@ -33,7 +33,7 @@ def make(
     """
     Create a new Collectra workflow with the specified name and file format.
     """
-    CollectraManager.make(
+    Collectra.make(
         name=pipeline,
         version=version,
         file_format=file_format,

@@ -1,6 +1,5 @@
 from rich import print
 from pathlib import Path
-from typing import Any
 import yaml, os, zipfile, shutil
 from .tasks import Task, MachineLearningTask
 from .utils import error_msg, success_msg, processing_msg
@@ -113,26 +112,26 @@ class CollectraManager:
         pipeline.setup(data)
         return pipeline
 
-dataclass(kw_only=True)
+@dataclass(kw_only=True)
 class Collectra:
     
     name: str
     version: str
     file_format: str
     description: str = "Collectra workflow configuration"    
-    config: dict[str, Any] = field(default_factory=dict)
+    tasks: list[Task] = field(default_factory=list)
+    config: dict[str, str | bool] = field(default_factory=dict)
 
     def __post_init__(self):
-        self.out_dir: str | Path = self.config.get("out_dir", Path.cwd() / self.name)
-        self.as_dir: bool = self.config.get("as_dir", False)
+        self.out_dir: str = str(self.config.get("out_dir", Path.cwd() / self.name))
+        self.as_dir: bool = self.config.get("as_dir", False)  # type: ignore
 
     @classmethod
-    def build(
+    def make(
         cls,
         name: str = "default",
         version: str = "1.0",
-        file_format: str = "",
-        out_dir: Path = Path.cwd(),
+        file_format: str = "",        
         **kwargs,
     ):
         """
@@ -140,14 +139,7 @@ class Collectra:
 
         This method initializes a new workflow with default parameters.
         """
-
-        pipeline = cls(
-            name=name,
-            version=version,
-            file_format=file_format,
-            out_dir=out_dir / name,
-            config=kwargs
-        )
+        pipeline = cls(name=name, version=version, file_format=file_format, config=kwargs)
         pipeline.save()
 
     def __str__(self) -> str:
@@ -372,7 +364,7 @@ class Collectra:
                 self.out_dir, exist_ok=True
             )  # Ensure the output directory exists
             for item in tmp_dir.iterdir():
-                shutil.move(item, self.out_dir / item.name)
+                shutil.move(item, Path(self.out_dir) / item.name)
 
     def _save_as_file(self):
         with tempfile.TemporaryDirectory() as tmpdirname:
@@ -385,7 +377,7 @@ class Collectra:
                 for root, _, files in os.walk(tmp_dir):
                     for file in files:
                         print(
-                            processing_msg(f"Saving file to zip: {self.out_dir / file}")
+                            processing_msg(f"Saving file to zip: {Path(self.out_dir) / file}")
                         )
                         zipf.write(os.path.join(root, file), file)
             print(
@@ -409,7 +401,7 @@ class Collectra:
                 continue
             # Ensure the model path is a Path object
             task_model_path = f"{task.name}-best.pt"  # Default model path for the task
-            model_path = self.out_dir / model
+            model_path = Path(self.out_dir) / model
             if self.as_dir and (not model_path.exists() or not model_path.is_file()):
                 # If the model path does not exist or is not a file, print an error message and attempt to load it
                 print(

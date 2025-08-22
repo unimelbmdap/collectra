@@ -1,14 +1,9 @@
-from abc import ABC, abstractmethod
-import uuid
-from typing import Dict, List, Optional
-from rich import print
 from pathlib import Path
-from .models import Model, YOLOModel, ImageClassifier
+from .models import Model, YOLOModel
 from dataclasses import dataclass, field
 
 @dataclass(kw_only=True)
-class Task(ABC):
-
+class Task:
     name: str
     input: list[str] = field(default_factory=list)
     output: list[str] = field(default_factory=list)
@@ -26,7 +21,7 @@ class Task(ABC):
         if isinstance(self.output, str):
             self.output = [self.output]            
 
-    def metadata(self) -> Dict:
+    def metadata(self) -> dict:
         """
         Get metadata of the task.
         :return: A dictionary containing task metadata.
@@ -44,16 +39,16 @@ class Task(ABC):
     def __repr__(self) -> str:
         return f"{self.name} of {self.__class__.__name__}"
 
-    def set_config(self, config: Dict) -> None:
+    def set_config(self, config: dict) -> None:
         """
         Set the configuration for the task.
         :param config: A dictionary containing configuration parameters.
         """
-        if not isinstance(config, Dict):
+        if not isinstance(config, dict):
             raise ValueError("Invalid config type.")
         self.config.update(config)
-    
-    def run(self) -> List[Dict] | None:
+
+    def run(self) -> list[dict] | None:
         """
         Run the task.
         This method should be implemented by subclasses.
@@ -96,7 +91,7 @@ class MachineLearningTask(Task):
         """
         self.model = ""
 
-    def run(self) -> List[Dict]:
+    def run(self) -> list[dict]:
         if not self.model:
             raise ValueError("Model must be set before running the task.")
         return self.load(self.model).detect(self.config)
@@ -120,7 +115,3 @@ class MachineLearningTask(Task):
 @dataclass(kw_only=True)
 class ObjectDetectionYOLO(MachineLearningTask):
     VALID_MODEL = YOLOModel
-
-@dataclass(kw_only=True)
-class ImageClassifier(MachineLearningTask):
-    VALID_MODEL = ImageClassifier
