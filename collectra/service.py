@@ -1,5 +1,5 @@
-from .task import Task, TaskEntity, ObjectDetectionYOLO, TextClassification
-from .model import Model, EngineEntity, YOLOModel, ImageClassifier, DETECTRON2Engine
+from .tasks import Task, ObjectDetectionYOLO, TextClassification
+from .models import Model, YOLOModel, ImageClassifier, DETECTRON2Engine
 import typer
 from rich import print
 from typing import List, Union

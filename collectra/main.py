@@ -1,4 +1,4 @@
-import json
+import yaml
 from typer import Typer, Option, Argument
 from typing_extensions import Annotated
 from typing import List
@@ -56,12 +56,11 @@ def render(
     """
     try:
         print(f"Rendering workflow [green]{workflow}[/green] to {output}")
-        pipeline = CollectraManager.load(workflow)
-        print(json.dumps(pipeline.metadata(), indent=2))
-        if pipeline.tasks:
-            print(f"Tasks in the pipeline:")
-        for task in pipeline.tasks:
-            print(json.dumps(task.metadata(), indent=2))
+        pipeline = CollectraManager.load(workflow)                
+        if pipeline.tasks:            
+            print(f"Tasks in the pipeline:\n")
+        for task in pipeline.tasks:                        
+            print(yaml.dump(task.metadata()))
     except Exception as e:
         print(error_msg(f"{e}"))
 

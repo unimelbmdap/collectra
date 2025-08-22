@@ -1,5 +1,5 @@
-import pytest, os
-from collectra.model import YOLOModel
+import os
+from collectra.models import YOLOModel
 from collectra.pipeline import CollectraManager
 from pathlib import Path
 import shutil

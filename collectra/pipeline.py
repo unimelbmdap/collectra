@@ -2,29 +2,16 @@ from rich import print
 from pathlib import Path
 from typing import Optional, List, Dict
 import yaml, os, zipfile, shutil
-from .task import Task, MachineLearningTask, ObjectDetectionYOLO, TextClassification
+from .tasks import Task, MachineLearningTask, ObjectDetectionYOLO, TextClassification
 from .utils import error_msg, success_msg, processing_msg
 from datetime import datetime
-import pytz, tempfile
+import pytz, tempfile, importlib
 
 
 class TaskManager:
-
-    VALID_TASKS = [
-        ObjectDetectionYOLO,
-        TextClassification,
-    ]
-
     """
 	Manages tasks in the Collectra workflow.
 	"""
-
-    @staticmethod
-    def get_valid_tasks() -> List[str]:
-        """
-        Get a list of valid task names.
-        """
-        return [task.__name__ for task in TaskManager.VALID_TASKS]
 
     @staticmethod
     def build(task: Dict) -> Task:
@@ -33,21 +20,18 @@ class TaskManager:
         :param task: The task dictionary containing the task details.
         :raises ValueError: If the task format is invalid or the task type is not recognized
         :return: An instance of Task.
-        """
-        task_name = task.get("id", "")
-        task_type = task.get("type", "").replace("collectra.task.", "")
+        """        
+        task_name = task.get("name", "")
+        type: str = task.get("type", "")
         model_path = task.get("model")
-        input = task.get("input", [])
-        output = task.get("output", [])
-
+        input = task.get("input", []) if isinstance(task.get("input"), list) else [task.get("input", "")]       
+        output = task.get("output", []) if isinstance(task.get("output"), list) else [task.get("output", "")]
+        if not type:
+            raise ValueError("Task type is required.")
         if not task_name or task_name == "":
             raise ValueError("Task name cannot be empty.")
-        valid_tasks = TaskManager.get_valid_tasks()
-        if task_type not in valid_tasks:
-            raise ValueError(
-                f"Invalid task type: {task_type}. Must be one of {valid_tasks}."
-            )
-        TaskClass = TaskManager.VALID_TASKS[valid_tasks.index(task_type)]
+        module_name, class_name = type.rsplit(".", 1)
+        TaskClass = getattr(importlib.import_module(module_name), class_name)              
         return TaskClass(
             id=task_name,
             model=model_path,
@@ -128,7 +112,7 @@ class CollectraManager:
 
     @staticmethod
     def _parse_data(
-        data: Dict = {}, path: Optional[Path] = None, as_dir: bool = False
+        data: Dict = {}, path: Path | None = None, as_dir: bool = False
     ) -> "Collectra":
         """
         Parse the workflow configuration data and create a Collectra instance.
@@ -146,7 +130,7 @@ class CollectraManager:
         )  # Remove metadata from the main config dictionary for easier loading
         pipeline = Collectra(
             **metadata, as_dir=as_dir, out_dir=path
-        )  # Create a Collectra instance with the loaded data
+        )  # Create a Collectra instance with the loaded data        
         pipeline.setup(data)
         return pipeline
 
@@ -177,15 +161,15 @@ class Collectra:
         Load the configuration from a dictionary.
         This method populates the workflow with tasks based on the provided configuration.
         :param config: A dictionary containing the workflow configuration.
-        """
-        for id, info in config.items():
-            task = {"id": id, **info}
+        """        
+        for name, info in config.items():
+            task = {"name": name, **info}            
             self.tasks.append(
                 TaskManager.build(task)
             )  # Build the task using the TaskManager
             print(
                 success_msg(
-                    f"Loaded {task['id']} of type {task['type']} and model {task['model']}"
+                    f"Loaded {task['name']} of type {task['type']} and model {task['model']}"
                 )
             )
         if len(self.tasks) > 0:
@@ -230,7 +214,7 @@ class Collectra:
             "file_format": self.file_format,
         }
 
-    def _get_existing_task_ids(self) -> List[str]:
+    def _get_existing_task_ids(self) -> list[str]:
         """
         Get a list of existing task IDs in the workflow.
 
@@ -239,21 +223,20 @@ class Collectra:
         return [task.id for task in self.tasks]
 
     def add(
-        self, task: str, task_input: List[str] = [], task_output: List[str] = []
+        self, task: str, task_input: list[str] = [], task_output: list[str] = []
     ) -> "Collectra":
         """
         Add a task to the workflow.
-
         This method parses the task string and adds it to the workflow.
         :param task: The task string in the format "<task_name>,<task_type>,<model_path>".
         :param task_input: what kind of input the task accepts.
         :param task_output: what kind of output the task produces.
         """
         existing_task_ids: List[str] = self._get_existing_task_ids()
-        task_name, task_type, model_path = task.split(",")
+        task_name, type, model_path = task.split(",")
         task_obj: Dict = {
-            "id": task_name,
-            "type": task_type,
+            "name": task_name,
+            "type": type,
             "model": model_path,
             "input": task_input,
             "output": task_output,
@@ -261,10 +244,9 @@ class Collectra:
         if task_name in existing_task_ids:
             raise ValueError(
                 f"Task name is empty or already exists: {task_name}. Please provide a unique task name."
-            )
-        built_task: Task = TaskManager.build(task_obj)
-        self.tasks.append(built_task)
-        print(success_msg(f"Task with ID {built_task.id} added to the workflow."))
+            )        
+        built_task = TaskManager.build(task_obj)        
+        print(success_msg(f"Task with ID {built_task} added to the workflow."))
         return self
 
     def run(self, task_id: str, config: dict = {}):

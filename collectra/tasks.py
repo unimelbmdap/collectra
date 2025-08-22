@@ -3,7 +3,7 @@ import uuid
 from typing import Dict, List, Optional
 from rich import print
 from pathlib import Path
-from .model import Model, YOLOModel, ImageClassifier
+from .models import Model, YOLOModel, ImageClassifier
 
 
 class Task(ABC):
@@ -15,8 +15,8 @@ class Task(ABC):
         output: List[str] = [],
         config: Dict = {},
         model: str | Path = "",
-    ):
-        self.id = id
+    ):        
+        self.id = id        
         self.input = input
         self.output = output
         self.config = config
@@ -27,11 +27,10 @@ class Task(ABC):
         """
         Get metadata of the task.
         :return: A dictionary containing task metadata.
-        """
+        """        
         return {
-            "id": self.id,
-            "config": self.config,
-            "input": self.input,
+            "id": self.id,            
+            "input": self.input if len(self.input) > 1 else self.input[0],
             "output": self.output,
             "model": self.model,
         }
@@ -50,8 +49,7 @@ class Task(ABC):
         if not isinstance(config, Dict):
             raise ValueError("Invalid config type.")
         self.config.update(config)
-
-    @abstractmethod
+    
     def run(self) -> List[Dict] | None:
         """
         Run the task.
@@ -78,19 +76,8 @@ class MachineLearningTask(Task):
         input: List[str] = [],
         output: List[str] = [],
         config: Dict = {},
-    ):
+    ):        
         super().__init__(id, input, output, config, model=model)
-
-    def metadata(self) -> Dict:
-        """
-        Get metadata of the task.
-        :return: A dictionary containing task metadata.
-        """
-        return {
-            "id": self.id,
-            "model": str(self.model) if self.model else None,
-            "config": self.config,
-        }
 
     def load(self, model: str | Path) -> Model:
         if not self.VALID_MODEL or not model:

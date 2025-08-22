@@ -8,7 +8,7 @@ from rich import print
 from rocrate.rocrate import ROCrate
 from .utils import BaseROCrate
 from .service import TaskManager
-from .task import TaskEntity
+from .tasks import TaskEntity
 
 
 class WorkflowConfig:

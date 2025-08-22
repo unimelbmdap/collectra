@@ -1,8 +1,8 @@
 import re, os, pytest, shutil
 from pathlib import Path
 from typer.testing import CliRunner
-from collectra.task import ObjectDetectionYOLO
-from collectra.model import YOLOModel, ImageClassifier
+from collectra.tasks import ObjectDetectionYOLO
+from collectra.models import YOLOModel, ImageClassifier
 from collectra.main import app
 from collectra.pipeline import CollectraManager
 

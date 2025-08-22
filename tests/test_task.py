@@ -1,6 +1,6 @@
 import pytest
-from collectra.task import Task, ObjectDetectionYOLO, ImageClassifier
-from collectra.model import YOLOModel, DETECTRON2Engine, ImageClassifier
+from collectra.tasks import Task, ObjectDetectionYOLO, ImageClassifier
+from collectra.models import YOLOModel, DETECTRON2Engine, ImageClassifier
 
 # def test_task_initialization():
 #     try:
