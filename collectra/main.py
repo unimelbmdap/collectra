@@ -21,7 +21,7 @@ def make(
             "-f",
             help="File format for the workflow, e.g., grapto, json, yaml",
         ),
-    ] = "",    
+    ] = "",
     as_dir: Annotated[
         bool,
         Option("--as-dir", help="Create the workflow as a directory instead of a file"),
@@ -35,11 +35,17 @@ def make(
         file_format (str): File format for the pipeline, e.g., grapto, hespi, etc.
         out_dir (Path): Output directory for the pipeline.
         as_dir (bool): Create the pipeline as a directory instead of a file.
-    """    
+    """
     input_directory = Path(dir)
     name = input_directory.name
-    out_dir = input_directory.parent    
-    pipeline: Collectra = Collectra.make(name=name, version=version, file_format=file_format, out_dir=out_dir, as_dir=as_dir)    
+    out_dir = input_directory.parent
+    pipeline: Collectra = Collectra.make(
+        name=name,
+        version=version,
+        file_format=file_format,
+        out_dir=out_dir,
+        as_dir=as_dir,
+    )
     pipeline.save()
     print(success_msg(f"Workflow '{pipeline}' created at {name}"))
 
@@ -57,8 +63,8 @@ def render(
     """
     try:
         print(f"Rendering workflow [green]{workflow}[/green] to {output}")
-        pipeline = CollectraManager.load(workflow)                
-        if pipeline.tasks:            
+        pipeline = CollectraManager.load(workflow)
+        if pipeline.tasks:
             print(f"\n[yellow2]Tasks in the pipeline:[/yellow2]\n")
         for task in pipeline.tasks:
             print(yaml.dump(task.metadata(), default_flow_style=False, sort_keys=False))

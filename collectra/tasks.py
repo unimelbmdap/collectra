@@ -2,6 +2,7 @@ from pathlib import Path
 from .models import Model, YOLOModel
 from dataclasses import dataclass, field
 
+
 @dataclass(kw_only=True)
 class Task:
     name: str
@@ -12,28 +13,28 @@ class Task:
     @classmethod
     def build(cls, name: str, **kwargs) -> "Task":
         input = kwargs.pop("input", [])
-        output = kwargs.pop("output", [])        
+        output = kwargs.pop("output", [])
         return cls(name=name, input=input, output=output, config=kwargs)
 
     def __post_init__(self):
         if isinstance(self.input, str):
             self.input = [self.input]
         if isinstance(self.output, str):
-            self.output = [self.output]            
+            self.output = [self.output]
 
     def metadata(self) -> dict:
         """
         Get metadata of the task.
         :return: A dictionary containing task metadata.
-        """       
+        """
         metadata = {
-            "name": self.name,            
-            "model": self.config.get("model", ""),            
-        }         
+            "name": self.name,
+            "model": self.config.get("model", ""),
+        }
         if self.input:
-            metadata["input"] = self.input if len(self.input) > 1 else self.input[0] # type: ignore
+            metadata["input"] = self.input if len(self.input) > 1 else self.input[0]  # type: ignore
         if self.output:
-            metadata["output"] = self.output if len(self.output) > 1 else self.output[0] # type: ignore
+            metadata["output"] = self.output if len(self.output) > 1 else self.output[0]  # type: ignore
         return metadata
 
     def __str__(self) -> str:
@@ -65,13 +66,14 @@ class Task:
         """
         return str(self.config.get("model", ""))
 
+
 @dataclass(kw_only=True)
 class MachineLearningTask(Task):
 
     VALID_MODEL = None
 
     def __post_init__(self):
-        super().__post_init__()                
+        super().__post_init__()
 
     def load(self, model: str | Path) -> Model:
         if not self.VALID_MODEL or not model:
@@ -102,7 +104,7 @@ class MachineLearningTask(Task):
     def train(self) -> Path | None:
         if not self.model:
             raise ValueError("Model must be set before training the task.")
-        return self.load(self.model).train(self.config)        
+        return self.load(self.model).train(self.config)
 
     def eval(self) -> None:
         if not self.model:
@@ -114,6 +116,7 @@ class MachineLearningTask(Task):
         #   raise ValueError("Model must be set before clustering the task.")
         # self.model.cluster(self.config)
         pass
+
 
 @dataclass(kw_only=True)
 class ObjectDetectionYOLO(MachineLearningTask):
