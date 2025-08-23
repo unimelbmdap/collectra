@@ -61,7 +61,7 @@ def render(
         if pipeline.tasks:            
             print(f"\n[yellow2]Tasks in the pipeline:[/yellow2]\n")
         for task in pipeline.tasks:
-            print(yaml.dump(task.metadata()))
+            print(yaml.dump(task.metadata(), default_flow_style=False, sort_keys=False))
     except Exception as e:
         print(error_msg(f"{e}"))
 

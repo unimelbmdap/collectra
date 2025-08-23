@@ -25,13 +25,16 @@ class Task:
         """
         Get metadata of the task.
         :return: A dictionary containing task metadata.
-        """        
-        return {
+        """       
+        metadata = {
             "name": self.name,            
-            "input": self.input if len(self.input) > 1 else self.input[0],
-            "output": self.output,
-            "model": self.config.get("model", ""),
-        }
+            "model": self.config.get("model", ""),            
+        }         
+        if self.input:
+            metadata["input"] = self.input if len(self.input) > 1 else self.input[0] # type: ignore
+        if self.output:
+            metadata["output"] = self.output if len(self.output) > 1 else self.output[0] # type: ignore
+        return metadata
 
     def __str__(self) -> str:
         return f"{self.name} of {self.__class__.__name__}"
