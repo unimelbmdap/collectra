@@ -29,8 +29,8 @@ class TaskManager:
             raise ValueError("Task type is required.")
         if not task_name or task_name == "":
             raise ValueError("Task name cannot be empty.")
-        module_name, class_name = type.rsplit(".", 1)
-        TaskClass = getattr(importlib.import_module(module_name), class_name)              
+        module_name, class_name = type.rsplit(".", 1)        
+        TaskClass = getattr(importlib.import_module(module_name), class_name)                      
         return TaskClass.build(            
             name=task_name,
             **task
@@ -38,6 +38,7 @@ class TaskManager:
 
 @dataclass(kw_only=True)
 class CollectraManager:
+        
     @staticmethod
     def load(pipeline: Path) -> "Collectra":
         """
@@ -115,7 +116,7 @@ class Collectra:
     config: dict[str, str | bool] = field(default_factory=dict)
 
     def __post_init__(self):
-        self.out_dir: str = f"{str(self.config.get("out_dir", Path.cwd()))}/{self.name}"
+        self.out_dir: str = str(self.config.get("out_dir", Path.cwd() / self.name))
         self.as_dir: bool = self.config.get("as_dir", False)  # type: ignore
 
     @classmethod
@@ -130,7 +131,7 @@ class Collectra:
         Create a new Collectra workflow instance.
 
         This method initializes a new workflow with default parameters.
-        """
+        """        
         pipeline = cls(name=name, version=version, file_format=file_format, config=kwargs)
         return pipeline
 
@@ -150,7 +151,7 @@ class Collectra:
             print(success_msg(f"Loaded {task_instance.name}"))
         
         if len(self.tasks) == 0:
-            print(processing_msg("No tasks found in the workflow configuration."))
+            print("No tasks found in the workflow configuration.")
 
     def get_config(self, config: dict = {}) -> dict:
         """
@@ -217,12 +218,13 @@ class Collectra:
             "model": model_path,
             "input": task_input,
             "output": task_output,
-        }
+        }        
         if task_name in existing_task_ids:
             raise ValueError(
                 f"Task name is empty or already exists: {task_name}. Please provide a unique task name."
             )        
-        built_task = TaskManager.build(task_obj)        
+        built_task = TaskManager.build(task_obj)
+        self.tasks.append(built_task)        
         print(success_msg(f"Task with ID {built_task} added to the workflow."))
         return self
 
@@ -347,15 +349,12 @@ class Collectra:
             success_msg(f"Workflow '{self.name}' saved successfully at {self.out_dir}")
         )
 
-    def _save_as_directory(self):        
+    def _save_as_directory(self):            
         with tempfile.TemporaryDirectory() as tmpdirname:
             tmp_dir = Path(tmpdirname)
             self._save_data_assets(tmp_dir)
-            self._save_pipeline_config(tmp_dir)
-            os.makedirs(
-                self.out_dir, exist_ok=True
-            )  # Ensure the output directory exists
-            print(self.out_dir)
+            self._save_pipeline_config(tmp_dir)                        
+            os.makedirs(self.out_dir, exist_ok=True)  # Ensure the output directory exists            
             for item in tmp_dir.iterdir():
                 shutil.move(item, Path(self.out_dir) / item.name)
 
@@ -379,11 +378,11 @@ class Collectra:
                 )
             )
 
-    def _save_data_assets(self, tmp_dir: Path):
+    def _save_data_assets(self, tmp_dir: Path):        
         for task in self.tasks:
             new_model = False
             # First get the path of the model associated with the task
-            model = task.get_model()
+            model = task.get_model()            
             if not model or not isinstance(task, MachineLearningTask):
                 # If the task does not have a model, skip it
                 print(
@@ -394,7 +393,7 @@ class Collectra:
                 continue
             # Ensure the model path is a Path object
             task_model_path = f"{task.name}-best.pt"  # Default model path for the task
-            model_path = Path(self.out_dir) / model
+            model_path = Path(self.out_dir) / model            
             if self.as_dir and (not model_path.exists() or not model_path.is_file()):
                 # If the model path does not exist or is not a file, print an error message and attempt to load it
                 print(
@@ -417,6 +416,7 @@ class Collectra:
                 shutil.move(
                     model_path, tmp_dir / task_model_path
                 )  # Move the model to the output directory
+                task.model = task_model_path  # Update the model path to the new path
             else:
                 print(
                     processing_msg(

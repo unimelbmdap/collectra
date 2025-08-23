@@ -12,7 +12,7 @@ app = Typer()
 
 @app.command()
 def make(
-    pipeline: Annotated[str, Option("--workflow", "-w", help="name of the workflow")],
+    dir: Annotated[str, Option("--workflow", "-w", help="name of the workflow")],
     version: Annotated[str, Option("--version", "-v", help="version of the workflow")],
     file_format: Annotated[
         str,
@@ -21,27 +21,27 @@ def make(
             "-f",
             help="File format for the workflow, e.g., grapto, json, yaml",
         ),
-    ] = "",
-    out_dir: Annotated[
-        Path, Option("--output", "-o", help="Output directory for the workflow")
-    ] = Path.cwd(),
+    ] = "",    
     as_dir: Annotated[
         bool,
         Option("--as-dir", help="Create the workflow as a directory instead of a file"),
     ] = False,
 ):
-    """
-    Create a new Collectra workflow with the specified name and file format.
-    """
-    pipeline: Collectra = Collectra.make(
-        name=pipeline,
-        version=version,
-        file_format=file_format,
-        out_dir=out_dir,
-        as_dir=as_dir,
-    )
+    """Create a new Collectra pipeline.
+
+    Args:
+        name (str): Name of the pipeline.
+        version (str): Version of the pipeline.
+        file_format (str): File format for the pipeline, e.g., grapto, hespi, etc.
+        out_dir (Path): Output directory for the pipeline.
+        as_dir (bool): Create the pipeline as a directory instead of a file.
+    """    
+    input_directory = Path(dir)
+    name = input_directory.name
+    out_dir = input_directory.parent    
+    pipeline: Collectra = Collectra.make(name=name, version=version, file_format=file_format, out_dir=out_dir, as_dir=as_dir)    
     pipeline.save()
-    print(success_msg(f"Workflow '{pipeline}' created at {out_dir}"))
+    print(success_msg(f"Workflow '{pipeline}' created at {name}"))
 
 
 @app.command()
