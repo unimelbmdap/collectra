@@ -1,6 +1,7 @@
 from pathlib import Path
 from .models import Model, YOLOModel
 from dataclasses import dataclass, field
+import tempfile, zipfile
 
 
 @dataclass(kw_only=True)
@@ -90,7 +91,18 @@ class MachineLearningTask(Task):
     def train(self) -> Path | None:        
         if not self.config.get("model", None):
             raise ValueError("Model must be set before training the task.")
-        return self.load(self.config.get("model")).train(self.config) # type: ignore
+        model = self.config.get("model", "")        
+        if not model:
+            raise ValueError("Model path must be set before training the task.")
+        if self.config.get("as_dir", False):                          
+            model_path = Path(self.config.get("out_dir", None)) / model # type: ignore
+            return self.load(model_path).train(self.config)
+        else:
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                with zipfile.ZipFile(model, 'r') as zip_ref:
+                    zip_ref.extract(member=model, path=tmpdirname)
+                    model_path = Path(tmpdirname) / model
+                    return self.load(model_path).train(self.config) # type: ignore
 
     def eval(self) -> None:
         if not self.config.get("model", None):

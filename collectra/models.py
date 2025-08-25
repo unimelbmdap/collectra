@@ -1,4 +1,4 @@
-import shutil, os, yaml, zipfile, platform
+import shutil, os, yaml, zipfile, tempfile, platform
 from rich import print
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -6,7 +6,6 @@ from ultralytics import YOLO
 from tqdm import tqdm
 from typing import List, Dict
 from datetime import datetime
-
 from .utils import get_all_files
 from .utils import processing_msg, error_msg
 
@@ -130,26 +129,15 @@ class YOLOModel(Model):
         self.yolo_config_path: str = "config.yml"
 
     def train(self, config: dict = {}) -> Path:
-        """Train the YOLO model with given configuration."""
-        merged_config = {**self.config, **config}
-        breakpoint()
+        """Train the YOLO model with given configuration."""        
+        merged_config = {**self.config, **config}        
         print(
             processing_msg(
-                f"[bold green]Training object detection model[/bold green]: {self.name}"
+                f"[bold green]Training object detection model[/bold green]: {self.path}"
             )
         )
         self._setup_environment(merged_config)
-        self._prepare_data(merged_config)
-
-        if merged_config.get("test", False):
-            print(
-                "[bold yellow]Test mode enabled[/bold yellow]: Training will not be performed."
-            )
-            train_results = "Test mode: No training performed."
-            metrics = "Test mode: No metrics available."
-            self._save_results(merged_config, train_results, metrics)
-            return None
-
+        self._prepare_data(merged_config)        
         train_results = self._execute_training(merged_config)
         new_model_path = self._get_model_path()
         metrics = self._validate_model()
@@ -166,9 +154,9 @@ class YOLOModel(Model):
         Args:
             config (dict): Configuration dictionary containing directory settings
         """
-        # Create unique directory with timestamp to avoid conflicts
+        # Create unique directory with timestamp to avoid conflicts        
         self.dir = (
-            Path(config.get("output"))
+            Path(config.get("output_log", "logs"))
             / f"{config.get('task')}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
         )
         print(processing_msg(f"Setting up training environment in {self.dir}"))
@@ -183,8 +171,8 @@ class YOLOModel(Model):
 
         Args:
             config (dict): Configuration dictionary containing input settings
-        """
-        data = config.get("input", None)
+        """        
+        data = config.get("input_files", None)
         inputs = config.get("inputs", [])
         classes = config.get("outputs", [])
         if not data:
@@ -196,7 +184,7 @@ class YOLOModel(Model):
             raise ValueError(
                 error_msg("File format is required for training. Found none")
             )
-        file_format = file_format.replace(".", "")
+        file_format = file_format.replace(".", "")        
         self.preprocess(data, inputs, classes, file_format=file_format)
 
     def _prepare_assets(
@@ -209,7 +197,7 @@ class YOLOModel(Model):
             )
             return
         with open(results_yaml, "r") as f:
-            data = yaml.safe_load(f)
+            data = yaml.safe_load(f)            
             image = data.get(inputs[0], None).get("path", None)
             if not image:
                 print(error_msg(f"Invalid input for {file}. Skipping this..."))
@@ -236,7 +224,7 @@ class YOLOModel(Model):
             yolo_config = f"val: val.txt\nnc: {len(classes)}\nnames: {classes}"
         Path(f"{self.dir}/train.txt").write_text("\n".join(train_files))
         Path(f"{self.dir}/val.txt").write_text("\n".join(val_files))
-        Path(f"{self.dir}/yolo_config.yml").write_text(yolo_config)
+        Path(f"{self.dir}/config.yml").write_text(yolo_config)
 
     def _generate_annotation_str(self, item: dict) -> str:
         return f"{item['class_id']} {item['x_center']} {item['y_center']} {item['width_relative']} {item['height_relative']}\n"
@@ -283,17 +271,15 @@ class YOLOModel(Model):
         classes: list[str],
         file_format: str,
         validation: bool = False,
-    ) -> None:
+    ) -> None:        
         files: List[Path] = get_all_files(data, file_format)
-        data_files = []
+        data_files = []        
         for file in tqdm(files, desc="Processing files for YOLO training"):
             if file.is_file():
-                with zipfile.ZipFile(file, "r") as zip_ref:
-                    data = zip_ref.extractall(path=self.dir)
-                    self._prepare_assets(file, inputs=inputs)
-                residual_yaml = self.dir / "results.yaml"
-                if residual_yaml.exists():
-                    os.remove(residual_yaml)
+                with tempfile.TemporaryDirectory() as tmpdirname:
+                    with zipfile.ZipFile(file, "r") as zip_ref:
+                        data = zip_ref.extractall(path=tmpdirname)
+                        self._prepare_assets(tmpdirname / file, inputs=inputs)                    
             if file.is_dir():
                 data = self._prepare_assets(file, is_file=False, inputs=inputs)
             data_files.append(data)
@@ -403,7 +389,7 @@ class YOLOModel(Model):
         train_params = {
             "data": Path(f"{self.dir}/{self.yolo_config_path}"),
             "project": self.dir,
-        }
+        }                
         if config.get("epochs", None):
             train_params["epochs"] = int(
                 config.get("epochs", self.DEFAULT_CONFIG["epochs"])

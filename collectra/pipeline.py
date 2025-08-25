@@ -256,15 +256,15 @@ class Collectra:
                 continue
             found_task = True
             print(processing_msg(f"Detecting task: {task.name}"))
-            task.set_config(
-                {
-                    **config,
-                    "file_format": self.file_format,
-                    "task": task.name,
-                    "input": task.input or [],
-                    "output": task.output or [],
-                }
-            )
+            config = {
+                **config,
+                "file_format": self.file_format,
+                "task": task.name,
+                "input": task.input or [],
+                "output": task.output or [],
+                "as_dir": self.as_dir
+            }
+            task.set_config(config)
             results = task.run()
             names = []
             if not results:
@@ -356,9 +356,10 @@ class Collectra:
             "task": task.name,
             "inputs": task.input or [],
             "outputs": task.output or [],
+            "out_dir": self.out_dir,
+            "as_dir": self.as_dir
         }
-        task.set_config(task_config)                
-        breakpoint()
+        task.set_config(task_config)                 
         task.train()
         self.save()
 
