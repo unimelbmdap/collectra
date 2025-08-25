@@ -36,9 +36,8 @@ def make(
         out_dir (Path): Output directory for the pipeline.
         as_dir (bool): Create the pipeline as a directory instead of a file.
     """
-    input_directory = Path(dir)
-    name = input_directory.name
-    out_dir = input_directory.parent
+    out_dir = Path(dir)
+    name = out_dir.name    
     pipeline: Collectra = Collectra.make(
         name=name,
         version=version,
@@ -63,11 +62,7 @@ def render(
     """
     try:
         print(f"Rendering workflow [green]{workflow}[/green] to {output}")
-        pipeline = CollectraManager.load(workflow)
-        if pipeline.tasks:
-            print(f"\n[yellow2]Tasks in the pipeline:[/yellow2]\n")
-        for task in pipeline.tasks:
-            print(yaml.dump(task.metadata(), default_flow_style=False, sort_keys=False))
+        CollectraManager.load(workflow).render()        
     except Exception as e:
         print(error_msg(f"{e}"))
 

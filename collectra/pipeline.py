@@ -5,7 +5,7 @@ from .tasks import Task, MachineLearningTask
 from .utils import error_msg, success_msg, processing_msg
 from datetime import datetime
 from dataclasses import dataclass, field
-import pytz, tempfile, importlib
+import pytz, tempfile, importlib, networkx as nx, graphviz
 
 
 class TaskManager:
@@ -86,7 +86,7 @@ class CollectraManager:
 
     @staticmethod
     def _parse_data(
-        data: dict = {}, path: Path | None = None, as_dir: bool = False
+        data: dict = dict(), path: Path | None = None, as_dir: bool = False
     ) -> "Collectra":
         """
         Parse the workflow configuration data and create a Collectra instance.
@@ -135,6 +135,23 @@ class Collectra:
             name=name, version=version, file_format=file_format, config=kwargs
         )
         return pipeline
+    
+    def render(self, filename: str = ""):
+        dag = nx.DiGraph()
+        for task in self.tasks:
+            metadata = task.metadata()
+            if task.name not in dag:
+                dag.add_node(task.name, item=task)
+            node = dag.nodes[task.name]
+            node["item"] = task
+            for input_name in task.input:                
+                dag.add_edge(input_name, task.name)
+            for output_name in task.output:
+                dag.add_edge(task.name, output_name)    
+        dot_str = nx.nx_pydot.to_pydot(dag).to_string()
+        filename = filename if filename else f"{self.name}_DAG"
+        graphviz.Source(dot_str).render(filename=f"{self.name}_DAG", format="svg", cleanup=True)
+
 
     def __str__(self) -> str:
         return f"{self.name} v{self.version}"
@@ -154,7 +171,7 @@ class Collectra:
         if len(self.tasks) == 0:
             print("No tasks found in the workflow configuration.")
 
-    def get_config(self, config: dict = {}) -> dict:
+    def get_config(self, config: dict = dict()) -> dict:
         """
         Generate a YAML representation of the workflow configuration.
 
@@ -213,7 +230,7 @@ class Collectra:
         :param task_output: what kind of output the task produces.
         """
         existing_task_ids: list[str] = self._get_existing_task_ids()
-        task_name, type, model_path = task.split(",")
+        task_name, type, model_path = task.split(",")        
         task_obj: dict = {
             "name": task_name,
             "type": type,
@@ -225,12 +242,12 @@ class Collectra:
             raise ValueError(
                 f"Task name is empty or already exists: {task_name}. Please provide a unique task name."
             )
-        built_task = TaskManager.build(task_obj)
-        self.tasks.append(built_task)
+        built_task = TaskManager.build(task_obj)        
+        self.tasks.append(built_task)        
         print(success_msg(f"Task with ID {built_task} added to the workflow."))
         return self
 
-    def run(self, task_id: str, config: dict = {}):
+    def run(self, task_id: str, config: dict = dict()):
         found_task = False
         for task in self.tasks:
             if found_task:
@@ -313,7 +330,7 @@ class Collectra:
                 error_msg(f"Task with ID {task_id} not found in the workflow.")
             )
 
-    def train(self, task_id: str, config: dict = {}):
+    def train(self, task_id: str, config: dict = dict()):
         """
         Train the specified task in the workflow.
 
