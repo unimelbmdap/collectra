@@ -132,6 +132,7 @@ class YOLOModel(Model):
     def train(self, config: dict = {}) -> Path:
         """Train the YOLO model with given configuration."""
         merged_config = {**self.config, **config}
+        breakpoint()
         print(
             processing_msg(
                 f"[bold green]Training object detection model[/bold green]: {self.name}"

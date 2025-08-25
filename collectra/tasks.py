@@ -80,36 +80,22 @@ class MachineLearningTask(Task):
             raise Exception(
                 "No valid model type defined for this task or model path is empty."
             )
-        return self.VALID_MODEL(model)
-
-    def add_model(self, model: Path) -> Model:
-        """
-        Add a model to the task.
-        :param model: The EngineModel instance to add.
-        """
-        return self.load(model)
-
-    def delete_model(self) -> None:
-        """
-        Delete the model associated with the task.
-        This method sets the model to None.
-        """
-        self.model = ""
+        return self.VALID_MODEL(model)        
 
     def run(self) -> list[dict]:
-        if not self.model:
+        if not self.config.get("model", None):
             raise ValueError("Model must be set before running the task.")
-        return self.load(self.model).detect(self.config)
+        return self.load(self.config.get("model")).detect(self.config) # type: ignore
 
-    def train(self) -> Path | None:
-        if not self.model:
+    def train(self) -> Path | None:        
+        if not self.config.get("model", None):
             raise ValueError("Model must be set before training the task.")
-        return self.load(self.model).train(self.config)
+        return self.load(self.config.get("model")).train(self.config) # type: ignore
 
     def eval(self) -> None:
-        if not self.model:
+        if not self.config.get("model", None):
             raise ValueError("Model must be set before validating the task.")
-        self.load(self.model).val(self.config)
+        self.load(self.config.get("model")).val(self.config) # type: ignore
 
     def cluster(self) -> None:
         # if not self.model:
@@ -120,4 +106,5 @@ class MachineLearningTask(Task):
 
 @dataclass(kw_only=True)
 class ObjectDetectionYOLO(MachineLearningTask):
-    VALID_MODEL = YOLOModel
+    VALID_MODEL = YOLOModel        
+

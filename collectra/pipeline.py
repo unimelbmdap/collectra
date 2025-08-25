@@ -189,9 +189,9 @@ class Collectra:
             config[task_key] = {
                 "type": f"{task.__class__.__module__}.{task.__class__.__name__}"
             }
-            # Chekc if task has attribute model
-            if hasattr(task, "model"):
-                config[task_key]["model"] = task.model  # type: ignore
+            # Check if task has attribute model
+            if task.config.get("model", None):
+                config[task_key]["model"] = task.config.get("model")  # type: ignore
             if task.input:
                 config[task_key]["input"] = task.input if len(task.input) > 1 else task.input[0]  # type: ignore
             if task.output:
@@ -341,10 +341,10 @@ class Collectra:
         if len(task_arr) == 0 or len(task_arr) > 1:
             raise ValueError(
                 error_msg(
-                    f"Task with ID {task_id} has an issue in the pipeline: not found or duplicates."
+                    f"There was a problem with {task_id}: not found or duplicates."
                 )
             )
-        task = task_arr[0]
+        task = task_arr[0]        
         if not isinstance(task, MachineLearningTask):
             raise ValueError(
                 error_msg(f"Task with ID {task_id} is not a machine learning task.")
@@ -357,7 +357,8 @@ class Collectra:
             "inputs": task.input or [],
             "outputs": task.output or [],
         }
-        task.set_config(task_config)
+        task.set_config(task_config)                
+        breakpoint()
         task.train()
         self.save()
 
@@ -459,7 +460,7 @@ class Collectra:
                         str(model), tmp_dir
                     )  # Extract the model to the temporary directory
                     zipf.close()
-            task.model = task_model_path  # Update the model path to the new path
+            task.config["model"] = task_model_path  # Update the model path to the new path
 
     def _save_pipeline_config(self, tmp_dir: Path):
         pipeline_yaml = tmp_dir / "pipeline.yaml"

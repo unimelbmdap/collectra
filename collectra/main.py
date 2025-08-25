@@ -111,14 +111,17 @@ def train(
     """
     Train a specific task in the Collectra workflow
     """
-    config = {
-        "input_files": input_files,
-        "output_log": output_log,
-        "epochs": epochs,
-        "imgsz": imgsz,
-        "lr0": lr0,
-    }
-    CollectraManager.load(pipeline).train(task_id=task, config=config)
+    try:
+        config = {
+            "input_files": input_files,
+            "output_log": output_log,
+            "epochs": epochs,
+            "imgsz": imgsz,
+            "lr0": lr0,
+        }
+        CollectraManager.load(pipeline).train(task_id=task, config=config)
+    except Exception as e:
+        print(error_msg(f"Failed to train task: {e}"))
 
 
 @app.command()
