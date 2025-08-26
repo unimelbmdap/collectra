@@ -37,7 +37,7 @@ def make(
         as_dir (bool): Create the pipeline as a directory instead of a file.
     """
     out_dir = Path(dir)
-    name = out_dir.name    
+    name = out_dir.name
     pipeline: Collectra = Collectra.make(
         name=name,
         version=version,
@@ -62,7 +62,7 @@ def render(
     """
     try:
         print(f"Rendering workflow [green]{workflow}[/green] to {output}")
-        CollectraManager.load(workflow).render()        
+        CollectraManager.load(workflow).render()
     except Exception as e:
         print(error_msg(f"{e}"))
 

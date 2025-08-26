@@ -53,7 +53,7 @@ def get_all_files(data: List[str], file_format: str) -> List[Path]:
         elif path.is_file() and path.suffix.replace(".", "") == file_format:
             files.append(Path(path))
     if len(files) == 0:
-        raise Exception(f"No files found with format '{file_format}'")    
+        raise Exception(f"No files found with format '{file_format}'")
     return files
 
 

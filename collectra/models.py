@@ -110,7 +110,7 @@ class YOLOModel(Model):
         "epochs": 50,  # Number of training epochs
         "imgsz": 640,  # Input image size for training
         "verbose": True,  # Enable verbose output during training
-        "lr0": 0.01,  # Initial learning rate   
+        "lr0": 0.01,  # Initial learning rate
     }
 
     def __init__(self, path: str | Path, config: dict = {}):
@@ -125,7 +125,7 @@ class YOLOModel(Model):
         print(processing_msg(f"Loading YOLO model with path {path}"))
         self.model = YOLO(path, verbose=True)
         self.yolo_config_path: str = "config.yml"
-    
+
     def _setup_environment(self, config: dict) -> None:
         """
         Setup the training environment and create necessary directories.
@@ -136,7 +136,7 @@ class YOLOModel(Model):
         Args:
             config (dict): Configuration dictionary containing directory settings
         """
-        # Create unique directory with timestamp to avoid conflicts        
+        # Create unique directory with timestamp to avoid conflicts
         self.dir = (
             Path(config.get("output_log", "logs"))
             / f"{config.get('task')}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
@@ -145,19 +145,19 @@ class YOLOModel(Model):
         self.dir.mkdir(parents=True, exist_ok=True)
 
     def train(self, config: dict = {}) -> Path:
-        """Train the YOLO model with given configuration."""        
-        merged_config = {**self.config, **config}        
+        """Train the YOLO model with given configuration."""
+        merged_config = {**self.config, **config}
         print(
             processing_msg(
                 f"[bold green]Training object detection model[/bold green]: {self.path}"
             )
         )
         self._setup_environment(merged_config)
-        self._prepare_data(merged_config)        
+        self._prepare_data(merged_config)
         train_results = self._execute_training(merged_config)
-        metrics = self._validate_model()              
-        self._save_results(merged_config, train_results, metrics)      
-        return self._get_model_path()    
+        metrics = self._validate_model()
+        self._save_results(merged_config, train_results, metrics)
+        return self._get_model_path()
 
     def _prepare_data(self, config: dict) -> None:
         """
@@ -168,7 +168,7 @@ class YOLOModel(Model):
 
         Args:
             config (dict): Configuration dictionary containing input settings
-        """        
+        """
         data = config.get("input_files", None)
         inputs = config.get("inputs", [])
         classes = config.get("outputs", [])
@@ -181,7 +181,7 @@ class YOLOModel(Model):
             raise ValueError(
                 error_msg("File format is required for training. Found none")
             )
-        file_format = file_format.replace(".", "")        
+        file_format = file_format.replace(".", "")
         self.preprocess(data, inputs, classes, file_format=file_format)
 
     def _prepare_assets(
@@ -194,7 +194,7 @@ class YOLOModel(Model):
             )
             return dict()
         with open(results_yaml, "r") as f:
-            data = yaml.safe_load(f)            
+            data = yaml.safe_load(f)
             image = data.get(inputs[0], None).get("path", None)
             if not image:
                 print(error_msg(f"Invalid input for {file}. Skipping this..."))
@@ -221,7 +221,7 @@ class YOLOModel(Model):
             yolo_config = f"val: val.txt\nnc: {len(classes)}\nnames: {classes}"
         Path(f"{self.dir}/train.txt").write_text("\n".join(train_files))
         Path(f"{self.dir}/val.txt").write_text("\n".join(val_files))
-        Path(f"{self.dir}/config.yml").write_text(yolo_config)        
+        Path(f"{self.dir}/config.yml").write_text(yolo_config)
 
     def _generate_annotation_str(self, item: dict) -> str:
         return f"{item['class_id']} {item['x_center']} {item['y_center']} {item['width_relative']} {item['height_relative']}\n"
@@ -258,7 +258,7 @@ class YOLOModel(Model):
             if for_validation:
                 val_files.append(f"./{image}")
             else:
-                train_files.append(f"./{image}")        
+                train_files.append(f"./{image}")
         return train_files, val_files
 
     def preprocess(
@@ -268,24 +268,24 @@ class YOLOModel(Model):
         classes: list[str],
         file_format: str,
         validation: bool = False,
-    ) -> None:                
-        files: list[Path] = get_all_files(data_paths, file_format)        
-        data_files = []        
+    ) -> None:
+        files: list[Path] = get_all_files(data_paths, file_format)
+        data_files = []
         for file in tqdm(files, desc="Processing files for YOLO training"):
             data: dict | None = None
             if file.is_file():
                 with tempfile.TemporaryDirectory() as tmpdirname:
                     with zipfile.ZipFile(file, "r") as zip_ref:
                         zip_ref.extractall(path=tmpdirname)
-                        data = self._prepare_assets(tmpdirname / file, inputs=inputs)                    
+                        data = self._prepare_assets(tmpdirname / file, inputs=inputs)
             if file.is_dir():
                 data = self._prepare_assets(file, is_file=False, inputs=inputs)
             if data:
-                data_files.append(data)        
+                data_files.append(data)
         train_files, val_files = self._prepare_annotations(data_files, classes=classes)
         self._prepare_yolo_config(
             train_files, val_files, classes, validation=validation
-        )        
+        )
 
     def val(self, config: dict = {}) -> None:
         """
@@ -383,14 +383,14 @@ class YOLOModel(Model):
         Returns:
             Training results object from YOLO training
         """
-        # Prepare training parameters                         
+        # Prepare training parameters
         params = {k: v for d in config.get("params", list()) for k, v in d.items()}
         params["data"] = Path(f"{self.dir}/{self.yolo_config_path}")
-        params["project"] = self.dir        
+        params["project"] = self.dir
         if platform.system() == "Darwin":
             params["device"] = "mps"
         if params.get("epochs", None) is None:
-            params["epochs"] = 1              
+            params["epochs"] = 1
         results = self.model.train(**params)
         return results
 
@@ -447,15 +447,15 @@ class YOLOModel(Model):
             config (dict): Configuration dictionary containing output settings
             train_results: Training results object from YOLO training
             metrics: Validation metrics from model evaluation
-        """                        
+        """
         for txt in self.dir.glob("*.txt"):
             txt.unlink()
         for p in self.dir.glob("*.jpg"):
-            p.unlink()                         
+            p.unlink()
         log = self.dir / "yolo.log" if not eval else self.dir / "eval.log"
         log.write_text(
             f"{config.get('task')}\n Training results: {train_results} \n Validation metrics: {metrics}"
-        )              
+        )
 
 
 class DETECTRON2Engine(Model):

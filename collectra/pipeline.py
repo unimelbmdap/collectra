@@ -135,7 +135,7 @@ class Collectra:
             name=name, version=version, file_format=file_format, config=kwargs
         )
         return pipeline
-    
+
     def render(self, filename: str = ""):
         dag = nx.DiGraph()
         for task in self.tasks:
@@ -144,14 +144,15 @@ class Collectra:
                 dag.add_node(task.name, item=task)
             node = dag.nodes[task.name]
             node["item"] = task
-            for input_name in task.input:                
+            for input_name in task.input:
                 dag.add_edge(input_name, task.name)
             for output_name in task.output:
-                dag.add_edge(task.name, output_name)    
+                dag.add_edge(task.name, output_name)
         dot_str = nx.nx_pydot.to_pydot(dag).to_string()
         filename = filename if filename else f"{self.name}_DAG"
-        graphviz.Source(dot_str).render(filename=f"{self.name}_DAG", format="svg", cleanup=True)
-
+        graphviz.Source(dot_str).render(
+            filename=f"{self.name}_DAG", format="svg", cleanup=True
+        )
 
     def __str__(self) -> str:
         return f"{self.name} v{self.version}"
@@ -164,9 +165,11 @@ class Collectra:
         """
         for name, info in config.items():
             if info.get("model", None) is not None:
-                info["old_model"] = info["model"] = f"{self.out_dir}/{info.get('model')}"                
+                info["old_model"] = info["model"] = (
+                    f"{self.out_dir}/{info.get('model')}"
+                )
             task = {"name": name, **info}
-            task_instance = TaskManager.build(task)            
+            task_instance = TaskManager.build(task)
             self.tasks.append(task_instance)
             print(success_msg(f"Loaded {task_instance.name}"))
 
@@ -232,20 +235,20 @@ class Collectra:
         :param task_output: what kind of output the task produces.
         """
         existing_task_ids: list[str] = self._get_existing_task_ids()
-        task_name, type, model_path = task.split(",")        
+        task_name, type, model_path = task.split(",")
         task_obj: dict = {
             "name": task_name,
             "type": type,
-            "model": f"{self.out_dir}/{model_path}",            
+            "model": f"{self.out_dir}/{model_path}",
             "input": task_input,
-            "output": task_output,            
+            "output": task_output,
         }
         if task_name in existing_task_ids:
             raise ValueError(
                 f"Task name is empty or already exists: {task_name}. Please provide a unique task name."
             )
-        built_task = TaskManager.build(task_obj)        
-        self.tasks.append(built_task)        
+        built_task = TaskManager.build(task_obj)
+        self.tasks.append(built_task)
         print(success_msg(f"Task with ID {built_task} added to the workflow."))
         return self
 
@@ -264,7 +267,7 @@ class Collectra:
                 "task": task.name,
                 "input": task.input or [],
                 "output": task.output or [],
-                "as_dir": self.as_dir
+                "as_dir": self.as_dir,
             }
             task.set_config(config)
             results = task.run()
@@ -346,7 +349,7 @@ class Collectra:
                     f"There was a problem with {task_id}: not found or duplicates."
                 )
             )
-        task = task_arr[0]        
+        task = task_arr[0]
         if not isinstance(task, MachineLearningTask):
             raise ValueError(
                 error_msg(f"Task with ID {task_id} is not a machine learning task.")
@@ -357,12 +360,12 @@ class Collectra:
             "file_format": self.file_format,
             "task": task.name,
             "inputs": task.input or [],
-            "outputs": task.output or [],            
-            "as_dir": self.as_dir
+            "outputs": task.output or [],
+            "as_dir": self.as_dir,
         }
-        task.set_config(task_config)                 
-        model_path = task.train()               
-        task.set_model(model_path)         
+        task.set_config(task_config)
+        model_path = task.train()
+        task.set_model(model_path)
         self.save()
 
     def save(self):
@@ -409,11 +412,13 @@ class Collectra:
 
     def _save_data_assets(self, tmp_dir: Path):
         for task in self.tasks:
-            new_model, model, old_model = False, "", ""            
+            new_model, model, old_model = False, "", ""
             # First get the path of the model associated with the task
             if hasattr(task, "get_model") and callable(getattr(task, "get_model")):
                 model = task.get_model()
-            if hasattr(task, "get_old_model") and callable(getattr(task, "get_old_model")):
+            if hasattr(task, "get_old_model") and callable(
+                getattr(task, "get_old_model")
+            ):
                 old_model = task.get_old_model()
             if not model or not isinstance(task, MachineLearningTask):
                 # If the task does not have a model, skip it
@@ -425,7 +430,7 @@ class Collectra:
                 continue
             # Ensure the model path is a Path object
             task_model_path = f"{task.name}-{datetime.now().strftime('%Y%m%d_%H%M%S')}-best.pt"  # Default model path for the task
-            model_path = Path(model)            
+            model_path = Path(model)
             if not model_path.exists() or not model_path.is_file():
                 if self.as_dir:
                     # If the model path does not exist or is not a file, print an error message and attempt to load it
@@ -444,9 +449,9 @@ class Collectra:
                         task.load(model_path.name)
                         model_path = Path(model_path.name)
                         new_model = True
-                    zipf.close()        
+                    zipf.close()
             if old_model != model:
-                new_model = True                                   
+                new_model = True
             if new_model:
                 print(
                     f"Moving model {model_path} to temporary directory with new name {task_model_path}..."
@@ -454,22 +459,25 @@ class Collectra:
                 shutil.move(
                     model_path, tmp_dir / task_model_path
                 )  # Move the new model to the output directory
-                os.remove(Path(old_model))
-                task.config["model"] = task_model_path  # Update the model path to the new path
+                if old_model and Path(old_model).exists():
+                    os.remove(Path(old_model))
+                task.config["model"] = (
+                    task_model_path  # Update the model path to the new path
+                )
             else:
                 print(
                     processing_msg(
                         f"Model {model_path} already exists. Copying to temporary directory..."
                     )
-                )                
+                )
                 if self.as_dir:
-                    shutil.copy(model_path, tmp_dir / model_path.name)                    
+                    shutil.copy(model_path, tmp_dir / model_path.name)
                 else:
                     zipf = zipfile.ZipFile(self.out_dir, "r")
                     zipf.extract(
                         str(model_path.name), tmp_dir
                     )  # Extract the model to the temporary directory
-                    zipf.close()            
+                    zipf.close()
                 task.config["model"] = model_path.name
 
     def _save_pipeline_config(self, tmp_dir: Path):

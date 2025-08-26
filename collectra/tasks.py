@@ -21,7 +21,7 @@ class Task:
         if isinstance(self.input, str):
             self.input = [self.input]
         if isinstance(self.output, str):
-            self.output = [self.output]                     
+            self.output = [self.output]
 
     def metadata(self) -> dict:
         """
@@ -58,7 +58,8 @@ class Task:
         Run the task.
         This method should be implemented by subclasses.
         """
-        raise NotImplementedError("Subclasses must implement this method.")    
+        raise NotImplementedError("Subclasses must implement this method.")
+
 
 @dataclass(kw_only=True)
 class MachineLearningTask(Task):
@@ -73,32 +74,32 @@ class MachineLearningTask(Task):
             raise Exception(
                 "No valid model type defined for this task or model path is empty."
             )
-        return self.VALID_MODEL(model)        
+        return self.VALID_MODEL(model)
 
     def run(self) -> list[dict]:
         if not self.config.get("model", None):
             raise ValueError("Model must be set before running the task.")
-        return self.load(self.config.get("model")).detect(self.config) # type: ignore
+        return self.load(self.config.get("model")).detect(self.config)  # type: ignore
 
-    def train(self) -> Path | None:        
+    def train(self) -> Path | None:
         if not self.config.get("model", None):
             raise ValueError("Model must be set before training the task.")
-        model = Path(self.config.get("model", ""))        
+        model = Path(self.config.get("model", ""))
         if not model:
             raise ValueError("Model path must be set before training the task.")
-        if self.config.get("as_dir", False):                                      
+        if self.config.get("as_dir", False):
             return self.load(model).train(self.config)
-        else:                        
+        else:
             with tempfile.TemporaryDirectory() as tmpdirname:
-                with zipfile.ZipFile(model, 'r') as zip_ref:
+                with zipfile.ZipFile(model, "r") as zip_ref:
                     zip_ref.extract(member=model.name, path=tmpdirname)
                     model_path = Path(tmpdirname) / model.name
-                    return self.load(model_path).train(self.config) # type: ignore
+                    return self.load(model_path).train(self.config)  # type: ignore
 
     def eval(self) -> None:
         if not self.config.get("model", None):
             raise ValueError("Model must be set before validating the task.")
-        self.load(self.config.get("model")).val(self.config) # type: ignore
+        self.load(self.config.get("model")).val(self.config)  # type: ignore
 
     def cluster(self) -> None:
         # if not self.model:
@@ -114,7 +115,7 @@ class MachineLearningTask(Task):
         if model:
             self.config["old_model"] = self.config.get("model", "")
             self.config["model"] = str(model)
-            
+
     def get_model(self) -> str:
         """
         Get the model associated with the task.
@@ -127,11 +128,9 @@ class MachineLearningTask(Task):
         Get the old model associated with the task.
         :return: The old model path as a string.
         """
-        return str(self.config.get("old_model", ""))    
+        return str(self.config.get("old_model", ""))
+
 
 @dataclass(kw_only=True)
 class ObjectDetectionYOLO(MachineLearningTask):
-    VALID_MODEL = YOLOModel        
-
-
-
+    VALID_MODEL = YOLOModel
