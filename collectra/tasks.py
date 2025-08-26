@@ -21,7 +21,7 @@ class Task:
         if isinstance(self.input, str):
             self.input = [self.input]
         if isinstance(self.output, str):
-            self.output = [self.output]
+            self.output = [self.output]                     
 
     def metadata(self) -> dict:
         """
@@ -58,15 +58,7 @@ class Task:
         Run the task.
         This method should be implemented by subclasses.
         """
-        raise NotImplementedError("Subclasses must implement this method.")
-
-    def get_model(self) -> str:
-        """
-        Get the model associated with the task.
-        :return: The model path as a string.
-        """
-        return str(self.config.get("model", ""))
-
+        raise NotImplementedError("Subclasses must implement this method.")    
 
 @dataclass(kw_only=True)
 class MachineLearningTask(Task):
@@ -91,17 +83,16 @@ class MachineLearningTask(Task):
     def train(self) -> Path | None:        
         if not self.config.get("model", None):
             raise ValueError("Model must be set before training the task.")
-        model = self.config.get("model", "")        
+        model = Path(self.config.get("model", ""))        
         if not model:
             raise ValueError("Model path must be set before training the task.")
-        if self.config.get("as_dir", False):                          
-            model_path = Path(self.config.get("out_dir", None)) / model # type: ignore
-            return self.load(model_path).train(self.config)
-        else:
+        if self.config.get("as_dir", False):                                      
+            return self.load(model).train(self.config)
+        else:                        
             with tempfile.TemporaryDirectory() as tmpdirname:
                 with zipfile.ZipFile(model, 'r') as zip_ref:
-                    zip_ref.extract(member=model, path=tmpdirname)
-                    model_path = Path(tmpdirname) / model
+                    zip_ref.extract(member=model.name, path=tmpdirname)
+                    model_path = Path(tmpdirname) / model.name
                     return self.load(model_path).train(self.config) # type: ignore
 
     def eval(self) -> None:
@@ -115,8 +106,32 @@ class MachineLearningTask(Task):
         # self.model.cluster(self.config)
         pass
 
+    def set_model(self, model: str | Path | None) -> None:
+        """
+        Set the model associated with the task.
+        :param model: The model path as a string or Path object.
+        """
+        if model:
+            self.config["old_model"] = self.config.get("model", "")
+            self.config["model"] = str(model)
+            
+    def get_model(self) -> str:
+        """
+        Get the model associated with the task.
+        :return: The model path as a string.
+        """
+        return str(self.config.get("model", ""))
+
+    def get_old_model(self) -> str:
+        """
+        Get the old model associated with the task.
+        :return: The old model path as a string.
+        """
+        return str(self.config.get("old_model", ""))    
 
 @dataclass(kw_only=True)
 class ObjectDetectionYOLO(MachineLearningTask):
     VALID_MODEL = YOLOModel        
+
+
 

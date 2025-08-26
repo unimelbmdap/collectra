@@ -163,8 +163,10 @@ class Collectra:
         :param config: A dictionary containing the workflow configuration.
         """
         for name, info in config.items():
+            if info.get("model", None) is not None:
+                info["old_model"] = info["model"] = f"{self.out_dir}/{info.get('model')}"                
             task = {"name": name, **info}
-            task_instance = TaskManager.build(task)
+            task_instance = TaskManager.build(task)            
             self.tasks.append(task_instance)
             print(success_msg(f"Loaded {task_instance.name}"))
 
@@ -234,9 +236,9 @@ class Collectra:
         task_obj: dict = {
             "name": task_name,
             "type": type,
-            "model": model_path,
+            "model": f"{self.out_dir}/{model_path}",            
             "input": task_input,
-            "output": task_output,
+            "output": task_output,            
         }
         if task_name in existing_task_ids:
             raise ValueError(
@@ -355,12 +357,12 @@ class Collectra:
             "file_format": self.file_format,
             "task": task.name,
             "inputs": task.input or [],
-            "outputs": task.output or [],
-            "out_dir": self.out_dir,
+            "outputs": task.output or [],            
             "as_dir": self.as_dir
         }
         task.set_config(task_config)                 
-        task.train()
+        model_path = task.train()               
+        task.set_model(model_path)         
         self.save()
 
     def save(self):
@@ -407,9 +409,12 @@ class Collectra:
 
     def _save_data_assets(self, tmp_dir: Path):
         for task in self.tasks:
-            new_model = False
+            new_model, model, old_model = False, "", ""            
             # First get the path of the model associated with the task
-            model = task.get_model()
+            if hasattr(task, "get_model") and callable(getattr(task, "get_model")):
+                model = task.get_model()
+            if hasattr(task, "get_old_model") and callable(getattr(task, "get_old_model")):
+                old_model = task.get_old_model()
             if not model or not isinstance(task, MachineLearningTask):
                 # If the task does not have a model, skip it
                 print(
@@ -419,8 +424,8 @@ class Collectra:
                 )
                 continue
             # Ensure the model path is a Path object
-            task_model_path = f"{task.name}-best.pt"  # Default model path for the task
-            model_path = Path(self.out_dir) / model
+            task_model_path = f"{task.name}-{datetime.now().strftime('%Y%m%d_%H%M%S')}-best.pt"  # Default model path for the task
+            model_path = Path(model)            
             if not model_path.exists() or not model_path.is_file():
                 if self.as_dir:
                     # If the model path does not exist or is not a file, print an error message and attempt to load it
@@ -430,38 +435,42 @@ class Collectra:
                         )
                     )
                     # If the model path does not exist, attempt to load it
-                    task.load(model)
-                    model_path = model
+                    task.load(model_path.name)
+                    model_path = Path(model_path.name)
                     new_model = True
                 else:
                     zipf = zipfile.ZipFile(self.out_dir, "r")
-                    if not model in zipf.namelist():
-                        task.load(model)
-                        model_path = model
+                    if not model_path.name in zipf.namelist():
+                        task.load(model_path.name)
+                        model_path = Path(model_path.name)
                         new_model = True
-                    zipf.close()
+                    zipf.close()        
+            if old_model != model:
+                new_model = True                                   
             if new_model:
                 print(
                     f"Moving model {model_path} to temporary directory with new name {task_model_path}..."
                 )
                 shutil.move(
                     model_path, tmp_dir / task_model_path
-                )  # Move the model to the output directory
+                )  # Move the new model to the output directory
+                os.remove(Path(old_model))
+                task.config["model"] = task_model_path  # Update the model path to the new path
             else:
                 print(
                     processing_msg(
                         f"Model {model_path} already exists. Copying to temporary directory..."
                     )
-                )
+                )                
                 if self.as_dir:
-                    shutil.copy(model_path, tmp_dir / task_model_path)
+                    shutil.copy(model_path, tmp_dir / model_path.name)                    
                 else:
                     zipf = zipfile.ZipFile(self.out_dir, "r")
                     zipf.extract(
-                        str(model), tmp_dir
+                        str(model_path.name), tmp_dir
                     )  # Extract the model to the temporary directory
-                    zipf.close()
-            task.config["model"] = task_model_path  # Update the model path to the new path
+                    zipf.close()            
+                task.config["model"] = model_path.name
 
     def _save_pipeline_config(self, tmp_dir: Path):
         pipeline_yaml = tmp_dir / "pipeline.yaml"
