@@ -62,7 +62,6 @@ def render(
     Render the Collectra workflow to a file
     """
     try:
-        print(f"Rendering workflow [green]{workflow}[/green] to {output}")
         CollectraManager.load(workflow).render()
     except Exception as e:
         print(error_msg(f"{e}"))
@@ -109,7 +108,7 @@ def train(
     """
     try:
         config = {"input_files": input_files, "output_log": output_log}
-        CollectraManager.load(workflow).train(task_id=task, config=config)
+        CollectraManager.load(workflow).train(task_name=task, config=config)
     except Exception as e:
         print(error_msg(f"Failed to train task: {e}"))
 
