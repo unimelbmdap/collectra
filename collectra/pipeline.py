@@ -6,17 +6,6 @@ from .utils import error_msg, success_msg, processing_msg
 from datetime import datetime
 from dataclasses import dataclass, field
 import pytz, tempfile, importlib, networkx as nx, graphviz
-from pydantic import BaseModel
-
-
-class TaskItem(BaseModel):
-    name: str
-    type: str
-    model: str = ""
-    old_model: str = ""
-    input: list[str] = []
-    output: list[str] = []
-
 
 @dataclass(kw_only=True)
 class Collectra:
@@ -95,8 +84,8 @@ class Collectra:
                     if isinstance(data["output"], str)
                     else data["output"]
                 )
-            task = TaskItem(name=name, **data)
-            task_instance = TaskManager.build(task)
+            data["name"] = name
+            task_instance = TaskManager.build(data)
             self.tasks.append(task_instance)
             print(success_msg(f"Loaded {task_instance.name}"))
 
@@ -172,14 +161,14 @@ class Collectra:
                 f"Task already exists: {task_name}. Please provide a unique task name."
             )
             raise ValueError(error_msg)
-        task_item = TaskItem(
-            name=task_name,
-            type=type,
-            model=f"{self.out_dir}/{model_path}",
-            input=task_input,
-            output=task_output,
-        )
-        built_task = TaskManager.build(task_item)
+        data = {
+            "name": task_name,
+            "type": type,
+            "model": f"{self.out_dir}/{model_path}",
+            "input": task_input,
+            "output": task_output,
+        }
+        built_task = TaskManager.build(data)
         self.tasks.append(built_task)
         print(success_msg(f"Task with ID {built_task} added to the workflow."))
         return self
@@ -315,20 +304,20 @@ class Collectra:
 class TaskManager:
 
     @staticmethod
-    def build(task: TaskItem) -> Task:
+    def build(task: dict) -> Task:
         """
         Build a Task from a dictionary.
         :param task: The task dictionary containing the task details.
         :raises ValueError: If the task format is invalid or the task type is not recognized
         :return: An instance of Task.
         """
-        if not task.name or task.name == "":
+        if not task.get("name") or task["name"] == "":
             raise ValueError("Task name cannot be empty.")
-        if not task.type:
+        if not task.get("type"):
             raise ValueError("Task type is required.")
-        module_name, class_name = task.type.rsplit(".", 1)
+        module_name, class_name = task["type"].rsplit(".", 1)
         TaskClass = getattr(importlib.import_module(module_name), class_name)
-        return TaskClass.build(**task.model_dump())
+        return TaskClass.build(**task)
 
 
 @dataclass(kw_only=True)
