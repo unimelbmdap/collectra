@@ -476,6 +476,10 @@ class CollectraDirectoryHandler(CollectraHandler):
                 shutil.copy(model_path, tmp_dir / model_path.name)
                 task.config["model"] = model_path.name
 
+        for old_model in old_models:
+            if old_models[old_model].exists():
+                print(f"Removing old model {old_models[old_model]}...")
+                os.remove(old_models[old_model])
         config_file = tmp_dir / "pipeline.yaml"
         with open(config_file, "w") as f:
             yaml.dump(self.pipeline.config, f)
