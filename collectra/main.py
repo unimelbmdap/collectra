@@ -36,30 +36,37 @@ def make(
         file_format (str): File format for the workflow, e.g., grapto, hespi, etc.
         out_dir (Path): Output directory for the workflow.
         as_dir (bool): Create the workflow as a directory instead of a file.
+    
+    Raises:
+        Exception: If the workflow cannot be created
     """
-    out_dir = Path(workflow_path)
-    name = out_dir.name
-    workflow: Collectra = Collectra.make(
-        name=name,
-        version=version,
-        file_format=file_format,
-        out_dir=out_dir,
-        as_dir=as_dir,
-    )
-    workflow.save()
-    print(success_msg(f"Workflow '{workflow}' created at {name}"))
+    try:
+        out_dir = Path(workflow_path)
+        name = out_dir.name
+        workflow: Collectra = Collectra.make(
+            name=name,
+            version=version,
+            file_format=file_format,
+            out_dir=out_dir,
+            as_dir=as_dir,
+        )
+        workflow.save()
+        print(success_msg(f"Workflow '{workflow}' created at {name}"))
+    except Exception as e:
+        print(error_msg(f"Failed to create workflow: {e}"))
 
 
 @app.command()
 def render(
     workflow: Annotated[Path, Option("-w", "--workflow", help="path to workflow")],
-    output: Annotated[
-        Path, Option("-o", "--output", help="path to output file")
-    ] = Path.cwd()
-    / "workflow.png",
 ):
-    """
-    Render the Collectra workflow to a file
+    """Render the Collectra workflow to a file
+
+    Args:
+        workflow (Path): Path to the workflow file
+    
+    Raises:
+        Exception: If the workflow cannot be rendered
     """
     try:
         CollectraManager.load(workflow).render()
@@ -85,8 +92,17 @@ def add(
         list[str], Option(help="valid output name for the task")
     ] = [],
 ):
-    """
-    Add a task to the Collectra workflow
+    """Add a task to the Collectra workflow
+
+    Args:
+        workflow (Path): Path to the workflow file
+        task (str): Task to add. It should be a valid task: task_name,task_type,engine_name
+        task_input (list[str]): Valid inputs 
+        task_output (list[str]): Valid outputs 
+    
+    Raises:
+        Exception: If the task cannot be added
+
     """
     try:
         CollectraManager.load(workflow).add(task, task_input, task_output).save()
@@ -103,8 +119,16 @@ def train(
         Path, Option("--output", "-o", help="Output directory for log files")
     ] = Path("logs"),
 ):
-    """
-    Train a specific task in the Collectra workflow
+    """Train a specific task in the Collectra workflow
+
+    Args:
+        workflow (Path): Path to the workflow file
+        task (str): Task to train
+        input_files (list[str]): Input directory of files
+        output_log (Path): Output directory for log files
+    
+    Raises:
+        Exception: If the task cannot be trained
     """
     try:
         config = {"input_files": input_files, "output_log": output_log}

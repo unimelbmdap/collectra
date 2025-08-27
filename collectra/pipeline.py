@@ -441,6 +441,7 @@ class CollectraDirectoryHandler(CollectraHandler):
             print(success_msg(success_message))
 
     def _save_artifacts(self, tmp_dir: Path) -> None:
+        old_models: dict[str, Path] = dict()
         for task_item in self.pipeline.tasks:
             if not self.is_machine_learning_task(task_item):
                 continue
@@ -466,10 +467,10 @@ class CollectraDirectoryHandler(CollectraHandler):
                 )
                 shutil.move(model_path, tmp_dir / task_model_path)
                 if old_model and Path(old_model).exists():
-                    os.remove(Path(old_model))
-                    print(success_msg(f"Sucessfully removed {old_model}"))
+                    old_models[old_model] = Path(old_model)
                 task.config["model"] = task_model_path
             else:
+                old_models.pop(model, None)
                 processing_message = f"Model {model_path} already exists. Copying to temporary directory..."
                 print(processing_msg(processing_message))
                 shutil.copy(model_path, tmp_dir / model_path.name)

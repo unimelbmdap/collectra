@@ -1,41 +1,46 @@
-import yaml, pytz, shutil, os
-import typer as tp
-from typing_extensions import Annotated
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 from pprint import pprint
-import tqdm
+from typing_extensions import Annotated
+
+import pytz, re, shutil, tqdm, yaml
+import typer as tp
 
 app = tp.Typer()
 
-
-def convert_files(config: dict):
+def get_files(config: dict) -> list[dict[str, str]]:
     files = []
-    with open(config.get("train"), "r") as file:
+    parent_dir = Path(config.get("parent_dir", "."))
+    train_file = parent_dir / config.get("train", "")
+    with open(train_file, "r") as file:
         files.extend(
             [{"path": line.strip(), "split": "train"} for line in file if line.strip()]
         )
-    with open(config.get("val"), "r") as file:
+    val_file = parent_dir / config.get("val", "")
+    with open(val_file, "r") as file:
         files.extend(
             [{"path": line.strip(), "split": "val"} for line in file if line.strip()]
         )
+    return files
 
-    names = config.get("names", [])
-
+def get_label_paths(files: list[dict[str, str]]) -> list[Path]:
     label_paths = []
     for file in files:
-        file_str = str(file["path"])
-        label_path = Path(
-            file_str.replace(".jpg", ".txt")
-            .replace(".png", ".txt")
-            .replace("images", "labels")
-        )
+        file_str = re.sub(r'\.(jpg|png)$', '.txt', str(file["path"]))
+        file_str = file_str.replace("images", "labels")
+        label_path = Path(file_str)
         if label_path.exists():
-            label_paths.append(label_path)
-
+            label_paths.append(label_path)    
     if len(label_paths) != len(files):
         raise ValueError("Mismatch between number of image files and label files.")
+    return label_paths
 
+def convert_files(config: dict) -> None:
+    files = get_files(config)
+    names = config.get("names", [])
+    output_dir = Path(config.get("output_dir", "output"))
+    file_format = re.sub(r'[^0-9a-zA-Z]+', '', config.get("file_format", "grapto").lower())
+    label_paths = get_label_paths(files)
     for index in tqdm.tqdm(range(len(files)), desc="Converting files"):
         image = Path(files[index]["path"])
         results_yaml = {
@@ -78,12 +83,9 @@ def convert_files(config: dict):
                     **results_yaml[key]["items"][0],
                 }
                 results_yaml[key].pop("items", None)
-        output_path = (
-            Path.cwd()
-            / "images"
-            / image.name.replace(".jpg", ".hespi").replace(".png", ".hespi")
-        )
-        os.makedirs(output_path, exist_ok=True)
+
+        output_path = output_dir / "images" / image.name.replace(".jpg", f".{file_format}").replace(".png", f".{file_format}")      
+        output_path.mkdir(parents=True, exist_ok=True)          
         shutil.copyfile(image, output_path / image.name)
         with open(output_path / "results.yaml", "w") as f:
             for key in results_yaml:
@@ -99,8 +101,14 @@ def convert_files(config: dict):
 
 @app.command()
 def convert(
-    yolo_config: Annotated[Path, tp.Argument(help="Path to YOLO configuration file")],
+    yolo_config: Annotated[Path, tp.Option("--config", "-c", help="Path to YOLO configuration file")],
+    file_format: Annotated[str, tp.Option("--format", "-f", help="File format, only 'yolo' is supported currently")],
+    output_dir: Annotated[Path, tp.Option("--output", "-o", help="Output directory for converted files")],    
 ):
+    """Convert YOLO formatted dataset to Collectra format
+    Args:
+        yolo_config (Path): Path to YOLO configuration file
+    """
     yolo_config = Path(yolo_config)
     if not yolo_config.exists():
         raise FileNotFoundError(
@@ -109,20 +117,24 @@ def convert(
 
     with open(yolo_config, "r") as file:
         config = yaml.safe_load(file)
-    convert_files(config)
+        config["file_format"] = file_format
+        config["output_dir"] = output_dir
+        config["parent_dir"] = yolo_config.parent
+        convert_files(config)
 
 
 @app.command()
 def cluster(
     yolo_config: Annotated[
-        Path, tp.Option("--config", help="Path to YOLO configuration file")
+        Path, tp.Option("--config", "-c", help="Path to YOLO configuration file")
     ],
     is_file_for_validation: Annotated[
-        bool, tp.Option("--validation", help="Is file for validation")
+        bool, tp.Option("--validation", "-v", help="Is file for validation")
     ],
     image_folder: Annotated[
         Path, tp.Option("--image-folder", "-i", help="Path to image folder")
     ],
+    file_format: Annotated[str, tp.Option("--format", "-f", help="File format")]
 ):
     yolo_config = Path(yolo_config)
     if not yolo_config.exists():
@@ -135,7 +147,7 @@ def cluster(
 
     class_counts = {name: 0 for name in config.get("names", [])}
 
-    for image in image_folder.glob("*.hespi"):
+    for image in image_folder.glob(f"*.{file_format}"):
         results_yaml_path = ""
         if image.is_dir():
             results_yaml_path = image / "results.yaml"
