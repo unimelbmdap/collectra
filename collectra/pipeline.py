@@ -116,7 +116,9 @@ class Collectra:
             if task.input:
                 config[task_key]["input"] = task.input if len(task.input) > 1 else task.input[0]  # type: ignore
             if task.output:
-                config[task_key]["output"] = task.output if len(task.output) > 1 else task.output[0]  # type: ignore
+                config[task_key]["output"] = task.output if len(task.output) > 1 else task.output[0]  # type: ignore           
+            if task.config.get("params", None): 
+                config[task_key]["params"] = task.config.get("params")
 
         return config
 
@@ -281,7 +283,7 @@ class Collectra:
             raise ValueError(
                 error_msg(f"Task with ID {task_name} is not a machine learning task.")
             )
-        print(processing_msg(f"Training task: {task.name}"))
+        print(processing_msg(f"Training task: {task.name}"))        
         task_config = {
             **config,
             "file_format": self.file_format,
@@ -289,8 +291,8 @@ class Collectra:
             "inputs": task.input or [],
             "outputs": task.output or [],
             "as_dir": self.as_dir,
-        }
-        task.set_config(task_config)
+        }                
+        task.set_config(task_config)        
         model_path = task.train()
         task.set_model(model_path)
         self.save()
@@ -479,10 +481,7 @@ class CollectraDirectoryHandler(CollectraHandler):
         for old_model in old_models:
             if old_models[old_model].exists():
                 print(f"Removing old model {old_models[old_model]}...")
-                os.remove(old_models[old_model])
-        config_file = tmp_dir / "pipeline.yaml"
-        with open(config_file, "w") as f:
-            yaml.dump(self.pipeline.config, f)
+                os.remove(old_models[old_model])        
 
 
 @dataclass(kw_only=True)
@@ -540,8 +539,4 @@ class CollectraZipHandler(CollectraHandler):
                     zipf.extract(str(model_path.name), tmp_dir)
                     print(processing_msg(processing_message))
                     shutil.copy(model_path, tmp_dir / model_path.name)
-                    task.config["model"] = model_path.name
-
-        config_file = tmp_dir / "pipeline.yaml"
-        with open(config_file, "w") as f:
-            yaml.dump(self.pipeline.config, f)
+                    task.config["model"] = model_path.name        

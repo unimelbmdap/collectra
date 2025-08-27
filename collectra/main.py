@@ -1,8 +1,9 @@
+from datetime import datetime
 from pathlib import Path
 from rich import print
+import os, shutil
 from typer import Typer, Option, Argument
 from typing_extensions import Annotated
-
 from collectra.pipeline import Collectra, CollectraManager
 from collectra.utils import success_msg, error_msg
 
@@ -114,10 +115,8 @@ def add(
 def train(
     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
     task: Annotated[str, Option("--task", "-t", help="task to train")],
-    input_files: Annotated[list[str], Argument(help="Input directory of files")],
-    output_log: Annotated[
-        Path, Option("--output", "-o", help="Output directory for log files")
-    ] = Path("logs"),
+    input_files: Annotated[list[str], Argument(help="Input directory of files")],    
+    keep_log: Annotated[bool, Option("--keep-log", help="Keep previous log files")] = False,
 ):
     """Train a specific task in the Collectra workflow
 
@@ -131,8 +130,14 @@ def train(
         Exception: If the task cannot be trained
     """
     try:
+        output_log = f"{task}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         config = {"input_files": input_files, "output_log": output_log}
         CollectraManager.load(workflow).train(task_name=task, config=config)
+        if not keep_log:
+            shutil.rmtree(output_log, ignore_errors=True)            
+            log_cache = Path(f"{output_log}.cache")
+            if log_cache.exists():
+                os.remove(log_cache)               
     except Exception as e:
         print(error_msg(f"Failed to train task: {e}"))
 

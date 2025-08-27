@@ -4,8 +4,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from ultralytics import YOLO
 from tqdm import tqdm
-from datetime import datetime
-from .utils import get_all_files
+from .utils import get_all_files, success_msg
 from .utils import processing_msg, error_msg
 
 
@@ -136,15 +135,12 @@ class YOLOModel(Model):
         Args:
             config (dict): Configuration dictionary containing directory settings
         """
-        # Create unique directory with timestamp to avoid conflicts
-        self.dir = (
-            Path(config.get("output_log", "logs"))
-            / f"{config.get('task')}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-        )
-        print(processing_msg(f"Setting up training environment in {self.dir}"))
+        # Create unique directory with timestamp to avoid conflicts        
+        self.dir = Path(config.get('output_log', 'logs'))
         self.dir.mkdir(parents=True, exist_ok=True)
+        print(success_msg(f"Successfully setup training environment at {self.dir}"))
 
-    def train(self, config: dict = {}) -> Path:
+    def train(self, config: dict = {}) -> Path:        
         """Train the YOLO model with given configuration."""
         merged_config = {**self.config, **config}
         print(
@@ -383,14 +379,14 @@ class YOLOModel(Model):
         Returns:
             Training results object from YOLO training
         """
-        # Prepare training parameters
+        # Prepare training parameters        
         params = {k: v for d in config.get("params", list()) for k, v in d.items()}
         params["data"] = Path(f"{self.dir}/{self.yolo_config_path}")
         params["project"] = self.dir
         if platform.system() == "Darwin":
             params["device"] = "mps"
         if params.get("epochs", None) is None:
-            params["epochs"] = 1
+            params["epochs"] = 1        
         results = self.model.train(**params)
         return results
 

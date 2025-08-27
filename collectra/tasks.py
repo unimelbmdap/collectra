@@ -86,8 +86,8 @@ class MachineLearningTask(Task):
             raise ValueError("Model must be set before training the task.")
         model = Path(self.config.get("model", ""))
         if not model:
-            raise ValueError("Model path must be set before training the task.")
-        if self.config.get("as_dir", False):
+            raise ValueError("Model path must be set before training the task.")        
+        if self.config.get("as_dir", False):            
             return self.load(model).train(self.config)
         else:
             with tempfile.TemporaryDirectory() as tmpdirname:
