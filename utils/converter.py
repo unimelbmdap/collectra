@@ -1,9 +1,8 @@
 from datetime import datetime
 from pathlib import Path
-from pprint import pprint
 from typing_extensions import Annotated
 
-import pytz, re, shutil, tqdm, yaml
+import os, pytz, re, shutil, tempfile, tqdm, yaml, zipfile
 import typer as tp
 
 app = tp.Typer()
@@ -173,6 +172,72 @@ def cluster(
     for class_name, count in class_counts.items():
         print(f"Total count for class '{class_name}': {count}")
 
+def convert_image_objects(results_yaml: dict) -> dict:
+    for key in results_yaml:
+        data = results_yaml[key]        
+        if "type" in data:
+            if data["type"]=="ImageCrop":
+                data["type"]="collectra.images.ImageCrop"
+            elif data["type"]=="Image":
+                data["type"]="collectra.images.Image"
+        if "image" in data and key != "specimen_sheet":
+            data["image"] = results_yaml["specimen_sheet"]["image"]
+            new_data = {
+                "type": data["type"],
+                "image": data["image"]
+            }
+            data.pop("type", None)
+            data.pop("image", None)
+            new_data.update(data)
+            results_yaml[key] = new_data
+    return results_yaml
+
+def modify_file(path):
+    with open(path, "r") as file:
+        results_yaml = yaml.safe_load(file)
+
+    results_yaml = convert_image_objects(results_yaml)
+
+    with open(path, "w") as file:
+        for result in results_yaml:            
+            yaml.dump(
+                {result: results_yaml[result]},
+                file,
+                default_flow_style=False,
+                sort_keys=False,
+            )            
+            file.write("\n")        
+
+def modify_zipfile(path):
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        tmpdir = Path(tmpdirname)
+        with zipfile.ZipFile(path, 'r') as zip_ref:
+            zip_ref.extractall(path=tmpdir)
+            results_yaml_path = tmpdir / "results.yaml"
+            modify_file(tmpdir)        
+        with zipfile.ZipFile(
+                path, "w", zipfile.ZIP_DEFLATED, allowZip64=True
+            ) as zipf:
+                for root, _, files in os.walk(tmpdir):
+                    for file in files:
+                        zipf.write(os.path.join(root, file), file)    
+
+@app.command()
+def modify_results_file(
+    format: Annotated[str, tp.Option("--format", "-f", help="File format")],
+    path: Annotated[Path, tp.Option("--folder", "-p", help="Path to folder containing results.yaml files")],
+):
+    if path.is_dir():
+        if "results.yaml" in [f.name for f in path.iterdir()]:
+            modify_file(path / "results.yaml")
+        else:
+            for file in path.glob(f"*.{format}"):
+                if file.is_dir():
+                    modify_file(file / "results.yaml")
+                elif file.is_file():
+                    modify_zipfile(file)
+    if path.is_file() and path.suffix == f".{format}":
+        modify_zipfile(path) 
 
 if __name__ == "__main__":
     app()
