@@ -180,11 +180,10 @@ def convert_image_objects(results_yaml: dict) -> dict:
                 data["type"]="collectra.images.ImageCrop"
             elif data["type"]=="Image":
                 data["type"]="collectra.images.Image"
-        if "image" in data and key != "specimen_sheet":
-            data["image"] = results_yaml["specimen_sheet"]["image"]
+        if "image" in data:            
             new_data = {
                 "type": data["type"],
-                "image": data["image"]
+                "path": data["image"],                
             }
             data.pop("type", None)
             data.pop("image", None)
