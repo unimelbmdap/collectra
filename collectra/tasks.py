@@ -1,8 +1,10 @@
 from pathlib import Path
-from .models import Model, YOLOModel
 from dataclasses import dataclass, field
 import tempfile, zipfile
+from langchain_core.language_models.llms import LLM
+from langchain_core.output_parsers import StrOutputParser
 
+from .models import Model, YOLOModel
 
 @dataclass(kw_only=True)
 class Task:
@@ -59,6 +61,17 @@ class Task:
         This method should be implemented by subclasses.
         """
         raise NotImplementedError("Subclasses must implement this method.")
+
+    def __call__(self, **kwargs):
+        self.check_kwargs(**kwargs)
+        return self.run(**kwargs)
+
+    def check_kwargs(self, **kwargs) -> None:
+        assert len(kwargs) == len(self.input), f"Number of arguments to {self} incorrect. Expected {len(self.input)} and received {len(len(kwargs))}"
+        for key,value in kwargs.items():
+            # TODO Check
+
+
 
 
 @dataclass(kw_only=True)
@@ -134,3 +147,41 @@ class MachineLearningTask(Task):
 @dataclass(kw_only=True)
 class ObjectDetectionYOLO(MachineLearningTask):
     VALID_MODEL = YOLOModel
+
+
+@dataclass(kw_only=True)
+class LLM(Task):
+    model:str
+    template:str|Path
+    llm:LLM = field(init=False)
+    temperature: float | None = None,
+    max_tokens: int = None,
+    variables: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self):
+        import llmloader
+        
+        self.llm = llmloader.load(self.model, temperature=self.temperature, max_tokens=self.max_tokens)
+
+    def replace_in_template(self, prompt, key, value:str|Path):
+        if Path(value).exists():
+            value = Path(value)
+
+        if isinstance(value, Path):
+            if value.is_file():
+                value = value.read_text()
+            else:
+                value = str(value)
+
+        return prompt.replace(f"{{{key}}}", str(value))
+
+    def run(self, **kwargs) -> str:
+        prompt = str(self.template)
+        
+        # Replace inputs and config in template
+        for key, value in kwargs.items() + self.variables.items():
+            prompt = self.replace_in_template(prompt, key, value)
+        
+        result = self.llm.invoke(prompt)
+        parser = StrOutputParser()
+        return parser.invoke(result)
