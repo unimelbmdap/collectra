@@ -153,7 +153,7 @@ def run(
 ):
     try:
         config = {"images": images, "as_dir": as_dir}
-        CollectraManager.load(workflow).run(task_id=task, config=config)
+        CollectraManager.load(workflow).run(task_name=task, config=config)
     except Exception as e:
         print(error_msg(f"Failed to run task: {e}"))
 

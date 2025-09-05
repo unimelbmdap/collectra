@@ -3,6 +3,8 @@ from rich import print
 from abc import ABC, abstractmethod
 from pathlib import Path
 from ultralytics import YOLO
+from ultralytics.utils import ThreadingLocked
+from ultralytics.engine.results import Results
 from tqdm import tqdm
 from .utils import get_all_files, success_msg
 from .utils import processing_msg, error_msg
@@ -306,6 +308,10 @@ class YOLOModel(Model):
         metrics = val_results = self._execute_validation(merged_config)
         self._save_results(merged_config, val_results, metrics, eval=True)
 
+    @ThreadingLocked()
+    def thread_safe_detect(self, path: Path) -> list[Results]:
+        return self.model.predict(path)
+
     def detect(self, config: dict = {}) -> list[dict]:
         """
         Run object detection inference on provided data.
@@ -317,36 +323,11 @@ class YOLOModel(Model):
         Args:
             data (Path): Path to the input data (images/video) for detection
         """
-        print(f"[bold green]Running object detection[/bold green]: {self.name}")
+        print(f"[bold green]Running object detection[/bold green]: {self.path}")
         images: list[dict] = []
-        image_paths: list[Path] = []
+        paths: list[Path] = []
         for image in tqdm(config.get("images", []), desc="Collecting images"):
-            image_path = Path(image)
-            # if image_path.is_dir():
-            #     for img_file in tqdm(image_path.glob("*"), desc=f"Processing directory {image_path}"):
-            #         results.append({
-            #             "image": img_file,
-            #             "results": self.model(img_file)
-            #         })
-            # if image_path.is_file():
-            #     results.append({
-            #         "image": image,
-            #         "results": self.model(image)
-            #     })
-            if image_path.is_dir():
-                for img_file in tqdm(
-                    image_path.glob("*"), desc=f"Processing directory {image_path}"
-                ):
-                    if img_file.suffix.lower() not in [
-                        ".jpg",
-                        ".jpeg",
-                        ".png",
-                        ".bmp",
-                        ".tiff",
-                    ]:
-                        continue
-                    image_paths.append(str(img_file))
-                    images.append({"image": img_file, "results": None})
+            image_path = Path(image)                        
             if image_path.is_file() and image_path.suffix.lower() in [
                 ".jpg",
                 ".jpeg",
@@ -354,14 +335,11 @@ class YOLOModel(Model):
                 ".bmp",
                 ".tiff",
             ]:
-                image_paths.append(str(image_path))
-                images.append({"image": image_path, "results": None})
-
-        results = self.model(image_paths)
-
-        for index in range(len(results)):
-            images[index]["results"] = results[index]
-
+                paths.append(image_path)
+                images.append({
+                    "image": image_path, 
+                    "results": self.thread_safe_detect(image_path)
+                })        
         return images
 
     def cluster(self, config) -> None:

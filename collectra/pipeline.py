@@ -175,88 +175,19 @@ class Collectra:
         print(success_msg(f"Task with ID {built_task} added to the workflow."))
         return self
 
-    def run(self, task_id: str, config: dict = dict()):
-        found_task = False
-        for task in self.tasks:
-            if found_task:
-                break
-            if task.name != task_id:
-                continue
-            found_task = True
-            print(processing_msg(f"Detecting task: {task.name}"))
-            config = {
-                **config,
-                "file_format": self.file_format,
-                "task": task.name,
-                "input": task.input or [],
-                "output": task.output or [],
-                "as_dir": self.as_dir,
-            }
-            task.set_config(config)
-            results = task.run()
-            names = []
-            if not results:
-                continue
-            for result in results:
-                image_file = Path(result.get("image"))  # type: ignore
-                output_yaml = {
-                    "collectra_results_metadata": {
-                        "timestamp": datetime.now(pytz.utc).isoformat(),
-                        "validation": False,
-                    },
-                    "specimen_sheet": {
-                        "type": "Image",
-                        "path": image_file.name,
-                    },
-                }
-                classification_results = result.get("results", [])
-                if not classification_results:
-                    continue
-                for cls_result in classification_results:
-                    coordinates = cls_result.boxes.xywhn
-                    names = [
-                        cls_result.names[cls.item()]
-                        for cls in cls_result.boxes.cls.int()
-                    ]
-                    for index in range(len(coordinates)):
-                        x, y, w, h = coordinates[index]
-                        output_yaml[names[index]] = {
-                            "type": "ImageCrop",
-                            "image": "specimen_sheet",
-                            "x_center": float(x),
-                            "y_center": float(y),
-                            "width_relative": float(w),
-                            "height_relative": float(h),
-                        }
-                path = Path(f"output/{image_file.stem}.{self.file_format}")
-                path.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists
-                # Copy the image to the output directory
-                shutil.copy(image_file, path / image_file.name)
-                with open(path / "results.yaml", "w") as f:
-                    for key in output_yaml:
-                        f.write(
-                            yaml.dump(
-                                {key: output_yaml[key]},
-                                default_flow_style=False,
-                                sort_keys=False,
-                            )
-                        )
-                        f.write("\n")
-                cls_result.save_crop(save_dir=path)
-                self.as_dir = config.get(
-                    "as_dir", self.as_dir
-                )  # Use the as_dir flag from the config if provided
-                if not self.as_dir:
-                    shutil.make_archive(
-                        str(path), "zip", path
-                    )  # Create a zip archive of the results
-                    shutil.rmtree(path)  # Remove the directory after zipping
-                    os.rename(f"{path}.zip", path.parent / f"{path.name}")
-
-        if not found_task:
-            raise Exception(
-                error_msg(f"Task with ID {task_id} not found in the workflow.")
-            )
+    def run(self, task_name: str, config: dict = dict()):
+        task = self._get_task(task_name)        
+        print(processing_msg(f"Running task: {task.name}"))            
+        config = {
+            **config,
+            "file_format": self.file_format,
+            "task": task.name,
+            "input": task.input or [],
+            "output": task.output or [],
+            "as_dir": self.as_dir,
+        }
+        task.set_config(config)
+        task.run()            
 
     def _find_task_by_name(self, task_name: str) -> list[Task]:
         return [task for task in self.tasks if task.name == task_name]

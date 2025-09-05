@@ -1,10 +1,11 @@
 from pathlib import Path
 from dataclasses import dataclass, field
-import tempfile, zipfile
+import tempfile, zipfile, pytz, shutil, yaml, os
 from langchain_core.language_models.llms import LLM
 from langchain_core.output_parsers import StrOutputParser
-
 from .models import Model, YOLOModel
+from datetime import datetime
+from collectra.images import Image, ImageCrop
 
 @dataclass(kw_only=True)
 class Task:
@@ -70,8 +71,7 @@ class Task:
         assert len(kwargs) == len(self.input), f"Number of arguments to {self} incorrect. Expected {len(self.input)} and received {len(len(kwargs))}"
         for key,value in kwargs.items():
             # TODO Check
-
-
+            pass
 
 
 @dataclass(kw_only=True)
@@ -147,6 +147,61 @@ class MachineLearningTask(Task):
 @dataclass(kw_only=True)
 class ObjectDetectionYOLO(MachineLearningTask):
     VALID_MODEL = YOLOModel
+
+    def run(self):
+        results = super().run()
+        names = []        
+        for result in results:
+            image_file = Path(result.get("image"))  # type: ignore
+            output_yaml = {
+                "collectra_results_metadata": {
+                    "timestamp": datetime.now(pytz.utc).isoformat(),
+                    "validation": False,
+                },
+                "specimen_sheet": {
+                    "type": f"{Image.__module__}.{Image.__name__}",
+                    "path": image_file.name,
+                },
+            }
+            classification_results = result.get("results", [])
+            if not classification_results:
+                continue
+            for cls_result in classification_results:
+                coordinates = cls_result.boxes.xywhn
+                names = [
+                    cls_result.names[cls.item()]
+                    for cls in cls_result.boxes.cls.int()
+                ]
+                for index in range(len(coordinates)):
+                    x, y, w, h = coordinates[index]
+                    output_yaml[names[index]] = {
+                        "type": f"{ImageCrop.__module__}.{ImageCrop.__name__}",
+                        "path": image_file.name,
+                        "x_center": float(x),
+                        "y_center": float(y),
+                        "width_relative": float(w),
+                        "height_relative": float(h),
+                    }
+            path = Path(f"output/{image_file.stem}.{self.config['file_format']}")
+            path.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists            
+            shutil.copy(image_file, path / image_file.name)
+            with open(path / "results.yaml", "w") as f:
+                for key in output_yaml:
+                    f.write(
+                        yaml.dump(
+                            {key: output_yaml[key]},
+                            default_flow_style=False,
+                            sort_keys=False,
+                        )
+                    )
+                    f.write("\n")
+            cls_result.save_crop(save_dir=path)            
+            if not self.config.get("as_dir", False):
+                shutil.make_archive(
+                    str(path), "zip", path
+                )  # Create a zip archive of the results
+                shutil.rmtree(path)  # Remove the directory after zipping
+                os.rename(f"{path}.zip", path.parent / f"{path.name}")    
 
 
 @dataclass(kw_only=True)
