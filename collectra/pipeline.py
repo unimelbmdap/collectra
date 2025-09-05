@@ -47,7 +47,7 @@ class Collectra:
         for task in self.tasks:
             metadata = task.metadata()
             if task.name not in dag:
-                dag.add_node(task.name, item=task, shape="box", style="filled", color="lightblue")                              
+                dag.add_node(task.name, item=task, shape="box", style="filled", color="blue", fontcolor='white')                              
             for input_name in task.input:
                 dag.add_edge(input_name, task.name)
             for output_name in task.output:
