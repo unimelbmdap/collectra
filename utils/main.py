@@ -173,6 +173,7 @@ def cluster(
         print(f"Total count for class '{class_name}': {count}")
 
 def convert_image_objects(results_yaml: dict) -> dict:
+    image_path = ""
     for key in results_yaml:
         data = results_yaml[key]        
         if "type" in data:
@@ -180,10 +181,11 @@ def convert_image_objects(results_yaml: dict) -> dict:
                 data["type"]="collectra.images.ImageCrop"
             elif data["type"]=="Image":
                 data["type"]="collectra.images.Image"
+                image_path = data["path"]
         if "image" in data:            
             new_data = {
                 "type": data["type"],
-                "path": data["image"],                
+                "path": image_path if image_path else data["image"],
             }
             data.pop("type", None)
             data.pop("image", None)
@@ -224,7 +226,7 @@ def modify_zipfile(path):
 @app.command()
 def modify_results_file(
     format: Annotated[str, tp.Option("--format", "-f", help="File format")],
-    path: Annotated[Path, tp.Option("--folder", "-p", help="Path to folder containing results.yaml files")],
+    path: Annotated[Path, tp.Option("--path", "-p", help="Path to folder containing results.yaml files")],
 ):
     if path.is_dir():
         if "results.yaml" in [f.name for f in path.iterdir()]:
