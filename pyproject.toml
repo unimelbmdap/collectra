@@ -56,3 +56,4 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 collectra = "collectra.main:app"
+utils = "utils.main:app"

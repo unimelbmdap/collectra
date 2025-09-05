@@ -1,4 +1,4 @@
-import shutil, os, yaml, zipfile, tempfile, platform
+import importlib, shutil, os, yaml, zipfile, tempfile, platform
 from rich import print
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -6,7 +6,7 @@ from ultralytics import YOLO
 from tqdm import tqdm
 from .utils import get_all_files, success_msg
 from .utils import processing_msg, error_msg
-
+from collectra.images import Image, ImageCrop
 
 class Model(ABC):
     """
@@ -229,14 +229,18 @@ class YOLOModel(Model):
         val_files = []
         for data in data_files:
             for_validation = False
-            image = None
+            image = None            
             annotation_str = ""
             for key, value in data.items():
+                image_class = None
                 if key == "collectra_results_metadata":
                     for_validation = value.get("validation", False)
-                if value.get("type", None) == "Image":
+                if value.get("type", None):
+                    module_name, class_name = value["type"].rsplit(".", 1)
+                    image_class = getattr(importlib.import_module(module_name), class_name)
+                if image_class == Image:
                     image = value.get("path", None)
-                if value.get("type", None) == "ImageCrop":
+                if image_class == ImageCrop:
                     if "items" not in value:
                         value["class_id"] = classes.index(key)
                         annotation_str += self._generate_annotation_str(value)
@@ -447,6 +451,8 @@ class YOLOModel(Model):
         for txt in self.dir.glob("*.txt"):
             txt.unlink()
         for p in self.dir.glob("*.jpg"):
+            p.unlink()
+        for p in self.dir.glob("*.png"):
             p.unlink()
         log = self.dir / "yolo.log" if not eval else self.dir / "eval.log"
         log.write_text(
