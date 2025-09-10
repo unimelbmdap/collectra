@@ -3,6 +3,6 @@ llm:
   model: dummy
   input: topic
   output: poem
-  prompt: "Write a poem about {topic} in {style}"
+  template: "Write a poem about {topic} in {style}"
   variables:
     style: haiku

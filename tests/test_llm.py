@@ -7,5 +7,5 @@ TEST_DATA = Path(__file__).parent / "data"
 def test_llm():
     workflow = CollectraManager.load(TEST_DATA / "basic_llm_pipeline.yaml")
     
-    result = workflow.run("love")
+    result = workflow("love")
     assert result == "Write a poem about love in haiku"

@@ -1,78 +1,11 @@
 from pathlib import Path
-from dataclasses import dataclass, field
-import tempfile, zipfile, pytz, shutil, yaml, os
-from langchain_core.language_models.llms import LLM
-from langchain_core.output_parsers import StrOutputParser
-from .models import Model, YOLOModel
+from collectra.images.base import Image, ImageCrop
+from collectra.models.base import Model
+from collectra.models.yolo import YOLOModel
+from collectra.tasks.base import Task
+from dataclasses import dataclass
 from datetime import datetime
-from collectra.images import Image, ImageCrop
-
-@dataclass(kw_only=True)
-class Task:
-    name: str
-    input: list[str] = field(default_factory=list)
-    output: list[str] = field(default_factory=list)
-    config: dict[str, str] = field(default_factory=dict)
-
-    @classmethod
-    def build(cls, name: str, **kwargs) -> "Task":
-        input = kwargs.pop("input", [])
-        output = kwargs.pop("output", [])
-        return cls(name=name, input=input, output=output, config=kwargs)
-
-    def __post_init__(self):
-        if isinstance(self.input, str):
-            self.input = [self.input]
-        if isinstance(self.output, str):
-            self.output = [self.output]
-
-    def metadata(self) -> dict:
-        """
-        Get metadata of the task.
-        :return: A dictionary containing task metadata.
-        """
-        metadata = {
-            "name": self.name,
-            "model": self.config.get("model", ""),
-        }
-        if self.input:
-            metadata["input"] = self.input if len(self.input) > 1 else self.input[0]  # type: ignore
-        if self.output:
-            metadata["output"] = self.output if len(self.output) > 1 else self.output[0]  # type: ignore
-        return metadata
-
-    def __str__(self) -> str:
-        return f"{self.name} of {self.__class__.__name__}"
-
-    def __repr__(self) -> str:
-        return f"{self.name} of {self.__class__.__name__}"
-
-    def set_config(self, config: dict) -> None:
-        """
-        Set the configuration for the task.
-        :param config: A dictionary containing configuration parameters.
-        """
-        if not isinstance(config, dict):
-            raise ValueError("Invalid config type.")
-        self.config.update(config)
-
-    def run(self) -> list[dict] | None:
-        """
-        Run the task.
-        This method should be implemented by subclasses.
-        """
-        raise NotImplementedError("Subclasses must implement this method.")
-
-    def __call__(self, **kwargs):
-        self.check_kwargs(**kwargs)
-        return self.run(**kwargs)
-
-    def check_kwargs(self, **kwargs) -> None:
-        assert len(kwargs) == len(self.input), f"Number of arguments to {self} incorrect. Expected {len(self.input)} and received {len(len(kwargs))}"
-        for key,value in kwargs.items():
-            # TODO Check
-            pass
-
+import tempfile, zipfile, pytz, shutil, yaml, os
 
 @dataclass(kw_only=True)
 class MachineLearningTask(Task):
@@ -143,7 +76,6 @@ class MachineLearningTask(Task):
         """
         return str(self.config.get("old_model", ""))
 
-
 @dataclass(kw_only=True)
 class ObjectDetectionYOLO(MachineLearningTask):
     VALID_MODEL = YOLOModel
@@ -203,40 +135,3 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 shutil.rmtree(path)  # Remove the directory after zipping
                 os.rename(f"{path}.zip", path.parent / f"{path.name}")    
 
-
-@dataclass(kw_only=True)
-class LLM(Task):
-    model:str
-    template:str|Path
-    llm:LLM = field(init=False)
-    temperature: float | None = None,
-    max_tokens: int = None,
-    variables: dict[str, str] = field(default_factory=dict)
-
-    def __post_init__(self):
-        import llmloader
-        
-        self.llm = llmloader.load(self.model, temperature=self.temperature, max_tokens=self.max_tokens)
-
-    def replace_in_template(self, prompt, key, value:str|Path):
-        if Path(value).exists():
-            value = Path(value)
-
-        if isinstance(value, Path):
-            if value.is_file():
-                value = value.read_text()
-            else:
-                value = str(value)
-
-        return prompt.replace(f"{{{key}}}", str(value))
-
-    def run(self, **kwargs) -> str:
-        prompt = str(self.template)
-        
-        # Replace inputs and config in template
-        for key, value in kwargs.items() + self.variables.items():
-            prompt = self.replace_in_template(prompt, key, value)
-        
-        result = self.llm.invoke(prompt)
-        parser = StrOutputParser()
-        return parser.invoke(result)

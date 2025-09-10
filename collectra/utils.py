@@ -1,5 +1,4 @@
 from typing import List
-from rich import print
 from rocrate.rocrate import ROCrate
 from pathlib import Path
 from tqdm import tqdm

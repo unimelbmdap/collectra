@@ -27,6 +27,7 @@ graphviz = "^0.21"
 roc-validator = "^0.7.3"
 wandb = "^0.21.1"
 llmloader = ">=0.1.4"
+langchain-core = "^0.3.75"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=6.2.5"

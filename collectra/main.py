@@ -4,7 +4,7 @@ from rich import print
 import os, shutil
 from typer import Typer, Option, Argument
 from typing_extensions import Annotated
-from collectra.pipeline import Collectra, CollectraManager
+from collectra.pipelines.managers import CollectraManager
 from collectra.utils import success_msg, error_msg
 
 app = Typer()
@@ -41,18 +41,20 @@ def make(
     Raises:
         Exception: If the workflow cannot be created
     """
-    try:
-        out_dir = Path(workflow_path)
-        name = out_dir.name
-        workflow: Collectra = Collectra.make(
-            name=name,
-            version=version,
-            file_format=file_format,
-            out_dir=out_dir,
-            as_dir=as_dir,
-        )
-        workflow.save()
-        print(success_msg(f"Workflow '{workflow}' created at {name}"))
+    try:        
+        metadata = {
+            "name": Path(workflow_path).name,
+            "version": version,
+            "description": "",
+            "file_format": file_format,
+            "out_dir": workflow_path,
+            "as_dir": as_dir,
+        }
+        manager = CollectraManager()
+        manager.build(metadata=metadata)              
+        manager.save()        
+        workflow = manager.get_pipeline()
+        print(success_msg(f"Workflow '{workflow}' created at {workflow.name}"))
     except Exception as e:
         print(error_msg(f"Failed to create workflow: {e}"))
 
@@ -70,45 +72,11 @@ def render(
         Exception: If the workflow cannot be rendered
     """
     try:
-        CollectraManager.load(workflow).render()
+       manager =  CollectraManager()
+       manager.load(workflow)
+       manager.get_pipeline().render()
     except Exception as e:
         print(error_msg(f"{e}"))
-
-
-@app.command()
-def add(
-    workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
-    task: Annotated[
-        str,
-        Option(
-            "--task",
-            "-t",
-            help="task to add. It should be a valid task: task_type,task_name,engine_type,engine_name",
-        ),
-    ],
-    task_input: Annotated[
-        list[str], Option("--input", "-i", help="valid input name for the task")
-    ] = [],
-    task_output: Annotated[
-        list[str], Option(help="valid output name for the task")
-    ] = [],
-):
-    """Add a task to the Collectra workflow
-
-    Args:
-        workflow (Path): Path to the workflow file
-        task (str): Task to add. It should be a valid task: task_name,task_type,engine_name
-        task_input (list[str]): Valid inputs 
-        task_output (list[str]): Valid outputs 
-    
-    Raises:
-        Exception: If the task cannot be added
-
-    """
-    try:
-        CollectraManager.load(workflow).add(task, task_input, task_output).save()
-    except Exception as e:
-        print(error_msg(f"Failed to add task: {e}"))
 
 
 @app.command()
@@ -126,13 +94,13 @@ def train(
         input_files (list[str]): Input directory of files
         output_log (Path): Output directory for log files
     
-    Raises:
+    Raises:d
         Exception: If the task cannot be trained
     """
     try:
         output_log = f"{task}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         config = {"input_files": input_files, "output_log": output_log}
-        CollectraManager.load(workflow).train(task_name=task, config=config)
+        CollectraManager().load(workflow).train(task_name=task, config=config)
         if not keep_log:
             shutil.rmtree(output_log, ignore_errors=True)            
             log_cache = Path(f"{output_log}.cache")
@@ -153,7 +121,7 @@ def run(
 ):
     try:
         config = {"images": images, "as_dir": as_dir}
-        CollectraManager.load(workflow).run(task_name=task, config=config)
+        CollectraManager().load(workflow).run(task_name=task, config=config)
     except Exception as e:
         print(error_msg(f"Failed to run task: {e}"))
 
