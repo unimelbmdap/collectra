@@ -38,8 +38,8 @@ class YOLOModel(Model):
             config (dict, optional): Configuration parameters for the model.
         """
         super().__init__(path, config)
-        print(processing_msg(f"Loading YOLO model with path {path}"))
-        self.model = YOLO(path, verbose=True)
+        print(processing_msg(f"Loading YOLO model with path {path}"))        
+        self.model = YOLO(path, verbose=True)        
         self.yolo_config_path: str = "config.yml"
 
     def _setup_environment(self, config: dict) -> None:
@@ -210,7 +210,7 @@ class YOLOModel(Model):
         """
         merged_config = {**self.config, **config}
         self._setup_environment(merged_config)
-        print(f"[bold green]Training object detection model[/bold green]: {self.name}")
+        print(f"[bold green]Training object detection model[/bold green]: {self.path}")
         self._prepare_data(merged_config)
         if merged_config.get("test", False):
             print(
@@ -283,7 +283,7 @@ class YOLOModel(Model):
         if platform.system() == "Darwin":
             params["device"] = "mps"
         if params.get("epochs", None) is None:
-            params["epochs"] = 1        
+            params["epochs"] = 1                
         results = self.model.train(**params)
         return results
 
@@ -291,7 +291,7 @@ class YOLOModel(Model):
         """
         Execute the YOLO model validation process.
         """
-        print(f"[bold green]Validating YOLO model[/bold green]: {self.name}")
+        print(f"[bold green]Validating YOLO model[/bold green]: {self.path}")
         validation_params = {
             "data": Path(f"{self.dir}/{self.yolo_config_path}"),
             "project": self.dir,

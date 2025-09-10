@@ -90,13 +90,30 @@ class CollectraManager:
             raise ValueError("Pipeline is not initialized. Please load a pipeline first.")            
 
         for name, data in config.items():               
-            data["name"] = name
+            data = self._modify_config_data(name, data)
             task_instance = TaskManager.build(data)
             self.pipeline.tasks.append(task_instance)
             print(success_msg(f"Loaded {task_instance.name}"))
 
         if len(self.pipeline.tasks) == 0:
             print(processing_msg("No tasks found in the workflow configuration."))
+    
+    def _modify_config_data(self, name: str, data: dict) -> dict:
+        data["name"] = name
+        if data.get("model", None) is not None:
+            data["model"] = f"{self.pipeline.out_dir}/{data.get('model')}" #type: ignore
+            data["old_model"] = data["model"]
+        if data.get("input", None) is not None:
+            data["input"] = (
+                [data["input"]] if isinstance(data["input"], str) else data["input"]
+            )
+        if data.get("output", None) is not None:
+            data["output"] = (
+                [data["output"]]
+                if isinstance(data["output"], str)
+                else data["output"]
+            )
+        return data
 
     def save(self) -> None:
         if not self.pipeline:

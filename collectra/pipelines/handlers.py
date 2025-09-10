@@ -78,7 +78,7 @@ class DirectoryHandler(DataHandler):
             # Ensure the model path is a Path object
             model_path = Path(model)
             task_model_path = f"{task.name}-{datetime.now().strftime('%Y%m%d_%H%M%S')}-best.pt"  # Default model path for the task
-            new_model = old_model != model
+            new_model = old_model != model            
             if not (model_path.exists() and model_path.is_file()):
                 error_message = f"Model for {task.name} does not point to a valid file or doesn't exist: {model_path}. Attempting to download..."
                 print(error_msg(error_message))
@@ -88,7 +88,7 @@ class DirectoryHandler(DataHandler):
             if new_model:
                 print(
                     f"Moving model {model_path} to temporary directory with new name {task_model_path}..."
-                )
+                )                
                 shutil.move(model_path, tmp_dir / task_model_path)
                 if old_model and Path(old_model).exists():
                     old_models[old_model] = Path(old_model)

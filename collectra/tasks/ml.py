@@ -19,7 +19,7 @@ class MachineLearningTask(Task):
         if not self.VALID_MODEL or not model:
             raise Exception(
                 "No valid model type defined for this task or model path is empty."
-            )
+            )        
         return self.VALID_MODEL(model)
 
     def run(self) -> list[dict]:
@@ -32,7 +32,7 @@ class MachineLearningTask(Task):
             raise ValueError("Model must be set before training the task.")
         model = Path(self.config.get("model", ""))
         if not model:
-            raise ValueError("Model path must be set before training the task.")        
+            raise ValueError("Model path must be set before training the task.")            
         if self.config.get("as_dir", False):            
             return self.load(model).train(self.config)
         else:

@@ -104,8 +104,9 @@ def train(
             "output_log": log
         }
         manager =  CollectraManager()
-        manager.load(workflow)
-        manager.get_pipeline().train(task_name=task, config=config)        
+        manager.load(workflow)        
+        manager.get_pipeline().train(task_name=task, config=config)
+        manager.save()
         if not keep_log:
             shutil.rmtree(log, ignore_errors=True)            
             log_cache = Path(f"{log}.cache")
