@@ -177,10 +177,10 @@ def convert_image_objects(results_yaml: dict) -> dict:
     for key in results_yaml:
         data = results_yaml[key]        
         if "type" in data:
-            if data["type"]=="ImageCrop":
-                data["type"]="collectra.images.ImageCrop"
-            elif data["type"]=="Image":
-                data["type"]="collectra.images.Image"
+            if data["type"]=="ImageCrop" or data["type"]=="collectra.images.ImageCrop":
+                data["type"]="collectra.images.base.ImageCrop"
+            elif data["type"]=="Image" or data["type"]=="collectra.images.Image":
+                data["type"]="collectra.images.base.Image"
                 image_path = data["path"]
         if "image" in data:            
             new_data = {
@@ -239,6 +239,8 @@ def modify_results_file(
                     modify_zipfile(file)
     if path.is_file() and path.suffix == f".{format}":
         modify_zipfile(path) 
+
+
 
 if __name__ == "__main__":
     app()
