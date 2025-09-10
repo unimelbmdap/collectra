@@ -25,16 +25,15 @@ class Collectra:
         if not self.tasks:
             print(error_msg("Skipping rendering empty workflow..."))
             return
-        for task in self.tasks:
-            metadata = task.metadata()
+        for task in self.tasks:            
             if task.name not in dag:
-                dag.add_node(task.name, item=task)
-            node = dag.nodes[task.name]
-            node["item"] = task
+                dag.add_node(task.name, item=task, shape="box", style="filled", fillcolor="blue", fontcolor="white")        
             for input_name in task.input:
+                dag.add_node(input_name, shape="oval", style="filled", fillcolor="green", fontcolor="white")
                 dag.add_edge(input_name, task.name)
             for output_name in task.output:
-                dag.add_edge(task.name, output_name)
+                dag.add_node(output_name, shape="oval", style="filled", fillcolor="orange")
+                dag.add_edge(task.name, output_name)                            
         dot_str = nx.nx_pydot.to_pydot(dag).to_string()
         filename = filename if filename else f"{self.name}_DAG"
         graphviz.Source(dot_str).render(
