@@ -36,9 +36,12 @@ class Collectra:
                 dag.add_edge(task.name, output_name)                            
         dot_str = nx.nx_pydot.to_pydot(dag).to_string()
         filename = filename if filename else f"{self.name}_DAG"
-        graphviz.Source(dot_str).render(
-            filename=f"{Path(self.out_dir) / filename}", format="svg", cleanup=True
-        )
+        if self.as_dir and self.out_dir:
+            graphviz.Source(dot_str).render(
+                filename=f"{Path(self.out_dir) / filename}", format="svg", cleanup=True
+            )
+        else:
+            graphviz.Source(dot_str).render(filename=filename, format="svg", cleanup=True)
         print(success_msg(f"Workflow rendered to {filename}.svg"))
 
     def __str__(self) -> str:
