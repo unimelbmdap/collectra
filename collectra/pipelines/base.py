@@ -37,7 +37,7 @@ class Collectra:
         dot_str = nx.nx_pydot.to_pydot(dag).to_string()
         filename = filename if filename else f"{self.name}_DAG"
         graphviz.Source(dot_str).render(
-            filename=f"{self.name}_DAG", format="svg", cleanup=True
+            filename=f"{Path(self.out_dir) / filename}", format="svg", cleanup=True
         )
         print(success_msg(f"Workflow rendered to {filename}.svg"))
 
