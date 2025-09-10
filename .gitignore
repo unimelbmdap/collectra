@@ -9,6 +9,7 @@ glabels/
 *.cache
 *.collectra
 images/
+samples/
 tmp/
 *.pt
 .python-version
