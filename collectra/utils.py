@@ -28,14 +28,6 @@ def get_class_path(obj_or_class):
     return f"{cls.__module__}.{cls.__name__}"
 
 
-class BaseROCrate:
-    def __init__(self, name: str, version: str, output: Path, crate: ROCrate = None):
-        self.name = name
-        self.version = version
-        self.output = output
-        self.crate = crate
-
-
 def get_all_files(data: List[str], file_format: str) -> List[Path]:
     """
     Get all files from the provided paths with the specified file format.
