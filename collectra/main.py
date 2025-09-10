@@ -98,12 +98,17 @@ def train(
         Exception: If the task cannot be trained
     """
     try:
-        output_log = f"{task}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        config = {"input_files": input_files, "output_log": output_log}
-        CollectraManager().load(workflow).train(task_name=task, config=config)
+        log = f"{task}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        config = {
+            "input_files": input_files, 
+            "output_log": log
+        }
+        manager =  CollectraManager()
+        manager.load(workflow)
+        manager.get_pipeline().train(task_name=task, config=config)        
         if not keep_log:
-            shutil.rmtree(output_log, ignore_errors=True)            
-            log_cache = Path(f"{output_log}.cache")
+            shutil.rmtree(log, ignore_errors=True)            
+            log_cache = Path(f"{log}.cache")
             if log_cache.exists():
                 os.remove(log_cache)               
     except Exception as e:
@@ -121,7 +126,9 @@ def run(
 ):
     try:
         config = {"images": images, "as_dir": as_dir}
-        CollectraManager().load(workflow).run(task_name=task, config=config)
+        manager =  CollectraManager()
+        manager.load(workflow)
+        manager.get_pipeline().run(task_name=task, config=config)
     except Exception as e:
         print(error_msg(f"Failed to run task: {e}"))
 

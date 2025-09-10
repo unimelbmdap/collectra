@@ -61,8 +61,7 @@ class Collectra:
             task_key: str = str(task.name)
             config[task_key] = {
                 "type": f"{task.__class__.__module__}.{task.__class__.__name__}"
-            }
-            # Check if task has attribute model
+            }            
             if task.config.get("model", None):
                 config[task_key]["model"] = task.config.get("model")  # type: ignore
             if task.input:
@@ -93,6 +92,9 @@ class Collectra:
         This method returns a list of task IDs that are already present in the workflow.
         """
         return [task.name for task in self.tasks]
+    
+    def __call__(self, task_name: str, config: dict = dict()):
+        self.run(task_name, config)
 
     def run(self, task_name: str, config: dict = dict()):
         task = self._get_task(task_name)        
