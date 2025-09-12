@@ -90,8 +90,8 @@ class CollectraManager:
             raise ValueError("Pipeline is not initialized. Please load a pipeline first.")            
 
         for name, data in config.items():               
-            data = self._modify_config_data(name, data)
-            task_instance = TaskManager.build(data)
+            data = self._modify_config_data(name, data)            
+            task_instance = TaskManager.build(data)            
             self.pipeline.tasks.append(task_instance)
             print(success_msg(f"Loaded {task_instance.name}"))
 

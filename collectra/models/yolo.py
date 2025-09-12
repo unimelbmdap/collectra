@@ -241,7 +241,7 @@ class YOLOModel(Model):
         print(f"[bold green]Running object detection[/bold green]: {self.path}")
         images: list[dict] = []
         paths: list[Path] = []
-        for image in tqdm(config.get("images", []), desc="Collecting images"):
+        for image in tqdm(config.get("inputs", []), desc="Collecting images"):
             image_path = Path(image)                        
             if image_path.is_file() and image_path.suffix.lower() in [
                 ".jpg",

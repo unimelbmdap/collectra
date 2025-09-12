@@ -1,4 +1,6 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
+
+LIST_TYPE_FIELDS = ["input", "output", "variables", "params"]
 
 @dataclass(kw_only=True)
 class Task:
@@ -8,10 +10,18 @@ class Task:
     config: dict[str, str] = field(default_factory=dict)
 
     @classmethod
-    def build(cls, name: str, **kwargs) -> "Task":
-        input = kwargs.pop("input", [])
-        output = kwargs.pop("output", [])
-        return cls(name=name, input=input, output=output, config=kwargs)
+    def build(cls, **kwargs) -> "Task":             
+        cls_fields = [f.name for f in fields(cls)]
+        input_args = dict()        
+        for cls_field in cls_fields:
+            if cls_field == "config": 
+                continue
+            if cls_field in LIST_TYPE_FIELDS:
+                input_args[cls_field] = kwargs.pop(cls_field, [])
+            else:
+                input_args[cls_field] = kwargs.pop(cls_field, None)            
+        input_args["config"] = kwargs                
+        return cls(**input_args)
 
     def __post_init__(self):
         if isinstance(self.input, str):
@@ -59,9 +69,10 @@ class Task:
     def __call__(self, **kwargs):
         self.check_kwargs(**kwargs)
         return self.run(**kwargs)
-
-    def check_kwargs(self, **kwargs) -> None:
+    
+    def check_kwargs(self, **kwargs) -> None:        
         assert len(kwargs) == len(self.input), f"Number of arguments to {self} incorrect. Expected {len(self.input)} and received {len(len(kwargs))}" # type: ignore
         for key,value in kwargs.items():
             # TODO Check
             pass
+        raise NotImplementedError("Subclasses must implement this method.")

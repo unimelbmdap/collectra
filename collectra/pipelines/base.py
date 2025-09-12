@@ -32,7 +32,7 @@ class Collectra:
                 dag.add_node(input_name, shape="oval", style="filled", fillcolor="green", fontcolor="white")
                 dag.add_edge(input_name, task.name)
             for output_name in task.output:
-                dag.add_node(output_name, shape="oval", style="filled", fillcolor="orange")
+                dag.add_node(output_name + "", shape="oval", style="filled", fillcolor="orange")
                 dag.add_edge(task.name, output_name)                            
         dot_str = nx.nx_pydot.to_pydot(dag).to_string()
         filename = filename if filename else f"{self.name}_DAG"
@@ -96,11 +96,11 @@ class Collectra:
         """
         return [task.name for task in self.tasks]
     
-    def __call__(self, task_name: str, config: dict = dict()):
+    def __call__(self, task_name: str, config: dict = dict()): 
         self.run(task_name, config)
 
-    def run(self, task_name: str, config: dict = dict()):
-        task = self._get_task(task_name)        
+    def run(self, task_name: str, config: dict = dict()):                
+        task = self._get_task(task_name)                    
         print(processing_msg(f"Running task: {task.name}"))            
         config = {
             **config,
@@ -110,7 +110,7 @@ class Collectra:
             "output": task.output or [],
             "as_dir": self.as_dir,
         }
-        task.set_config(config)
+        task.set_config(config)        
         task.run()            
 
     def _find_task_by_name(self, task_name: str) -> list[Task]:

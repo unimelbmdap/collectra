@@ -3,7 +3,7 @@ from pathlib import Path
 from rich import print
 import os, shutil
 from typer import Typer, Option, Argument
-from typing_extensions import Annotated
+from typing_extensions import Annotated, Optional
 from collectra.pipelines.managers import CollectraManager
 from collectra.utils import success_msg, error_msg
 
@@ -115,21 +115,21 @@ def train(
     except Exception as e:
         print(error_msg(f"Failed to train task: {e}"))
 
-
 @app.command()
 def run(
     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
     task: Annotated[str, Option("--task", "-t", help="task to run")],
-    images: Annotated[list[str], Argument(help="Input directory of files")],
+    inputs: Optional[list[str]] = Argument(None, help="Input directory of files"),
     as_dir: Annotated[
         bool, Option("--as-dir", help="Run the task as a directory instead of a file")
     ] = False,
 ):
     try:
-        config = {"images": images, "as_dir": as_dir}
-        manager =  CollectraManager()
-        manager.load(workflow)
-        manager.get_pipeline().run(task_name=task, config=config)
+        inputs = [] if inputs is None else inputs
+        config = {"inputs": inputs, "as_dir": as_dir}        
+        manager =  CollectraManager()                
+        manager.load(workflow)        
+        manager.get_pipeline()(task_name=task, config=config)
     except Exception as e:
         print(error_msg(f"Failed to run task: {e}"))
 
