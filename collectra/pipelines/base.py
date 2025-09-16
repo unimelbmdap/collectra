@@ -25,15 +25,16 @@ class Collectra:
         if not self.tasks:
             print(error_msg("Skipping rendering empty workflow..."))
             return
-        for task in self.tasks:            
+        for task in self.tasks:        
+            task_name = f"{task.name}\n{task.config['type'].split('.')[-1]}"    
             if task.name not in dag:
-                dag.add_node(task.name, item=task, shape="box", style="filled", fillcolor="blue", fontcolor="white")        
+                dag.add_node(task_name, item=task, shape="box", style="filled", fillcolor="blue", fontcolor="white")                                                                
             for input_name in task.input:
                 dag.add_node(input_name, shape="oval", style="filled", fillcolor="green", fontcolor="white")
-                dag.add_edge(input_name, task.name)
+                dag.add_edge(input_name, task_name)
             for output_name in task.output:
-                dag.add_node(output_name + "", shape="oval", style="filled", fillcolor="orange")
-                dag.add_edge(task.name, output_name)                            
+                dag.add_node(output_name, shape="oval", style="filled", fillcolor="orange")
+                dag.add_edge(task_name, output_name)                            
         dot_str = nx.nx_pydot.to_pydot(dag).to_string()
         filename = filename if filename else f"{self.name}_DAG"
         if self.as_dir and self.out_dir:
