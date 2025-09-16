@@ -13,23 +13,23 @@ def get_files(config: dict) -> list[dict[str, str]]:
     train_file = parent_dir / config.get("train", "")
     with open(train_file, "r") as file:
         files.extend(
-            [{"path": line.strip(), "split": "train"} for line in file if line.strip()]
+            [{"path": parent_dir / line.strip(), "split": "train"} for line in file if line.strip()]
         )
     val_file = parent_dir / config.get("val", "")
     with open(val_file, "r") as file:
         files.extend(
-            [{"path": line.strip(), "split": "val"} for line in file if line.strip()]
-        )
+            [{"path": parent_dir / line.strip(), "split": "val"} for line in file if line.strip()]
+        )    
     return files
 
-def get_label_paths(files: list[dict[str, str]]) -> list[Path]:
+def get_label_paths(config: dict, files: list[dict[str, str]]) -> list[Path]:
     label_paths = []
     for file in files:
         file_str = re.sub(r'\.(jpg|png)$', '.txt', str(file["path"]))
         file_str = file_str.replace("images", "labels")
-        label_path = Path(file_str)
+        label_path = Path(file_str)        
         if label_path.exists():
-            label_paths.append(label_path)    
+            label_paths.append(label_path)            
     if len(label_paths) != len(files):
         raise ValueError("Mismatch between number of image files and label files.")
     return label_paths
@@ -39,7 +39,7 @@ def convert_files(config: dict) -> None:
     names = config.get("names", [])
     output_dir = Path(config.get("output_dir", "output"))
     file_format = re.sub(r'[^0-9a-zA-Z]+', '', config.get("file_format", "grapto").lower())
-    label_paths = get_label_paths(files)
+    label_paths = get_label_paths(config, files)
     for index in tqdm.tqdm(range(len(files)), desc="Converting files"):
         image = Path(files[index]["path"])
         results_yaml = {
@@ -47,7 +47,7 @@ def convert_files(config: dict) -> None:
                 "timestamp": datetime.now(pytz.utc).isoformat(),
                 "validation": files[index]["split"] == "val",
             },
-            "specimen_sheet": {"type": "Image", "path": image.name},
+            "primary_specimen_label": {"type": "Image", "path": image.name},
         }
         label_path = label_paths[index]
         bbox = []
@@ -67,14 +67,14 @@ def convert_files(config: dict) -> None:
             if class_name not in results_yaml:
                 results_yaml[class_name] = {
                     "type": "ImageCrop",
-                    "image": "specimen_sheet",
+                    "image": "primary_specimen_label",
                     "items": [item_dimensions],
                 }
             else:
                 results_yaml[class_name]["items"].append(item_dimensions)
         for key in results_yaml:
             if (
-                key not in ["collectra_results_metadata", "specimen_sheet"]
+                key not in ["collectra_results_metadata", "primary_specimen_label"]
                 and len(results_yaml[key]["items"]) == 1
             ):
                 results_yaml[key] = {
@@ -108,19 +108,20 @@ def convert(
     Args:
         yolo_config (Path): Path to YOLO configuration file
     """
-    yolo_config = Path(yolo_config)
-    if not yolo_config.exists():
-        raise FileNotFoundError(
-            f"YOLO configuration file '{yolo_config}' does not exist."
-        )
-
-    with open(yolo_config, "r") as file:
-        config = yaml.safe_load(file)
-        config["file_format"] = file_format
-        config["output_dir"] = output_dir
-        config["parent_dir"] = yolo_config.parent
-        convert_files(config)
-
+    try:
+        yolo_config = Path(yolo_config)    
+        if not yolo_config.exists():
+            raise FileNotFoundError(
+                f"YOLO configuration file '{yolo_config}' does not exist."
+            )
+        with open(yolo_config, "r") as file:
+            config = yaml.safe_load(file)
+            config["file_format"] = file_format
+            config["output_dir"] = output_dir
+            config["parent_dir"] = yolo_config.parent
+            convert_files(config)
+    except Exception as e:
+        print(f"Error: {e}")
 
 @app.command()
 def cluster(
