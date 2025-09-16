@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from rich import print
 import os, shutil
-from typer import Typer, Option, Argument
+from typer import Typer, Option, Argument, Context
 from typing_extensions import Annotated, Optional
 from collectra.pipelines.managers import CollectraManager
 from collectra.utils import success_msg, error_msg
@@ -115,20 +115,26 @@ def train(
     except Exception as e:
         print(error_msg(f"Failed to train task: {e}"))
 
-@app.command()
+@app.command(
+    context_settings={
+        "allow_extra_args": True, 
+        "ignore_unknown_options": True
+    }
+)
 def run(
     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
-    task: Annotated[str, Option("--task", "-t", help="task to run")],
-    inputs: Optional[list[str]] = Argument(None, help="Input directory of files"),
+    task: Annotated[str, Option("--task", "-t", help="task to run")],        
+    ctx: Context,
     as_dir: Annotated[
         bool, Option("--as-dir", help="Run the task as a directory instead of a file")
-    ] = False,
+    ] = False,    
 ):
     try:
-        inputs = [] if inputs is None else inputs
+        additional_args = ctx.args
+        inputs = {additional_args[args_id].replace("--", "") : additional_args[args_id + 1] for args_id in range(0, len(additional_args), 2) if additional_args[args_id].startswith("--")}      
         config = {"inputs": inputs, "as_dir": as_dir}        
         manager =  CollectraManager()                
-        manager.load(workflow)        
+        manager.load(workflow)                
         manager.get_pipeline()(task_name=task, config=config)
     except Exception as e:
         print(error_msg(f"Failed to run task: {e}"))

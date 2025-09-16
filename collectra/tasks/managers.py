@@ -16,5 +16,5 @@ class TaskManager:
         if not task.get("type"):
             raise ValueError("Task type is required.")
         module_name, class_name = task["type"].rsplit(".", 1)
-        cls = getattr(importlib.import_module(module_name), class_name)                             
+        cls = getattr(importlib.import_module(module_name), class_name)                     
         return cls.build(**task)

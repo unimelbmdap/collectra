@@ -102,16 +102,12 @@ class Collectra:
     def run(self, task_name: str, config: dict = dict()):                
         task = self._get_task(task_name)                    
         print(processing_msg(f"Running task: {task.name}"))            
-        config = {
-            **config,
-            "file_format": self.file_format,
-            "task": task.name,
-            "input": task.input or [],
-            "output": task.output or [],
+        task_config = {            
+            "file_format": self.file_format,                        
             "as_dir": self.as_dir,
-        }
-        task.set_config(config)        
-        task.run()            
+        }        
+        task.set_config(task_config)                                
+        task(**config.get("inputs", []))          
 
     def _find_task_by_name(self, task_name: str) -> list[Task]:
         return [task for task in self.tasks if task.name == task_name]

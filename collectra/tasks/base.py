@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field, fields
+from collectra.utils import processing_msg
 
-LIST_TYPE_FIELDS = ["input", "output", "variables", "params"]
+LIST_TYPE_FIELDS = ["input", "output"]
+DICT_TYPE_FIELDS = ["variables", "params"]
 
 @dataclass(kw_only=True)
 class Task:
@@ -18,6 +20,8 @@ class Task:
                 continue
             if cls_field in LIST_TYPE_FIELDS:
                 input_args[cls_field] = kwargs.pop(cls_field, [])
+            elif cls_field in DICT_TYPE_FIELDS:
+                input_args[cls_field] = kwargs.pop(cls_field, {})
             else:
                 input_args[cls_field] = kwargs.pop(cls_field, None)            
         input_args["config"] = kwargs                
@@ -67,12 +71,13 @@ class Task:
         raise NotImplementedError("Subclasses must implement this method.")
 
     def __call__(self, **kwargs):
-        self.check_kwargs(**kwargs)
+        self.check_kwargs(**kwargs)        
         return self.run(**kwargs)
     
-    def check_kwargs(self, **kwargs) -> None:        
-        assert len(kwargs) == len(self.input), f"Number of arguments to {self} incorrect. Expected {len(self.input)} and received {len(len(kwargs))}" # type: ignore
-        for key,value in kwargs.items():
-            # TODO Check
-            pass
-        raise NotImplementedError("Subclasses must implement this method.")
+    def check_kwargs(self, **kwargs) -> None:          
+        assert len(kwargs) == len(self.input), f"Number of arguments for {self.name} is incorrect. Expected {len(self.input)} and received {len(kwargs)}" # type: ignore
+        for key, _ in kwargs.items():
+            if key not in self.input:
+                raise ValueError(f"input {key} is does not exist in input definitions: {', '.join(self.input)}")        
+            
+        
