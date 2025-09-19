@@ -111,8 +111,8 @@ class Collectra:
         task_config = {            
             "file_format": self.file_format,                        
             "as_dir": self.as_dir,
-        }        
-        task.set_config(task_config)                                
+        }                
+        task.set_config(task_config)                                        
         task(**config.get("inputs", []))          
 
     def _find_task_by_name(self, task_name: str) -> list[Task]:

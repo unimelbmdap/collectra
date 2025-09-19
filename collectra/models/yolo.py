@@ -227,7 +227,7 @@ class YOLOModel(Model):
     def thread_safe_detect(self, path: Path) -> list[Results]:
         return self.model.predict(path)
 
-    def detect(self, config: dict = {}) -> list[dict]:
+    def detect(self, **kwargs) -> list[dict]:
         """
         Run object detection inference on provided data.
 
@@ -237,12 +237,12 @@ class YOLOModel(Model):
 
         Args:
             data (Path): Path to the input data (images/video) for detection
-        """
+        """        
         print(f"[bold green]Running object detection[/bold green]: {self.path}")
         images: list[dict] = []
         paths: list[Path] = []
-        for image in tqdm(config.get("inputs", []), desc="Collecting images"):
-            image_path = Path(image)                        
+        for key, value in kwargs.items():
+            image_path = Path(value)                                            
             if image_path.is_file() and image_path.suffix.lower() in [
                 ".jpg",
                 ".jpeg",

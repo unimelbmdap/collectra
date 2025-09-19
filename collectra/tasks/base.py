@@ -74,7 +74,7 @@ class Task:
         self.check_kwargs(**kwargs)        
         return self.run(**kwargs)
     
-    def check_kwargs(self, **kwargs) -> None:          
+    def check_kwargs(self, **kwargs) -> None:                  
         assert len(kwargs) == len(self.input), f"Number of arguments for {self.name} is incorrect. Expected {len(self.input)} and received {len(kwargs)}" # type: ignore
         for key in kwargs.keys():
             if key not in self.input:

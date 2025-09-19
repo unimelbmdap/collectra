@@ -22,10 +22,10 @@ class MachineLearningTask(Task):
             )        
         return self.VALID_MODEL(model)
 
-    def run(self) -> list[dict]:
+    def run(self, **kwargs) -> list[dict]:
         if not self.config.get("model", None):
             raise ValueError("Model must be set before running the task.")
-        return self.load(self.config.get("model")).detect(self.config)  # type: ignore
+        return self.load(self.config.get("model")).detect(**kwargs)  # type: ignore
 
     def train(self) -> Path | None:
         if not self.config.get("model", None):
@@ -80,8 +80,8 @@ class MachineLearningTask(Task):
 class ObjectDetectionYOLO(MachineLearningTask):
     VALID_MODEL = YOLOModel
 
-    def run(self):
-        results = super().run()
+    def run(self, **kwargs):
+        results = super().run(**kwargs)        
         names = []        
         for result in results:
             image_file = Path(result.get("image"))  # type: ignore
