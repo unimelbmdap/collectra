@@ -17,11 +17,11 @@ class EntityCanonicalizer(Task):
             with open(self.entities, "r") as f:
                 self.entities = [line.strip() for line in f if line.strip()]
 
-    def input_types(self) -> set[type]:
-        return {str}
+    def input_types(self) -> type:
+        return str
 
-    def output_types(self) -> set[type]:
-        return {str}
+    def output_types(self) -> type:
+        return str
     
     def run(self, text: str) -> str:
         close_matches = get_close_matches(

@@ -22,6 +22,12 @@ class LLM(Task):
     max_tokens: int = 250
     variables: dict = field(default_factory=dict)
 
+    def input_type(self) -> type:
+        return str | Path | Image
+
+    def output_type(self) -> type:
+        return str
+
     def __post_init__(self):                                        
         self.llm = llmloader.load(Path(self.model).name, temperature=self.temperature, max_tokens=self.max_tokens)           
         self.messages: list[SystemMessage | HumanMessage] = [
