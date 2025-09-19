@@ -74,7 +74,7 @@ class CollectraManager:
         """
         metadata = data.pop("collectra_pipeline_metadata", dict())   
         if not set(metadata.keys()).issubset(set(self.required_keys)):        
-            raise ValueError(f"Invalid pipeline file. Must have the keys: {", ".join(self.required_keys)} in metadata.")                                 
+            raise ValueError(f"Invalid pipeline file. Must have the keys: {', '.join(self.required_keys)} in metadata.")                                 
         metadata["out_dir"] = str(path) if path else str(Path.cwd() / metadata["name"])
         metadata["as_dir"] = as_dir 
         self.build(metadata)        
