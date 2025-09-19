@@ -98,9 +98,14 @@ class Collectra:
         return [task.name for task in self.tasks]
     
     def __call__(self, task_name: str, config: dict = dict()): 
-        self.run(task_name, config)
+        self.run(config)
+    
+    def run(self, config: dict = dict()):  
+        # TODO Explore potential DAG execution manager              
+        for task in self.tasks:    
+            self.run_task(task.name, config)        
 
-    def run(self, task_name: str, config: dict = dict()):                
+    def run_task(self, task_name: str, config: dict = dict()):                
         task = self._get_task(task_name)                    
         print(processing_msg(f"Running task: {task.name}"))            
         task_config = {            

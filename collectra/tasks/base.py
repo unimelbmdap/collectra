@@ -76,8 +76,8 @@ class Task:
     
     def check_kwargs(self, **kwargs) -> None:          
         assert len(kwargs) == len(self.input), f"Number of arguments for {self.name} is incorrect. Expected {len(self.input)} and received {len(kwargs)}" # type: ignore
-        for key, _ in kwargs.items():
+        for key in kwargs.keys():
             if key not in self.input:
-                raise ValueError(f"input {key} is does not exist in input definitions: {', '.join(self.input)}")        
+                raise ValueError(f"input {key} does not exist in input definitions: {', '.join(self.input)}")        
             
         
