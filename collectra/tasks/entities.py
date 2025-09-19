@@ -17,10 +17,10 @@ class EntityCanonicalizer(Task):
             with open(self.entities, "r") as f:
                 self.entities = [line.strip() for line in f if line.strip()]
 
-    def input_types(self) -> type:
+    def input_type(self) -> type:
         return str
 
-    def output_types(self) -> type:
+    def output_type(self) -> type:
         return str
     
     def run(self, text: str) -> str:
