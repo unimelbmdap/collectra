@@ -80,6 +80,12 @@ class MachineLearningTask(Task):
 class ObjectDetectionYOLO(MachineLearningTask):
     VALID_MODEL = YOLOModel
 
+    def input_type(self) -> type:
+        return Image | Path
+    
+    def output_type(self) -> type:
+        return ImageCrop
+
     def run(self, **kwargs):
         results = super().run(**kwargs)        
         names = []        

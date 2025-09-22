@@ -11,6 +11,12 @@ class Task:
     output: list[str] = field(default_factory=list)
     config: dict[str, str] = field(default_factory=dict)
 
+    def input_type(self) -> type:
+        raise NotImplementedError("Subclasses must implement this method.")
+
+    def output_type(self) -> type:
+        return str
+
     @classmethod
     def build(cls, **kwargs) -> "Task":             
         cls_fields = [f.name for f in fields(cls)]
