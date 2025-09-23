@@ -69,33 +69,36 @@ class LLM(Task):
             "text": prompt.replace(f"{{{key}}}", value).replace("{input}", value).strip()
         }
 
-    def replace_in_template(self, prompt, items) -> list[dict | str]:              
-        content = []                
-        for key, value in items:   
-            if not bool(value):
-                continue
-            if isinstance(value, Image):                  
+    def replace_in_template(self, prompt, key, value) -> list[dict | str]:              
+        content = []                        
+        if isinstance(value, Image):                  
+            content.append(self.add_text(prompt, key))      
+            content.append(self.image_content(value))                                                 
+        elif Path(value).is_file():       
+            try:                    
+                image = Image.build(Path(value))                         
                 content.append(self.add_text(prompt, key))      
-                content.append(self.image_content(value))                                                 
-            elif Path(value).is_file():       
-                try:                    
-                    image = Image.build(Path(value))                         
-                    content.append(self.add_text(prompt, key))      
-                    content.append(self.image_content(image))                                 
-                except Exception as e:                
-                    value = value.read_text()                    
-                    content.append(self.add_text(prompt, key, str(value)))     
-            else:                
+                content.append(self.image_content(image))                                 
+            except Exception as e:                
+                value = value.read_text()                    
                 content.append(self.add_text(prompt, key, str(value)))     
+        else:                
+            content.append(self.add_text(prompt, key, str(value)))     
         return content
     
-    def run(self, **kwargs) -> str:                
+    def run(self, **kwargs) -> dict:                
         prompt = str(self.template)                       
-        items = self.process_inputs(**kwargs)           
-        content = self.replace_in_template(prompt, items)                
-        self.messages.append(HumanMessage(content=content))               
-        result = self.llm.invoke(self.messages)
+        items = self.process_inputs(**kwargs)
         parser = StrOutputParser()
-        output = parser.invoke(result)
-        print(success_msg(f"[yellow]Inference Complete. Displaying results below: [/yellow]\n\n{output}\n"))        
-        return output
+        results = dict()
+        for key, value in items:
+            if not bool(value):
+                continue
+            content = self.replace_in_template(prompt, key, value)     
+            message = self.messages.copy()
+            message.append(HumanMessage(content=content))                        
+            for output_key in self.output:
+                if key in output_key:
+                    results[output_key] = parser.invoke(self.llm.invoke(message))                                    
+        print(success_msg(f"[yellow]Inference Complete. Displaying results below: [/yellow]\n\n{results}\n"))        
+        return results
