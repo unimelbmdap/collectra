@@ -1,14 +1,15 @@
 from collectra.tasks.base import Task
 from collectra.images.base import Image
-from collectra.utils import success_msg
+from collectra.utils import success_msg, processing_msg
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_openai import AzureChatOpenAI
 from pathlib import Path
 from rich import print
-import llmloader
-import base64
+from types import UnionType
+import base64, importlib, llmloader
 
 load_dotenv()
 
@@ -22,64 +23,77 @@ class LLM(Task):
     max_tokens: int = 250
     variables: dict = field(default_factory=dict)
 
-    def input_type(self) -> type:
-        return str | Path | Image
+    def input_type(self) -> type | tuple:
+        return str, Path
 
-    def output_type(self) -> type:
+    def output_type(self) -> type | tuple:
         return str
+    
+    def check_kwargs(self, **kwargs) -> dict[str, str|dict|Image]:
+        input_data: dict[str, dict | str | Image] = super().check_kwargs(**kwargs)
+        for key, value in input_data.items():
+            if isinstance(value, dict) and "path" in value and "type" in value:
+                module_name, class_name = value.pop("type").rsplit(".", 1)
+                cls = getattr(importlib.import_module(module_name), class_name)     
+                path = value.pop("path")                
+                input_data[key] = cls.build(path, **value)   
+        return input_data
 
-    def __post_init__(self):                                        
-        self.llm = llmloader.load(Path(self.model).name, temperature=self.temperature, max_tokens=self.max_tokens)           
+    def process_inputs(self, **kwargs) -> tuple:   
+        kwargs.update(self.variables)     
+        return kwargs.items()
+
+    def __post_init__(self):                                                
+        self.llm = AzureChatOpenAI(
+            azure_deployment=Path(self.model).name,
+            api_version="2024-12-01-preview",
+            temperature=self.temperature,
+            max_tokens=self.max_tokens            
+        )
+        # self.llm = llmloader.load(Path(self.model).name, temperature=self.temperature, max_tokens=self.max_tokens)           
         self.messages: list[SystemMessage | HumanMessage] = [
             SystemMessage(content=self.config.get("system", ""))
-        ]
+        ]    
     
-    def is_image(self, value: Path):
-        return value.is_file(), value.suffix in [".jpg", ".png"]
-    
-    def encode_image(self, image_path: Path):
-        types = {
-            ".jpg": "jpeg",
-            ".png": "png",
-        }
-        with open(image_path, "rb") as img_file:
-            value = base64.b64encode(img_file.read()).decode('utf-8')                       
+    def image_content(self, image: Image):                
         return {
             "type": "image",
-            "source_type": "base64", 
-            "data": value,
-            "mime_type": f"image/{types[image_path.suffix]}"
-        }  
-    
-    def add_text(self, prompt: str, key: str, value: str =""):
+            "source_type": "base64",
+            "data": image.get_encoding(),
+            "mime_type": image.mime(),
+        }
+
+    def add_text(self, prompt: str, key: str, value: str=""):
         return {
             "type": "text",
-            "text": prompt.replace(f"{{{key}}}", value).strip()
+            "text": prompt.replace(f"{{{key}}}", value).replace("{input}", value).strip()
         }
 
     def replace_in_template(self, prompt, items) -> list[dict | str]:              
-        content = []
-        for key, value in items:
+        content = []                
+        for key, value in items:   
+            if not bool(value):
+                continue
             if isinstance(value, Image):                  
                 content.append(self.add_text(prompt, key))      
-                content.append(self.encode_image(Path(value.image)))                                 
-            elif Path(value).exists():                
-                image_path = Path(value)
-                is_file, is_image = self.is_image(image_path)
-                if is_file and is_image:
-                    content.append(self.add_text(prompt, key))    
-                    content.append(self.encode_image(image_path))                     
-                elif is_file:
+                content.append(self.image_content(value))                                                 
+            elif Path(value).is_file():       
+                try:                    
+                    image = Image.build(Path(value))                         
+                    content.append(self.add_text(prompt, key))      
+                    content.append(self.image_content(image))                                 
+                except Exception as e:                
                     value = value.read_text()                    
                     content.append(self.add_text(prompt, key, str(value)))     
-            else:
+            else:                
                 content.append(self.add_text(prompt, key, str(value)))     
         return content
     
-    def run(self, **kwargs) -> str:
-        prompt = str(self.template)                   
-        content = self.replace_in_template(prompt, kwargs.items() | self.variables.items())                
-        self.messages.append(HumanMessage(content=content))         
+    def run(self, **kwargs) -> str:                
+        prompt = str(self.template)                       
+        items = self.process_inputs(**kwargs)           
+        content = self.replace_in_template(prompt, items)                
+        self.messages.append(HumanMessage(content=content))               
         result = self.llm.invoke(self.messages)
         parser = StrOutputParser()
         output = parser.invoke(result)

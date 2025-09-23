@@ -1,8 +1,8 @@
 from typing import List
-from rocrate.rocrate import ROCrate
 from pathlib import Path
 from tqdm import tqdm
-
+from PIL import Image as ImagePil
+import zipfile, yaml
 
 def success_msg(message: str):
     return f"[green]Success[/green]: {message}"
@@ -47,16 +47,24 @@ def get_all_files(data: List[str], file_format: str) -> List[Path]:
         raise Exception(f"No files found with format '{file_format}'")
     return files
 
+def unzip(path: Path, config: str = "pipeline.yaml") -> dict:    
+    with zipfile.ZipFile(path, "r") as zipf:
+        data = yaml.safe_load(zipf.read(config))
+        if not data:
+            raise ValueError(f"Config file is empty or invalid: {path}")           
+        return data        
 
-def rcollect(path: Path, files: List[Path], file_format: str) -> None:
-    if path.is_dir():
-        matches = list(path.glob("results.yaml"))
-        if matches:
-            if len(matches) > 1:
-                raise ValueError(f"Found multiple results.yaml files: {matches}")
-            files.append(path)
-        else:
-            for path in path.glob(f"**/*{file_format}"):
-                rcollect(path, files=files, file_format=file_format)
-    if path.is_file() and path.suffix.replace(".", "") == file_format:
-        files.append(path)
+def from_dir(path: Path, config: str = "pipeline.yaml") -> dict:    
+    pipeline = path / config        
+    with open(pipeline, "r") as f:
+        data = yaml.safe_load(f)
+        if not data:
+            raise ValueError(f"Config file is empty or invalid: {pipeline}")
+        return data
+
+def crop(path: Path, coordinates: tuple[float, float, float, float], show=False) -> ImagePil.Image:
+    with ImagePil.open(path) as imf:
+        im_crop = imf.crop(coordinates)
+        if show:
+            im_crop.show()
+    return im_crop

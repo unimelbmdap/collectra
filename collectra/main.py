@@ -131,11 +131,10 @@ def run_task(
 ):
     try:
         additional_args = ctx.args
-        inputs = {additional_args[args_id].replace("--", "") : additional_args[args_id + 1] for args_id in range(0, len(additional_args), 2) if additional_args[args_id].startswith("--")}      
-        config = {"inputs": inputs, "as_dir": as_dir}                
+        inputs = {additional_args[args_id].replace("--", "") : additional_args[args_id + 1] for args_id in range(0, len(additional_args), 2) if additional_args[args_id].startswith("--")}                           
         manager =  CollectraManager()                
         manager.load(workflow)                
-        manager.get_pipeline().run_task(task_name=task, config=config)
+        manager.get_pipeline().run_task(task_name=task, inputs=inputs)
     except Exception as e:
         print(error_msg(f"Failed to run task: {e}"))
 

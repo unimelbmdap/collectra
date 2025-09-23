@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from collectra.pipelines.base import Collectra
 from collectra.pipelines.handlers import DirectoryHandler, ZipHandler
 from collectra.tasks.managers import TaskManager
-from collectra.utils import success_msg, processing_msg
+from collectra.utils import success_msg, processing_msg, from_dir, unzip
 from pathlib import Path
 from rich import print
 import yaml, zipfile
@@ -41,12 +41,8 @@ class CollectraManager:
         :param path: The path to the directory containing the workflow configuration.
         :return: An instance of Collectra with the loaded configuration.
         """
-        pipeline_file = path / "pipeline.yaml"        
-        with open(pipeline_file, "r") as f:
-            data = yaml.safe_load(f)
-            if not data:
-                raise ValueError(f"Pipeline file is empty or invalid: {pipeline_file}")
-            self._load_pipeline(data, path, as_dir=True)
+        data = from_dir(path)                    
+        self._load_pipeline(data, path, as_dir=True)
 
     def _load_zip(self, path: Path):
         """
@@ -55,10 +51,8 @@ class CollectraManager:
         :param path: The path to the zip file containing the workflow configuration.
         :return: An instance of Collectra with the loaded configuration.
         """
-        pipeline_file = "pipeline.yaml"
-        with zipfile.ZipFile(path, "r") as zipf:
-            data = yaml.safe_load(zipf.read(pipeline_file))            
-            self._load_pipeline(data, path, as_dir=False)
+        data = unzip(path)        
+        self._load_pipeline(data, path, as_dir=False)
     
     def _load_pipeline(
         self,

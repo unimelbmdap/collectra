@@ -5,6 +5,7 @@ from collectra.models.yolo import YOLOModel
 from collectra.tasks.base import Task
 from dataclasses import dataclass
 from datetime import datetime
+from types import UnionType
 import tempfile, zipfile, pytz, shutil, yaml, os
 
 @dataclass(kw_only=True)
@@ -80,17 +81,19 @@ class MachineLearningTask(Task):
 class ObjectDetectionYOLO(MachineLearningTask):
     VALID_MODEL = YOLOModel
 
-    def input_type(self) -> type:
+    def input_type(self) -> UnionType:
         return Image | Path
     
     def output_type(self) -> type:
         return ImageCrop
 
-    def run(self, **kwargs):
+    def run(self, **kwargs):        
         results = super().run(**kwargs)        
         names = []        
-        for result in results:
+        for result in results:            
             image_file = Path(result.get("image"))  # type: ignore
+            path = Path(f"{image_file.stem}.{self.config['file_format']}")
+            path.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists            
             output_yaml = {
                 "collectra_results_metadata": {
                     "timestamp": datetime.now(pytz.utc).isoformat(),
@@ -120,8 +123,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
                         "width_relative": float(w),
                         "height_relative": float(h),
                     }
-            path = Path(f"output/{image_file.stem}.{self.config['file_format']}")
-            path.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists            
+                cls_result.save_crop(save_dir=path)            
             shutil.copy(image_file, path / image_file.name)
             with open(path / "results.yaml", "w") as f:
                 for key in output_yaml:
@@ -132,8 +134,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
                             sort_keys=False,
                         )
                     )
-                    f.write("\n")
-            cls_result.save_crop(save_dir=path)            
+                    f.write("\n")                     
             if not self.config.get("as_dir", False):
                 shutil.make_archive(
                     str(path), "zip", path
