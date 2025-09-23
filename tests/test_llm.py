@@ -1,5 +1,5 @@
 from pathlib import Path
-from collectra.pipeline import CollectraManager
+from collectra.pipelines.managers import CollectraManager
 
 
 TEST_DATA = Path(__file__).parent / "data"
