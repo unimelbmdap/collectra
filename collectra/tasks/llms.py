@@ -5,11 +5,9 @@ from dataclasses import dataclass, field
 from dotenv import load_dotenv
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_openai import AzureChatOpenAI
 from pathlib import Path
 from rich import print
-from types import UnionType
-import base64, importlib, llmloader
+import importlib, llmloader
 
 load_dotenv()
 
@@ -43,14 +41,8 @@ class LLM(Task):
         kwargs.update(self.variables)     
         return kwargs.items()
 
-    def __post_init__(self):                                                
-        self.llm = AzureChatOpenAI(
-            azure_deployment=Path(self.model).name,
-            api_version="2024-12-01-preview",
-            temperature=self.temperature,
-            max_tokens=self.max_tokens            
-        )
-        # self.llm = llmloader.load(Path(self.model).name, temperature=self.temperature, max_tokens=self.max_tokens)           
+    def __post_init__(self):                                                        
+        self.llm = llmloader.load(Path(self.model).name, temperature=self.temperature, max_tokens=self.max_tokens)           
         self.messages: list[SystemMessage | HumanMessage] = [
             SystemMessage(content=self.config.get("system", ""))
         ]    
