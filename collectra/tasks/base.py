@@ -1,7 +1,7 @@
 from collectra.utils import from_dir, unzip
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-import yaml
+import yaml, ray
 
 LIST_TYPE_FIELDS = ["input", "output"]
 DICT_TYPE_FIELDS = ["variables", "params"]

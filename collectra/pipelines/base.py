@@ -135,7 +135,12 @@ class Collectra:
         if self.flow is None:
             raise ValueError(f"Pipeline is not initialised for: {self.name}") 
         initial_nodes = [node for node in self.flow.nodes() if len(list(self.flow.predecessors(node))) == 0]    
-        
+        for node in initial_nodes:
+            output = run_task(node, config)
+            children_node = self.flow.successors(node)
+            for child_node in children_node:
+                child_output = run_task(child_node)
+      
 
     def run_task(self, task_name: str, **kwargs):                
         task = self._get_task(task_name)        
