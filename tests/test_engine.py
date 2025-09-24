@@ -1,6 +1,6 @@
 import os
-from collectra.models import YOLOModel
-from collectra.pipeline import CollectraManager
+from collectra.models.yolo import YOLOModel
+from collectra.pipelines.managers import CollectraManager
 from pathlib import Path
 import shutil
 
@@ -12,7 +12,7 @@ def test_yolo_model_initialization():
 
 
 def test_yolo_model_run():
-    config = {"input": "test_data", "file_format": "hespi"}
+    config = {"input": "test_data", "format": "hespi"}
     model = YOLOModel(name="yolo11n.pt")
     os.makedirs(CollectraManager.TEMPORARY_DIR, exist_ok=True)
     model.preprocess(Path(config.get("input")), "hespi")

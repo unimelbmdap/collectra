@@ -82,7 +82,7 @@ A file created by the Collectra application is an RO-Crate compliant (`RO-Crate 
                 "@id": "./",
                 "@type": "Dataset",
                 "datePublished": "2025-07-29T08:16:24+00:00",
-                "file_format": "hespi",
+                "format": "hespi",
                 "hasPart": [                    
                     {
                         "@id": "648bfb1e-bcf0-41e4-8eed-3ce7c912a6b6"

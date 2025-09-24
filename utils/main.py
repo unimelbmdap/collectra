@@ -38,7 +38,7 @@ def convert_files(config: dict) -> None:
     files = get_files(config)
     names = config.get("names", [])
     output_dir = Path(config.get("output_dir", "output"))
-    file_format = re.sub(r'[^0-9a-zA-Z]+', '', config.get("file_format", "grapto").lower())
+    format = re.sub(r'[^0-9a-zA-Z]+', '', config.get("format", "grapto").lower())
     label_paths = get_label_paths(config, files)
     for index in tqdm.tqdm(range(len(files)), desc="Converting files"):
         image = Path(files[index]["path"])
@@ -83,7 +83,7 @@ def convert_files(config: dict) -> None:
                 }
                 results_yaml[key].pop("items", None)
 
-        output_path = output_dir / "images" / image.name.replace(".jpg", f".{file_format}").replace(".png", f".{file_format}")      
+        output_path = output_dir / "images" / image.name.replace(".jpg", f".{format}").replace(".png", f".{format}")      
         output_path.mkdir(parents=True, exist_ok=True)          
         shutil.copyfile(image, output_path / image.name)
         with open(output_path / "results.yaml", "w") as f:
@@ -101,7 +101,7 @@ def convert_files(config: dict) -> None:
 @app.command()
 def convert(
     yolo_config: Annotated[Path, tp.Option("--config", "-c", help="Path to YOLO configuration file")],
-    file_format: Annotated[str, tp.Option("--format", "-f", help="File format, only 'yolo' is supported currently")],
+    format: Annotated[str, tp.Option("--format", "-f", help="File format, only 'yolo' is supported currently")],
     output_dir: Annotated[Path, tp.Option("--output", "-o", help="Output directory for converted files")],    
 ):
     """Convert YOLO formatted dataset to Collectra format
@@ -116,7 +116,7 @@ def convert(
             )
         with open(yolo_config, "r") as file:
             config = yaml.safe_load(file)
-            config["file_format"] = file_format
+            config["format"] = format
             config["output_dir"] = output_dir
             config["parent_dir"] = yolo_config.parent
             convert_files(config)
@@ -134,7 +134,7 @@ def cluster(
     image_folder: Annotated[
         Path, tp.Option("--image-folder", "-i", help="Path to image folder")
     ],
-    file_format: Annotated[str, tp.Option("--format", "-f", help="File format")]
+    format: Annotated[str, tp.Option("--format", "-f", help="File format")]
 ):
     yolo_config = Path(yolo_config)
     if not yolo_config.exists():
@@ -147,7 +147,7 @@ def cluster(
 
     class_counts = {name: 0 for name in config.get("names", [])}
 
-    for image in image_folder.glob(f"*.{file_format}"):
+    for image in image_folder.glob(f"*.{format}"):
         results_yaml_path = ""
         if image.is_dir():
             results_yaml_path = image / "results.yaml"

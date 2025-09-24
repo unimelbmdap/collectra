@@ -89,13 +89,13 @@ class YOLOModel(Model):
             raise ValueError(
                 error_msg("Input data path is required for training. Found none")
             )
-        file_format = config.get("file_format", None)
-        if not file_format:
+        format = config.get("format", None)
+        if not format:
             raise ValueError(
                 error_msg("File format is required for training. Found none")
             )
-        file_format = file_format.replace(".", "")
-        self.preprocess(data, inputs, classes, file_format=file_format)
+        format = format.replace(".", "")
+        self.preprocess(data, inputs, classes, format=format)
 
     def _prepare_assets(
         self, file: Path, is_file: bool = True, inputs: list[str] = []
@@ -183,10 +183,10 @@ class YOLOModel(Model):
         data_paths: list[str],
         inputs: list[str],
         classes: list[str],
-        file_format: str,
+        format: str,
         validation: bool = False,
     ) -> None:
-        files: list[Path] = get_all_files(data_paths, file_format)
+        files: list[Path] = get_all_files(data_paths, format)
         data_files = []
         for file in tqdm(files, desc="Processing files for YOLO training"):
             data: dict | None = None

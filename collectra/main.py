@@ -19,7 +19,7 @@ def make(
         str, Option("--workflow", "-w", help="name of the workflow")
     ],
     version: Annotated[str, Option("--version", "-v", help="version of the workflow")],
-    file_format: Annotated[
+    format: Annotated[
         str,
         Option(
             "--file-format",
@@ -37,7 +37,7 @@ def make(
     Args:
         workflow_path (str): Name of the workflow.
         version (str): Version of the workflow.
-        file_format (str): File format for the workflow, e.g., grapto, hespi, etc.
+        format (str): File format for the workflow, e.g., grapto, hespi, etc.
         out_dir (Path): Output directory for the workflow.
         as_dir (bool): Create the workflow as a directory instead of a file.
     
@@ -49,7 +49,7 @@ def make(
             "name": Path(workflow_path).name,
             "version": version,
             "description": "",
-            "file_format": file_format,
+            "format": format,
             "out_dir": workflow_path,
             "as_dir": as_dir,
         }
@@ -65,6 +65,7 @@ def make(
 @app.command()
 def render(
     workflow: Annotated[Path, Option("-w", "--workflow", help="path to workflow")],
+    raw: Annotated[bool, Option(help="print raw pipeline if set")] = False,
 ):
     """Render the Collectra workflow to a file
 
@@ -77,7 +78,7 @@ def render(
     try:
        manager =  CollectraManager()
        manager.load(workflow)
-       manager.get_pipeline().render()
+       manager.get_pipeline().render(raw=raw)
     except Exception as e:
         print(error_msg(f"{e}"))
 
@@ -138,6 +139,29 @@ def run_task(
         manager =  CollectraManager()                
         manager.load(workflow)                
         manager.get_pipeline().run_task(task_name=task, inputs=inputs)
+    except Exception as e:
+        print(error_msg(f"Failed to run task: {e}"))
+
+
+@app.command(
+    context_settings={
+        "allow_extra_args": True, 
+        "ignore_unknown_options": True
+    }
+)
+def run(
+    workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],    
+    ctx: Context,
+    as_dir: Annotated[
+        bool, Option("--as-dir", help="Run the task as a directory instead of a file")
+    ] = False,    
+):
+    try:
+        additional_args = ctx.args
+        inputs = {additional_args[args_id].replace("--", "") : additional_args[args_id + 1] for args_id in range(0, len(additional_args), 2) if additional_args[args_id].startswith("--")}                           
+        manager =  CollectraManager()                
+        manager.load(workflow)                
+        manager.get_pipeline().run()
     except Exception as e:
         print(error_msg(f"Failed to run task: {e}"))
 

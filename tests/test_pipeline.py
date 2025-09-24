@@ -16,9 +16,9 @@ class TestPipeline:
         """Helper method to invoke CLI commands."""
         return self.runner.invoke(app, command.split())
 
-    def make_workflow(self, dummy_workflow: str, file_format: str):
+    def make_workflow(self, dummy_workflow: str, format: str):
         """Helper method to create a dummy workflow."""
-        return self.call(f"make -f {file_format} -w {dummy_workflow}")
+        return self.call(f"make -f {format} -w {dummy_workflow}")
 
     def test_pipeline_making(self):
         """Test that pipeline creation works correctly."""

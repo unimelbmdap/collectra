@@ -77,12 +77,12 @@ class Model(ABC):
         pass
 
     @abstractmethod
-    def preprocess(self, data: Path, file_format: str) -> None:
+    def preprocess(self, data: Path, format: str) -> None:
         """
         Preprocess data for training or inference.
 
         Args:
             data (Path): Path to the data to preprocess
-            file_format (str): Format of the input files
+            format (str): Format of the input files
         """
         pass

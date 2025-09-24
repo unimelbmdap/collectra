@@ -1,10 +1,10 @@
 import re, os, pytest, shutil
 from pathlib import Path
 from typer.testing import CliRunner
-from collectra.tasks import ObjectDetectionYOLO
-from collectra.models import YOLOModel, ImageClassifier
+from collectra.tasks.ml import ObjectDetectionYOLO
+from collectra.models.yolo import YOLOModel
 from collectra.main import app
-from collectra.pipeline import CollectraManager
+from collectra.pipelines.managers import CollectraManager
 
 TEST_DATA = Path(__file__).parent / "testworkflow"
 TEST_FILES = [str(file) for file in TEST_DATA.glob("*.hespi")]
@@ -41,7 +41,7 @@ def make_workflow(dummy_workflow):
     task_string = ",".join(DUMMY_TASK_INPUT.values())
     result = run_app(f"add -w {dummy_workflow} -t {task_string}")
     assert result.exit_code == 0, f"Add task {task_string} should succeed"
-    myworkflow = CollectraManager.load_workflow(dummy_workflow)
+    myworkflow = CollectraManager.load(dummy_workflow)
     return myworkflow
 
 
@@ -49,7 +49,7 @@ def make_workflow(dummy_workflow):
 #     """
 #     Test the training functionality of the DetectObject task with a YOLOEngine.
 #     """
-#     engine = YOLOModel(name="yolo11n.pt", config={"test": 1, "file_format": "hespi", "input": TEST_FILES})
+#     engine = YOLOModel(name="yolo11n.pt", config={"test": 1, "format": "hespi", "input": TEST_FILES})
 #     task = ObjectDetectionYOLO(task_type="detect_object", engine=engine)
 #     assert isinstance(task.engine, YOLOModel), "Engine should be an instance of YOLOModel"
 #     # Run the training process

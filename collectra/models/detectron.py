@@ -67,7 +67,7 @@ class DETECTRON2Engine(Model):
         # TODO: Implement Detectron2 detection logic here
         pass
 
-    def preprocess(self, data: Path, file_format: str) -> None:
+    def preprocess(self, data: Path, format: str) -> None:
         """
         Preprocess data for DETECTRON2 training (placeholder implementation).
 
@@ -76,7 +76,7 @@ class DETECTRON2Engine(Model):
 
         Args:
             data (Path): Path to the input data
-            file_format (str): Format of the input files
+            format (str): Format of the input files
         """
         print(f"[bold green]Preprocessing data for DETECTRON2[/bold green]: {data}")
         # TODO: Implement Detectron2 preprocessing logic here
@@ -152,7 +152,7 @@ class ImageClassifier(Model):
         # TODO: Implement image classifier validation logic
         pass
 
-    def preprocess(self, data: Path, file_format: str) -> None:
+    def preprocess(self, data: Path, format: str) -> None:
         """
         Preprocess data for image classification (placeholder implementation).
 
@@ -162,7 +162,7 @@ class ImageClassifier(Model):
 
         Args:
             data (Path): Path to the input data
-            file_format (str): Format of the input image files
+            format (str): Format of the input image files
         """
         print(
             f"[bold green]Preprocessing data for image classification[/bold green]: {data}"

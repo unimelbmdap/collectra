@@ -92,7 +92,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
         names = []        
         for result in results:            
             image_file = Path(result.get("image"))  # type: ignore
-            path = Path(f"{image_file.stem}.{self.config['file_format']}")
+            path = Path(f"{image_file.stem}.{self.config['format']}")
             path.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists            
             output_yaml = {
                 "collectra_results_metadata": {

@@ -11,38 +11,69 @@ import networkx as nx, graphviz
 class Collectra:
     name: str
     version: str
-    file_format: str
+    format: str
     out_dir: str | None = None
     as_dir: bool = False
     description: str = "Collectra workflow configuration"
     tasks: list[Task] = field(default_factory=list)      
+    flow: nx.DiGraph | None = None
 
-    def __post_init__(self):        
-        self.out_dir = str(Path.cwd() / self.name) if not self.out_dir else self.out_dir        
+    def __post_init__(self):       
+        if not self.out_dir:             
+            self.out_dir = str(Path.cwd() / self.name)
+        self.flow = nx.DiGraph()
 
-    def render(self, filename: str = ""):
-        dag = nx.DiGraph()
-        if not self.tasks:
-            print(error_msg("Skipping rendering empty workflow..."))
-            return
-        for task in self.tasks:        
-            task_name = f"{task.name}\n{task.config['type'].split('.')[-1]}"    
-            if task.name not in dag:
-                dag.add_node(task_name, item=task, shape="box", style="filled", fillcolor="blue", fontcolor="white")                                                                
-            for input_name in task.input:
-                dag.add_node(input_name, shape="oval", style="filled", fillcolor="green", fontcolor="white")
-                dag.add_edge(input_name, task_name)
-            for output_name in task.output:
-                dag.add_node(output_name, shape="oval", style="filled", fillcolor="orange")
-                dag.add_edge(task_name, output_name)                            
-        dot_str = nx.nx_pydot.to_pydot(dag).to_string()
-        filename = filename if filename else f"{self.name}_DAG"
+    def add_task(self, task: Task, mapping: dict):
+        if self.flow is None:
+            raise ValueError(f"Pipeline has not been initialised for {self.name}")
+        if task.name in self.flow.nodes():
+            raise ValueError(f"Flow already has this task: {task.name}")
+        self.tasks.append(task)
+        self.flow.add_node(task.name, item=task)
+        for output in task.output:
+            if output not in mapping:
+                mapping[output] = []
+            mapping[output].append(task.name)        
+            
+    def connect(self, mapping: dict):   
+        if self.flow is None:
+            raise ValueError(f"Pipeline has not been initialised for {self.name}")  
+        for task in self.tasks:
+            for input in task.input:                
+                parent_tasks = mapping.get(input, [])
+                for parent_task in parent_tasks:
+                    self.flow.add_edge(parent_task, task.name)     
+
+    def render(self, filename: str = "", raw=False):
+        dot_str = ""
+        filename = filename if filename else f"{self.name}_DAG_raw" if raw else f"{self.name}_DAG" 
+        if raw:
+            if self.flow is None:
+                raise ValueError(f"Pipeline has not been initialised for workflow: {self.name}")
+            dot_str = nx.nx_pydot.to_pydot(self.flow).to_string()
+            print(dot_str)
+        else:            
+            dag = nx.DiGraph()
+            if not self.tasks:
+                print(error_msg("Skipping rendering empty workflow..."))
+                return
+            for task in self.tasks:        
+                task_name = f"{task.name}\n{task.config['type'].split('.')[-1]}"    
+                if task.name not in dag:
+                    dag.add_node(task_name, item=task, shape="box", style="filled", fillcolor="blue", fontcolor="white")                                                                
+                for input_name in task.input:
+                    dag.add_node(input_name, shape="oval", style="filled", fillcolor="green", fontcolor="white")
+                    dag.add_edge(input_name, task_name)
+                for output_name in task.output:
+                    dag.add_node(output_name, shape="oval", style="filled", fillcolor="orange")
+                    dag.add_edge(task_name, output_name)                            
+            dot_str = nx.nx_pydot.to_pydot(dag).to_string()            
         if self.as_dir and self.out_dir:
             graphviz.Source(dot_str).render(
                 filename=f"{Path(self.out_dir) / filename}", format="svg", cleanup=True
             )
         else:
-            graphviz.Source(dot_str).render(filename=filename, format="svg", cleanup=True)
+            graphviz.Source(dot_str).render(filename=filename, format="svg", cleanup=True)        
         print(success_msg(f"Workflow rendered to {filename}.svg"))
 
     def __str__(self) -> str:
@@ -57,7 +88,7 @@ class Collectra:
         config["collectra_pipeline_metadata"] = {
             "name": self.name,
             "version": self.version,
-            "file_format": self.file_format,
+            "format": self.format,
             "description": self.description,
         }
 
@@ -86,7 +117,7 @@ class Collectra:
         return {
             "name": self.name,
             "version": self.version,
-            "file_format": self.file_format,
+            "format": self.format,
         }
 
     def _get_existing_task_ids(self) -> list[str]:
@@ -101,15 +132,16 @@ class Collectra:
         self.run(config)
     
     def run(self, config: dict = dict()):  
-        # TODO Explore potential DAG execution manager              
-        for task in self.tasks:    
-            self.run_task(task.name, config)        
+        if self.flow is None:
+            raise ValueError(f"Pipeline is not initialised for: {self.name}") 
+        initial_nodes = [node for node in self.flow.nodes() if len(list(self.flow.predecessors(node))) == 0]    
+        
 
     def run_task(self, task_name: str, **kwargs):                
         task = self._get_task(task_name)        
         inputs = kwargs.pop("inputs", dict())                             
         task_config = {            
-            "file_format": self.file_format,                        
+            "format": self.format,                        
             "as_dir": self.as_dir,
         }                
         task.set_config(task_config)             
@@ -144,7 +176,7 @@ class Collectra:
         print(processing_msg(f"Training task: {task.name}"))        
         task_config = {
             **config,
-            "file_format": self.file_format,
+            "format": self.format,
             "task": task.name,
             "inputs": task.input or [],
             "outputs": task.output or [],

@@ -5,13 +5,12 @@ from collectra.tasks.managers import TaskManager
 from collectra.utils import success_msg, processing_msg, from_dir, unzip
 from pathlib import Path
 from rich import print
-import yaml, zipfile
 
 @dataclass(kw_only=True)
 class CollectraManager:
 
     pipeline: Collectra | None = None
-    required_keys: list[str] = field(default_factory=lambda: ["name", "version", "description", "file_format"])
+    required_keys: list[str] = field(default_factory=lambda: ["name", "version", "description", "format"])
 
     def build(self, metadata):
         self.pipeline = Collectra(**metadata)                         
@@ -83,12 +82,15 @@ class CollectraManager:
         if not self.pipeline:
             raise ValueError("Pipeline is not initialized. Please load a pipeline first.")            
 
+        mapping = dict()
         for name, data in config.items():               
             data = self._modify_config_data(name, data)            
             task_instance = TaskManager.build(data)            
-            self.pipeline.tasks.append(task_instance)
+            self.pipeline.add_task(task_instance, mapping)                        
             print(success_msg(f"Loaded {task_instance.name}"))
-
+        
+        self.pipeline.connect(mapping)
+                
         if len(self.pipeline.tasks) == 0:
             print(processing_msg("No tasks found in the workflow configuration."))
     

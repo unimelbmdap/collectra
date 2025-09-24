@@ -28,6 +28,8 @@ roc-validator = "^0.7.3"
 wandb = "^0.21.1"
 llmloader = ">=0.1.4"
 langchain-core = "^0.3.75"
+dask = "^2025.9.1"
+ray = "^2.49.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=6.2.5"

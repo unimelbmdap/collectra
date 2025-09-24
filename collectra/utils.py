@@ -28,23 +28,23 @@ def get_class_path(obj_or_class):
     return f"{cls.__module__}.{cls.__name__}"
 
 
-def get_all_files(data: List[str], file_format: str) -> List[Path]:
+def get_all_files(data: List[str], format: str) -> List[Path]:
     """
     Get all files from the provided paths with the specified file format.
     :param data: List of potential file/file paths to search.
-    :param file_format: File format to filter by (e.g., '.jpg', '.png').
+    :param format: File format to filter by (e.g., '.jpg', '.png').
     :return: List of file paths that match the specified format.
     """
     files: List[Path] = []
     for path in tqdm(data, desc="Collecting files"):
         path = Path(path)
         if path.is_dir():
-            sub_files = [Path(file) for file in path.glob(f"**/*{file_format}")]
+            sub_files = [Path(file) for file in path.glob(f"**/*{format}")]
             files.extend(sub_files)
-        elif path.is_file() and path.suffix.replace(".", "") == file_format:
+        elif path.is_file() and path.suffix.replace(".", "") == format:
             files.append(Path(path))
     if len(files) == 0:
-        raise Exception(f"No files found with format '{file_format}'")
+        raise Exception(f"No files found with format '{format}'")
     return files
 
 def unzip(path: Path, config: str = "pipeline.yaml") -> dict:    

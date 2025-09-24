@@ -100,8 +100,8 @@ class Task:
         if not file:
             return pending_inputs, input_data
         file_path = Path(file)
-        if self.config.get("file_format", "") != file_path.suffix.replace(".", ""):
-            raise ValueError(f"File format {file_path.suffix} does not match expected format {self.config.get('file_format', '')}")
+        if self.config.get("format", "") != file_path.suffix.replace(".", ""):
+            raise ValueError(f"File format {file_path.suffix} does not match expected format {self.config.get('format', '')}")
         data = unzip(file_path, "results.yaml") if file_path.is_file() else from_dir(file_path, "results.yaml") if file_path.is_dir() else dict()                            
         for key in pending_inputs:                        
             input_data[key] = data.get(key, dict())
