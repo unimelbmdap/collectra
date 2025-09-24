@@ -1,14 +1,17 @@
 from datetime import datetime
 from pathlib import Path
 from rich import print
-import os, shutil
 from typer import Typer, Option, Argument, Context
-from typing_extensions import Annotated, Optional
+from typing_extensions import Annotated
 from collectra.pipelines.managers import CollectraManager
 from collectra.utils import success_msg, error_msg
 
-app = Typer()
+import os, shutil, logging, sys
 
+logger = logging.getLogger(__name__)
+logging.basicConfig(stream=sys.stdout)
+
+app = Typer()
 
 @app.command()
 def make(
