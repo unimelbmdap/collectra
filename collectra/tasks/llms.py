@@ -26,16 +26,6 @@ class LLM(Task):
 
     def output_type(self) -> type | tuple:
         return str
-    
-    def check_kwargs(self, **kwargs) -> dict[str, str|dict|Image]:
-        input_data: dict[str, dict | str | Image] = super().check_kwargs(**kwargs)
-        for key, value in input_data.items():
-            if isinstance(value, dict) and "path" in value and "type" in value:
-                module_name, class_name = value.pop("type").rsplit(".", 1)
-                cls = getattr(importlib.import_module(module_name), class_name)     
-                path = value.pop("path")                
-                input_data[key] = cls.build(path, **value)   
-        return input_data
 
     def process_inputs(self, **kwargs) -> tuple:   
         kwargs.update(self.variables)     

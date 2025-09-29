@@ -21,9 +21,9 @@ class MachineLearningTask(Task):
             raise Exception(
                 "No valid model type defined for this task or model path is empty."
             )        
-        return self.VALID_MODEL(model)
+        return self.VALID_MODEL(model)    
 
-    def run(self, **kwargs) -> list[dict]:
+    def run(self, **kwargs) -> dict:
         if not self.config.get("model", None):
             raise ValueError("Model must be set before running the task.")
         return self.load(self.config.get("model")).detect(**kwargs)  # type: ignore
@@ -87,37 +87,33 @@ class ObjectDetectionYOLO(MachineLearningTask):
     def output_type(self) -> type:
         return ImageCrop
 
-    def run(self, **kwargs):        
-        results = super().run(**kwargs)        
-        names = []        
-        for result in results:            
-            image_file = Path(result.get("image"))  # type: ignore
+    def run(self, **kwargs) -> dict:                        
+        detections = super().run(**kwargs)                             
+        names = []                   
+        for key, value in detections.items():            
+            image_file = Path(value.get("image"))  # type: ignore
             path = Path(f"{image_file.stem}.{self.config['format']}")
             path.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists            
-            output_yaml = {
-                "collectra_results_metadata": {
-                    "timestamp": datetime.now(pytz.utc).isoformat(),
-                    "validation": False,
-                },
-                "specimen_sheet": {
+            output_yaml = {            
+                f"{key}": {
                     "type": f"{Image.__module__}.{Image.__name__}",
-                    "path": image_file.name,
+                    "path": image_file,
                 },
             }
-            classification_results = result.get("results", [])
+            classification_results = value.get("results", [])
             if not classification_results:
-                continue
-            for cls_result in classification_results:
+                continue            
+            for cls_result in classification_results:                
                 coordinates = cls_result.boxes.xywhn
                 names = [
                     cls_result.names[cls.item()]
                     for cls in cls_result.boxes.cls.int()
-                ]
+                ]                
                 for index in range(len(coordinates)):
                     x, y, w, h = coordinates[index]
                     output_yaml[names[index]] = {
                         "type": f"{ImageCrop.__module__}.{ImageCrop.__name__}",
-                        "path": image_file.name,
+                        "path": image_file,
                         "x_center": float(x),
                         "y_center": float(y),
                         "width_relative": float(w),
@@ -140,5 +136,5 @@ class ObjectDetectionYOLO(MachineLearningTask):
                     str(path), "zip", path
                 )  # Create a zip archive of the results
                 shutil.rmtree(path)  # Remove the directory after zipping
-                os.rename(f"{path}.zip", path.parent / f"{path.name}")    
-
+                os.rename(f"{path}.zip", path.parent / f"{path.name}")                 
+        return output_yaml

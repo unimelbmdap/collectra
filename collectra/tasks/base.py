@@ -1,7 +1,7 @@
 from collectra.utils import from_dir, unzip
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-import yaml, ray
+import importlib, datetime
 
 LIST_TYPE_FIELDS = ["input", "output"]
 DICT_TYPE_FIELDS = ["variables", "params"]
@@ -71,16 +71,36 @@ class Task:
             raise ValueError("Invalid config type.")
         self.config.update(config)
 
-    def run(self) -> list[dict] | None:
+    def run(self) -> dict:
         """
         Run the task.
         This method should be implemented by subclasses.
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
+    def check_metadata(self, input_data: dict) -> dict:
+        metadata: dict[str, str | dict] = {
+            "collectra_results_metadata":
+                input_data.pop("collectra_results_metadata", {
+                    "timestamp": datetime.datetime.now().isoformat(), 
+                    "validation": False
+                }) #type: ignore
+        }  
+        return metadata
+
+    def filter_unused(self, input_data: dict) -> dict:        
+        unused_data = {key: value for key, value in input_data.items() if key not in self.input}
+        for key in unused_data.keys():
+            input_data.pop(key)
+        return unused_data
+
     def __call__(self, **kwargs):
-        input_data: dict[str, dict | str] = self.check_kwargs(**kwargs)                
-        return self.run(**input_data)
+        input_data: dict[str, str | dict] = self.check_kwargs(**kwargs)
+        output_data: dict[str, str | dict] = self.check_metadata(input_data)
+        unused_data: dict = self.filter_unused(input_data)                       
+        output_data.update(self.run(**input_data)) 
+        output_data.update(unused_data)       
+        return output_data
     
     def check_file(self, file: str = "") -> tuple[list[str], dict[str, dict | str]]:
         """Check if a file is provided. If so, validate the file format and extract input data.
@@ -103,11 +123,12 @@ class Task:
         if self.config.get("format", "") != file_path.suffix.replace(".", ""):
             raise ValueError(f"File format {file_path.suffix} does not match expected format {self.config.get('format', '')}")
         data = unzip(file_path, "results.yaml") if file_path.is_file() else from_dir(file_path, "results.yaml") if file_path.is_dir() else dict()                            
+        input_data["collectra_results_metadata"] = data.pop("collectra_results_metadata")
         for key in pending_inputs:                        
             input_data[key] = data.get(key, dict())
             if "path" in input_data[key]:
                 input_data[key]["path"] = file_path / input_data[key]["path"]
-        pending_inputs = []                                     
+        pending_inputs = []                                             
         return pending_inputs, input_data
     
     def check_kwargs(self, **kwargs) -> dict[str, str|dict]:
@@ -122,11 +143,16 @@ class Task:
         Raises: 
             ValueError: If the number of arguments or argument names do not match the input definitions
 
-        """         
-        pending_input, input_data = self.check_file(kwargs.pop("file", ""))             
+        """                 
+        pending_input, input_data = self.check_file(kwargs.pop("file", ""))                                       
         for key in pending_input:
             if key not in kwargs.keys():
-                raise ValueError(f"Missing input for: {key}. Either provide a valid 'file' or the required inputs as arguments.")
-            input_data[key] = {'path': str(kwargs[key])}
-        input_data.update(kwargs)        
+                raise ValueError(f"Missing input for: {key}. Either provide a valid 'file' or the required inputs as arguments.")            
+        input_data.update(kwargs)                            
+        for key, value in input_data.items():
+            if isinstance(value, dict) and "path" in value and "type" in value:
+                module_name, class_name = value.pop("type").rsplit(".", 1)
+                cls = getattr(importlib.import_module(module_name), class_name)     
+                path = value.pop("path")                
+                input_data[key] = cls.build(path, **value)            
         return input_data

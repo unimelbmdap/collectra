@@ -227,7 +227,7 @@ class YOLOModel(Model):
     def thread_safe_detect(self, path: Path) -> list[Results]:
         return self.model.predict(path)
 
-    def detect(self, **kwargs) -> list[dict]:
+    def detect(self, **kwargs) -> dict:
         """
         Run object detection inference on provided data.
 
@@ -239,23 +239,21 @@ class YOLOModel(Model):
             data (Path): Path to the input data (images/video) for detection
         """        
         print(f"[bold green]Running object detection[/bold green]: {self.path}")
-        images: list[dict] = []
-        paths: list[Path] = []
+        detections: dict = dict()            
         for key, value in kwargs.items():
-            image_path = Path(value)                                            
-            if image_path.is_file() and image_path.suffix.lower() in [
-                ".jpg",
-                ".jpeg",
-                ".png",
-                ".bmp",
-                ".tiff",
-            ]:
-                paths.append(image_path)
-                images.append({
-                    "image": image_path, 
-                    "results": self.thread_safe_detect(image_path)
-                })        
-        return images
+            if not isinstance(value, Image):
+                if not Path(value).exists():
+                    raise ValueError(f"Input path {value} does not exist.")
+                if not Path(value).is_file() or Path(value).suffix.lower() not in [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".mp4", ".avi", ".mov"]:
+                    raise ValueError(f"Input path {value} is not a valid image or video file.")
+                image = Path(value)
+            else:
+                image = value.path()  
+            detections[key] = {
+                "image": image,
+                "results": self.thread_safe_detect(image)                                  
+            }
+        return detections
 
     def cluster(self, config) -> None:
         merged_config = {**self.config, **config}
