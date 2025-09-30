@@ -155,10 +155,14 @@ class Task:
         for key in pending_keys:
             if key not in kwargs.keys():
                 raise ValueError(f"Missing input for: {key}. Either provide a valid entry file or the required inputs as arguments.")            
-        self.input.update(kwargs)                  
+        self.input.update(kwargs)    
+
+    def save(self, output: dict, output_path: Path, **kwargs) -> dict:
+        raise NotImplementedError("Subclasses must implement this method.")              
 
 @dataclass(kw_only=True)             
 class TaskResult:
+
     output: dict
     task: Task
     status: str = "successful"

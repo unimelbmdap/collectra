@@ -1,11 +1,13 @@
 from pathlib import Path
+from collectra.commons import MetaClass
 from collectra.images.base import Image, ImageCrop
 from collectra.models.base import Model
 from collectra.models.yolo import YOLOModel
 from collectra.tasks.base import Task
 from dataclasses import dataclass
 from types import UnionType
-import tempfile, zipfile, copy, importlib
+import tempfile, zipfile, copy, importlib, yaml
+
 
 @dataclass(kw_only=True)
 class MachineLearningTask(Task):
@@ -135,3 +137,39 @@ class ObjectDetectionYOLO(MachineLearningTask):
             for key in self.output.keys():
                 if self.output[key] and len(self.output[key]) == 1:
                     self.output[key] = self.output[key][0] 
+    
+    def save(self, output: dict, output_path: Path, **kwargs) -> tuple[Path, str, list[Path]]:
+        if not output:
+            raise ValueError("Output is empty. Nothing to save.")
+        keys_to_remove = kwargs.get("keys_to_remove", [])
+        file_name = output.pop("file", "")
+        for key in keys_to_remove:
+            if key in output:
+                output.pop(key)        
+        result_str = ""
+        file_name = ""
+        image_path = ""
+        for key, value in output.items():
+            if isinstance(value, Image | ImageCrop):
+                value = value.metadata()
+            if isinstance(value, list):
+                if all(isinstance(v, ImageCrop) for v in value):
+                    image_path = value[0].path()
+                    value = ImageCrop.metadata_list(value)                                        
+                elif len(value) == 1 and isinstance(value[0], Image):                        
+                    image_path = value[0].path()
+                    value = value[0].metadata()
+            if not value:
+                continue
+            result_str += yaml.dump(
+                {key:value},
+                default_flow_style=False,
+                sort_keys=False,
+            )
+            result_str += "\n"
+            if not file_name and not isinstance(value, str) and value.get("path"):
+                file_name = f"{value.get("path")}.{kwargs.pop("format", "")}"
+        if not file_name:
+            file_name = f"output.{kwargs.pop("format", "")}"
+        result_path = output_path / file_name.replace(".jpg", "").replace(".png", "").replace(".jpeg", "")          
+        return result_path, result_str, [Path(image_path)] if image_path else []  

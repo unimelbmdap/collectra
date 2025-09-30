@@ -1,3 +1,4 @@
+from collectra.commons import MetaClass
 from collectra.utils import crop
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -5,7 +6,7 @@ from PIL import Image as ImagePil
 import base64, io, copy
 
 @dataclass(kw_only=True)
-class Image:
+class Image(MetaClass):
 
     img_path: str # Path to the image file
     width: int

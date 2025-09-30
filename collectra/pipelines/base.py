@@ -1,4 +1,3 @@
-from collectra.images.base import Image, ImageCrop
 from collectra.tasks.base import Task, TaskResult
 from collectra.tasks.ml import MachineLearningTask
 from collectra.utils import error_msg, success_msg, processing_msg
@@ -6,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from rich import print
 import networkx as nx, graphviz
-import copy, yaml, os, logging, shutil
+import copy, logging, shutil, os
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -238,42 +237,15 @@ class CollectraResult:
     def save(self, output: Path, **kwargs) -> None:
         if not self.successful_tasks:
             raise ValueError("No successful tasks to save.")                          
-        latest_result = self.successful_tasks[-1]                                            
-        keys_to_remove = kwargs.get("keys_to_remove", [])
-
-        for key in keys_to_remove:
-            if key in latest_result.output:
-                latest_result.output.pop(key)        
-        result_str = ""
-        file_name = ""
-        image_path = ""
-        for key, value in latest_result.output.items():
-            if isinstance(value, list):
-                if all(isinstance(v, ImageCrop) for v in value):
-                    image_path = value[0].path()
-                    value = ImageCrop.metadata_list(value)                                        
-                elif len(value) == 1 and isinstance(value[0], Image):                        
-                    image_path = value[0].path()
-                    value = value[0].metadata()
-            if not value:
-                continue
-            if isinstance(value, Image | ImageCrop):
-                value = value.metadata()
-            result_str += yaml.dump(
-                {key:value},
-                default_flow_style=False,
-                sort_keys=False,
-            )
-            result_str += "\n"
-            if not file_name and not isinstance(value, str) and value.get("path"):
-                file_name = f"{value.get("path")}.{kwargs.pop("format", "")}"
-        if not file_name:
-            file_name = f"output.{kwargs.pop("format", "")}"
-        result_path = output / file_name.replace(".jpg", "").replace(".png", "").replace(".jpeg", "")
-        os.makedirs(result_path.parent, exist_ok=True)        
+        latest_result = self.successful_tasks[-1]                                                    
+        result_path, result_str, files = latest_result.task.save(latest_result.output, output_path=output, **kwargs)        
+        os.makedirs(result_path, exist_ok=True)                   
         with open(result_path / "result.yaml", "w") as f:
             f.write(result_str)
-        if image_path and not (result_path / image_path.name).exists():
-            shutil.copy(image_path, result_path / image_path.name)
+        for file in files:
+            if (result_path / file.name).exists():
+                continue        
+            shutil.copy(file, result_path / file.name) 
+        
 
         
