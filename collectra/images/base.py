@@ -2,7 +2,7 @@ from collectra.utils import crop
 from dataclasses import dataclass, field
 from pathlib import Path
 from PIL import Image as ImagePil
-import base64, io
+import base64, io, copy
 
 @dataclass(kw_only=True)
 class Image:
@@ -43,8 +43,7 @@ class Image:
         return {
             "type": f"{self.__class__.__module__}.{self.__class__.__name__}",  
             "path": Path(self.img_path).name,                      
-        }
-
+        }    
 
 @dataclass(kw_only=True)
 class ImageCrop(Image):   
@@ -93,3 +92,23 @@ class ImageCrop(Image):
             "height_relative": self.height_relative,
         })
         return data
+    
+    @staticmethod
+    def metadata_list(images: list['ImageCrop']) -> dict:
+        if not images:
+            raise ValueError("The images list is empty.")
+        metadata = copy.deepcopy(images[0].metadata())
+        list_to_pop = ["x_center", "y_center", "width_relative", "height_relative"]
+        for key in list_to_pop:
+            metadata.pop(key, None)
+        metadata["items"] = list()
+        for img in images:
+            if not isinstance(img, ImageCrop):
+                raise ValueError(f"Invalid image type. Expected ImageCrop, got {type(img)}")
+            metadata["items"].append({
+                "x_center": img.x_center,
+                "y_center": img.y_center,
+                "width_relative": img.width_relative,
+                "height_relative": img.height_relative,
+            })
+        return metadata

@@ -49,24 +49,22 @@ class DataHandler:
 @dataclass(kw_only=True)
 class DirectoryHandler(DataHandler):
 
-    def save(self):
-        if not self.pipeline.out_dir:
-            raise ValueError("Output directory is not specified.")
+    def save(self):        
         with tempfile.TemporaryDirectory() as tmpdirname:
+            out_dir = self.pipeline.get_out_dir()
             tmp_dir = Path(tmpdirname)
             self._save_artifacts(tmp_dir)
             self._save_config(tmp_dir)
-            os.makedirs(
-                self.pipeline.out_dir, exist_ok=True
-            )  # Ensure the output directory exists
+            out_dir.mkdir(parents=True, exist_ok=True)  # Ensure the output directory exists
             for item in tmp_dir.iterdir():
-                shutil.move(item, Path(self.pipeline.out_dir) / item.name)
-            success_message = f"Workflow {self.pipeline.name} was saved successfully to {self.pipeline.out_dir}"
+                shutil.move(item, out_dir / item.name)
+            success_message = f"Workflow {self.pipeline.name} was saved successfully to {out_dir}"
             print(success_msg(success_message))
 
     def _save_artifacts(self, tmp_dir: Path) -> None:
         old_models: dict[str, Path] = dict()
         for task_item in self.pipeline.tasks:
+            breakpoint()
             if not self.is_machine_learning_task(task_item):
                 continue
             task: MachineLearningTask = task_item  # type: ignore

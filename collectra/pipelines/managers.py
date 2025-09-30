@@ -111,10 +111,11 @@ class CollectraManager:
             )
         return data
 
-    def save(self) -> None:
+    def save(self) -> None:        
         if not self.pipeline:
             raise ValueError("Pipeline is not initialized. Please load a pipeline first.")            
         if self.pipeline.as_dir:
             DirectoryHandler(pipeline=self.pipeline).save() 
         else:
             ZipHandler(pipeline=self.pipeline).save()
+

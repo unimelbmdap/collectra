@@ -85,6 +85,8 @@ class ObjectDetectionYOLO(MachineLearningTask):
 
     def check_kwargs(self, **kwargs) -> None:
         super().check_kwargs(**kwargs)
+        if self.name == 'field_detector':
+            print("Checking kwargs for field_detector")            
         for key in self.input:
             value = copy.deepcopy(self.input[key])
             if isinstance(value, dict) and "path" in value and "type" in value:                
@@ -96,11 +98,11 @@ class ObjectDetectionYOLO(MachineLearningTask):
                     for item in value["items"]:
                         self.input[key].append(cls.build(path, **item))
                 else:
-                    self.input[key] = cls.build(path, **value)
-            elif Path(str(value)).is_file() and Image.is_image_file(Path(str(value))):
+                    self.input[key] = cls.build(path, **value)            
+            elif isinstance(value, str) and Path(value).is_file() and Image.is_image_file(Path(str(value))):
                 self.input[key] = Image.build(Path(str(value)))                  
 
-    def run(self, **kwargs):                          
+    def run(self, **kwargs):                   
         for value in kwargs.values():
             if not isinstance(value, self.input_type()):
                 raise ValueError(f"Invalid input type. Expected {self.input_type()}.")        
@@ -111,19 +113,25 @@ class ObjectDetectionYOLO(MachineLearningTask):
             classification_results: list = value.get("results", [])
             if not classification_results:
                 continue            
-            for cls_result in classification_results:                
-                coordinates = cls_result.boxes.xywhn
-                names = [
-                    cls_result.names[cls.item()]
-                    for cls in cls_result.boxes.cls.int()
-                ]                                                
-                for index in range(len(coordinates)):
-                    x, y, w, h = coordinates[index]
-                    cropped = ImageCrop.build(
-                        image.path(),
-                        x_center=float(x),
-                        y_center=float(y),
-                        width_relative=float(w),
-                        height_relative=float(h),
-                    )                                                                                                             
-                    self.output[names[index]] = cropped                
+            cls_result = classification_results.pop()                       
+            coordinates = cls_result.boxes.xywhn
+            names = [
+                cls_result.names[cls.item()]
+                for cls in cls_result.boxes.cls.int()
+            ]                                                
+            for index in range(len(coordinates)):
+                x, y, w, h = coordinates[index]
+                cropped = ImageCrop.build(
+                    image.path(),
+                    x_center=float(x),
+                    y_center=float(y),
+                    width_relative=float(w),
+                    height_relative=float(h),
+                )                     
+                if self.output.get(names[index], None) is None:
+                    self.output[names[index]] = [cropped]
+                else:
+                    self.output[names[index]].append(cropped)                     
+            for key in self.output.keys():
+                if self.output[key] and len(self.output[key]) == 1:
+                    self.output[key] = self.output[key][0] 

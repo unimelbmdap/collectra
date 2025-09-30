@@ -1,7 +1,7 @@
 from collectra.utils import from_dir, unzip
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-import datetime, copy
+import datetime, copy, traceback
 
 LIST_TYPE_FIELDS = ["input", "output"]
 DICT_TYPE_FIELDS = ["variables", "params"]
@@ -94,14 +94,14 @@ class Task:
             input_data[key] = copy.deepcopy(self.input.get(key, None))
         return input_data
 
-    def __call__(self, **kwargs) -> dict:
+    def __call__(self, **kwargs) -> "TaskResult":
         self.check_kwargs(**kwargs)           
         input_data = self.filter_unused()            
         self.check_metadata()                         
         self.run(**input_data)        
         output = self.input | self.output              
-        return output        
-    
+        return TaskResult.create_successful(self, output)        
+
     def check_file(self, file: str = "") -> list[str]:
         """Check if a file is provided. If so, validate the file format and extract input data.
         
@@ -156,4 +156,31 @@ class Task:
             if key not in kwargs.keys():
                 raise ValueError(f"Missing input for: {key}. Either provide a valid entry file or the required inputs as arguments.")            
         self.input.update(kwargs)                  
-             
+
+@dataclass(kw_only=True)             
+class TaskResult:
+    output: dict
+    task: Task
+    status: str = "successful"
+
+    @staticmethod
+    def create_successful(task: Task, output: dict) -> "TaskResult":
+        return TaskResult(output=output, task=task, status="successful")
+
+    @staticmethod
+    def create_failed(task: Task, error: Exception) -> "TaskResult":
+        result = TaskResult(output=dict(), task=task, status="failed")
+        result._set_error(error)
+        return result
+
+    def _set_error(self, error: Exception) -> None:        
+        self.output["error"] = {
+            "type": type(error).__name__,
+            "message": str(error),
+            "stack": traceback.format_exc()
+        }
+    
+    def get_error(self) -> str:
+        if self.status != "failed" or "error" not in self.output:
+            return ""
+        return f"{self.output['error']['stack']}"   

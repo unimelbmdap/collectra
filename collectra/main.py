@@ -130,9 +130,7 @@ def run(
     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],    
     ctx: Context,
     task: Annotated[str, Option("--task", "-t", help="task to run")] = "",    
-    as_dir: Annotated[
-        bool, Option("--as-dir", help="Run the task as a directory instead of a file")
-    ] = False,    
+    output: Annotated[Path, Option("--output", "-o", help="output directory")]= Path.cwd()  
 ):
     try:
         additional_args = ctx.args
@@ -140,7 +138,7 @@ def run(
         manager =  CollectraManager()                
         manager.load(workflow)                
         pipeline = manager.get_pipeline()                
-        pipeline(task, **inputs)
+        pipeline(task, output, **inputs)        
     except Exception as e:
         print(error_msg(f"Failed to run task: {e}"))
 

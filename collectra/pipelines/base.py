@@ -1,13 +1,15 @@
-from collectra.tasks.base import Task
+from collectra.images.base import Image, ImageCrop
+from collectra.tasks.base import Task, TaskResult
 from collectra.tasks.ml import MachineLearningTask
-from collectra.tasks.managers import TaskManager
 from collectra.utils import error_msg, success_msg, processing_msg
 from dataclasses import dataclass, field
 from pathlib import Path
 from rich import print
-from rich.syntax import Syntax
 import networkx as nx, graphviz
-import copy, yaml
+import copy, yaml, os, logging, shutil
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 @dataclass(kw_only=True)
 class Collectra:
@@ -22,11 +24,20 @@ class Collectra:
     results: dict = field(default_factory=dict)
     cli_kwargs: list[str] = field(default_factory=list)
 
-    def __post_init__(self):       
-        if not self.out_dir:             
-            self.out_dir = str(Path.cwd() / self.name)
+    def __post_init__(self):               
         self.flow = nx.DiGraph()
         self.result = CollectraResult()
+
+    def get_out_dir(self) -> Path:
+        if not self.out_dir:             
+            self.out_dir = str(Path.cwd() / self.name)
+        return Path(self.out_dir)
+    
+    def get_run_result(self) -> dict:
+        return self.results
+
+    def is_pipeline_dir(self) -> bool:
+        return self.as_dir
 
     def add_task(self, task: Task, mapping: dict):
         if self.flow is None:
@@ -73,9 +84,9 @@ class Collectra:
                     dag.add_node(output_name, shape="oval", style="filled", fillcolor="orange")
                     dag.add_edge(task_name, output_name)                            
             dot_str = nx.nx_pydot.to_pydot(dag).to_string()            
-        if self.as_dir and self.out_dir:
+        if self.is_pipeline_dir():
             graphviz.Source(dot_str).render(
-                filename=f"{Path(self.out_dir) / filename}", format="svg", cleanup=True
+                filename=f"{self.get_out_dir() / filename}", format="svg", cleanup=True
             )
         else:
             graphviz.Source(dot_str).render(filename=filename, format="svg", cleanup=True)        
@@ -133,11 +144,11 @@ class Collectra:
         """
         return [task.name for task in self.tasks]
 
-    def __call__(self, task_name: str, **kwargs): 
+    def __call__(self, task_name: str, output: Path, **kwargs): 
         self.cli_kwargs = list(kwargs.keys())        
-        self.run(task_name, **kwargs)
+        self.run(task_name, output=output, **kwargs)
 
-    def run(self, task_name: str, **kwargs):              
+    def run(self, task_name: str, output: Path, **kwargs):              
         if self.flow is None:
             raise ValueError(f"Pipeline is not initialised for: {self.name}")                  
         if task_name:
@@ -149,32 +160,32 @@ class Collectra:
         single = kwargs.pop("single", False)
         self._run_nodes(initial_nodes, single=single, **kwargs)
         if self.result.failed_tasks:
-            self.result.status = "failed" if not self.result.successful_tasks else "partial"
-        print(Syntax(yaml.dump(self.result), "yaml", background_color="default"))
+            self.result.status = "failed" if not self.result.successful_tasks else "partial"   
+        if self.result.status == "partial" or self.result.status == "failed":
+            for failed_task in self.result.failed_tasks:
+                print(error_msg(f"Task {failed_task.task.name} failed with error:\n{failed_task.get_error()}"))     
+        self.result.save(output, keys_to_remove=self.cli_kwargs, format=self.format, as_dir=self.is_pipeline_dir())    
 
     def _run_nodes(self, nodes: list[str], single: bool=False, **kwargs):        
         if self.flow is None:
             raise ValueError(f"Pipeline is not initialised for: {self.name}")                 
         for node in nodes:
             try:                
-                output_data: dict = self._run_task(node, **kwargs)                                                                                                 
-                self.result.successful_tasks.append({str(node): copy.deepcopy(output_data)})                     
+                task_result: TaskResult = self._run_task(node, **kwargs)                                                                                                              
+                output_data = copy.deepcopy(task_result.output)                
+                self.result.successful_tasks.append(task_result)                                     
                 children_nodes = list(self.flow.successors(node)) if single is False else []                        
                 if children_nodes:
                     self._run_nodes(children_nodes, **output_data)                                
             except Exception as e:
-                self.result.failed_tasks.append({
-                    str(node): {
-                        "error": type(e).__name__,
-                        "message": str(e),
-                    }
-                })
+                task_result = TaskResult.create_failed(self._get_task(node), e)                
+                self.result.failed_tasks.append(task_result)
 
-    def _run_task(self, task_name: str, **kwargs) -> dict:                
+    def _run_task(self, task_name: str, **kwargs) -> TaskResult:                
         task = self._get_task(task_name)                                           
         task_config = {            
             "format": self.format,                        
-            "as_dir": self.as_dir,
+            "as_dir": self.is_pipeline_dir(),
         }                        
         task.set_config(task_config)            
         print(processing_msg(f"Running task: {task.name}"))               
@@ -212,7 +223,7 @@ class Collectra:
             "task": task.name,
             "inputs": task.input or [],
             "outputs": task.output or [],
-            "as_dir": self.as_dir,
+            "as_dir": self.is_pipeline_dir(),
         }                
         task.set_config(task_config)        
         model_path = task.train()
@@ -223,3 +234,46 @@ class CollectraResult:
     successful_tasks: list = field(default_factory=list)
     failed_tasks: list = field(default_factory=list)
     status: str = "success"  # success, partial, failed
+
+    def save(self, output: Path, **kwargs) -> None:
+        if not self.successful_tasks:
+            raise ValueError("No successful tasks to save.")                          
+        latest_result = self.successful_tasks[-1]                                            
+        keys_to_remove = kwargs.get("keys_to_remove", [])
+
+        for key in keys_to_remove:
+            if key in latest_result.output:
+                latest_result.output.pop(key)        
+        result_str = ""
+        file_name = ""
+        image_path = ""
+        for key, value in latest_result.output.items():
+            if isinstance(value, list):
+                if all(isinstance(v, ImageCrop) for v in value):
+                    image_path = value[0].path()
+                    value = ImageCrop.metadata_list(value)                                        
+                elif len(value) == 1 and isinstance(value[0], Image):                        
+                    image_path = value[0].path()
+                    value = value[0].metadata()
+            if not value:
+                continue
+            if isinstance(value, Image | ImageCrop):
+                value = value.metadata()
+            result_str += yaml.dump(
+                {key:value},
+                default_flow_style=False,
+                sort_keys=False,
+            )
+            result_str += "\n"
+            if not file_name and not isinstance(value, str) and value.get("path"):
+                file_name = f"{value.get("path")}.{kwargs.pop("format", "")}"
+        if not file_name:
+            file_name = f"output.{kwargs.pop("format", "")}"
+        result_path = output / file_name.replace(".jpg", "").replace(".png", "").replace(".jpeg", "")
+        os.makedirs(result_path.parent, exist_ok=True)        
+        with open(result_path / "result.yaml", "w") as f:
+            f.write(result_str)
+        if image_path and not (result_path / image_path.name).exists():
+            shutil.copy(image_path, result_path / image_path.name)
+
+        
