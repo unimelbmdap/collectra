@@ -1,5 +1,5 @@
 from collectra.utils import crop
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from PIL import Image as ImagePil
 import base64, io
@@ -7,7 +7,7 @@ import base64, io
 @dataclass(kw_only=True)
 class Image:
 
-    image: str # Path to the image file
+    img_path: str # Path to the image file
     width: int
     height: int
     format: str | None
@@ -17,13 +17,18 @@ class Image:
         with ImagePil.open(path) as imf:
             format = imf.format
             width, height = imf.size           
-        return Image(image=str(path), width=width, height=height, format=format)
+        return Image(img_path=str(path), width=width, height=height, format=format)
+    
+    @staticmethod
+    def is_image_file(path: Path) -> bool:
+        image_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp"}
+        return path.suffix.lower() in image_extensions
     
     def path(self) -> Path:
-        return Path(self.image)
+        return Path(self.img_path)
     
     def load(self) -> bytes:
-        with open(self.image, "rb") as img_file:
+        with open(self.img_path, "rb") as img_file:
             buffer = img_file.read()
         return buffer
 
@@ -32,7 +37,14 @@ class Image:
         return base64.b64encode(buffer).decode('utf-8')
 
     def mime(self) -> str:
-        return f"image/{self.format.lower()}" if self.format else "image"            
+        return f"image/{self.format.lower()}" if self.format else "image"      
+
+    def metadata(self) -> dict:
+        return {
+            "type": f"{self.__class__.__module__}.{self.__class__.__name__}",  
+            "path": Path(self.img_path).name,                      
+        }
+
 
 @dataclass(kw_only=True)
 class ImageCrop(Image):   
@@ -47,15 +59,14 @@ class ImageCrop(Image):
         img = Image.build(path)
         
         return ImageCrop(
-            image=str(path), 
+            img_path=str(path), 
             width=img.width, 
             height=img.height, 
             format=img.format, 
             **kwargs
         )
 
-    def coordinates(self) -> tuple[float, float, float, float]:
-        # TODO modify this logic to produce identical dimensions as YOLO crops
+    def coordinates(self) -> tuple[float, float, float, float]:        
         x_center = self.x_center * self.width
         y_center = self.y_center * self.height
         actual_width_half = self.width * self.width_relative / 2
@@ -72,3 +83,13 @@ class ImageCrop(Image):
         img.save(buffer, format=self.format)
         buffer.seek(0)        
         return buffer.read()
+    
+    def metadata(self) -> dict:
+        data = super().metadata()
+        data.update({
+            "x_center": self.x_center,
+            "y_center": self.y_center,
+            "width_relative": self.width_relative,
+            "height_relative": self.height_relative,
+        })
+        return data

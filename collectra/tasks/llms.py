@@ -82,5 +82,5 @@ class LLM(Task):
             for output_key in self.output:
                 if key in output_key:
                     results[output_key] = parser.invoke(self.llm.invoke(message))                                    
-        print(success_msg(f"[yellow]Inference Complete. Displaying results below: [/yellow]\n\n{results}\n"))        
+        print(success_msg(f"[yellow]Inference Complete. Displaying results below: [/yellow]\n\n{results}\n"))            
         return results

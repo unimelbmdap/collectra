@@ -5,8 +5,9 @@ from collectra.utils import error_msg, success_msg, processing_msg
 from dataclasses import dataclass, field
 from pathlib import Path
 from rich import print
+from rich.syntax import Syntax
 import networkx as nx, graphviz
-import traceback
+import copy, yaml
 
 @dataclass(kw_only=True)
 class Collectra:
@@ -19,11 +20,13 @@ class Collectra:
     tasks: list[Task] = field(default_factory=list)      
     flow: nx.DiGraph | None = None
     results: dict = field(default_factory=dict)
+    cli_kwargs: list[str] = field(default_factory=list)
 
     def __post_init__(self):       
         if not self.out_dir:             
             self.out_dir = str(Path.cwd() / self.name)
         self.flow = nx.DiGraph()
+        self.result = CollectraResult()
 
     def add_task(self, task: Task, mapping: dict):
         if self.flow is None:
@@ -129,45 +132,50 @@ class Collectra:
         This method returns a list of task IDs that are already present in the workflow.
         """
         return [task.name for task in self.tasks]
-    
-    def __call__(self, **kwargs): 
-        self.run(**kwargs)
-    
-    def _run_nodes(self, pipeline_result: "CollectraResult",  nodes: list[str], **kwargs):        
+
+    def __call__(self, task_name: str, **kwargs): 
+        self.cli_kwargs = list(kwargs.keys())        
+        self.run(task_name, **kwargs)
+
+    def run(self, task_name: str, **kwargs):              
         if self.flow is None:
-            raise ValueError(f"Pipeline is not initialised for: {self.name}") 
+            raise ValueError(f"Pipeline is not initialised for: {self.name}")                  
+        if task_name:
+            initial_nodes = [node for node in self.flow.nodes() if str(node) == task_name]            
+        else:
+            initial_nodes = [node for node in self.flow.nodes() if len(list(self.flow.predecessors(node))) == 0]
+        if task_name and not initial_nodes:
+            raise ValueError(f"Task {task_name} not found in the workflow.")
+        single = kwargs.pop("single", False)
+        self._run_nodes(initial_nodes, single=single, **kwargs)
+        if self.result.failed_tasks:
+            self.result.status = "failed" if not self.result.successful_tasks else "partial"
+        print(Syntax(yaml.dump(self.result), "yaml", background_color="default"))
+
+    def _run_nodes(self, nodes: list[str], single: bool=False, **kwargs):        
+        if self.flow is None:
+            raise ValueError(f"Pipeline is not initialised for: {self.name}")                 
         for node in nodes:
-            try:
-                output_data: dict = self.run_task(node, **kwargs)            
-                children_nodes = list(self.flow.successors(node))
-                pipeline_result.successful_tasks[node] = output_data
+            try:                
+                output_data: dict = self._run_task(node, **kwargs)                                                                                                 
+                self.result.successful_tasks.append({str(node): copy.deepcopy(output_data)})                     
+                children_nodes = list(self.flow.successors(node)) if single is False else []                        
                 if children_nodes:
-                    self._run_nodes(pipeline_result, children_nodes, **output_data)                
+                    self._run_nodes(children_nodes, **output_data)                                
             except Exception as e:
-                pipeline_result.failed_tasks[node] = {
-                    "error": type(e).__name__,
-                    "message": str(e),                    
-                }
+                self.result.failed_tasks.append({
+                    str(node): {
+                        "error": type(e).__name__,
+                        "message": str(e),
+                    }
+                })
 
-    def run(self, **kwargs):              
-        if self.flow is None:
-            raise ValueError(f"Pipeline is not initialised for: {self.name}") 
-        result = CollectraResult()
-        initial_nodes = [node for node in self.flow.nodes() if len(list(self.flow.predecessors(node))) == 0]            
-        self._run_nodes(result, initial_nodes, **kwargs)      
-        if result.failed_tasks:
-            result.status = "failed" if not result.successful_tasks else "partial"
-        print(result)
-    
-    def save_run(self, **kwargs):
-        print(kwargs)
-
-    def run_task(self, task_name: str, **kwargs) -> dict:                
+    def _run_task(self, task_name: str, **kwargs) -> dict:                
         task = self._get_task(task_name)                                           
         task_config = {            
             "format": self.format,                        
             "as_dir": self.as_dir,
-        }                
+        }                        
         task.set_config(task_config)            
         print(processing_msg(f"Running task: {task.name}"))               
         return task(**kwargs)                               
@@ -212,6 +220,6 @@ class Collectra:
 
 @dataclass(kw_only=True)
 class CollectraResult:
-    successful_tasks: dict = field(default_factory=dict)
-    failed_tasks: dict = field(default_factory=dict)
+    successful_tasks: list = field(default_factory=list)
+    failed_tasks: list = field(default_factory=list)
     status: str = "success"  # success, partial, failed

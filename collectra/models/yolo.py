@@ -242,16 +242,10 @@ class YOLOModel(Model):
         detections: dict = dict()            
         for key, value in kwargs.items():
             if not isinstance(value, Image):
-                if not Path(value).exists():
-                    raise ValueError(f"Input path {value} does not exist.")
-                if not Path(value).is_file() or Path(value).suffix.lower() not in [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".mp4", ".avi", ".mov"]:
-                    raise ValueError(f"Input path {value} is not a valid image or video file.")
-                image = Path(value)
-            else:
-                image = value.path()  
+                raise ValueError(f"Invalid input type for {key}. Expected Image.")            
             detections[key] = {
-                "image": image,
-                "results": self.thread_safe_detect(image)                                  
+                "image": value,
+                "results": self.thread_safe_detect(value.path())                                  
             }
         return detections
 

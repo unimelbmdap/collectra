@@ -119,31 +119,6 @@ def train(
     except Exception as e:
         print(error_msg(f"Failed to train task: {e}"))
 
-@app.command(
-    context_settings={
-        "allow_extra_args": True, 
-        "ignore_unknown_options": True
-    }
-)
-def run_task(
-    workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
-    task: Annotated[str, Option("--task", "-t", help="task to run")],        
-    ctx: Context,
-    as_dir: Annotated[
-        bool, Option("--as-dir", help="Run the task as a directory instead of a file")
-    ] = False,    
-):
-    try:
-        additional_args = ctx.args
-        kwargs = {additional_args[args_id].replace("--", "") : additional_args[args_id + 1] for args_id in range(0, len(additional_args), 2) if additional_args[args_id].startswith("--")}                           
-        manager =  CollectraManager()                
-        manager.load(workflow)  
-        pipeline = manager.get_pipeline()
-        kwargs = pipeline.run_task(task_name=task, **kwargs)
-        pipeline.save_run(**kwargs)        
-    except Exception as e:
-        print(error_msg(f"Failed to run task: {e}"))
-
 
 @app.command(
     context_settings={
@@ -154,6 +129,7 @@ def run_task(
 def run(
     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],    
     ctx: Context,
+    task: Annotated[str, Option("--task", "-t", help="task to run")] = "",    
     as_dir: Annotated[
         bool, Option("--as-dir", help="Run the task as a directory instead of a file")
     ] = False,    
@@ -163,8 +139,8 @@ def run(
         inputs = {additional_args[args_id].replace("--", "") : additional_args[args_id + 1] for args_id in range(0, len(additional_args), 2) if additional_args[args_id].startswith("--")}                           
         manager =  CollectraManager()                
         manager.load(workflow)                
-        pipeline = manager.get_pipeline()        
-        pipeline(**inputs)
+        pipeline = manager.get_pipeline()                
+        pipeline(task, **inputs)
     except Exception as e:
         print(error_msg(f"Failed to run task: {e}"))
 

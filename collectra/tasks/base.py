@@ -1,16 +1,18 @@
 from collectra.utils import from_dir, unzip
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-import importlib, datetime
+import datetime, copy
 
 LIST_TYPE_FIELDS = ["input", "output"]
 DICT_TYPE_FIELDS = ["variables", "params"]
 
 @dataclass(kw_only=True)
 class Task:
+
     name: str
-    input: list[str] = field(default_factory=list)
-    output: list[str] = field(default_factory=list)
+    input_keys: list[str] = field(default_factory=list)
+    input: dict = field(default_factory=dict)
+    output: dict = field(default_factory=dict )
     config: dict[str, str] = field(default_factory=dict)
 
     def input_type(self) -> type | tuple:
@@ -22,24 +24,20 @@ class Task:
     @classmethod
     def build(cls, **kwargs) -> "Task":             
         cls_fields = [f.name for f in fields(cls)]
-        input_args = dict()        
-        for cls_field in cls_fields:
-            if cls_field == "config": 
-                continue
+        input_args = dict()                
+        for cls_field in cls_fields:            
             if cls_field in LIST_TYPE_FIELDS:
-                input_args[cls_field] = kwargs.pop(cls_field, [])
+                keys = kwargs.pop(cls_field, [])
+                iodict = dict()
+                for key in keys:
+                    iodict[key] = None                    
+                input_args[cls_field] = iodict
             elif cls_field in DICT_TYPE_FIELDS:
                 input_args[cls_field] = kwargs.pop(cls_field, {})
             else:
                 input_args[cls_field] = kwargs.pop(cls_field, None)            
-        input_args["config"] = kwargs                
+        input_args["config"] = kwargs                 
         return cls(**input_args)
-
-    def __post_init__(self):
-        if isinstance(self.input, str):
-            self.input = [self.input]
-        if isinstance(self.output, str):
-            self.output = [self.output]
 
     def metadata(self) -> dict:
         """
@@ -51,9 +49,9 @@ class Task:
             "model": self.config.get("model", ""),
         }
         if self.input:
-            metadata["input"] = self.input if len(self.input) > 1 else self.input[0]  # type: ignore
+            metadata["input"] = self.input if len(self.input) > 1 else self.input[list(self.input.keys())[0]]
         if self.output:
-            metadata["output"] = self.output if len(self.output) > 1 else self.output[0]  # type: ignore
+            metadata["output"] = self.output if len(self.output) > 1 else self.output[list(self.output.keys())[0]]
         return metadata
 
     def __str__(self) -> str:
@@ -78,31 +76,33 @@ class Task:
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
-    def check_metadata(self, input_data: dict) -> dict:
-        metadata: dict[str, str | dict] = {
-            "collectra_results_metadata":
-                input_data.pop("collectra_results_metadata", {
-                    "timestamp": datetime.datetime.now().isoformat(), 
-                    "validation": False
-                }) #type: ignore
-        }  
-        return metadata
+    def check_metadata(self):     
+        if "collectra_results_metadata" not in self.input:            
+            old_data = copy.deepcopy(self.input)
+            self.input = dict()            
+            self.input["collectra_results_metadata"] = {
+                "timestamp": datetime.datetime.now().isoformat(), 
+                "validation": False
+            } 
+            self.input.update(old_data)
+        else:
+            self.input["collectra_results_metadata"]["timestamp"] = datetime.datetime.now().isoformat()
 
-    def filter_unused(self, input_data: dict) -> dict:        
-        unused_data = {key: value for key, value in input_data.items() if key not in self.input}
-        for key in unused_data.keys():
-            input_data.pop(key)
-        return unused_data
+    def filter_unused(self) -> dict:        
+        input_data = dict()
+        for key in self.input_keys:
+            input_data[key] = copy.deepcopy(self.input.get(key, None))
+        return input_data
 
-    def __call__(self, **kwargs):
-        input_data: dict[str, str | dict] = self.check_kwargs(**kwargs)
-        output_data: dict[str, str | dict] = self.check_metadata(input_data)
-        unused_data: dict = self.filter_unused(input_data)                       
-        output_data.update(self.run(**input_data)) 
-        output_data.update(unused_data)       
-        return output_data
+    def __call__(self, **kwargs) -> dict:
+        self.check_kwargs(**kwargs)           
+        input_data = self.filter_unused()            
+        self.check_metadata()                         
+        self.run(**input_data)        
+        output = self.input | self.output              
+        return output        
     
-    def check_file(self, file: str = "") -> tuple[list[str], dict[str, dict | str]]:
+    def check_file(self, file: str = "") -> list[str]:
         """Check if a file is provided. If so, validate the file format and extract input data.
         
         If no file is provided, return the pending inputs as is.
@@ -114,24 +114,32 @@ class Task:
         Returns:
             A tuple containing a list of pending input definitions and a dictionary of input data.
         
-        """
-        pending_inputs = self.input.copy()
-        input_data: dict[str, str|dict] = dict()        
+        """                           
+        self.input_keys = list(self.input.keys()) 
+        pending_keys = self.input_keys.copy()             
+        original_input_data = dict()
+        for key in self.input:
+            if not self.input[key]:
+                continue
+            original_input_data[key] = copy.deepcopy(self.input[key])        
+        self.input.clear()                            
         if not file:
-            return pending_inputs, input_data
-        file_path = Path(file)
+            return pending_keys
+        file_path = Path(file)        
         if self.config.get("format", "") != file_path.suffix.replace(".", ""):
             raise ValueError(f"File format {file_path.suffix} does not match expected format {self.config.get('format', '')}")
-        data = unzip(file_path, "results.yaml") if file_path.is_file() else from_dir(file_path, "results.yaml") if file_path.is_dir() else dict()                            
-        input_data["collectra_results_metadata"] = data.pop("collectra_results_metadata")
-        for key in pending_inputs:                        
-            input_data[key] = data.get(key, dict())
-            if "path" in input_data[key]:
-                input_data[key]["path"] = file_path / input_data[key]["path"]
-        pending_inputs = []                                             
-        return pending_inputs, input_data
-    
-    def check_kwargs(self, **kwargs) -> dict[str, str|dict]:
+        data = unzip(file_path, "results.yaml") if file_path.is_file() else from_dir(file_path, "results.yaml") if file_path.is_dir() else dict()                                    
+        for key in data:       
+            if not data[key]: 
+                continue
+            if key in pending_keys:
+                pending_keys.remove(key)                             
+            if "path" in data[key]:
+                data[key]["path"] = file_path / data[key]["path"]      
+        self.input = data | original_input_data  # Merge with original input to preserve any existing data in        
+        return pending_keys            
+
+    def check_kwargs(self, **kwargs) -> None:
         """ Check if the kwargs match the input definitions of the task
         
         If a "file" key is provided, it will validate whether the required inputs are present.
@@ -142,17 +150,10 @@ class Task:
         
         Raises: 
             ValueError: If the number of arguments or argument names do not match the input definitions
-
-        """                 
-        pending_input, input_data = self.check_file(kwargs.pop("file", ""))                                       
-        for key in pending_input:
+        """                         
+        pending_keys = self.check_file(kwargs.get("file", ""))                                               
+        for key in pending_keys:
             if key not in kwargs.keys():
-                raise ValueError(f"Missing input for: {key}. Either provide a valid 'file' or the required inputs as arguments.")            
-        input_data.update(kwargs)                            
-        for key, value in input_data.items():
-            if isinstance(value, dict) and "path" in value and "type" in value:
-                module_name, class_name = value.pop("type").rsplit(".", 1)
-                cls = getattr(importlib.import_module(module_name), class_name)     
-                path = value.pop("path")                
-                input_data[key] = cls.build(path, **value)            
-        return input_data
+                raise ValueError(f"Missing input for: {key}. Either provide a valid entry file or the required inputs as arguments.")            
+        self.input.update(kwargs)                  
+             

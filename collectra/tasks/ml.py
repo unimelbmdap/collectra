@@ -4,17 +4,13 @@ from collectra.models.base import Model
 from collectra.models.yolo import YOLOModel
 from collectra.tasks.base import Task
 from dataclasses import dataclass
-from datetime import datetime
 from types import UnionType
-import tempfile, zipfile, pytz, shutil, yaml, os
+import tempfile, zipfile, copy, importlib
 
 @dataclass(kw_only=True)
 class MachineLearningTask(Task):
 
     VALID_MODEL = None
-
-    def __post_init__(self):
-        super().__post_init__()
 
     def load(self, model: str | Path) -> Model:
         if not self.VALID_MODEL or not model:
@@ -82,25 +78,37 @@ class ObjectDetectionYOLO(MachineLearningTask):
     VALID_MODEL = YOLOModel
 
     def input_type(self) -> UnionType:
-        return Image | Path
+        return Image | ImageCrop
     
     def output_type(self) -> type:
         return ImageCrop
 
-    def run(self, **kwargs) -> dict:                        
+    def check_kwargs(self, **kwargs) -> None:
+        super().check_kwargs(**kwargs)
+        for key in self.input:
+            value = copy.deepcopy(self.input[key])
+            if isinstance(value, dict) and "path" in value and "type" in value:                
+                module_name, class_name = value.pop("type").rsplit(".", 1)
+                cls = getattr(importlib.import_module(module_name), class_name)     
+                path = value.pop("path")                                
+                if "items" in value:                    
+                    self.input[key] = []
+                    for item in value["items"]:
+                        self.input[key].append(cls.build(path, **item))
+                else:
+                    self.input[key] = cls.build(path, **value)
+            elif Path(str(value)).is_file() and Image.is_image_file(Path(str(value))):
+                self.input[key] = Image.build(Path(str(value)))                  
+
+    def run(self, **kwargs):                          
+        for value in kwargs.values():
+            if not isinstance(value, self.input_type()):
+                raise ValueError(f"Invalid input type. Expected {self.input_type()}.")        
         detections = super().run(**kwargs)                             
-        names = []                   
-        for key, value in detections.items():            
-            image_file = Path(value.get("image"))  # type: ignore
-            path = Path(f"{image_file.stem}.{self.config['format']}")
-            path.mkdir(parents=True, exist_ok=True)  # Ensure the directory exists            
-            output_yaml = {            
-                f"{key}": {
-                    "type": f"{Image.__module__}.{Image.__name__}",
-                    "path": image_file,
-                },
-            }
-            classification_results = value.get("results", [])
+        names = []                                   
+        for value in detections.values():            
+            image: Image = value.get("image")
+            classification_results: list = value.get("results", [])
             if not classification_results:
                 continue            
             for cls_result in classification_results:                
@@ -108,33 +116,14 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 names = [
                     cls_result.names[cls.item()]
                     for cls in cls_result.boxes.cls.int()
-                ]                
+                ]                                                
                 for index in range(len(coordinates)):
                     x, y, w, h = coordinates[index]
-                    output_yaml[names[index]] = {
-                        "type": f"{ImageCrop.__module__}.{ImageCrop.__name__}",
-                        "path": image_file,
-                        "x_center": float(x),
-                        "y_center": float(y),
-                        "width_relative": float(w),
-                        "height_relative": float(h),
-                    }
-                cls_result.save_crop(save_dir=path)            
-            shutil.copy(image_file, path / image_file.name)
-            with open(path / "results.yaml", "w") as f:
-                for key in output_yaml:
-                    f.write(
-                        yaml.dump(
-                            {key: output_yaml[key]},
-                            default_flow_style=False,
-                            sort_keys=False,
-                        )
-                    )
-                    f.write("\n")                     
-            if not self.config.get("as_dir", False):
-                shutil.make_archive(
-                    str(path), "zip", path
-                )  # Create a zip archive of the results
-                shutil.rmtree(path)  # Remove the directory after zipping
-                os.rename(f"{path}.zip", path.parent / f"{path.name}")                 
-        return output_yaml
+                    cropped = ImageCrop.build(
+                        image.path(),
+                        x_center=float(x),
+                        y_center=float(y),
+                        width_relative=float(w),
+                        height_relative=float(h),
+                    )                                                                                                             
+                    self.output[names[index]] = cropped                
