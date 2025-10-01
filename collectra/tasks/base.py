@@ -15,6 +15,8 @@ Classes:
     TaskResult: Container for task execution results and error handling
 """
 
+__all__ = ["Task", "TaskResult"]
+
 from collectra.utils import from_dir, unzip
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -225,7 +227,11 @@ class Task:
         pending_keys = self.check_file(kwargs.get("file", ""))                                               
         for key in pending_keys:
             if key not in kwargs.keys():
-                raise ValueError(f"Missing input for: {key}. Either provide a valid entry file or the required inputs as arguments.")            
+                raise ValueError(f"Missing input for: {key}. Either provide a valid entry file or the required inputs as arguments.")    
+            # required_type = self.input_type()            
+            # data = kwargs[key]
+            # if not isinstance(data, required_type):
+            #     kwargs[key] = required_type(data)        
         self.input.update(kwargs)    
 
     def save(self, output: dict, output_path: Path, **kwargs) -> tuple[Path, dict, list[Path]]:

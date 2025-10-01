@@ -16,8 +16,10 @@ Classes:
     ObjectDetectionYOLO: YOLO-based object detection task implementation
 """
 
+__all__ = ["MachineLearningTask", "ObjectDetectionYOLO"]
+
 from pathlib import Path
-from collectra.images.base import Image, ImageCrop
+from collectra.types.images import Image, ImageCrop
 from collectra.models.base import Model
 from collectra.models.yolo import YOLOModel
 from collectra.tasks.base import Task
@@ -215,7 +217,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 else:
                     self.input[key] = cls.build(path, **value)            
             elif isinstance(value, str) and Path(value).is_file() and Image.is_image_file(Path(str(value))):
-                self.input[key] = Image.build(Path(str(value)))                  
+                self.input[key] = Image(Path(str(value)))                  
 
     def run(self, **kwargs):
         """Execute YOLO object detection on the provided inputs.
@@ -281,8 +283,8 @@ class ObjectDetectionYOLO(MachineLearningTask):
         
         for index in range(len(coordinates)):
             x, y, w, h = coordinates[index]
-            cropped = ImageCrop.build(
-                image.path(), # type: ignore
+            cropped = ImageCrop(
+                path=image.path, # type: ignore
                 x_center=float(x),
                 y_center=float(y),
                 width_relative=float(w),

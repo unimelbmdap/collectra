@@ -16,15 +16,21 @@ Classes:
     ImageCrop: Specialized class for cropped image regions
 """
 
-from collectra.commons import MetaClass
-from collectra.utils import crop
+__all__ = ["Image", "ImageCrop"]
+
+
+import base64, io, copy
 from dataclasses import dataclass, field
 from pathlib import Path
 from PIL import Image as ImagePil
-import base64, io, copy
 
-@dataclass(kw_only=True)
-class Image(MetaClass):
+from collectra.utils import crop
+
+from .base import Type
+
+
+@dataclass(kw_only=False)
+class Image(Type):
     """Base class for handling image data and metadata in Collectra workflows.
     
     Provides core functionality for loading, encoding, and managing image files
@@ -32,19 +38,18 @@ class Image(MetaClass):
     foundation for more specialized image processing classes.
     
     Attributes:
-        img_path (str): File system path to the image file.
+        path (str): File system path to the image file.
         width (int): Width of the image in pixels.
         height (int): Height of the image in pixels.
         format (str | None): Image format (PNG, JPEG, etc.) or None if unknown.
     """
+    path: Path # Path to the image file
+    width: int = field(init=False)  # Image width in pixels
+    height: int = field(init=False) # Image height in pixels
+    format: str | None = field(init=False, default=None) # Image format (e.g., PNG, JPEG)
 
-    img_path: str # Path to the image file
-    width: int
-    height: int
-    format: str | None
 
-    @staticmethod
-    def build(path: Path):
+    def __post_init__(self, **kwargs):
         """Create an Image instance from a file path.
         
         Loads image metadata (dimensions and format) from the specified file
@@ -60,10 +65,13 @@ class Image(MetaClass):
             FileNotFoundError: If the image file doesn't exist.
             PIL.UnidentifiedImageError: If the file is not a valid image.
         """
-        with ImagePil.open(path) as imf:
-            format = imf.format
-            width, height = imf.size           
-        return Image(img_path=str(path), width=width, height=height, format=format)
+        self.path = Path(self.path)
+        if not self.path.exists() or not self.path.is_file():
+            raise FileNotFoundError(f"Image file not found: {self.path}")
+        
+        with ImagePil.open(self.path) as imf:
+            self.format = imf.format
+            self.width, self.height = imf.size        
     
     @staticmethod
     def is_image_file(path: Path) -> bool:
@@ -77,15 +85,7 @@ class Image(MetaClass):
         """
         image_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp"}
         return path.suffix.lower() in image_extensions
-    
-    def path(self) -> Path:
-        """Get the image file path as a Path object.
         
-        Returns:
-            Path: Path object for the image file.
-        """
-        return Path(self.img_path)
-    
     def load(self) -> bytes:
         """Load the image file content as raw bytes.
         
@@ -151,31 +151,6 @@ class ImageCrop(Image):
     width_relative: float
     height_relative: float
 
-    @staticmethod
-    def build(path: Path, **kwargs):
-        """Create an ImageCrop instance from a file path and crop parameters.
-        
-        Loads the base image metadata and creates a crop region with the
-        specified relative coordinates and dimensions.
-        
-        Args:
-            path (Path): Path to the image file to crop.
-            **kwargs: Crop parameters including x_center, y_center, 
-                     width_relative, height_relative.
-                     
-        Returns:
-            ImageCrop: Configured ImageCrop instance ready for processing.
-        """
-        img = Image.build(path)
-        
-        return ImageCrop(
-            img_path=str(path), 
-            width=img.width, 
-            height=img.height, 
-            format=img.format, 
-            **kwargs
-        )
-
     def coordinates(self) -> tuple[float, float, float, float]:
         """Calculate absolute pixel coordinates for the crop region.
         
@@ -205,7 +180,7 @@ class ImageCrop(Image):
         Returns:
             bytes: Raw binary content of the cropped image region.
         """
-        img = crop(path=self.path(), coordinates=self.coordinates())
+        img = crop(path=self.path, coordinates=self.coordinates())
         buffer = io.BytesIO()
         img.save(buffer, format=self.format)
         buffer.seek(0)        

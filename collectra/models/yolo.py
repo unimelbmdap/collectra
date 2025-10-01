@@ -18,7 +18,7 @@ Classes:
 """
 
 from collectra.models.base import Model 
-from collectra.images.base import Image, ImageCrop
+from collectra.types.images import Image, ImageCrop
 from collectra.utils import get_all_files, success_msg
 from collectra.utils import processing_msg, error_msg
 from pathlib import Path
@@ -386,7 +386,7 @@ class YOLOModel(Model):
                 # Single image case
                 detections[key] = {
                     "image": value,
-                    "results": self.thread_safe_detect(value.path())                                  
+                    "results": self.thread_safe_detect(value.path)                                  
                 }
             elif isinstance(value, list) and all(isinstance(img, Image) for img in value):
                 # Multiple images case
@@ -394,7 +394,7 @@ class YOLOModel(Model):
                 for img in value:
                     detections[key].append({
                         "image": img,
-                        "results": self.thread_safe_detect(img.path())
+                        "results": self.thread_safe_detect(img.path)
                     })
             else:
                 raise ValueError(f"Invalid input type for {key}. Expected Image or list of Images.")

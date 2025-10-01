@@ -13,17 +13,19 @@ The module includes:
 Classes:
     LLM: Task for Large Language Model inference operations
 """
+__all__ = ["LLM"]
 
 from collectra.tasks.base import Task
-from collectra.images.base import Image
+from collectra.types.images import Image
 from collectra.utils import success_msg, processing_msg
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from pathlib import Path
 from rich import print
 import copy, llmloader, re
+
 
 load_dotenv()
 
@@ -65,7 +67,7 @@ class LLM(Task):
         Returns:
             type | tuple: String type for generated text outputs.
         """
-        return str
+        return dict
 
     def process_inputs(self, **kwargs) -> tuple:
         """Process and merge input arguments with predefined variables.
@@ -185,8 +187,7 @@ class LLM(Task):
                 text_content = value.read_text()                    
                 content.append(self.add_text(prompt, key, str(text_content)))     
         else:                
-            content.append(self.add_text(prompt, key, str(value)))     
-        
+            content.append(self.add_text(prompt, key, str(value)))             
         return content
     
     def run(self, **kwargs):
@@ -217,7 +218,8 @@ class LLM(Task):
                 prompt_text = content.pop()
                 for file_content in content:
                     message = self.messages.copy()
-                    message.append(HumanMessage(content=[prompt_text, file_content]))                                            
+                    message.append(HumanMessage(content=[prompt_text, file_content])) 
+                    message.append(AIMessage(content="Here is the text:"))                                           
                     for output_key in self.output.keys():
                         if key in output_key:
                             if not self.output[output_key] or not isinstance(self.output[output_key], list):
@@ -225,7 +227,8 @@ class LLM(Task):
                             self.output[output_key].append(parser.invoke(self.llm.invoke(message)))                
             else:
                 message = self.messages.copy()
-                message.append(HumanMessage(content=content))                        
+                message.append(HumanMessage(content=content))
+                message.append(AIMessage(content="Here is the text:"))                        
                 for output_key in self.output.keys():
                     if key in output_key:
                         self.output[output_key] = parser.invoke(self.llm.invoke(message))                                                                     
