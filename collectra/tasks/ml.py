@@ -282,7 +282,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
         for index in range(len(coordinates)):
             x, y, w, h = coordinates[index]
             cropped = ImageCrop.build(
-                image.path(),
+                image.path(), # type: ignore
                 x_center=float(x),
                 y_center=float(y),
                 width_relative=float(w),
