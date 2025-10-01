@@ -1,3 +1,21 @@
+"""Core pipeline execution and workflow management for Collectra.
+
+This module contains the main Collectra workflow class and result management
+system. It provides the core functionality for defining, executing, and
+managing complex data processing workflows with task dependencies.
+
+The module supports:
+    - Workflow definition and configuration management
+    - Task dependency graph construction and execution
+    - Result aggregation and persistence
+    - Workflow visualization and rendering
+    - Training and inference execution modes
+
+Classes:
+    Collectra: Main workflow management class
+    CollectraResult: Container for workflow execution results
+"""
+
 from collectra.tasks.base import Task, TaskResult
 from collectra.tasks.ml import MachineLearningTask
 from collectra.utils import error_msg, success_msg, processing_msg
@@ -12,6 +30,24 @@ logger.setLevel(logging.INFO)
 
 @dataclass(kw_only=True)
 class Collectra:
+    """Main class for managing Collectra workflows and task execution.
+    
+    This class represents a complete workflow configuration with tasks, dependencies,
+    and execution management. It provides functionality to add tasks, connect them
+    in a dependency graph, execute the workflow, and manage results.
+    
+    Attributes:
+        name (str): The name of the workflow.
+        version (str): The version of the workflow.
+        format (str): The output format for results.
+        out_dir (str | None): Output directory path. Defaults to None.
+        as_dir (bool): Whether to treat output as a directory structure. Defaults to False.
+        description (str): Description of the workflow configuration.
+        tasks (list[Task]): List of tasks in the workflow.
+        flow (nx.DiGraph | None): Directed graph representing task dependencies.
+        results (dict): Dictionary storing workflow execution results.
+        cli_kwargs (list[str]): List of CLI keyword arguments.
+    """
     name: str
     version: str
     format: str
@@ -23,22 +59,53 @@ class Collectra:
     results: dict = field(default_factory=dict)
     cli_kwargs: list[str] = field(default_factory=list)
 
-    def __post_init__(self):               
+    def __post_init__(self):
+        """Initialize the workflow after dataclass initialization.
+        
+        Sets up the directed graph for task dependencies and creates a result container.
+        """               
         self.flow = nx.DiGraph()
         self.result = CollectraResult()
 
     def get_out_dir(self) -> Path:
+        """Get the output directory path for the workflow.
+        
+        If no output directory is specified, defaults to current working directory
+        with the workflow name as subdirectory.
+        
+        Returns:
+            Path: The output directory path.
+        """
         if not self.out_dir:             
             self.out_dir = str(Path.cwd() / self.name)
         return Path(self.out_dir)
     
     def get_run_result(self) -> dict:
+        """Get the execution results of the workflow.
+        
+        Returns:
+            dict: Dictionary containing the workflow execution results.
+        """
         return self.results
 
     def is_pipeline_dir(self) -> bool:
+        """Check if the pipeline output should be treated as a directory structure.
+        
+        Returns:
+            bool: True if output should be a directory structure, False otherwise.
+        """
         return self.as_dir
 
     def add_task(self, task: Task, mapping: dict):
+        """Add a task to the workflow and update the output mapping.
+        
+        Args:
+            task (Task): The task to add to the workflow.
+            mapping (dict): Dictionary mapping outputs to task names.
+            
+        Raises:
+            ValueError: If the pipeline is not initialized or task already exists.
+        """
         if self.flow is None:
             raise ValueError(f"Pipeline has not been initialised for {self.name}")
         if task.name in self.flow.nodes():
@@ -50,7 +117,15 @@ class Collectra:
                 mapping[output] = []
             mapping[output].append(task.name)        
             
-    def connect(self, mapping: dict):   
+    def connect(self, mapping: dict):
+        """Connect tasks in the workflow based on input-output mapping.
+        
+        Args:
+            mapping (dict): Dictionary mapping outputs to task names for establishing dependencies.
+            
+        Raises:
+            ValueError: If the pipeline is not initialized.
+        """   
         if self.flow is None:
             raise ValueError(f"Pipeline has not been initialised for {self.name}")  
         for task in self.tasks:
@@ -60,6 +135,18 @@ class Collectra:
                     self.flow.add_edge(parent_task, task.name)     
 
     def render(self, filename: str = "", raw=False):
+        """Render the workflow as a directed acyclic graph (DAG) visualization.
+        
+        Creates an SVG visualization of the workflow showing tasks and their dependencies.
+        Can render either the raw task graph or a formatted version with inputs/outputs.
+        
+        Args:
+            filename (str, optional): Name for the output file. Defaults to workflow name with DAG suffix.
+            raw (bool, optional): Whether to render raw task graph or formatted version. Defaults to False.
+            
+        Raises:
+            ValueError: If the pipeline is not initialized.
+        """
         dot_str = ""
         filename = filename if filename else f"{self.name}_DAG_raw" if raw else f"{self.name}_DAG" 
         if raw:
@@ -92,13 +179,24 @@ class Collectra:
         print(success_msg(f"Workflow rendered to {filename}.svg"))
 
     def __str__(self) -> str:
+        """Return a string representation of the workflow.
+        
+        Returns:
+            str: String containing workflow name and version.
+        """
         return f"{self.name} v{self.version}"
 
     def get_config(self, config: dict = dict()) -> dict:
-        """
-        Generate a YAML representation of the workflow configuration.
+        """Generate a YAML representation of the workflow configuration.
 
-        This method serializes the workflow configuration into a YAML format.
+        This method serializes the workflow configuration into a YAML format,
+        including metadata and task configurations.
+
+        Args:
+            config (dict, optional): Existing configuration dictionary to update. Defaults to empty dict.
+
+        Returns:
+            dict: Dictionary containing the complete workflow configuration in YAML format.
         """
         config["collectra_pipeline_metadata"] = {
             "name": self.name,
@@ -124,10 +222,12 @@ class Collectra:
         return config
 
     def metadata(self):
-        """
-        Retrieve the metadata of the current workflow.
+        """Retrieve the metadata of the current workflow.
 
         This method returns the metadata of the workflow as a dictionary.
+        
+        Returns:
+            dict: Dictionary containing workflow metadata including name, version, and format.
         """
         return {
             "name": self.name,
@@ -136,18 +236,37 @@ class Collectra:
         }
 
     def _get_existing_task_ids(self) -> list[str]:
-        """
-        Get a list of existing task IDs in the workflow.
+        """Get a list of existing task IDs in the workflow.
 
         This method returns a list of task IDs that are already present in the workflow.
+        
+        Returns:
+            list[str]: List of existing task IDs in the workflow.
         """
         return [task.name for task in self.tasks]
 
-    def __call__(self, task_name: str, output: Path, **kwargs): 
+    def __call__(self, task_name: str, output: Path, **kwargs):
+        """Make the Collectra instance callable.
+        
+        Args:
+            task_name (str): Name of the task to run.
+            output (Path): Output path for results.
+            **kwargs: Additional keyword arguments passed to run method.
+        """ 
         self.cli_kwargs = list(kwargs.keys())        
         self.run(task_name, output=output, **kwargs)
 
-    def run(self, task_name: str, output: Path, **kwargs):              
+    def run(self, task_name: str, output: Path, **kwargs):
+        """Execute the workflow starting from the specified task or root tasks.
+        
+        Args:
+            task_name (str): Name of the specific task to run. If empty, runs from root tasks.
+            output (Path): Output path for saving results.
+            **kwargs: Additional keyword arguments passed to task execution.
+            
+        Raises:
+            ValueError: If the pipeline is not initialized or task not found.
+        """              
         if self.flow is None:
             raise ValueError(f"Pipeline is not initialised for: {self.name}")                  
         if task_name:
@@ -165,7 +284,17 @@ class Collectra:
                 print(error_msg(f"Task {failed_task.task.name} failed with error:\n{failed_task.get_error()}"))     
         self.result.save(output, keys_to_remove=self.cli_kwargs, format=self.format, as_dir=self.is_pipeline_dir(), **kwargs)    
 
-    def _run_nodes(self, nodes: list[str], single: bool=False, **kwargs):        
+    def _run_nodes(self, nodes: list[str], single: bool=False, **kwargs):
+        """Recursively execute workflow nodes and their dependencies.
+        
+        Args:
+            nodes (list[str]): List of node names to execute.
+            single (bool, optional): Whether to run only single node without children. Defaults to False.
+            **kwargs: Additional keyword arguments passed to task execution.
+            
+        Raises:
+            ValueError: If the pipeline is not initialized.
+        """        
         if self.flow is None:
             raise ValueError(f"Pipeline is not initialised for: {self.name}")                 
         for node in nodes:
@@ -180,7 +309,16 @@ class Collectra:
                 task_result = TaskResult.create_failed(self._get_task(node), e)                
                 self.result.failed_tasks.append(task_result)
 
-    def _run_task(self, task_name: str, **kwargs) -> TaskResult:                
+    def _run_task(self, task_name: str, **kwargs) -> TaskResult:
+        """Execute a single task in the workflow.
+        
+        Args:
+            task_name (str): Name of the task to execute.
+            **kwargs: Additional keyword arguments passed to task execution.
+            
+        Returns:
+            TaskResult: Result of the task execution.
+        """                
         task = self._get_task(task_name)                                           
         task_config = {            
             "format": self.format,                        
@@ -191,9 +329,28 @@ class Collectra:
         return task(**kwargs)                               
 
     def _find_task_by_name(self, task_name: str) -> list[Task]:
+        """Find tasks in the workflow by name.
+        
+        Args:
+            task_name (str): Name of the task to find.
+            
+        Returns:
+            list[Task]: List of tasks matching the given name.
+        """
         return [task for task in self.tasks if task.name == task_name]
 
     def _get_task(self, task_name: str):
+        """Get a single task by name from the workflow.
+        
+        Args:
+            task_name (str): Name of the task to retrieve.
+            
+        Returns:
+            Task: The task matching the given name.
+            
+        Raises:
+            ValueError: If no task or multiple tasks with the same name are found.
+        """
         matching_tasks = self._find_task_by_name(task_name)
         if len(matching_tasks) == 0:
             raise ValueError(f"Task with name {task_name} not found.")
@@ -206,6 +363,7 @@ class Collectra:
 
         Args:
             task_name (str): The name of the task to be trained
+            config (dict, optional): Additional configuration for training. Defaults to empty dict.
 
         Raises:
             ValueError: If the task is not a machine learning task.
@@ -230,11 +388,35 @@ class Collectra:
 
 @dataclass(kw_only=True)
 class CollectraResult:
+    """Container for storing and managing workflow execution results.
+    
+    This class tracks successful and failed task executions and provides
+    functionality to save results to disk in various formats.
+    
+    Attributes:
+        successful_tasks (list): List of successfully executed tasks.
+        failed_tasks (list): List of tasks that failed during execution.
+        status (str): Overall execution status - 'success', 'partial', or 'failed'.
+    """
     successful_tasks: list = field(default_factory=list)
     failed_tasks: list = field(default_factory=list)
     status: str = "success"  # success, partial, failed
 
     def save(self, output: Path, **kwargs) -> None:
+        """Save workflow execution results to the specified output path.
+        
+        Aggregates results from all successful task executions and saves them
+        to a YAML file along with associated output files. Creates the output
+        directory if it doesn't exist.
+        
+        Args:
+            output (Path): Directory path where results will be saved.
+            **kwargs: Additional keyword arguments passed to task save methods.
+            
+        Raises:
+            ValueError: If no successful tasks exist to save or no result path
+                can be determined.
+        """
         if not self.successful_tasks:
             raise ValueError("No successful tasks to save.")      
         final_result_dict = {
@@ -262,9 +444,12 @@ class CollectraResult:
                 continue        
             shutil.copy(file, final_result_path / file.name) 
         if kwargs.get("print_log", False):
-            print(success_msg(f"Results saved to {final_result_path}"))
-            print(success_msg(f"Successful tasks: {[str(task) for task in self.successful_tasks]}"))
-            print(success_msg(f"Failed tasks: {[str(task) for task in self.failed_tasks]}"))
+            log_message = f"""
+                Results saved to {final_result_path}
+                Successful tasks: {[str(task) for task in self.successful_tasks]}
+                Failed tasks: {[str(task) for task in self.failed_tasks]}
+            """
+            print(log_message)
             if self.status == "partial":
                 print(error_msg("Some tasks failed during execution."))
             elif self.status == "failed":

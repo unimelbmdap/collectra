@@ -1,3 +1,17 @@
+"""Abstract base class and interface definitions for machine learning models.
+
+This module defines the common interface that all machine learning models
+in the Collectra system must implement. It provides a standardized way to
+train, validate, detect, and manage ML models across different frameworks.
+
+The Model abstract base class ensures consistency in model handling and
+provides a common API for different types of machine learning models
+including object detection, image classification, and other ML tasks.
+
+Classes:
+    Model: Abstract base class defining the ML model interface
+"""
+
 from abc import ABC, abstractmethod
 from pathlib import Path
 import os

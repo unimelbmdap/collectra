@@ -1,3 +1,17 @@
+"""Ray-based distributed workflow execution for Collectra (experimental).
+
+This module provides an experimental implementation of Collectra workflows
+using Ray for distributed and parallel execution. It's designed to handle
+large-scale data processing workflows that can benefit from distributed
+computing capabilities.
+
+Note: This is an experimental module and may not have full feature parity
+with the main Collectra pipeline implementation.
+
+Classes:
+    Collectra: Ray-enabled workflow class for distributed execution
+"""
+
 from pathlib import Path
 from dataclasses import dataclass, field
 from collectra.tasks.base import Task

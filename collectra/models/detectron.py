@@ -1,3 +1,19 @@
+"""DETECTRON2 and image classification model implementations for Collectra.
+
+This module provides placeholder implementations for Facebook's Detectron2
+object detection framework and general image classification models. These
+classes define the interface but contain placeholder implementations that
+need to be completed with actual framework-specific logic.
+
+The module includes:
+    - DETECTRON2Engine: Placeholder for Detectron2 object detection
+    - ImageClassifier: Placeholder for image classification models
+
+Classes:
+    DETECTRON2Engine: DETECTRON2 object detection model implementation
+    ImageClassifier: General image classification model implementation
+"""
+
 from collectra.models.base import Model
 from pathlib import Path
 
