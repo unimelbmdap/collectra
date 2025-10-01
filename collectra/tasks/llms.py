@@ -7,7 +7,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import SystemMessage, HumanMessage
 from pathlib import Path
 from rich import print
-import importlib, llmloader
+import copy, llmloader
 
 load_dotenv()
 
@@ -68,7 +68,7 @@ class LLM(Task):
             content.append(self.add_text(prompt, key, str(value)))     
         return content
     
-    def run(self, **kwargs) -> dict:                
+    def run(self, **kwargs):                
         prompt = str(self.template)                       
         items = self.process_inputs(**kwargs)
         parser = StrOutputParser()
@@ -81,6 +81,17 @@ class LLM(Task):
             message.append(HumanMessage(content=content))                        
             for output_key in self.output:
                 if key in output_key:
-                    results[output_key] = parser.invoke(self.llm.invoke(message))                                    
-        print(success_msg(f"[yellow]Inference Complete. Displaying results below: [/yellow]\n\n{results}\n"))            
-        return results
+                    self.output[output_key] = parser.invoke(self.llm.invoke(message))                                    
+        print(success_msg(f"[yellow]Inference Complete.[/yellow]"))            
+        
+
+    def save(self, output_path: Path, **kwargs) -> tuple[Path, dict, list[Path]]:        
+        output_data = kwargs.get("output_data", dict())
+        result_data = dict()
+        for key in self.output:
+            data_key = key.replace("_text", "")
+            if data_key in output_data:
+                to_be_updated = copy.deepcopy(output_data[data_key])
+                to_be_updated.update({"text": str(self.output[key])})
+                result_data[data_key] = to_be_updated
+        return None, result_data, []

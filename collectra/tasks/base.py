@@ -1,7 +1,7 @@
 from collectra.utils import from_dir, unzip
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-import datetime, copy, traceback
+import copy, traceback
 
 LIST_TYPE_FIELDS = ["input", "output"]
 DICT_TYPE_FIELDS = ["variables", "params"]
@@ -74,19 +74,7 @@ class Task:
         Run the task.
         This method should be implemented by subclasses.
         """
-        raise NotImplementedError("Subclasses must implement this method.")
-
-    def check_metadata(self):     
-        if "collectra_results_metadata" not in self.input:            
-            old_data = copy.deepcopy(self.input)
-            self.input = dict()            
-            self.input["collectra_results_metadata"] = {
-                "timestamp": datetime.datetime.now().isoformat(), 
-                "validation": False
-            } 
-            self.input.update(old_data)
-        else:
-            self.input["collectra_results_metadata"]["timestamp"] = datetime.datetime.now().isoformat()
+        raise NotImplementedError("Subclasses must implement this method.")    
 
     def filter_unused(self) -> dict:        
         input_data = dict()
@@ -96,8 +84,7 @@ class Task:
 
     def __call__(self, **kwargs) -> "TaskResult":
         self.check_kwargs(**kwargs)           
-        input_data = self.filter_unused()            
-        self.check_metadata()                         
+        input_data = self.filter_unused()                                        
         self.run(**input_data)        
         output = self.input | self.output              
         return TaskResult.create_successful(self, output)        
@@ -157,7 +144,7 @@ class Task:
                 raise ValueError(f"Missing input for: {key}. Either provide a valid entry file or the required inputs as arguments.")            
         self.input.update(kwargs)    
 
-    def save(self, output: dict, output_path: Path, **kwargs) -> dict:
+    def save(self, output: dict, output_path: Path, **kwargs) -> tuple[Path, dict, list[Path]]:
         raise NotImplementedError("Subclasses must implement this method.")              
 
 @dataclass(kw_only=True)             
@@ -166,6 +153,12 @@ class TaskResult:
     output: dict
     task: Task
     status: str = "successful"
+
+    def __str__(self) -> str:
+        return self.task.name
+
+    def __repr__(self) -> str:
+        return self.task.name
 
     @staticmethod
     def create_successful(task: Task, output: dict) -> "TaskResult":

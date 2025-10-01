@@ -6,7 +6,7 @@ from collectra.models.yolo import YOLOModel
 from collectra.tasks.base import Task
 from dataclasses import dataclass
 from types import UnionType
-import tempfile, zipfile, copy, importlib, yaml
+import tempfile, zipfile, copy, importlib
 
 
 @dataclass(kw_only=True)
@@ -138,18 +138,17 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 if self.output[key] and len(self.output[key]) == 1:
                     self.output[key] = self.output[key][0] 
     
-    def save(self, output: dict, output_path: Path, **kwargs) -> tuple[Path, str, list[Path]]:
-        if not output:
-            raise ValueError("Output is empty. Nothing to save.")
+    def save(self, output_path: Path, **kwargs) -> tuple[Path, dict, list[Path]]:
+        
         keys_to_remove = kwargs.get("keys_to_remove", [])
-        file_name = output.pop("file", "")
+        file_name = self.output.pop("file", "")
         for key in keys_to_remove:
-            if key in output:
-                output.pop(key)        
-        result_str = ""
+            if key in self.output:
+                self.output.pop(key)        
+        result_dict = dict()
         file_name = ""
         image_path = ""
-        for key, value in output.items():
+        for key, value in self.output.items():
             if isinstance(value, Image | ImageCrop):
                 value = value.metadata()
             if isinstance(value, list):
@@ -161,15 +160,10 @@ class ObjectDetectionYOLO(MachineLearningTask):
                     value = value[0].metadata()
             if not value:
                 continue
-            result_str += yaml.dump(
-                {key:value},
-                default_flow_style=False,
-                sort_keys=False,
-            )
-            result_str += "\n"
+            result_dict.update({key: value})            
             if not file_name and not isinstance(value, str) and value.get("path"):
                 file_name = f"{value.get("path")}.{kwargs.pop("format", "")}"
         if not file_name:
             file_name = f"output.{kwargs.pop("format", "")}"
         result_path = output_path / file_name.replace(".jpg", "").replace(".png", "").replace(".jpeg", "")          
-        return result_path, result_str, [Path(image_path)] if image_path else []  
+        return result_path, result_dict, [Path(image_path)] if image_path else []  

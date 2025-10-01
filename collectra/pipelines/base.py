@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from rich import print
 import networkx as nx, graphviz
-import copy, logging, shutil, os
+import copy, logging, shutil, os, yaml, datetime
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -163,7 +163,7 @@ class Collectra:
         if self.result.status == "partial" or self.result.status == "failed":
             for failed_task in self.result.failed_tasks:
                 print(error_msg(f"Task {failed_task.task.name} failed with error:\n{failed_task.get_error()}"))     
-        self.result.save(output, keys_to_remove=self.cli_kwargs, format=self.format, as_dir=self.is_pipeline_dir())    
+        self.result.save(output, keys_to_remove=self.cli_kwargs, format=self.format, as_dir=self.is_pipeline_dir(), **kwargs)    
 
     def _run_nodes(self, nodes: list[str], single: bool=False, **kwargs):        
         if self.flow is None:
@@ -236,16 +236,38 @@ class CollectraResult:
 
     def save(self, output: Path, **kwargs) -> None:
         if not self.successful_tasks:
-            raise ValueError("No successful tasks to save.")                          
-        latest_result = self.successful_tasks[-1]                                                    
-        result_path, result_str, files = latest_result.task.save(latest_result.output, output_path=output, **kwargs)        
-        os.makedirs(result_path, exist_ok=True)                   
-        with open(result_path / "result.yaml", "w") as f:
-            f.write(result_str)
-        for file in files:
-            if (result_path / file.name).exists():
+            raise ValueError("No successful tasks to save.")      
+        final_result_dict = {
+             "collectra_results_metadata":{
+                "timestamp": datetime.datetime.now().isoformat(), 
+                "validation": False
+            }
+        } 
+        final_result_path = None
+        final_result_files = set()
+        for task_result in self.successful_tasks:                                                                             
+            result_path, result_dict, files = task_result.task.save(output_path=output, output_data=final_result_dict, **kwargs)                            
+            final_result_dict.update(result_dict)    
+            final_result_files.update(files)            
+            final_result_path = result_path if result_path else final_result_path        
+        if not final_result_path:
+            raise ValueError("No result path to save.")    
+        os.makedirs(final_result_path, exist_ok=True)                   
+        with open(final_result_path / "results.yaml", "w") as f:
+            for key, value in final_result_dict.items():
+                f.write(yaml.dump({key: value}, default_flow_style=False, sort_keys=False))
+                f.write("\n")                
+        for file in final_result_files:
+            if (final_result_path / file.name).exists():
                 continue        
-            shutil.copy(file, result_path / file.name) 
-        
-
-        
+            shutil.copy(file, final_result_path / file.name) 
+        if kwargs.get("print_log", False):
+            print(success_msg(f"Results saved to {final_result_path}"))
+            print(success_msg(f"Successful tasks: {[str(task) for task in self.successful_tasks]}"))
+            print(success_msg(f"Failed tasks: {[str(task) for task in self.failed_tasks]}"))
+            if self.status == "partial":
+                print(error_msg("Some tasks failed during execution."))
+            elif self.status == "failed":
+                print(error_msg("All tasks failed during execution."))
+            else:
+                print(success_msg(f"All tasks completed successfully."))
