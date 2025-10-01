@@ -438,7 +438,7 @@ class YOLOModel(Model):
             Training results object from YOLO training
         """
         # Prepare training parameters        
-        params = {k: v for d in config.get("params", list()) for k, v in d.items()}
+        params = config.get("params", dict())
         params["data"] = Path(f"{self.dir}/{self.yolo_config_path}")
         params["project"] = self.dir
         if platform.system() == "Darwin":
