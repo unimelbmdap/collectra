@@ -86,7 +86,7 @@ def get_class_path(obj_or_class):
     return f"{cls.__module__}.{cls.__name__}"
 
 
-def get_all_files(data: List[str], format: str) -> List[Path]:
+def get_all_files(data: list[str], format: str) -> List[Path]:
     """Collect all files matching the specified format from given paths.
     
     Recursively searches through directories and collects files that match
@@ -102,7 +102,7 @@ def get_all_files(data: List[str], format: str) -> List[Path]:
     Raises:
         Exception: If no files are found matching the specified format.
     """
-    files: List[Path] = []
+    files: list[Path] = []
     for path in tqdm(data, desc="Collecting files"):
         path = Path(path)
         if path.is_dir():

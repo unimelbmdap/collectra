@@ -154,6 +154,8 @@ def train(
             if log_cache.exists():
                 os.remove(log_cache)               
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(error_msg(f"Failed to train task: {e}"))
 
 

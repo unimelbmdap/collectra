@@ -130,6 +130,10 @@ class YOLOModel(Model):
         data = config.get("input_files", None)
         inputs = config.get("inputs", [])
         classes = config.get("outputs", [])
+        if isinstance(classes, dict):
+            classes = list(classes.keys())        
+        if isinstance(inputs, dict):
+            inputs = list(inputs.keys())        
         if not data:
             raise ValueError(
                 error_msg("Input data path is required for training. Found none")
@@ -143,7 +147,10 @@ class YOLOModel(Model):
         self.preprocess(data, inputs, classes, format=format)
 
     def _prepare_assets(
-        self, file: Path, is_file: bool = True, inputs: list[str] = []
+        self, 
+        file: Path, 
+        is_file: bool = True, 
+        inputs: list[str] = [],
     ) -> dict:
         """Prepare assets for YOLO training by extracting metadata and copying image files.
         
@@ -244,6 +251,7 @@ class YOLOModel(Model):
         """
         train_files = []
         val_files = []
+
         for data in data_files:
             for_validation = False
             image = None            
