@@ -134,7 +134,6 @@ class DirectoryHandler(DataHandler):
         """
         old_models: dict[str, Path] = dict()
         for task_item in self.pipeline.tasks:
-            breakpoint()
             if not self.is_machine_learning_task(task_item):
                 continue
             task: MachineLearningTask = task_item  # type: ignore
