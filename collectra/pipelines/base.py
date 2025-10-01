@@ -209,7 +209,11 @@ class Collectra:
             task_key: str = str(task.name)
             config[task_key] = {
                 "type": f"{task.__class__.__module__}.{task.__class__.__name__}"
-            }            
+            }          
+            if isinstance(task.input, dict):
+                task.input = list(task.input.keys())  
+            if isinstance(task.output, dict):
+                task.output = list(task.output.keys())  
             if task.config.get("model", None):
                 config[task_key]["model"] = task.config.get("model")  # type: ignore
             if task.input:
