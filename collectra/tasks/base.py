@@ -39,21 +39,6 @@ class Task:
         input_args["config"] = kwargs                 
         return cls(**input_args)
 
-    def metadata(self) -> dict:
-        """
-        Get metadata of the task.
-        :return: A dictionary containing task metadata.
-        """
-        metadata = {
-            "name": self.name,
-            "model": self.config.get("model", ""),
-        }
-        if self.input:
-            metadata["input"] = self.input if len(self.input) > 1 else self.input[list(self.input.keys())[0]]
-        if self.output:
-            metadata["output"] = self.output if len(self.output) > 1 else self.output[list(self.output.keys())[0]]
-        return metadata
-
     def __str__(self) -> str:
         return f"{self.name} of {self.__class__.__name__}"
 

@@ -29,7 +29,7 @@ class LLM(Task):
 
     def process_inputs(self, **kwargs) -> tuple:   
         kwargs.update(self.variables)     
-        return kwargs.items()
+        return kwargs.items() # type: ignore
 
     def __post_init__(self):                                                        
         self.llm = llmloader.load(Path(self.model).name, temperature=self.temperature, max_tokens=self.max_tokens)           
@@ -85,7 +85,7 @@ class LLM(Task):
         print(success_msg(f"[yellow]Inference Complete.[/yellow]"))            
         
 
-    def save(self, output_path: Path, **kwargs) -> tuple[Path, dict, list[Path]]:        
+    def save(self, output_path: Path, **kwargs) -> tuple[Path | None, dict, list[Path]]:        
         output_data = kwargs.get("output_data", dict())
         result_data = dict()
         for key in self.output:

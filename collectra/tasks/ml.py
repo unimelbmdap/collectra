@@ -1,5 +1,4 @@
 from pathlib import Path
-from collectra.commons import MetaClass
 from collectra.images.base import Image, ImageCrop
 from collectra.models.base import Model
 from collectra.models.yolo import YOLOModel
@@ -161,7 +160,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
             if not value:
                 continue
             result_dict.update({key: value})            
-            if not file_name and not isinstance(value, str) and value.get("path"):
+            if not file_name and isinstance(value, dict) and value.get("path", ""):
                 file_name = f"{value.get("path")}.{kwargs.pop("format", "")}"
         if not file_name:
             file_name = f"output.{kwargs.pop("format", "")}"
