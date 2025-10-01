@@ -17,6 +17,7 @@ __all__ = ["LLM"]
 
 from collectra.tasks.base import Task
 from collectra.types.images import Image
+from collectra.types.text import Text
 from collectra.utils import success_msg, processing_msg
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
@@ -59,7 +60,7 @@ class LLM(Task):
         Returns:
             type | tuple: Tuple of str and Path types for text and file inputs.
         """
-        return str, Path
+        return Text, Image 
 
     def output_type(self) -> type | tuple:
         """Define the expected output types for this LLM task.
