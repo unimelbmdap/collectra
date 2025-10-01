@@ -330,10 +330,10 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 value = value.metadata()
             if isinstance(value, list):
                 if all(isinstance(v, ImageCrop) for v in value):
-                    image_path = value[0].path()
+                    image_path = value[0].path
                     value = ImageCrop.metadata_list(value)                                        
                 elif len(value) == 1 and isinstance(value[0], Image):                        
-                    image_path = value[0].path()
+                    image_path = value[0].path
                     value = value[0].metadata()
             if not value:
                 continue
