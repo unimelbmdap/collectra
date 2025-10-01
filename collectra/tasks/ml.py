@@ -226,8 +226,8 @@ class ObjectDetectionYOLO(MachineLearningTask):
         
         Args:
             **kwargs: Input arguments containing Image or ImageCrop objects
-                     for object detection.
-                     
+                 or lists thereof for object detection.
+                 
         Raises:
             ValueError: If input types don't match the expected Image or ImageCrop types.
             
@@ -235,39 +235,66 @@ class ObjectDetectionYOLO(MachineLearningTask):
             Updates self.output with detected objects as ImageCrop instances,
             organized by object class names.
         """                   
+        # Validate inputs - handle both single instances and lists
         for value in kwargs.values():
-            if not isinstance(value, self.input_type()):
+            if isinstance(value, list):
+                if not all(isinstance(v, self.input_type()) for v in value):
+                    raise ValueError(f"Invalid input type in list. Expected {self.input_type()}.")
+            elif not isinstance(value, self.input_type()):
+                print(value)
                 raise ValueError(f"Invalid input type. Expected {self.input_type()}.")        
-        detections = super().run(**kwargs)                             
-        names = []                                   
-        for value in detections.values():            
-            image: Image = value.get("image")
-            classification_results: list = value.get("results", [])
-            if not classification_results:
-                continue            
-            cls_result = classification_results.pop()                       
-            coordinates = cls_result.boxes.xywhn
-            names = [
-                cls_result.names[cls.item()]
-                for cls in cls_result.boxes.cls.int()
-            ]                                                
-            for index in range(len(coordinates)):
-                x, y, w, h = coordinates[index]
-                cropped = ImageCrop.build(
-                    image.path(),
-                    x_center=float(x),
-                    y_center=float(y),
-                    width_relative=float(w),
-                    height_relative=float(h),
-                )                     
-                if self.output.get(names[index], None) is None:
-                    self.output[names[index]] = [cropped]
-                else:
-                    self.output[names[index]].append(cropped)                     
-            for key in self.output.keys():
-                if self.output[key] and len(self.output[key]) == 1:
-                    self.output[key] = self.output[key][0] 
     
+        detections = super().run(**kwargs)                             
+    
+        for detection_results in detections.values():
+            # Handle both single detection and list of detections
+            if isinstance(detection_results, list):
+                # Multiple images processed
+                for result in detection_results:
+                    self._process_single_detection(result)
+            else:
+                # Single image processed
+                self._process_single_detection(detection_results)
+    
+        # Convert single-item lists to single items for consistency
+        for key in self.output.keys():
+            if self.output[key] and len(self.output[key]) == 1:
+                self.output[key] = self.output[key][0]
+
+    def _process_single_detection(self, detection_result: dict) -> None:
+        """Process a single detection result and update output.
+        
+        Args:
+            detection_result (dict): Single detection result containing image and results.
+        """
+        image: Image | None = detection_result.get("image", None)
+        classification_results: list = detection_result.get("results", [])
+        if not classification_results:
+            return
+            
+        cls_result = classification_results.pop()                       
+        coordinates = cls_result.boxes.xywhn
+        names = [
+            cls_result.names[cls.item()]
+            for cls in cls_result.boxes.cls.int()
+        ]                                                
+        
+        for index in range(len(coordinates)):
+            x, y, w, h = coordinates[index]
+            cropped = ImageCrop.build(
+                image.path(),
+                x_center=float(x),
+                y_center=float(y),
+                width_relative=float(w),
+                height_relative=float(h),
+            )                     
+            if self.output.get(names[index], None) is None:
+                self.output[names[index]] = [cropped]
+            else:
+                self.output[names[index]].append(cropped)
+        
+        cls_result.save_crop("output")
+
     def save(self, output_path: Path, **kwargs) -> tuple[Path, dict, list[Path]]:
         """Save object detection results to the specified output path.
         
@@ -314,4 +341,4 @@ class ObjectDetectionYOLO(MachineLearningTask):
         if not file_name:
             file_name = f"output.{kwargs.pop("format", "")}"
         result_path = output_path / file_name.replace(".jpg", "").replace(".png", "").replace(".jpeg", "")          
-        return result_path, result_dict, [Path(image_path)] if image_path else []  
+        return result_path, result_dict, [Path(image_path)] if image_path else []

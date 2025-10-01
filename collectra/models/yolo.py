@@ -368,25 +368,36 @@ class YOLOModel(Model):
         predictions for each detected object.
 
         Args:
-            **kwargs: Variable keyword arguments where values should be Image objects
-                     for detection. Keys become the identifiers for the results.
+            **kwargs: Variable keyword arguments where values can be Image objects
+                     or lists of Image objects for detection. Keys become the 
+                     identifiers for the results.
 
         Returns:
             dict: Dictionary mapping input keys to detection results, where each
-                  result contains the original image and YOLO Results objects.
+                  result contains the original image(s) and YOLO Results objects.
                   
         Raises:
-            ValueError: If any input value is not an Image object.
+            ValueError: If any input value is not an Image object or list of Image objects.
         """        
         print(f"[bold green]Running object detection[/bold green]: {self.path}")
         detections: dict = dict()            
         for key, value in kwargs.items():
-            if not isinstance(value, Image):
-                raise ValueError(f"Invalid input type for {key}. Expected Image.")            
-            detections[key] = {
-                "image": value,
-                "results": self.thread_safe_detect(value.path())                                  
-            }
+            if isinstance(value, Image):
+                # Single image case
+                detections[key] = {
+                    "image": value,
+                    "results": self.thread_safe_detect(value.path())                                  
+                }
+            elif isinstance(value, list) and all(isinstance(img, Image) for img in value):
+                # Multiple images case
+                detections[key] = []
+                for img in value:
+                    detections[key].append({
+                        "image": img,
+                        "results": self.thread_safe_detect(img.path())
+                    })
+            else:
+                raise ValueError(f"Invalid input type for {key}. Expected Image or list of Images.")
         return detections
 
     def cluster(self, config) -> None:
