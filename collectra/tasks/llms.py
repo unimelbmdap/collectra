@@ -17,7 +17,7 @@ __all__ = ["LLM"]
 
 from collectra.tasks.base import Task
 from collectra.types.images import Image
-from collectra.types.text import Text
+from collectra.types.texts import Text
 from collectra.utils import success_msg, processing_msg
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
