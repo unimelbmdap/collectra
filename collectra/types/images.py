@@ -96,7 +96,7 @@ class Image(Type):
             FileNotFoundError: If the image file doesn't exist.
             PermissionError: If the file cannot be read due to permissions.
         """
-        with open(self.img_path, "rb") as img_file:
+        with open(self.path, "rb") as img_file:
             buffer = img_file.read()
         return buffer
 
@@ -128,7 +128,7 @@ class Image(Type):
         """
         return {
             "type": f"{self.__class__.__module__}.{self.__class__.__name__}",  
-            "path": Path(self.img_path).name,                      
+            "path": Path(self.path).name,                      
         }    
 
 @dataclass(kw_only=True)
