@@ -216,7 +216,7 @@ class LLM(Task):
                 continue                        
             content = self.replace_in_template(prompt, key, value)                 
             if isinstance(value, list):
-                prompt_text = content.pop()
+                prompt_text = content.pop(0)
                 for file_content in content:
                     message = self.messages.copy()
                     message.append(HumanMessage(content=[prompt_text, file_content])) 
@@ -232,7 +232,10 @@ class LLM(Task):
                 message.append(AIMessage(content="Here is the text:"))                        
                 for output_key in self.output.keys():
                     if key in output_key:
-                        self.output[output_key] = parser.invoke(self.llm.invoke(message))                                                                     
+                        # self.output[output_key] = "SKIPPED" # HACK
+                        self.output[output_key] = parser.invoke(self.llm.invoke(message))     
+
+        print(f"{self} output:", self.output)                                                                
         print(success_msg(f"[yellow]Inference Complete.[/yellow]"))            
         
 
