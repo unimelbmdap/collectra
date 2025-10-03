@@ -215,7 +215,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
                     for item in value["items"]:
                         self.input[key].append(cls.build(path, **item))
                 else:
-                    self.input[key] = cls.build(path, **value)            
+                    self.input[key] = cls(path, **value)            
             elif isinstance(value, str) and Path(value).is_file() and Image.is_image_file(Path(str(value))):
                 self.input[key] = Image(Path(str(value)))                  
 
