@@ -18,6 +18,7 @@ Classes:
 __all__ = ["Task", "TaskResult"]
 
 from collectra.utils import from_dir, unzip
+from collectra.parsing import load_class_from_string
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 import copy, traceback
@@ -202,13 +203,20 @@ class Task:
         if self.config.get("format", "") != file_path.suffix.replace(".", ""):
             raise ValueError(f"File format {file_path.suffix} does not match expected format {self.config.get('format', '')}")
         data = unzip(file_path, "results.yaml") if file_path.is_file() else from_dir(file_path, "results.yaml") if file_path.is_dir() else dict()                                    
-        for key in data:       
-            if not data[key]: 
+        for key, data_for_key in data.items():       
+            if not data_for_key: 
                 continue
             if key in pending_keys:
                 pending_keys.remove(key)                             
-            if "path" in data[key]:
-                data[key]["path"] = file_path / data[key]["path"]      
+            if "path" in data_for_key:
+                data_for_key["path"] = file_path / data_for_key["path"]      # This shouldn't be magic keyword
+
+            if "type" in data_for_key:
+                # Get type
+                type_name = data_for_key.pop("type")
+                type = load_class_from_string(type_name)
+                data[key] = type(**data_for_key)
+
         self.input = data | original_input_data  # Merge with original input to preserve any existing data in        
         return pending_keys            
 

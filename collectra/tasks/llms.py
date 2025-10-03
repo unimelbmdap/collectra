@@ -181,7 +181,7 @@ class LLM(Task):
             content.append(self.image_content(value))                                                 
         elif isinstance(value, Path) and value.is_file():       
             try:                    
-                image = Image.build(value)                         
+                image = Image(value)                         
                 content.append(self.add_text(prompt, key))      
                 content.append(self.image_content(image))                                 
             except Exception as e:                
@@ -209,7 +209,7 @@ class LLM(Task):
             Prints a success message when inference completes.
         """ 
         prompt = str(self.template)                       
-        items = self.process_inputs(**kwargs)        
+        items = self.process_inputs(**kwargs)       
         parser = StrOutputParser()                
         for key, value in items:
             if not bool(value) or (isinstance(value, str) and not value):
@@ -232,7 +232,6 @@ class LLM(Task):
                 message.append(AIMessage(content="Here is the text:"))                        
                 for output_key in self.output.keys():
                     if key in output_key:
-                        # self.output[output_key] = "SKIPPED" # HACK
                         self.output[output_key] = parser.invoke(self.llm.invoke(message))     
 
         print(f"{self} output:", self.output)                                                                

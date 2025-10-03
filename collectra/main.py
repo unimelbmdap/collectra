@@ -169,7 +169,7 @@ def run(
     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],    
     ctx: Context,
     task: Annotated[str, Option("--task", "-t", help="task to run")] = "",    
-    output: Annotated[Path, Option("--output", "-o", help="output directory")]= Path.cwd()  
+    output: Annotated[Path|None, Option("--output", "-o", help="output directory")]= None
 ):
     """Execute a Collectra workflow or specific task within a workflow.
 

@@ -236,7 +236,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
         Side Effects:
             Updates self.output with detected objects as ImageCrop instances,
             organized by object class names.
-        """                   
+        """            
         # Validate inputs - handle both single instances and lists
         for value in kwargs.values():
             if isinstance(value, list):

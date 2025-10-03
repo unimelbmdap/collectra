@@ -257,7 +257,9 @@ class Collectra:
             output (Path): Output path for results.
             **kwargs: Additional keyword arguments passed to run method.
         """ 
-        self.cli_kwargs = list(kwargs.keys())        
+        self.cli_kwargs = list(kwargs.keys())      
+        if output is None and 'file' in kwargs:
+            output = Path(kwargs["file"])
         self.run(task_name, output=output, **kwargs)
 
     def run(self, task_name: str, output: Path, **kwargs):
@@ -270,7 +272,7 @@ class Collectra:
             
         Raises:
             ValueError: If the pipeline is not initialized or task not found.
-        """              
+        """
         if self.flow is None:
             raise ValueError(f"Pipeline is not initialised for: {self.name}")                  
         if task_name:
@@ -429,7 +431,7 @@ class CollectraResult:
                 "validation": False
             }
         } 
-        final_result_path = None
+        final_result_path = output
         final_result_files = set()
         for task_result in self.successful_tasks:                                                                             
             result_path, result_dict, files = task_result.task.save(output_path=output, output_data=final_result_dict, **kwargs)                            
@@ -438,7 +440,9 @@ class CollectraResult:
             final_result_path = result_path if result_path else final_result_path        
         if not final_result_path:
             raise ValueError("No result path to save.")    
-        os.makedirs(final_result_path, exist_ok=True)                   
+        os.makedirs(final_result_path, exist_ok=True)      
+        breakpoint()
+             
         with open(final_result_path / "results.yaml", "w", encoding="utf-8") as f:
             for key, value in final_result_dict.items():
                 yaml_representation_str = yaml.dump({key: value}, default_flow_style=False, sort_keys=False, allow_unicode=True)
