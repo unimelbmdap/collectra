@@ -441,7 +441,6 @@ class CollectraResult:
         if not final_result_path:
             raise ValueError("No result path to save.")    
         os.makedirs(final_result_path, exist_ok=True)      
-        breakpoint()
              
         with open(final_result_path / "results.yaml", "w", encoding="utf-8") as f:
             for key, value in final_result_dict.items():
