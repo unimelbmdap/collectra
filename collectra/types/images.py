@@ -48,6 +48,8 @@ class Image(Type):
     height: int = field(init=False) # Image height in pixels
     format: str | None = field(init=False, default=None) # Image format (e.g., PNG, JPEG)
 
+    def attributes_to_ignore(self):
+        return {"width", "height", "format"}
 
     def __post_init__(self, **kwargs):
         """Create an Image instance from a file path.

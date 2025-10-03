@@ -197,6 +197,8 @@ def run(
         pipeline = manager.get_pipeline()                
         pipeline(task, output, **inputs)        
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(error_msg(f"Failed to run task: {e}"))
 
 
