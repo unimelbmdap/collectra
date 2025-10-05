@@ -269,17 +269,12 @@ class Collectra:
         output = Path(output)
         
         # set current working directory to 'file'
+        self.results = self.parse(**kwargs)
+
+        # set current working directory to 'file'
         os.chdir(output)
 
-        self.results = self.parse(**kwargs)
         self.run(task_name, output=output, **kwargs)
-
-    def parse_item(self, data):
-        if "type" in data:
-            type_name = data.pop("type")
-            type = load_class_from_string(type_name)
-            data = type(**data)
-        return data
         
     def parse(self, **kwargs) -> dict:
         results = dict()
