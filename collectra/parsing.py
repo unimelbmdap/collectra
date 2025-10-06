@@ -244,7 +244,7 @@ class CollectraWorkflow:
 
 
 def parse_item(data):
-    if "type" in data:
+    if isinstance(data, dict) and "type" in data:
         type_name = data.pop("type")
         type = load_class_from_string(type_name)
         data = type(**data)

@@ -19,8 +19,7 @@ import os
 
 from collectra.tasks.base import Task, TaskResult
 from collectra.tasks.ml import MachineLearningTask
-from collectra.parsing import load_class_from_string
-from collectra.utils import from_dir, unzip
+from collectra.parsing import parse_results
 from collectra.utils import error_msg, success_msg, processing_msg
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -284,17 +283,13 @@ class Collectra:
             file_path = Path(file)        
             if self.format != file_path.suffix.replace(".", ""):
                 raise ValueError(f"File format {file_path.suffix} does not match expected format {self.format}")
-            results = unzip(file_path, "results.yaml") if file_path.is_file() else from_dir(file_path, "results.yaml") if file_path.is_dir() else dict()                                    
-            for key, data in results.items():       
-                if isinstance(data, list):
-                    results[key] = [self.parse_item(data_item) for data_item in data]
-                else:
-                    results[key] = self.parse_item(data)
+            
+            results = parse_results(file_path)
         
         results.update(kwargs)
         return results
 
-    def run(self, task_name: str, output: Path, **kwargs):
+    def run(self, task_name: str, output: Path, force:bool=False, **kwargs):
         """Execute the workflow starting from the specified task or root tasks.
         
         Args:
@@ -314,7 +309,7 @@ class Collectra:
         if task_name and not initial_nodes:
             raise ValueError(f"Task {task_name} not found in the workflow.")
         single = kwargs.pop("single", False)
-        self._run_nodes(initial_nodes, single=single)
+        self._run_nodes(initial_nodes, single=single, force=force)
         if self.result.failed_tasks:
             self.result.status = "failed" if not self.result.successful_tasks else "partial"   
         if self.result.status == "partial" or self.result.status == "failed":
@@ -322,7 +317,7 @@ class Collectra:
                 print(error_msg(f"Task {failed_task.task.name} failed with error:\n{failed_task.get_error()}"))     
         self.save(output, keys_to_remove=self.cli_kwargs, format=self.format, as_dir=self.is_pipeline_dir(), **kwargs)    
 
-    def _run_nodes(self, nodes: list[str], single: bool=False):
+    def _run_nodes(self, nodes: list[str], single: bool=False, force:bool=False):
         """Recursively execute workflow nodes and their dependencies.
         
         Args:
@@ -343,7 +338,7 @@ class Collectra:
                     print(f"Some inputs for task {task} are missing. Skipping")
                     continue
                 
-                if any(key in self.results for key in task.output.keys()):
+                if any(key in self.results for key in task.output.keys()) and not force:
                     print(f"Some outputs complete for task {task}. Skipping")
                 else:
                     task_result: TaskResult = self._run_task(task_name)                                                                                                              

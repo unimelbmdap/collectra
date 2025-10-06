@@ -225,7 +225,9 @@ class LLM(Task):
                         if key in output_key:
                             if not self.output[output_key] or not isinstance(self.output[output_key], list):
                                 self.output[output_key] = list()
-                            self.output[output_key].append(parser.invoke(self.llm.invoke(message)))                
+                            resulting_text = parser.invoke(self.llm.invoke(message))
+                            print(resulting_text)
+                            self.output[output_key].append(resulting_text)                
             else:
                 message = self.messages.copy()
                 message.append(HumanMessage(content=content))
