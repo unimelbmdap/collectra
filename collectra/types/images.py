@@ -29,7 +29,6 @@ from collectra.utils import crop
 from .base import Type
 
 
-@dataclass(kw_only=False)
 class Image(Type):
     """Base class for handling image data and metadata in Collectra workflows.
     
@@ -43,13 +42,19 @@ class Image(Type):
         height (int): Height of the image in pixels.
         format (str | None): Image format (PNG, JPEG, etc.) or None if unknown.
     """
-    path: Path # Path to the image file
-    width: int = field(init=False)  # Image width in pixels
-    height: int = field(init=False) # Image height in pixels
-    format: str | None = field(init=False, default=None) # Image format (e.g., PNG, JPEG)
+    name: str
+    path: Path
+    width: int  # Image width in pixels
+    height: int # Image height in pixels
+    ext: str | None
 
 
-    def __post_init__(self, **kwargs):
+    def __init__(self, name: str, path: str | Path):
+        self.name = name
+        self.path = Path(path)
+        self.__post_init__()
+
+    def __post_init__(self):
         """Create an Image instance from a file path.
         
         Loads image metadata (dimensions and format) from the specified file
@@ -64,15 +69,21 @@ class Image(Type):
         Raises:
             FileNotFoundError: If the image file doesn't exist.
             PIL.UnidentifiedImageError: If the file is not a valid image.
-        """
-        self.path = Path(self.path)
+        """        
         if not self.path.exists() or not self.path.is_file():
-            raise FileNotFoundError(f"Image file not found: {self.path}")
-        
+            raise FileNotFoundError(f"Image file not found: {self.path}")        
         with ImagePil.open(self.path) as imf:
-            self.format = imf.format
+            self.ext = imf.format
             self.width, self.height = imf.size        
-    
+
+    def get_path(self) -> Path:
+        """Get the file path of the image.
+        
+        Returns:
+            Path: The file path of the image.
+        """
+        return self.path
+
     @staticmethod
     def is_image_file(path: Path) -> bool:
         """Check if a file path represents a supported image format.
@@ -118,7 +129,7 @@ class Image(Type):
         Returns:
             str: MIME type string (e.g., 'image/jpeg', 'image/png').
         """
-        return f"image/{self.format.lower()}" if self.format else "image"      
+        return f"image/{self.ext.lower()}" if self.ext else "image"
 
     def metadata(self) -> dict:
         """Extract metadata dictionary for the image.
@@ -131,7 +142,6 @@ class Image(Type):
             "path": Path(self.path).name,                      
         }    
 
-@dataclass(kw_only=True)
 class ImageCrop(Image):
     """Specialized image class for handling cropped regions of images.
     
@@ -150,6 +160,13 @@ class ImageCrop(Image):
     y_center: float
     width_relative: float
     height_relative: float
+
+    def __init__(self, name: str, path: str | Path, x_center: float, y_center: float, width_relative: float, height_relative: float):
+        super().__init__(name=name, path=path)
+        self.x_center = x_center
+        self.y_center = y_center
+        self.width_relative = width_relative
+        self.height_relative = height_relative
 
     def coordinates(self) -> tuple[float, float, float, float]:
         """Calculate absolute pixel coordinates for the crop region.

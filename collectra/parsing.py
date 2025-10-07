@@ -106,7 +106,7 @@ class OCR(CollectraTask):
     pass
 
 
-def load_class_from_string(path: str):
+def load_class_from_string(path: str | None):
     """Dynamically load a class from a string module path.
     
     Takes a fully qualified class path string and imports the class
@@ -123,8 +123,8 @@ def load_class_from_string(path: str):
         AttributeError: If the class does not exist in the module.
     """
     module_name, class_name = path.rsplit(".", 1)
-    module = importlib.import_module(module_name)
-    cls = getattr(module, class_name)
+    module = importlib.import_module(module_name)    
+    cls = getattr(module, class_name)        
     return cls
 
 

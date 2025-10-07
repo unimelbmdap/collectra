@@ -395,7 +395,7 @@ class YOLOModel(Model):
                 detections[key] = {
                     "image": value,
                     "results": self.thread_safe_detect(value.path)                                  
-                }
+                }                
             elif isinstance(value, list) and all(isinstance(img, Image) for img in value):
                 # Multiple images case
                 detections[key] = []
@@ -403,8 +403,8 @@ class YOLOModel(Model):
                     detections[key].append({
                         "image": img,
                         "results": self.thread_safe_detect(img.path)
-                    })
-            else:
+                    })                
+            else:                
                 raise ValueError(f"Invalid input type for {key}. Expected Image or list of Images.")
         return detections
 
