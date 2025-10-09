@@ -242,6 +242,77 @@ def modify_results_file(
         modify_zipfile(path) 
 
 
+@app.command()
+def show(       
+    path: Annotated[str, tp.Option("--path", "-p", help="collectra file path")], 
+    label: Annotated[str, tp.Option("--label", "-l", help="label of the original image")]
+):
+    """Display the original image with crops and labels from the results.yaml annotation file.
+
+    Args:
+        path (Path): Path to the collectra file containing annotations.        
+
+    """
+
+    def x1y1x2y2(box, img_width, img_height):
+        """Convert relative box coordinates to absolute pixel values.
+
+        Args:
+            box (list): List of normalized coordinates [x_center, y_center, width, height].
+            img_width (int): Width of the image in pixels.
+            img_height (int): Height of the image in pixels.
+
+        Returns:
+            tuple: Absolute pixel coordinates (x1, y1, x2, y2).
+        """
+        x_center, y_center, width, height = box
+        x1 = int((x_center - width / 2) * img_width)
+        y1 = int((y_center - height / 2) * img_height)
+        x2 = int((x_center + width / 2) * img_width)
+        y2 = int((y_center + height / 2) * img_height)
+        return x1, y1, x2, y2
+
+    try:
+        file = Path(path)
+        if not file.exists():
+            raise FileNotFoundError(f"File not found: {file}")
+        results = file / "results.yaml"
+        if not results.exists():
+            raise FileNotFoundError(f"Invalid collectra file")
+        import yaml
+        with open(results, "r") as f:
+            data = yaml.safe_load(f)
+            data.pop("collectra_results_metadata", None)
+        label_data = data.pop(label, None)        
+        if label_data is None:
+            raise ValueError(f"Label '{label}' not found in results.yaml")
+        image_path = file / label_data["path"]
+        from PIL import Image, ImageDraw, ImageFont
+        img = Image.open(image_path)
+        img_width, img_height = img.size
+        draw = ImageDraw.Draw(img)
+        fnt = ImageFont.truetype(Path.cwd() / "samples" / "Trueno.otf", 40)
+        for key, value in data.items():
+            if isinstance(value, list):
+                for item in value:
+                    box = (item["x_center"], item["y_center"], item["width_relative"], item["height_relative"])
+                    x1, y1, x2, y2 = x1y1x2y2(box, img_width, img_height)
+                    draw.rectangle([x1, y1, x2, y2], outline="red", width=2)
+                    bbox=draw.textbbox((x1, y1-40), key, font=fnt)
+                    draw.rectangle(bbox, fill="red")
+                    draw.text((x1, y1-40), key, font=fnt, fill="white")
+            else:
+                box = (value["x_center"], value["y_center"], value["width_relative"], value["height_relative"])
+                x1, y1, x2, y2 = x1y1x2y2(box, img_width, img_height)
+                draw.rectangle([x1, y1, x2, y2], outline="red", width=2)
+                bbox=draw.textbbox((x1, y1-40), key, font=fnt)
+                draw.rectangle(bbox, fill="red")
+                draw.text((x1, y1-40), key, font=fnt, fill="white")
+        img.show()
+
+    except Exception as e:
+        print(f"Failed to display annotations: {e}")
+
 
 if __name__ == "__main__":
     app()

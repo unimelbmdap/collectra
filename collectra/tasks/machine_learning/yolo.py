@@ -1,4 +1,4 @@
-import yaml, tempfile, shutil
+import shutil
 
 from ultralytics import YOLO
 from ultralytics.engine.results import Results
@@ -18,7 +18,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
 
     model: str | Path | YOLO    
 
-    def _ensure_model(self) -> None:
+    def _init_model(self) -> None:
         """Ensure that the YOLO model is loaded before performing any operations."""
         if self.model and isinstance(self.model, (str, Path)):
             self._load(self.model)          
@@ -50,7 +50,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
             list[ImageCrop]: A list of ImageCrop objects representing the detected
                               objects in the input image.
         """
-        self._ensure_model()
+        self._init_model()
         results: Results = (self.model(input.get_path())).pop()
         detections: list[ImageCrop] = []
         coordinates = results.boxes.xywhn if results.boxes else []
@@ -63,14 +63,27 @@ class ObjectDetectionYOLO(MachineLearningTask):
             x, y, w, h = coordinates[index]
             image_crop = ImageCrop(
                 name=names[index],
-                path=image.path,  # type: ignore
+                path=input.get_path(),
                 x_center=float(x),
                 y_center=float(y),
                 width_relative=float(w),
                 height_relative=float(h),
             )
             detections.append(image_crop)
+        print(f"Found {len(detections)} objects in the image.")
         return detections
+    
+    def train(self, train_img: list[ImageCrop], val_img: list[ImageCrop], classes: list[str], **kwargs) -> DetMetrics | None:
+        self._init_model()
+        log_dir: Path = Path(kwargs.pop("log_dir")) if kwargs.get("log_dir", None) else Path.cwd() / "logs"
+        kwargs["log_dir"] = log_dir
+        log_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Training logs will be saved to: {log_dir}")
+        kwargs["config_file"] = self._prepare_yolo_config(classes, train_img, val_img, log_dir)
+        self._prepare_assets(classes, train_img + val_img, log_dir)
+        params = self._prepare_params(**kwargs)                       
+        results: DetMetrics | None = self.model.train(**params)                     
+        return results
 
     def _prepare_yolo_config(
         self,
@@ -121,19 +134,5 @@ class ObjectDetectionYOLO(MachineLearningTask):
             "epochs": kwargs.get("epochs", 1),
             "imgsz": kwargs.get("imgsz", 640),
         }   
-        return params
-
-    def train(self, train_img: list[ImageCrop], val_img: list[ImageCrop], classes: list[str], **kwargs) -> DetMetrics | None:
-        self._ensure_model()
-        log_dir: Path = Path.cwd() / kwargs.pop("log", "logs")
-        kwargs["log_dir"] = log_dir
-        log_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Training logs will be saved to: {log_dir}")
-        # with tempfile.TemporaryDirectory() as tmp_dir:
-        #     tmp_path = Path(tmp_dir)
-        kwargs["config_file"] = self._prepare_yolo_config(classes, train_img, val_img, log_dir)
-        self._prepare_assets(classes, train_img + val_img, log_dir)
-        params = self._prepare_params(**kwargs)                       
-        results: DetMetrics | None = self.model.train(**params)                     
-        return results
+        return params    
 
