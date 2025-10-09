@@ -1,8 +1,0 @@
-llm:
-  type: collectra.LLM
-  model: dummy
-  input: topic
-  output: poem
-  template: "Write a poem about {topic} in {style}"
-  variables:
-    style: haiku

@@ -1,0 +1,37 @@
+collectra_results_metadata:
+  timestamp: '2025-08-16T04:25:51.126362+00:00'
+  validation: true
+
+image_sheet:
+  type: collectra.Image
+  path: restaurant1.jpg
+
+human:
+  - type: collectra.ImageCrop
+    path: restaurant1.jpg
+    x_center: 0.193703
+    y_center: 0.634770
+    width_relative: 0.050502
+    height_relative: 0.115831
+  - type: collectra.ImageCrop
+    path: restaurant1.jpg
+    x_center: 0.907291
+    y_center: 0.664313
+    width_relative: 0.084213
+    height_relative: 0.172582
+
+chair:
+  - type: collectra.ImageCrop
+    path: restaurant1.jpg
+    x_center: 0.662632
+    y_center: 0.671351
+    width_relative: 0.048777
+    height_relative: 0.120690
+  - type: collectra.ImageCrop
+    path: restaurant1.jpg
+    x_center: 0.925907
+    y_center: 0.818573
+    width_relative: 0.148038
+    height_relative: 0.098108
+
+

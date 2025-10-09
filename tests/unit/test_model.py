@@ -11,7 +11,7 @@ from collectra.types.images import Image
 #     with patch("collectra.models.yolo.YOLO") as yolo_mock:
 #         yolo_mock_client = MagicMock()
 #         yolo_mock.return_value = yolo_mock_client
-#         yolo_mock_client.predict.return_value = ["results"]                
+#         yolo_mock_client.predict.return_value = ["results"]
 #         yield yolo_mock, yolo_mock_client
 
 # @pytest.fixture()
@@ -21,18 +21,18 @@ from collectra.types.images import Image
 #         image_mock.return_value = image_instance
 #         yield image_instance
 
-# def test_yolo_model_initialization(mock_yolo_model, model_path):    
+# def test_yolo_model_initialization(mock_yolo_model, model_path):
 #     yolo_mock, _ = mock_yolo_model
 #     model = YOLOModel(model_path)
 #     yolo_mock.assert_called_once_with(model_path, verbose = True)
 #     assert model.get_path() == Path(model_path), "Model path should match the provided path"
 
-# def test_yolo_model_run(model_path, mock_yolo_model):    
+# def test_yolo_model_run(model_path, mock_yolo_model):
 #     yolo_mock, yolo_mock_client = mock_yolo_model
 #     key = "test_image1"
-#     model = YOLOModel(model_path)    
+#     model = YOLOModel(model_path)
 #     test_image1 = Image(Path("tests/data/specimen.jpg"))
-#     detections = model.detect(test_image1=test_image1) # argument key should be same as variable key    
+#     detections = model.detect(test_image1=test_image1) # argument key should be same as variable key
 
 #     yolo_mock.assert_called_once_with(model_path, verbose = True)
 #     yolo_mock_client.predict.assert_called_once()

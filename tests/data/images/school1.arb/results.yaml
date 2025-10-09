@@ -1,0 +1,25 @@
+collectra_results_metadata:
+  timestamp: '2025-08-16T04:25:51.126362+00:00'
+  validation: true
+
+image_sheet:
+  type: collectra.Image
+  path: school1.jpg
+
+table:
+  type: collectra.ImageCrop
+  path: school1.jpg
+  x_center: 0.501357
+  y_center: 0.385575
+  width_relative: 0.145443
+  height_relative: 0.128675
+
+chair:
+  type: collectra.ImageCrop
+  path: school1.jpg
+  x_center: 0.887047
+  y_center: 0.779335
+  width_relative: 0.168965
+  height_relative: 0.437270
+
+

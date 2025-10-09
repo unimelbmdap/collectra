@@ -1,1 +1,1 @@
-This folder contains sample data use for regression testing
+This folder contains sample data use for regression testing.

@@ -1,0 +1,32 @@
+collectra_results_metadata:
+  timestamp: '2025-08-16T04:25:51.126362+00:00'
+  validation: false
+
+image_sheet:
+  type: collectra.Image
+  path: bar1.jpg
+
+human:
+  - type: collectra.ImageCrop
+    path: bar1.jpg
+    x_center: 0.146729 
+    y_center: 0.329624
+    width_relative: 0.073699
+    height_relative: 0.343065
+  - type: collectra.ImageCrop
+    path: bar1.jpg
+    x_center: 0.227609
+    y_center: 0.309103
+    width_relative: 0.082134
+    height_relative: 0.295184
+
+chair:
+  type: collectra.ImageCrop
+  path: bar1.jpg
+  x_center: 0.623751
+  y_center: 0.597571
+  width_relative: 0.118196
+  height_relative: 0.398343
+
+
+

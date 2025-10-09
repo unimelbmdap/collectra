@@ -1,0 +1,24 @@
+collectra_results_metadata:
+  timestamp: '2025-08-16T04:25:51.126362+00:00'
+  validation: false
+
+image_sheet:
+  type: collectra.Image
+  path: car1.jpg
+
+car:
+  - type: collectra.ImageCrop
+    path: car1.jpg
+    x_center: 0.420908
+    y_center: 0.716293
+    width_relative: 0.138966
+    height_relative: 0.094565
+  - type: collectra.ImageCrop
+    path: car1.jpg
+    x_center: 0.664863
+    y_center: 0.715704
+    width_relative: 0.133064
+    height_relative: 0.083924
+
+
+
