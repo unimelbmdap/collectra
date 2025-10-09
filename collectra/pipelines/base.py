@@ -30,6 +30,15 @@ import copy, logging, shutil, os, yaml, datetime
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+def str_presenter(dumper, data):
+    """Represent multi-line strings using block style |"""
+    if "\n" in data:  # only use | when the string has newlines
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data)
+
+yaml.add_representer(str, str_presenter)
+
+
 @dataclass(kw_only=True)
 class Collectra:
     """Main class for managing Collectra workflows and task execution.
