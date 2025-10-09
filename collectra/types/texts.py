@@ -1,3 +1,5 @@
+__all__ = ["Text"]
+
 from pathlib import Path
 
 from .base import Type

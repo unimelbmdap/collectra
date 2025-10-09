@@ -15,6 +15,7 @@ Classes:
     CollectraManager: Main manager class for workflow operations
 """
 
+import os
 from dataclasses import dataclass, field
 from collectra.pipelines.base import Collectra
 from collectra.pipelines.handlers import DirectoryHandler, ZipHandler
@@ -87,8 +88,16 @@ class CollectraManager:
         Args:
             path (Path): The path to the directory containing the workflow configuration.
         """
+        # Save CWD
+        cwd = Path.cwd()
+        if path.is_dir():
+            os.chdir(path)    
+
         data = from_dir(path)                    
         self._load_pipeline(data, path, as_dir=True)
+
+        # Revert current working directory
+        os.chdir(cwd)    
 
     def _load_zip(self, path: Path):
         """Load an existing Collectra workflow from a zip file.

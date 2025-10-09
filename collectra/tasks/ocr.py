@@ -74,6 +74,7 @@ class SuryaLineDetector(Task):
         from surya.detection import DetectionPredictor
 
         self.detection_predictor = DetectionPredictor()
+        self.min_height = self.min_height or 0
 
     def input_type(self) -> type | tuple:
         """Define the expected input types for this LLM task.
@@ -117,7 +118,7 @@ class SuryaLineDetector(Task):
             # Sort bounding boxes vertically
             bounding_boxes = sorted([polygon_box.bbox for polygon_box in predictions[0].bboxes], key=lambda bbox:bbox[1])
 
-            if len(bounding_boxes) == 0 or image.height <= self.min_height:
+            if len(bounding_boxes) == 0 or (self.min_height and image.height <= self.min_height):
                 crop = image.make_crop(0.5, 0.5, 1.0, 1.0)
                 results.append(crop)
             elif self.merge_horizontal:
@@ -143,8 +144,7 @@ class SuryaLineDetector(Task):
                     results.append(crop)
 
             for output_key in self.output.keys():
-                if key in output_key:
-                    self.output[output_key] = results
+                self.output[output_key] = results
 
 
 
