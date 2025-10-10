@@ -156,6 +156,7 @@ class Image(Type):
             height_relative = min_height/self.height
 
         return ImageCrop(
+            name=self.name,
             path=self.path,
             x_center=x_center,
             y_center=y_center,
@@ -319,6 +320,7 @@ class ImageCrop(Image):
         assert 0.0 <= height_relative <= 1.0, f"y_center is {height_relative}"
 
         return ImageCrop(
+            name=self.name,
             path=self.path,
             x_center=self.x_center + (x_center - 0.5) * self.width_relative,
             y_center=self.y_center + (y_center - 0.5) * self.height_relative,
