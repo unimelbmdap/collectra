@@ -30,7 +30,6 @@ llmloader = ">=0.1.4"
 langchain-core = "^0.3.75"
 dask = "^2025.9.1"
 ray = "^2.49.2"
-surya-ocr = "^0.17.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=6.2.5"
