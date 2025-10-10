@@ -21,7 +21,7 @@ from collectra.types.texts import Text
 from collectra.utils import success_msg, processing_msg
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
-from langchain_core.output_parsers import StrOutputParser
+from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from pathlib import Path
 from rich import print
@@ -30,7 +30,6 @@ import copy, llmloader, re
 
 load_dotenv()
 
-@dataclass(kw_only=True)
 class LLM(Task):
     """Task for Large Language Model inference operations.
     
@@ -46,57 +45,24 @@ class LLM(Task):
         max_tokens (int): Maximum number of tokens to generate.
         variables (dict): Additional variables for template substitution.
     """
-
     name: str
     model: str
-    template: str | Path    
-    temperature: float = 0.8
-    max_tokens: int = 250
-    output_filename: str|None = None
+    template: str | Path = field(init=False, default="")    
+    temperature: float = field(init=False, default=0.8)
+    max_tokens: int = field(init=False, default=250)    
     variables: dict = field(default_factory=dict)
 
-    def input_type(self) -> type | tuple:
-        """Define the expected input types for this LLM task.
-        
-        Returns:
-            type | tuple: Tuple of str and Path types for text and file inputs.
-        """
-        return Text, Image 
-
-    def output_type(self) -> type | tuple:
-        """Define the expected output types for this LLM task.
-        
-        Returns:
-            type | tuple: String type for generated text outputs.
-        """
-        return dict
-
-    def process_inputs(self, **kwargs) -> tuple:
-        """Process and merge input arguments with predefined variables.
-        
-        Combines the provided keyword arguments with the task's predefined
-        variables to create a unified set of template substitution parameters.
-        
-        Args:
-            **kwargs: Input arguments provided to the task.
-            
-        Returns:
-            tuple: Items from the merged dictionary of variables and inputs.
-        """
-        kwargs.update(self.variables)     
-        return kwargs.items() # type: ignore
-
-    def __post_init__(self):
-        """Initialize the LLM instance and message templates after object creation.
-        
-        Loads the specified LLM model using the llmloader library and sets up
-        the initial system message for the conversation context.
-        """
-        self.llm = llmloader.load(Path(self.model).name, temperature=self.temperature, max_tokens=self.max_tokens)           
-        self.messages: list[SystemMessage | HumanMessage] = [
-            SystemMessage(content=self.config.get("system", ""))
-        ]    
+    def __init__(self, name: str, model: str, **kwargs):
+        self.name = name
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        self.temperature = kwargs.get("temperature", 0.8)
+        self.max_tokens = kwargs.get("max_tokens", 250)
+        self.llm = llmloader.load(model, temperature=self.temperature, max_tokens=self.max_tokens)
+        init_messages = SystemMessage(content=kwargs.get("system", "")) if kwargs.get("system", "") else SystemMessage(content="You are a helpful assistant.")
+        self.messages: list[SystemMessage | HumanMessage] = [init_messages]
     
+        
     def image_content(self, image: Image):
         """Create image content dictionary for multimodal LLM input.
         
@@ -192,7 +158,7 @@ class LLM(Task):
             content.append(self.add_text(prompt, key, str(value)))             
         return content
     
-    def run(self, **kwargs):
+    def run(self, inputs: list[ Text | Image | dict[Text, Image]], **kwargs) -> Text:
         """Execute LLM inference on the provided inputs with template-based prompt generation.                
         
         For list inputs, each item is processed individually and results are collected
@@ -209,6 +175,7 @@ class LLM(Task):
             that contain the input key as a substring will be populated with LLM results.
             Prints a success message when inference completes.
         """ 
+        prompt = str(self.template)
         prompt = str(self.template)                       
         items = self.process_inputs(**kwargs)   
         parser = StrOutputParser()                

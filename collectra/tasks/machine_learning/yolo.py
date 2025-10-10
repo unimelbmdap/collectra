@@ -1,6 +1,6 @@
 import shutil
 
-from ultralytics import YOLO
+from ultralytics.models import YOLO
 from ultralytics.engine.results import Results
 from ultralytics.utils.metrics import DetMetrics
 
@@ -108,8 +108,8 @@ class ObjectDetectionYOLO(MachineLearningTask):
         for img in images:
             src = img.get_path()
             dst = log_dir / src.name
-            if not dst.exists():
-                shutil.copy(src, dst)            
+            if not dst.exists():  # Only copy if the file does not already exist
+                shutil.copy(src, dst)
             name_index = classes.index(img.name) if img.name in classes else -1
             if not name_index:
                 continue

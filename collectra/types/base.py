@@ -2,6 +2,8 @@ from pathlib import Path
 from collectra.commons import MetaClass
 from typing import TypeVar
 
+T = TypeVar("T")
+
 class Type(MetaClass):
     def serialize(self) -> dict:
         serialized = dict(type=self.get_class_path())
@@ -29,6 +31,3 @@ class Type(MetaClass):
             'collectra.images.Image'
         """
         return f"{cls.__module__}.{cls.__qualname__}"
-
-
-T = TypeVar("T")
