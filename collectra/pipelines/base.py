@@ -15,9 +15,11 @@ Classes:
     Collectra: Main workflow management class
     CollectraResult: Container for workflow execution results
 """
+import os
 
 from collectra.tasks.base import Task, TaskResult
 from collectra.tasks.ml import MachineLearningTask
+from collectra.parsing import parse_results
 from collectra.utils import error_msg, success_msg, processing_msg
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,6 +29,15 @@ import copy, logging, shutil, os, yaml, datetime
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+def str_presenter(dumper, data):
+    """Represent multi-line strings using block style |"""
+    if "\n" in data:  # only use | when the string has newlines
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data)
+
+yaml.add_representer(str, str_presenter)
+
 
 @dataclass(kw_only=True)
 class Collectra:
@@ -57,6 +68,7 @@ class Collectra:
     tasks: list[Task] = field(default_factory=list)      
     flow: nx.DiGraph | None = None
     results: dict = field(default_factory=dict)
+    status_of_tasks : dict = field(default_factory=dict)
     cli_kwargs: list[str] = field(default_factory=list)
 
     def __post_init__(self):
@@ -86,7 +98,7 @@ class Collectra:
         Returns:
             dict: Dictionary containing the workflow execution results.
         """
-        return self.results
+        return self.status_of_tasks
 
     def is_pipeline_dir(self) -> bool:
         """Check if the pipeline output should be treated as a directory structure.
@@ -260,9 +272,33 @@ class Collectra:
         self.cli_kwargs = list(kwargs.keys())      
         if output is None and 'file' in kwargs:
             output = Path(kwargs["file"])
-        self.run(task_name, output=output, **kwargs)
+        
+        assert output is not None
+        output = Path(output)
+        
+        # set current working directory to 'file'
+        self.results = self.parse(**kwargs)
 
-    def run(self, task_name: str, output: Path, **kwargs):
+        # set current working directory to 'file'
+        os.chdir(output)
+
+        self.run(task_name, output=output, **kwargs)
+        
+    def parse(self, **kwargs) -> dict:
+        results = dict()
+
+        if "file" in kwargs:
+            file = kwargs.pop("file")
+            file_path = Path(file)        
+            if self.format != file_path.suffix.replace(".", ""):
+                raise ValueError(f"File format {file_path.suffix} does not match expected format {self.format}")
+            
+            results = parse_results(file_path)
+        
+        results.update(kwargs)
+        return results
+
+    def run(self, task_name: str, output: Path, force:bool=False, **kwargs):
         """Execute the workflow starting from the specified task or root tasks.
         
         Args:
@@ -282,15 +318,15 @@ class Collectra:
         if task_name and not initial_nodes:
             raise ValueError(f"Task {task_name} not found in the workflow.")
         single = kwargs.pop("single", False)
-        self._run_nodes(initial_nodes, single=single, **kwargs)
+        self._run_nodes(initial_nodes, single=single, force=force)
         if self.result.failed_tasks:
             self.result.status = "failed" if not self.result.successful_tasks else "partial"   
         if self.result.status == "partial" or self.result.status == "failed":
             for failed_task in self.result.failed_tasks:
                 print(error_msg(f"Task {failed_task.task.name} failed with error:\n{failed_task.get_error()}"))     
-        self.result.save(output, keys_to_remove=self.cli_kwargs, format=self.format, as_dir=self.is_pipeline_dir(), **kwargs)    
+        self.save(output, keys_to_remove=self.cli_kwargs, format=self.format, as_dir=self.is_pipeline_dir(), **kwargs)    
 
-    def _run_nodes(self, nodes: list[str], single: bool=False, **kwargs):
+    def _run_nodes(self, nodes: list[str], single: bool=False, force:bool=False):
         """Recursively execute workflow nodes and their dependencies.
         
         Args:
@@ -303,19 +339,31 @@ class Collectra:
         """        
         if self.flow is None:
             raise ValueError(f"Pipeline is not initialised for: {self.name}")                 
-        for node in nodes:
+        for task_name in nodes:
+            # If output already exists in self.results, continue
+            task = self._get_task(task_name)    
             try:                
-                task_result: TaskResult = self._run_task(node, **kwargs)                                                                                                              
-                output_data = copy.deepcopy(task_result.output)                
-                self.result.successful_tasks.append(task_result)                                     
-                children_nodes = list(self.flow.successors(node)) if single is False else []                        
+                if not all(key in self.results for key in task.input.keys()):
+                    print(f"Some inputs for task {task} are missing. Skipping")
+                    continue
+                
+                if any(key in self.results for key in task.output.keys()) and not force:
+                    print(f"Some outputs complete for task {task}. Skipping")
+                else:
+                    task_result: TaskResult = self._run_task(task_name)                                                                                                              
+                    output_data = copy.deepcopy(task_result.output)      
+
+                    self.results.update(output_data)
+                    self.result.successful_tasks.append(task_result)                                     
+                
+                children_nodes = list(self.flow.successors(task_name)) if single is False else []                        
                 if children_nodes:
-                    self._run_nodes(children_nodes, **output_data)                                
+                    self._run_nodes(children_nodes)                                
             except Exception as e:
-                task_result = TaskResult.create_failed(self._get_task(node), e)                
+                task_result = TaskResult.create_failed(self._get_task(task_name), e)                
                 self.result.failed_tasks.append(task_result)
 
-    def _run_task(self, task_name: str, **kwargs) -> TaskResult:
+    def _run_task(self, task_name: str) -> TaskResult:
         """Execute a single task in the workflow.
         
         Args:
@@ -332,7 +380,7 @@ class Collectra:
         }                        
         task.set_config(task_config)            
         print(processing_msg(f"Running task: {task.name}"))               
-        return task(**kwargs)                               
+        return task(**self.results)                               
 
     def _find_task_by_name(self, task_name: str) -> list[Task]:
         """Find tasks in the workflow by name.
@@ -390,7 +438,54 @@ class Collectra:
         }                
         task.set_config(task_config)        
         model_path = task.train()
-        task.set_model(model_path)        
+        task.set_model(model_path)       
+
+    def save(self, output: Path, **kwargs) -> None:
+        """Save workflow execution results to the specified output path.
+        
+        Aggregates results from all successful task executions and saves them
+        to a YAML file along with associated output files. Creates the output
+        directory if it doesn't exist.
+        
+        Args:
+            output (Path): Directory path where results will be saved.
+            **kwargs: Additional keyword arguments passed to task save methods.
+            
+        Raises:
+            ValueError: If no successful tasks exist to save or no result path
+                can be determined.
+        """
+        # if not self.successful_tasks:
+        #     raise ValueError("No successful tasks to save.")      
+        
+        final_result_dict = {
+             "collectra_results_metadata":{
+                "timestamp": datetime.datetime.now().isoformat(), 
+                "validation": False
+            }
+        } 
+        final_result_dict.update(self.results)
+        final_result_path = output
+        final_result_files = set()
+        if not final_result_path:
+            raise ValueError("No result path to save.")    
+        os.makedirs(final_result_path, exist_ok=True)      
+             
+        with open(final_result_path / "results.yaml", "w", encoding="utf-8") as f:
+            for key, value in final_result_dict.items():
+                if isinstance(value, list):
+                    value = [item.serialize() if hasattr(item, "serialize") else item for item in value]
+                elif hasattr(value, "serialize"):
+                    value = value.serialize()
+
+                yaml_representation_str = yaml.dump({key: value}, default_flow_style=False, sort_keys=False, allow_unicode=True)
+                f.write(yaml_representation_str)
+                f.write("\n")                
+        for file in final_result_files:
+            if (final_result_path / file.name).exists():
+                continue        
+            shutil.copy(file, final_result_path / file.name) 
+
 
 @dataclass(kw_only=True)
 class CollectraResult:
@@ -408,59 +503,3 @@ class CollectraResult:
     failed_tasks: list = field(default_factory=list)
     status: str = "success"  # success, partial, failed
 
-    def save(self, output: Path, **kwargs) -> None:
-        """Save workflow execution results to the specified output path.
-        
-        Aggregates results from all successful task executions and saves them
-        to a YAML file along with associated output files. Creates the output
-        directory if it doesn't exist.
-        
-        Args:
-            output (Path): Directory path where results will be saved.
-            **kwargs: Additional keyword arguments passed to task save methods.
-            
-        Raises:
-            ValueError: If no successful tasks exist to save or no result path
-                can be determined.
-        """
-        if not self.successful_tasks:
-            raise ValueError("No successful tasks to save.")      
-        final_result_dict = {
-             "collectra_results_metadata":{
-                "timestamp": datetime.datetime.now().isoformat(), 
-                "validation": False
-            }
-        } 
-        final_result_path = output
-        final_result_files = set()
-        for task_result in self.successful_tasks:                                                                             
-            result_path, result_dict, files = task_result.task.save(output_path=output, output_data=final_result_dict, **kwargs)                            
-            final_result_dict.update(result_dict)    
-            final_result_files.update(files)            
-            final_result_path = result_path if result_path else final_result_path        
-        if not final_result_path:
-            raise ValueError("No result path to save.")    
-        os.makedirs(final_result_path, exist_ok=True)      
-             
-        with open(final_result_path / "results.yaml", "w", encoding="utf-8") as f:
-            for key, value in final_result_dict.items():
-                yaml_representation_str = yaml.dump({key: value}, default_flow_style=False, sort_keys=False, allow_unicode=True)
-                f.write(yaml_representation_str)
-                f.write("\n")                
-        for file in final_result_files:
-            if (final_result_path / file.name).exists():
-                continue        
-            shutil.copy(file, final_result_path / file.name) 
-        if kwargs.get("print_log", False):
-            log_message = f"""
-                Results saved to {final_result_path}
-                Successful tasks: {[str(task) for task in self.successful_tasks]}
-                Failed tasks: {[str(task) for task in self.failed_tasks]}
-            """
-            print(log_message)
-            if self.status == "partial":
-                print(error_msg("Some tasks failed during execution."))
-            elif self.status == "failed":
-                print(error_msg("All tasks failed during execution."))
-            else:
-                print(success_msg(f"All tasks completed successfully."))

@@ -24,7 +24,7 @@ class TaskManager:
     """
 
     @staticmethod
-    def build(task: dict) -> Task:
+    def build(task: dict) -> Task: # This should just be a 'node'
         """Build a Task instance from a configuration dictionary.
         
         Dynamically loads the task class based on the 'type' field and
@@ -46,6 +46,14 @@ class TaskManager:
             raise ValueError("Task name cannot be empty.")
         if not task.get("type"):
             raise ValueError("Task type is required.")
-        module_name, class_name = task["type"].rsplit(".", 1)
-        cls = getattr(importlib.import_module(module_name), class_name)                     
-        return cls.build(**task)
+        node_type = task.pop("type")
+        module_name, class_name = node_type.rsplit(".", 1)
+        cls = getattr(importlib.import_module(module_name), class_name)     
+        
+        ## Hack
+        # It should just be the constructor. 
+        # We shouldn't need a 'build' method
+        if hasattr(cls, 'build'):                
+            return cls.build(**task)
+        task.pop("name")  
+        return cls(**task)

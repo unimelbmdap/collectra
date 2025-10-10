@@ -21,10 +21,11 @@ Classes:
 
 from pathlib import Path
 import yaml
+import os
 import networkx as nx
 import importlib
 from dataclasses import dataclass, field
-
+from collectra.utils import from_dir, unzip
 
 @dataclass(kw_only=True)
 class CollectraNode:
@@ -240,3 +241,33 @@ class CollectraWorkflow:
             graph.render(str(output.with_suffix("")), format=format, cleanup=True)
 
         return dot_string
+
+
+def parse_item(data):
+    if isinstance(data, dict) and "type" in data:
+        type_name = data.pop("type")
+        type = load_class_from_string(type_name)
+        data = type(**data)
+    return data
+
+
+def parse_results(file_path:Path|str) -> dict:
+    file_path = Path(file_path).absolute()
+    
+    cwd = Path.cwd()
+
+    # set current working directory to 'file'
+    if file_path.is_dir():
+        os.chdir(file_path)    
+    
+    results = unzip(file_path, "results.yaml") if file_path.is_file() else from_dir(file_path, "results.yaml") if file_path.is_dir() else dict()                                    
+    for key, data in results.items():       
+        if isinstance(data, list):
+            results[key] = [parse_item(data_item) for data_item in data]
+        else:
+            results[key] = parse_item(data)
+
+    # Revert current working directory
+    os.chdir(cwd)    
+
+    return results

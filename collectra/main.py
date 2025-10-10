@@ -169,7 +169,8 @@ def run(
     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],    
     ctx: Context,
     task: Annotated[str, Option("--task", "-t", help="task to run")] = "",    
-    output: Annotated[Path|None, Option("--output", "-o", help="output directory")]= None
+    output: Annotated[Path|None, Option("--output", "-o", help="output directory")]= None,
+    force:bool = False,
 ):
     """Execute a Collectra workflow or specific task within a workflow.
 
@@ -195,8 +196,10 @@ def run(
         manager =  CollectraManager()                
         manager.load(workflow)                
         pipeline = manager.get_pipeline()                
-        pipeline(task, output, **inputs)        
+        pipeline(task, output, force=force, **inputs)        
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(error_msg(f"Failed to run task: {e}"))
 
 

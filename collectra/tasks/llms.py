@@ -52,6 +52,7 @@ class LLM(Task):
     template: str | Path    
     temperature: float = 0.8
     max_tokens: int = 250
+    output_filename: str|None = None
     variables: dict = field(default_factory=dict)
 
     def input_type(self) -> type | tuple:
@@ -209,7 +210,7 @@ class LLM(Task):
             Prints a success message when inference completes.
         """ 
         prompt = str(self.template)                       
-        items = self.process_inputs(**kwargs)       
+        items = self.process_inputs(**kwargs)   
         parser = StrOutputParser()                
         for key, value in items:
             if not bool(value) or (isinstance(value, str) and not value):
@@ -222,17 +223,25 @@ class LLM(Task):
                     message.append(HumanMessage(content=[prompt_text, file_content])) 
                     message.append(AIMessage(content="Here is the text:"))                                           
                     for output_key in self.output.keys():
-                        if key in output_key:
-                            if not self.output[output_key] or not isinstance(self.output[output_key], list):
-                                self.output[output_key] = list()
-                            self.output[output_key].append(parser.invoke(self.llm.invoke(message)))                
+                        if not self.output[output_key] or not isinstance(self.output[output_key], list):
+                            self.output[output_key] = list()
+                        resulting_text = parser.invoke(self.llm.invoke(message))
+                        print(resulting_text)
+                        self.output[output_key].append(resulting_text)                
             else:
                 message = self.messages.copy()
                 message.append(HumanMessage(content=content))
                 message.append(AIMessage(content="Here is the text:"))                        
                 for output_key in self.output.keys():
-                    if key in output_key:
-                        self.output[output_key] = parser.invoke(self.llm.invoke(message))     
+                    resulting_text = parser.invoke(self.llm.invoke(message))  
+                    print(resulting_text)
+                    self.output[output_key] = resulting_text
+
+                    if self.output_filename:
+                        output_filepath = Path(self.output_filename)
+                        output_filepath.parent.mkdir(exist_ok=True, parents=True)
+                        output_filepath.write_text(resulting_text) # Only works for single output
+
 
         print(f"{self} output:", self.output)                                                                
         print(success_msg(f"[yellow]Inference Complete.[/yellow]"))            
@@ -264,6 +273,12 @@ class LLM(Task):
         output_data = kwargs.get("output_data", dict())
         result_data = dict()
         for key in self.output:
+            # Save to path
+            if self.output_filename:
+                output_filepath = output_path/self.output_filename
+                output_filepath.parent.mkdir(exist_ok=True, parents=True)
+                output_filepath.write_text(self.output[key]) # Only works for single output
+
             output_is_list = isinstance(self.output[key], list)
             data_key = key.replace("_text", "")
             if data_key in output_data:

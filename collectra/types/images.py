@@ -44,8 +44,8 @@ class Image(Type):
     """
     name: str
     path: Path
-    width: int  # Image width in pixels
-    height: int # Image height in pixels
+    raw_width: int  # Image width in pixels
+    raw_height: int # Image height in pixels
     ext: str | None
 
 
@@ -53,6 +53,16 @@ class Image(Type):
         self.name = name
         self.path = Path(path)
         self.__post_init__()
+    def attributes_to_ignore(self):
+        return {"raw_width", "raw_height", "format"}
+    
+    @property
+    def width(self):
+        return self.raw_width
+
+    @property
+    def height(self):
+        return self.raw_height
 
     def __post_init__(self):
         """Create an Image instance from a file path.
@@ -74,7 +84,7 @@ class Image(Type):
             raise FileNotFoundError(f"Image file not found: {self.path}")        
         with ImagePil.open(self.path) as imf:
             self.ext = imf.format
-            self.width, self.height = imf.size        
+            self.raw_width, self.raw_height = imf.size        
 
     def get_path(self) -> Path:
         """Get the file path of the image.
@@ -142,6 +152,7 @@ class Image(Type):
             "path": Path(self.path).name,                      
         }    
 
+@dataclass(kw_only=True)
 class ImageCrop(Image):
     """Specialized image class for handling cropped regions of images.
     
@@ -168,6 +179,14 @@ class ImageCrop(Image):
         self.width_relative = width_relative
         self.height_relative = height_relative
 
+    @property
+    def width(self):
+        return self.width_relative * self.raw_width
+
+    @property
+    def height(self):
+        return self.height_relative * self.raw_height
+
     def coordinates(self) -> tuple[float, float, float, float]:
         """Calculate absolute pixel coordinates for the crop region.
         
@@ -178,15 +197,18 @@ class ImageCrop(Image):
             tuple[float, float, float, float]: Absolute coordinates as 
                 (left, upper, right, bottom) in pixels.
         """
-        x_center = self.x_center * self.width
-        y_center = self.y_center * self.height
-        actual_width_half = self.width * self.width_relative / 2
-        actual_height_half = self.height * self.height_relative / 2
-        left = max(0, min(int(x_center - actual_width_half), self.width))
-        upper = max(0, min(int(y_center - actual_height_half), self.height))
-        right = max(0, min(int(x_center + actual_width_half), self.width))
-        bottom = max(0, min(int(y_center + actual_height_half), self.height))
+        x_center = self.x_center * self.raw_width
+        y_center = self.y_center * self.raw_height
+        actual_width_half = self.raw_width * self.width_relative / 2
+        actual_height_half = self.raw_height * self.height_relative / 2
+        left = max(0, min(int(x_center - actual_width_half), self.raw_width))
+        upper = max(0, min(int(y_center - actual_height_half), self.raw_height))
+        right = max(0, min(int(x_center + actual_width_half), self.raw_width))
+        bottom = max(0, min(int(y_center + actual_height_half), self.raw_height))
         return (left, upper, right, bottom)
+
+    def pil(self) -> ImagePil:
+        return crop(path=self.path, coordinates=self.coordinates())
 
     def load(self) -> bytes:
         """Load the cropped region as raw bytes.
@@ -197,7 +219,7 @@ class ImageCrop(Image):
         Returns:
             bytes: Raw binary content of the cropped image region.
         """
-        img = crop(path=self.path, coordinates=self.coordinates())
+        img = self.pil()
         buffer = io.BytesIO()
         img.save(buffer, format=self.format)
         buffer.seek(0)        
@@ -251,3 +273,35 @@ class ImageCrop(Image):
                 "height_relative": img.height_relative,
             })
         return metadata
+
+    def make_crop(
+            self, 
+            x_center:float, 
+            y_center:float, 
+            width_relative:float, 
+            height_relative:float,
+            min_height:float=0.0,
+    ) -> "ImageCrop":
+        x_center = float(x_center)
+        y_center = float(y_center)
+        width_relative = float(width_relative)
+        height_relative = float(height_relative)
+
+        if min_height > self.height:
+            y_center = 0.0
+            height_relative = 1.0
+        elif height_relative < min_height/self.height:
+            height_relative = min_height/self.height            
+
+        assert 0.0 <= x_center <= 1.0, f"x_center is {x_center}"
+        assert 0.0 <= y_center <= 1.0, f"y_center is {y_center}"
+        assert 0.0 <= width_relative <= 1.0, f"y_center is {width_relative}"
+        assert 0.0 <= height_relative <= 1.0, f"y_center is {height_relative}"
+
+        return ImageCrop(
+            path=self.path,
+            x_center=self.x_center + (x_center - 0.5) * self.width_relative,
+            y_center=self.y_center + (y_center - 0.5) * self.height_relative,
+            width_relative=width_relative * self.width_relative,
+            height_relative=height_relative * self.height_relative,
+        )
