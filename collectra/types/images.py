@@ -28,7 +28,7 @@ from collectra.utils import crop
 
 from .base import Type
 
-
+@dataclass(kw_only=True)
 class Image(Type):
     """Base class for handling image data and metadata in Collectra workflows.
     
@@ -38,22 +38,17 @@ class Image(Type):
     
     Attributes:
         path (str): File system path to the image file.
-        width (int): Width of the image in pixels.
-        height (int): Height of the image in pixels.
+        raw_width (int): Width of the image in pixels.
+        raw_height (int): Height of the image in pixels.
         format (str | None): Image format (PNG, JPEG, etc.) or None if unknown.
     """
-    name: str
-    path: Path
-    raw_width: int  # Image width in pixels
-    raw_height: int # Image height in pixels
-    ext: str | None
+    name: str  # Identifying name for the image
+    path: Path # Path to the image file
+    raw_width: int = field(init=False)  # Image width in pixels
+    raw_height: int = field(init=False) # Image height in pixels
+    ext: str | None = field(init=False, default=None) # Image format (e.g., PNG, JPEG)
 
-
-    def __init__(self, name: str, path: str | Path):
-        self.name = name
-        self.path = Path(path)
-        self.__post_init__()
-    def attributes_to_ignore(self):
+    def attributes_to_ignore(self):        
         return {"raw_width", "raw_height", "format"}
     
     @property
@@ -80,6 +75,7 @@ class Image(Type):
             FileNotFoundError: If the image file doesn't exist.
             PIL.UnidentifiedImageError: If the file is not a valid image.
         """        
+        self.path = Path(self.path)
         if not self.path.exists() or not self.path.is_file():
             raise FileNotFoundError(f"Image file not found: {self.path}")        
         with ImagePil.open(self.path) as imf:
@@ -152,6 +148,37 @@ class Image(Type):
             "path": Path(self.path).name,                      
         }    
 
+    def pil(self) -> ImagePil.Image:
+        return ImagePil.open(self.path)
+    
+    def make_crop(self, x_center:float, y_center:float, width_relative:float, height_relative:float, min_height:float=0.0) -> "ImageCrop":
+        if height_relative < min_height/self.height:
+            height_relative = min_height/self.height
+
+        return ImageCrop(
+            path=self.path,
+            x_center=x_center,
+            y_center=y_center,
+            width_relative=width_relative,
+            height_relative=height_relative,
+        )
+
+    def make_crop_bounding_box(self, left, top, right, bottom, min_height:float=0.0) -> "ImageCrop":
+        bbox_width = right - left
+        bbox_height = bottom - top
+        x_center = (left + 0.5 * bbox_width)/self.width
+        y_center = (top + 0.5 * bbox_height)/self.height
+        width_relative = bbox_width/self.width
+        height_relative = bbox_height/self.height
+
+        return self.make_crop(
+            x_center=x_center,
+            y_center=y_center,
+            width_relative=width_relative,
+            height_relative=height_relative,
+            min_height=min_height,
+        )
+
 @dataclass(kw_only=True)
 class ImageCrop(Image):
     """Specialized image class for handling cropped regions of images.
@@ -171,13 +198,6 @@ class ImageCrop(Image):
     y_center: float
     width_relative: float
     height_relative: float
-
-    def __init__(self, name: str, path: str | Path, x_center: float, y_center: float, width_relative: float, height_relative: float):
-        super().__init__(name=name, path=path)
-        self.x_center = x_center
-        self.y_center = y_center
-        self.width_relative = width_relative
-        self.height_relative = height_relative
 
     @property
     def width(self):
@@ -207,7 +227,7 @@ class ImageCrop(Image):
         bottom = max(0, min(int(y_center + actual_height_half), self.raw_height))
         return (left, upper, right, bottom)
 
-    def pil(self) -> ImagePil:
+    def pil(self) -> ImagePil.Image:
         return crop(path=self.path, coordinates=self.coordinates())
 
     def load(self) -> bytes:
@@ -221,7 +241,7 @@ class ImageCrop(Image):
         """
         img = self.pil()
         buffer = io.BytesIO()
-        img.save(buffer, format=self.format)
+        img.save(buffer, format=self.ext)
         buffer.seek(0)        
         return buffer.read()
     
