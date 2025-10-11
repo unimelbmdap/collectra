@@ -19,14 +19,18 @@ Functions:
     get_all_files: Collect files matching format from paths
     unzip: Extract configuration from zip files
     from_dir: Load configuration from directory
+    load_class_from_string: Dynamically load class from string
     crop: Crop images using specified coordinates
 """
+
+import zipfile, yaml
+import importlib
 
 from typing import List
 from pathlib import Path
 from tqdm import tqdm
 from PIL import Image as ImagePil
-import zipfile, yaml
+
 
 
 def success_msg(message: str):
@@ -192,3 +196,24 @@ def crop(
         if show:
             im_crop.show()
     return im_crop
+
+def load_class_from_string(path: str | None):
+    """Dynamically load a class from a string module path.
+
+    Takes a fully qualified class path string and imports the class
+    for instantiation. Used for loading task classes from configuration.
+
+    Args:
+        path (str): Fully qualified class path (e.g., 'module.submodule.ClassName').
+
+    Returns:
+        type: The loaded class object ready for instantiation.
+
+    Raises:
+        ImportError: If the module cannot be imported.
+        AttributeError: If the class does not exist in the module.
+    """
+    module_name, class_name = path.rsplit(".", 1)
+    module = importlib.import_module(module_name)
+    cls = getattr(module, class_name)
+    return cls

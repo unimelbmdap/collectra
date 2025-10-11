@@ -27,8 +27,9 @@ class Task(Generic[T]):
 
     name: str
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, **kwargs) -> None:
         self.name = name
+        self.data = kwargs
 
     def get_name(self) -> str:
         """Get the name of the task.
@@ -83,3 +84,4 @@ class Task(Generic[T]):
 
         """
         return self.run(**kwargs)
+        

@@ -27,8 +27,8 @@ class MachineLearningTask(Task, Generic[T]):
 
     model: T
 
-    def __init__(self, name: str, model: T = None) -> None:
-        super().__init__(name)
+    def __init__(self, name: str, model: T = None, **kwargs) -> None:
+        super().__init__(name, **kwargs)
         self.model = model
 
     def get_model(self) -> T:
