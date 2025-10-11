@@ -3,7 +3,7 @@ from pathlib import Path
 from collectra import ObjectDetectionYOLO, ImageCrop
 
 
-def test_train_yolo_temp_dir(classes, images, model, debug):
+def test_train_yolo_temp_dir(classes, images, model, train_yolo, debug):
     """Test training YOLO model with temporary directory for logs and weights.
 
     This test verifies that the YOLO training process completes successfully,
@@ -25,24 +25,21 @@ def test_train_yolo_temp_dir(classes, images, model, debug):
         assert (
             len(validation_images) > 0
         ), "No images provided for validation. Check fixture"
-        log_dir = Path("log_dir")
-        Path(log_dir).mkdir(exist_ok=True)
         yolo_task = ObjectDetectionYOLO(name="label-detector", model=model)
         assert isinstance(yolo_task, ObjectDetectionYOLO)
         assert isinstance(yolo_task.model, str) or isinstance(
             yolo_task.model, Path
         ), "Model should be a string or path initially"
-        results = yolo_task.train(
-            train_img=train_images,
-            val_img=validation_images,
-            classes=classes,
-            log_dir=log_dir,
-        )
+        results, log_dir = train_yolo(
+            task=yolo_task,
+            train_images=train_images,
+            validation_images=validation_images,
+            classes=classes)      
         assert results, "Training failed to return any results"
         assert results.results_dict is not None, "results_dict should exist"
         best_model_path = results.save_dir / "weights" / "best.pt"
         assert best_model_path.exists(), f"best.pt not found in {best_model_path}"
-        shutil.rmtree(log_dir, ignore_errors=True)
+        shutil.rmtree(log_dir, ignore_errors=True)  
     except Exception as e:
         debug(e)
 
