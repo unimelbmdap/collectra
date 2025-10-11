@@ -22,7 +22,7 @@ import networkx as nx
 
 from pathlib import Path
 
-from collectra import Task
+from collectra import Task, MachineLearningTask
 from collectra.utils import load_class_from_string
 
 logger = logging.getLogger(__name__)
@@ -78,4 +78,9 @@ class Collectra:
     def run(self, task_name: str, **kwargs):        
         task = self.task(task_name, build=True)
         assert isinstance(task, Task)
-        result = task(**kwargs)
+        TaskManager.execute(task, **kwargs)
+    
+    def train(self, task_name: str, **kwargs):
+        task = self.task(task_name, build=True)
+        assert isinstance(task, MachineLearningTask)        
+        TaskManager.train(task, **kwargs)
