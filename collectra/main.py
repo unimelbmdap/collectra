@@ -30,6 +30,7 @@ logging.basicConfig(stream=sys.stdout)
 
 app = Typer()
 
+
 @app.command()
 def make(
     workflow_path: Annotated[
@@ -58,16 +59,16 @@ def make(
     Args:
         workflow_path (str): Name of the workflow to create.
         version (str): Version identifier for the workflow.
-        format (str, optional): File format for the workflow (e.g., grapto, hespi). 
+        format (str, optional): File format for the workflow (e.g., grapto, hespi).
             Defaults to empty string.
-        as_dir (bool, optional): Whether to create the workflow as a directory 
+        as_dir (bool, optional): Whether to create the workflow as a directory
             structure instead of a single file. Defaults to False.
-    
+
     Raises:
         Exception: If the workflow cannot be created due to invalid parameters
             or filesystem errors.
     """
-    try:        
+    try:
         metadata = {
             "name": Path(workflow_path).name,
             "version": version,
@@ -77,8 +78,8 @@ def make(
             "as_dir": as_dir,
         }
         manager = CollectraManager()
-        manager.build(metadata=metadata)              
-        manager.save()        
+        manager.build(metadata=metadata)
+        manager.save()
         workflow = manager.get_pipeline()
         print(success_msg(f"Workflow '{workflow}' created at {workflow.name}"))
     except Exception as e:
@@ -92,23 +93,23 @@ def render(
 ):
     """Render the Collectra workflow as a visual diagram.
 
-    Generates an SVG visualization of the workflow showing tasks and their 
-    dependencies. The diagram can be rendered in raw format (showing the 
+    Generates an SVG visualization of the workflow showing tasks and their
+    dependencies. The diagram can be rendered in raw format (showing the
     underlying graph structure) or formatted view (showing inputs/outputs).
 
     Args:
         workflow (Path): Path to the workflow configuration file to render.
         raw (bool, optional): Whether to render the raw pipeline graph structure
             instead of the formatted view. Defaults to False.
-    
+
     Raises:
         Exception: If the workflow file cannot be loaded or rendered due to
             invalid format or missing dependencies.
     """
     try:
-       manager =  CollectraManager()
-       manager.load(workflow)
-       manager.get_pipeline().render(raw=raw)
+        manager = CollectraManager()
+        manager.load(workflow)
+        manager.get_pipeline().render(raw=raw)
     except Exception as e:
         print(error_msg(f"{e}"))
 
@@ -117,8 +118,10 @@ def render(
 def train(
     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
     task: Annotated[str, Option("--task", "-t", help="task to train")],
-    input_files: Annotated[list[str], Argument(help="Input directory of files")],    
-    keep_log: Annotated[bool, Option("--keep-log", help="Keep previous log files")] = False,
+    input_files: Annotated[list[str], Argument(help="Input directory of files")],
+    keep_log: Annotated[
+        bool, Option("--keep-log", help="Keep previous log files")
+    ] = False,
 ):
     """Train a specific machine learning task in the Collectra workflow.
 
@@ -133,44 +136,41 @@ def train(
             training data for the task.
         keep_log (bool, optional): Whether to preserve training log files after
             completion. Defaults to False (logs are deleted).
-    
+
     Raises:
         Exception: If the task cannot be trained due to invalid task name,
             missing input files, or training process failures.
     """
     try:
         log = f"{task}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        config = {
-            "input_files": input_files, 
-            "output_log": log
-        }
-        manager =  CollectraManager()
-        manager.load(workflow)        
+        config = {"input_files": input_files, "output_log": log}
+        manager = CollectraManager()
+        manager.load(workflow)
         manager.get_pipeline().train(task_name=task, config=config)
         manager.save()
         if not keep_log:
-            shutil.rmtree(log, ignore_errors=True)            
+            shutil.rmtree(log, ignore_errors=True)
             log_cache = Path(f"{log}.cache")
             if log_cache.exists():
-                os.remove(log_cache)               
+                os.remove(log_cache)
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         print(error_msg(f"Failed to train task: {e}"))
 
 
 @app.command(
-    context_settings={
-        "allow_extra_args": True, 
-        "ignore_unknown_options": True
-    }
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True}
 )
 def run(
-    workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],    
+    workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
     ctx: Context,
-    task: Annotated[str, Option("--task", "-t", help="task to run")] = "",    
-    output: Annotated[Path|None, Option("--output", "-o", help="output directory")]= None,
-    force:bool = False,
+    task: Annotated[str, Option("--task", "-t", help="task to run")] = "",
+    output: Annotated[
+        Path | None, Option("--output", "-o", help="output directory")
+    ] = None,
+    force: bool = False,
 ):
     """Execute a Collectra workflow or specific task within a workflow.
 
@@ -185,20 +185,25 @@ def run(
             from root tasks in the workflow. Defaults to empty string.
         output (Path, optional): Directory path where workflow results will be
             saved. Defaults to current working directory.
-    
+
     Raises:
         Exception: If the workflow execution fails due to invalid workflow file,
             missing task, or runtime errors during execution.
     """
     try:
         additional_args = ctx.args
-        inputs = {additional_args[args_id].replace("--", "") : additional_args[args_id + 1] for args_id in range(0, len(additional_args), 2) if additional_args[args_id].startswith("--")}                           
-        manager =  CollectraManager()                
-        manager.load(workflow)                
-        pipeline = manager.get_pipeline()                
-        pipeline(task, output, force=force, **inputs)        
+        inputs = {
+            additional_args[args_id].replace("--", ""): additional_args[args_id + 1]
+            for args_id in range(0, len(additional_args), 2)
+            if additional_args[args_id].startswith("--")
+        }
+        manager = CollectraManager()
+        manager.load(workflow)
+        pipeline = manager.get_pipeline()
+        pipeline(task, output, force=force, **inputs)
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         print(error_msg(f"Failed to run task: {e}"))
 

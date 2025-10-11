@@ -18,6 +18,7 @@ from collectra.tasks.base import Task
 import networkx as nx
 import ray
 
+
 @dataclass(kw_only=True)
 class Collectra:
     name: str
@@ -35,24 +36,23 @@ class Collectra:
         self.flow = nx.DiGraph()
 
     def add_task(self, task: Task, mapping: dict):
-        
+
         if self.flow is None:
             raise ValueError(f"Flow has not been initialised for this pipeline")
         if task.name in self.flow.nodes():
             raise ValueError(f"Flow already has this task: {task.name}")
-        self.tasks.append(task)                
-        self.flow.add_node(task.name, item=task)        
+        self.tasks.append(task)
+        self.flow.add_node(task.name, item=task)
         for output in task.output:
             if output not in mapping:
                 mapping[output] = []
-            mapping[output].append(task.name)        
-            
-    def connect(self, mapping: dict):   
+            mapping[output].append(task.name)
+
+    def connect(self, mapping: dict):
         if self.flow is None:
-            raise ValueError(f"Flow has not been initialised for this pipeline")     
+            raise ValueError(f"Flow has not been initialised for this pipeline")
         for task in self.tasks:
-            for input in task.input:                
+            for input in task.input:
                 parent_tasks = mapping.get(input, [])
                 for parent_task in parent_tasks:
                     self.flow.add_edge(parent_task, task.name)
-        

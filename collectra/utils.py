@@ -13,7 +13,7 @@ The module includes functions for:
 
 Functions:
     success_msg: Format success messages for console output
-    error_msg: Format error messages for console output  
+    error_msg: Format error messages for console output
     processing_msg: Format processing status messages
     get_class_path: Get fully qualified class path from object
     get_all_files: Collect files matching format from paths
@@ -28,12 +28,13 @@ from tqdm import tqdm
 from PIL import Image as ImagePil
 import zipfile, yaml
 
+
 def success_msg(message: str):
     """Format a success message with green styling for console output.
-    
+
     Args:
         message (str): The success message text to format.
-        
+
     Returns:
         str: Formatted message with Rich markup for green styling.
     """
@@ -42,10 +43,10 @@ def success_msg(message: str):
 
 def error_msg(message: str):
     """Format an error message with red styling for console output.
-    
+
     Args:
         message (str): The error message text to format.
-        
+
     Returns:
         str: Formatted message with Rich markup for red styling.
     """
@@ -54,10 +55,10 @@ def error_msg(message: str):
 
 def processing_msg(message: str):
     """Format a processing status message with orange styling for console output.
-    
+
     Args:
         message (str): The processing message text to format.
-        
+
     Returns:
         str: Formatted message with Rich markup for orange styling.
     """
@@ -66,13 +67,13 @@ def processing_msg(message: str):
 
 def get_class_path(obj_or_class):
     """Get the full dotted module path for a class or instance.
-    
+
     Extracts the fully qualified class path including module and class name,
     which can be used for dynamic class loading and serialization.
-    
+
     Args:
         obj_or_class: Either a class object or an instance of a class.
-        
+
     Returns:
         str: Fully qualified class path (e.g., 'package.module.ClassName').
     """
@@ -88,17 +89,17 @@ def get_class_path(obj_or_class):
 
 def get_all_files(data: list[str], format: str) -> List[Path]:
     """Collect all files matching the specified format from given paths.
-    
+
     Recursively searches through directories and collects files that match
     the specified format. Displays a progress bar during collection.
-    
+
     Args:
         data (List[str]): List of file paths or directory paths to search.
         format (str): File extension to filter by (without dot, e.g., 'jpg', 'png').
-        
+
     Returns:
         List[Path]: List of Path objects for files matching the format.
-        
+
     Raises:
         Exception: If no files are found matching the specified format.
     """
@@ -114,19 +115,20 @@ def get_all_files(data: list[str], format: str) -> List[Path]:
         raise Exception(f"No files found with format '{format}'")
     return files
 
+
 def unzip(path: Path, config: str = "pipeline.yaml") -> dict:
     """Extract and load configuration data from a zip file.
-    
+
     Opens a zip file and reads the specified configuration file (usually YAML)
     from within the archive, returning the parsed configuration data.
-    
+
     Args:
         path (Path): Path to the zip file to extract from.
         config (str, optional): Name of config file within zip. Defaults to "pipeline.yaml".
-        
+
     Returns:
         dict: Parsed configuration data from the config file.
-        
+
     Raises:
         ValueError: If the config file is empty, invalid, or missing.
         zipfile.BadZipFile: If the zip file is corrupted or invalid.
@@ -134,49 +136,53 @@ def unzip(path: Path, config: str = "pipeline.yaml") -> dict:
     with zipfile.ZipFile(path, "r") as zipf:
         data = yaml.safe_load(zipf.read(config))
         if not data:
-            raise ValueError(f"Config file is empty or invalid: {path}")           
-        return data        
+            raise ValueError(f"Config file is empty or invalid: {path}")
+        return data
+
 
 def from_dir(path: Path, config: str = "pipeline.yaml") -> dict:
     """Load configuration data from a directory containing a config file.
-    
+
     Reads the specified configuration file from a directory and returns
     the parsed YAML configuration data.
-    
+
     Args:
         path (Path): Path to the directory containing the config file.
         config (str, optional): Name of config file. Defaults to "pipeline.yaml".
-        
+
     Returns:
         dict: Parsed configuration data from the config file.
-        
+
     Raises:
         ValueError: If the config file is empty, invalid, or missing.
         FileNotFoundError: If the config file doesn't exist in the directory.
         yaml.YAMLError: If the YAML file is malformed.
     """
-    pipeline = path / config        
+    pipeline = path / config
     with open(pipeline, "r") as f:
         data = yaml.safe_load(f)
         if not data:
             raise ValueError(f"Config file is empty or invalid: {pipeline}")
         return data
 
-def crop(path: Path, coordinates: tuple[float, float, float, float], show=False) -> ImagePil.Image:
+
+def crop(
+    path: Path, coordinates: tuple[float, float, float, float], show=False
+) -> ImagePil.Image:
     """Crop an image using the specified coordinates.
-    
+
     Opens an image file and crops it to the specified rectangular region
     defined by the coordinates tuple. Optionally displays the cropped image.
-    
+
     Args:
         path (Path): Path to the image file to crop.
-        coordinates (tuple[float, float, float, float]): Crop coordinates as 
+        coordinates (tuple[float, float, float, float]): Crop coordinates as
             (left, upper, right, lower) in pixels.
         show (bool, optional): Whether to display the cropped image. Defaults to False.
-        
+
     Returns:
         ImagePil.Image: The cropped image object.
-        
+
     Raises:
         FileNotFoundError: If the image file doesn't exist.
         PIL.UnidentifiedImageError: If the file is not a valid image format.

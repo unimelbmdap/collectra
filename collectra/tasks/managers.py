@@ -16,27 +16,28 @@ Classes:
 from collectra.tasks.base import Task
 import importlib
 
+
 class TaskManager:
     """Factory class for creating task instances from configuration dictionaries.
-    
+
     Provides static methods to dynamically instantiate task objects based on
     their type specifications and configuration parameters.
     """
 
     @staticmethod
-    def build(task: dict) -> Task: # This should just be a 'node'
+    def build(task: dict) -> Task:  # This should just be a 'node'
         """Build a Task instance from a configuration dictionary.
-        
+
         Dynamically loads the task class based on the 'type' field and
         instantiates it with the provided configuration parameters.
-        
+
         Args:
             task (dict): Configuration dictionary containing task details including
                         'name', 'type', and other task-specific parameters.
-                        
+
         Returns:
             Task: An instantiated task object of the specified type.
-            
+
         Raises:
             ValueError: If the task name is empty or type is not specified.
             ImportError: If the specified module cannot be imported.
@@ -48,12 +49,12 @@ class TaskManager:
             raise ValueError("Task type is required.")
         node_type = task.pop("type")
         module_name, class_name = node_type.rsplit(".", 1)
-        cls = getattr(importlib.import_module(module_name), class_name)     
-        
+        cls = getattr(importlib.import_module(module_name), class_name)
+
         ## Hack
-        # It should just be the constructor. 
+        # It should just be the constructor.
         # We shouldn't need a 'build' method
-        if hasattr(cls, 'build'):                
+        if hasattr(cls, "build"):
             return cls.build(**task)
-        task.pop("name")  
+        task.pop("name")
         return cls(**task)

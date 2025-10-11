@@ -12,7 +12,7 @@ The module supports:
 
 Classes:
     CollectraNode: Base class for workflow nodes
-    CollectraTask: Base class for executable tasks  
+    CollectraTask: Base class for executable tasks
     TextProcessor: Task for text processing operations
     ObjectDetection: Task for object detection operations
     OCR: Task for optical character recognition
@@ -27,18 +27,20 @@ import importlib
 from dataclasses import dataclass, field
 from collectra.utils import from_dir, unzip
 
+
 @dataclass(kw_only=True)
 class CollectraNode:
     """Base class for all nodes in a Collectra workflow graph.
-    
+
     Represents a single node in the workflow directed graph with input and output
     connections. Serves as the foundation for more specialized node types.
-    
+
     Attributes:
         name (str): Unique identifier for the node within the workflow.
         input (list[str]): List of input connection names for this node.
         output (list[str]): List of output connection names from this node.
     """
+
     name: str
     input: list[str] = field(default_factory=list)
     output: list[str] = field(default_factory=list)
@@ -52,7 +54,7 @@ class CollectraNode:
 
     def set_node_attributes(self, node):
         """Set visual attributes for the node in graph rendering.
-        
+
         Args:
             node: NetworkX node object to set attributes on.
         """
@@ -62,14 +64,14 @@ class CollectraNode:
 @dataclass(kw_only=True)
 class CollectraTask(CollectraNode):
     """Base class for executable tasks in a Collectra workflow.
-    
+
     Extends CollectraNode with task-specific functionality and visual styling
     for graph rendering. Tasks represent executable operations in the workflow.
     """
-    
+
     def set_node_attributes(self, node):
         """Set visual attributes for task nodes in graph rendering.
-        
+
         Args:
             node: NetworkX node object to set attributes on.
         """
@@ -80,67 +82,71 @@ class CollectraTask(CollectraNode):
 @dataclass(kw_only=True)
 class TextProcessor(CollectraTask):
     """Task for text processing operations in workflows.
-    
+
     Specialized task type for handling text analysis, transformation,
     and natural language processing operations.
     """
+
     pass
 
 
 @dataclass(kw_only=True)
 class ObjectDetection(CollectraTask):
     """Task for object detection operations in workflows.
-    
+
     Specialized task type for computer vision operations that identify
     and locate objects within images or video streams.
     """
+
     pass
 
 
 @dataclass(kw_only=True)
 class OCR(CollectraTask):
     """Task for optical character recognition operations in workflows.
-    
+
     Specialized task type for extracting text content from images
     and converting it to machine-readable text format.
     """
+
     pass
 
 
 def load_class_from_string(path: str | None):
     """Dynamically load a class from a string module path.
-    
+
     Takes a fully qualified class path string and imports the class
     for instantiation. Used for loading task classes from configuration.
-    
+
     Args:
         path (str): Fully qualified class path (e.g., 'module.submodule.ClassName').
-        
+
     Returns:
         type: The loaded class object ready for instantiation.
-        
+
     Raises:
         ImportError: If the module cannot be imported.
         AttributeError: If the class does not exist in the module.
     """
     module_name, class_name = path.rsplit(".", 1)
-    module = importlib.import_module(module_name)    
-    cls = getattr(module, class_name)        
+    module = importlib.import_module(module_name)
+    cls = getattr(module, class_name)
     return cls
 
 
 @dataclass()
 class CollectraWorkflow:
     """Main workflow class for parsing and executing Collectra workflows.
-    
+
     Loads workflow configurations from YAML files and converts them into
     executable directed graphs. Manages the complete workflow lifecycle
     including parsing, validation, and execution.
-    
+
     Attributes:
         path (Path): Path to the workflow configuration YAML file.
         dag (nx.DiGraph): Directed graph representation of the workflow.
     """
+
     path: Path
     dag: nx.DiGraph = field(init=False, default=None)
 
@@ -150,14 +156,14 @@ class CollectraWorkflow:
 
     def read_yaml(self) -> nx.DiGraph:
         """Parse the YAML workflow configuration into a directed graph.
-        
+
         Reads the workflow definition from the specified YAML file and constructs
         a NetworkX directed graph with nodes representing tasks and edges
         representing data flow dependencies.
-        
+
         Returns:
             nx.DiGraph: The constructed workflow graph.
-            
+
         Raises:
             AssertionError: If required 'type' field is missing from any task.
             FileNotFoundError: If the workflow YAML file cannot be found.
@@ -199,10 +205,10 @@ class CollectraWorkflow:
 
     def dot(self) -> str:
         """Convert the workflow graph to DOT format string.
-        
+
         Generates a DOT (Graphviz) representation of the workflow graph
         that can be used for visualization and rendering.
-        
+
         Returns:
             str: DOT format string representation of the workflow graph.
         """
@@ -210,17 +216,17 @@ class CollectraWorkflow:
 
     def render(self, output: Path | str) -> str:
         """Render the workflow graph to a visual format.
-        
+
         Creates a visual representation of the workflow graph and saves it
         to the specified output path. Supports various formats based on
         the file extension (SVG, PNG, PDF, etc.).
-        
+
         Args:
             output (Path | str): Output file path for the rendered graph.
-            
+
         Returns:
             str: DOT format string used for rendering.
-            
+
         Raises:
             ImportError: If graphviz package is not available for rendering.
             OSError: If the output directory cannot be created or written to.
@@ -251,23 +257,27 @@ def parse_item(data):
     return data
 
 
-def parse_results(file_path:Path|str) -> dict:
+def parse_results(file_path: Path | str) -> dict:
     file_path = Path(file_path).absolute()
-    
+
     cwd = Path.cwd()
 
     # set current working directory to 'file'
     if file_path.is_dir():
-        os.chdir(file_path)    
-    
-    results = unzip(file_path, "results.yaml") if file_path.is_file() else from_dir(file_path, "results.yaml") if file_path.is_dir() else dict()                                    
-    for key, data in results.items():       
+        os.chdir(file_path)
+
+    results = (
+        unzip(file_path, "results.yaml")
+        if file_path.is_file()
+        else from_dir(file_path, "results.yaml") if file_path.is_dir() else dict()
+    )
+    for key, data in results.items():
         if isinstance(data, list):
             results[key] = [parse_item(data_item) for data_item in data]
         else:
             results[key] = parse_item(data)
 
     # Revert current working directory
-    os.chdir(cwd)    
+    os.chdir(cwd)
 
     return results

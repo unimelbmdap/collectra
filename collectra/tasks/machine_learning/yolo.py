@@ -16,12 +16,12 @@ __all__ = ["ObjectDetectionYOLO"]
 
 class ObjectDetectionYOLO(MachineLearningTask):
 
-    model: str | Path | YOLO    
+    model: str | Path | YOLO
 
     def _init_model(self) -> None:
         """Ensure that the YOLO model is loaded before performing any operations."""
         if self.model and isinstance(self.model, (str, Path)):
-            self._load(self.model)          
+            self._load(self.model)
         if not isinstance(self.model, YOLO):
             raise ValueError("Model must be a YOLO instance")
 
@@ -72,27 +72,41 @@ class ObjectDetectionYOLO(MachineLearningTask):
             detections.append(image_crop)
         print(f"Found {len(detections)} objects in the image.")
         return detections
-    
-    def train(self, train_img: list[ImageCrop], val_img: list[ImageCrop], classes: list[str], **kwargs) -> DetMetrics | None:
+
+    def train(
+        self,
+        train_img: list[ImageCrop],
+        val_img: list[ImageCrop],
+        classes: list[str],
+        **kwargs,
+    ) -> DetMetrics | None:
         self._init_model()
-        log_dir: Path = Path(kwargs.pop("log_dir")) if kwargs.get("log_dir", None) else Path.cwd() / "logs"
+        log_dir: Path = (
+            Path(kwargs.pop("log_dir"))
+            if kwargs.get("log_dir", None)
+            else Path.cwd() / "logs"
+        )
         kwargs["log_dir"] = log_dir
         log_dir.mkdir(parents=True, exist_ok=True)
         print(f"Training logs will be saved to: {log_dir}")
-        kwargs["config_file"] = self._prepare_yolo_config(classes, train_img, val_img, log_dir)
+        kwargs["config_file"] = self._prepare_yolo_config(
+            classes, train_img, val_img, log_dir
+        )
         self._prepare_assets(classes, train_img + val_img, log_dir)
-        params = self._prepare_params(**kwargs)                       
-        results: DetMetrics | None = self.model.train(**params)                     
+        params = self._prepare_params(**kwargs)
+        results: DetMetrics | None = self.model.train(**params)
         return results
 
     def _prepare_yolo_config(
         self,
-        classes: list[str],        
+        classes: list[str],
         train_img: list[ImageCrop],
         val_img: list[ImageCrop],
         log_dir: Path,
     ) -> Path:
-        config = f"train: train.txt\nval: val.txt\nnc: {len(classes)}\nnames: {classes}\n"
+        config = (
+            f"train: train.txt\nval: val.txt\nnc: {len(classes)}\nnames: {classes}\n"
+        )
         train_files = set([f"./{img.get_path().name}" for img in train_img])
         val_files = set([f"./{img.get_path().name}" for img in val_img])
 
@@ -104,7 +118,9 @@ class ObjectDetectionYOLO(MachineLearningTask):
             Path(log_dir / "val.txt").write_text("\n".join(val_files))
         return config_file
 
-    def _prepare_assets(self, classes: list[str], images: list[ImageCrop], log_dir: Path) -> None:
+    def _prepare_assets(
+        self, classes: list[str], images: list[ImageCrop], log_dir: Path
+    ) -> None:
         for img in images:
             src = img.get_path()
             dst = log_dir / src.name
@@ -124,15 +140,19 @@ class ObjectDetectionYOLO(MachineLearningTask):
                     f.write(
                         f"{name_index} {img.x_center:.6f} {img.y_center:.6f} {img.width_relative:.6f} {img.height_relative:.6f}\n"
                     )
-    
+
     def _prepare_params(self, **kwargs) -> dict:
         import platform, torch
+
         params = {
             "data": kwargs["config_file"],
             "project": kwargs["config_file"].parent,
-            "device": "mps" if platform.system() == "Darwin" else "cuda" if torch.cuda.is_available() else "cpu",
+            "device": (
+                "mps"
+                if platform.system() == "Darwin"
+                else "cuda" if torch.cuda.is_available() else "cpu"
+            ),
             "epochs": kwargs.get("epochs", 1),
             "imgsz": kwargs.get("imgsz", 640),
-        }   
-        return params    
-
+        }
+        return params

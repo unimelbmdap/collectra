@@ -29,10 +29,10 @@ import os, shutil, tempfile, yaml, zipfile
 @dataclass(kw_only=True)
 class DataHandler:
     """Abstract base class for workflow data handling operations.
-    
+
     Provides common functionality for saving workflow configurations and
     managing machine learning model artifacts across different storage formats.
-    
+
     Attributes:
         pipeline (Collectra): The workflow pipeline to save.
     """
@@ -41,7 +41,7 @@ class DataHandler:
 
     def save(self):
         """Save the workflow configuration and artifacts.
-        
+
         Raises:
             NotImplementedError: This method must be implemented by subclasses.
         """
@@ -51,10 +51,10 @@ class DataHandler:
 
     def get_models(self, task: MachineLearningTask) -> tuple[str, str]:
         """Extract current and previous model paths from a machine learning task.
-        
+
         Args:
             task (MachineLearningTask): The ML task to extract models from.
-            
+
         Returns:
             tuple[str, str]: Current model path and old model path.
         """
@@ -65,10 +65,10 @@ class DataHandler:
 
     def is_machine_learning_task(self, task: Task | MachineLearningTask) -> bool:
         """Check if a task is a machine learning task.
-        
+
         Args:
             task (Task | MachineLearningTask): The task to check.
-            
+
         Returns:
             bool: True if the task is a machine learning task, False otherwise.
         """
@@ -82,7 +82,7 @@ class DataHandler:
 
     def _save_config(self, tmp_dir: Path) -> None:
         """Save the workflow configuration to a YAML file.
-        
+
         Args:
             tmp_dir (Path): Temporary directory to save the configuration file.
         """
@@ -101,14 +101,14 @@ class DataHandler:
 @dataclass(kw_only=True)
 class DirectoryHandler(DataHandler):
     """Handler for saving workflows as directory structures.
-    
+
     Saves workflow configurations and artifacts to a directory structure,
     making them easy to inspect and modify manually.
     """
 
     def save(self):
         """Save the workflow and its artifacts to a directory structure.
-        
+
         Creates a temporary directory for staging files, then moves them to
         the final output directory location.
         """
@@ -117,18 +117,22 @@ class DirectoryHandler(DataHandler):
             tmp_dir = Path(tmpdirname)
             self._save_artifacts(tmp_dir)
             self._save_config(tmp_dir)
-            out_dir.mkdir(parents=True, exist_ok=True)  # Ensure the output directory exists
+            out_dir.mkdir(
+                parents=True, exist_ok=True
+            )  # Ensure the output directory exists
             for item in tmp_dir.iterdir():
                 shutil.move(item, out_dir / item.name)
-            success_message = f"Workflow {self.pipeline.name} was saved successfully to {out_dir}"
+            success_message = (
+                f"Workflow {self.pipeline.name} was saved successfully to {out_dir}"
+            )
             print(success_msg(success_message))
 
     def _save_artifacts(self, tmp_dir: Path) -> None:
         """Save machine learning model artifacts to the temporary directory.
-        
+
         Processes all machine learning tasks in the pipeline to save their model
         artifacts. Handles model versioning, file movement, and cleanup of old models.
-        
+
         Args:
             tmp_dir (Path): Temporary directory to save artifacts to.
         """
@@ -145,7 +149,7 @@ class DirectoryHandler(DataHandler):
             # Ensure the model path is a Path object
             model_path = Path(model)
             task_model_path = f"{task.name}-{datetime.now().strftime('%Y%m%d_%H%M%S')}-best.pt"  # Default model path for the task
-            new_model = old_model != model            
+            new_model = old_model != model
             if not (model_path.exists() and model_path.is_file()):
                 error_message = f"Model for {task.name} does not point to a valid file or doesn't exist: {model_path}. Attempting to download..."
                 print(error_msg(error_message))
@@ -155,7 +159,7 @@ class DirectoryHandler(DataHandler):
             if new_model:
                 print(
                     f"Moving model {model_path} to temporary directory with new name {task_model_path}..."
-                )                
+                )
                 shutil.move(model_path, tmp_dir / task_model_path)
                 if old_model and Path(old_model).exists():
                     old_models[old_model] = Path(old_model)
@@ -176,17 +180,17 @@ class DirectoryHandler(DataHandler):
 @dataclass(kw_only=True)
 class ZipHandler(DataHandler):
     """Handler for saving workflows as compressed zip files.
-    
+
     Saves workflow configurations and artifacts to a single zip file,
     making them portable and easy to distribute.
     """
 
     def save(self):
         """Save the workflow and its artifacts to a compressed zip file.
-        
+
         Creates a temporary directory for staging files, then compresses
         them into a single zip file at the output location.
-        
+
         Raises:
             ValueError: If the output directory is not specified.
         """
@@ -211,14 +215,14 @@ class ZipHandler(DataHandler):
 
     def _save_artifacts(self, tmp_dir: Path) -> None:
         """Save machine learning model artifacts to the temporary directory for zip compression.
-        
+
         Processes all machine learning tasks in the pipeline to save their model
         artifacts for zip archive creation. Handles model extraction from existing
         zip files and version management.
-        
+
         Args:
             tmp_dir (Path): Temporary directory to save artifacts to.
-            
+
         Raises:
             ValueError: If the output directory is not specified.
         """

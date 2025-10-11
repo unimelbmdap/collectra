@@ -23,16 +23,17 @@ import copy, re
 @dataclass(kw_only=True)
 class EntityCanonicalizer(Task):
     """Task for canonicalizing entities in text using fuzzy string matching.
-    
+
     Matches input text against a list of known entities and returns the best
     canonical match if it exceeds the similarity threshold. Can load entity
     lists from files or use provided lists directly.
-    
+
     Attributes:
         entities (list[str]|Path): List of canonical entities or path to file containing them.
         threshold (float): Minimum similarity threshold for matches (0.0 to 1.0).
     """
-    entities: list[str]|Path = field(default_factory=list)
+
+    entities: list[str] | Path = field(default_factory=list)
     threshold: float = 0.8
 
     def __post_init__(self):
@@ -43,7 +44,7 @@ class EntityCanonicalizer(Task):
 
     def input_type(self) -> type:
         """Define input type as string text.
-        
+
         Returns:
             type: String type for text input.
         """
@@ -51,37 +52,44 @@ class EntityCanonicalizer(Task):
 
     def output_type(self) -> type:
         """Define output type as string text.
-        
+
         Returns:
             type: String type for canonicalized text output.
         """
         return str
-    
+
     def run(self, **kwargs) -> str:
         """Canonicalize the input text against known entities.
-        
+
         Args:
             text (str): Input text to canonicalize.
-            
+
         Returns:
             str: Canonicalized text if a match is found, otherwise original text.
-        """        
+        """
         if not isinstance(self.entities, list):
             for output_key in self.output.keys():
-                input_key = output_key.replace("_actual", "_text")            
+                input_key = output_key.replace("_actual", "_text")
                 value = kwargs.pop(input_key, [])
                 self.output[output_key] = value
-        else:                    
+        else:
             for key in self.input_keys:
                 text_list = self.input.get(key, [])
-                new_text_list = self.input.get(key, [])            
-                for index in range(len(text_list)):        
-                    close_matches = get_close_matches(text_list[index], self.entities, n=3, cutoff=self.threshold)
+                new_text_list = self.input.get(key, [])
+                for index in range(len(text_list)):
+                    close_matches = get_close_matches(
+                        text_list[index], self.entities, n=3, cutoff=self.threshold
+                    )
                     match_score = 0
                     if close_matches:
-                        match_score = round(SequenceMatcher(None, text_list[index], close_matches[0]).ratio(), 3)
-                        new_text_list[index] = close_matches[0]    
-                self.output[key.replace("_text", "_actual")] = new_text_list                                           
+                        match_score = round(
+                            SequenceMatcher(
+                                None, text_list[index], close_matches[0]
+                            ).ratio(),
+                            3,
+                        )
+                        new_text_list[index] = close_matches[0]
+                self.output[key.replace("_text", "_actual")] = new_text_list
 
     def save(self, output_path: Path, **kwargs) -> tuple[Path, dict, list[Path]]:
         output_data = kwargs.get("output_data", dict())
@@ -91,12 +99,25 @@ class EntityCanonicalizer(Task):
             data_key = key.replace("_actual", "")
             if data_key in output_data:
                 to_be_updated = copy.deepcopy(output_data[data_key])
-                if "items" in to_be_updated and isinstance(to_be_updated["items"], list):
-                    for index in range(len(to_be_updated["items"])):                        
+                if "items" in to_be_updated and isinstance(
+                    to_be_updated["items"], list
+                ):
+                    for index in range(len(to_be_updated["items"])):
                         if output_is_list and index < len(self.output[key]):
-                            to_be_updated["items"][index].update({"canonical": re.sub(r'\s+', ' ', str(self.output[key][index])).strip()})                         
-                else:    
-                    to_be_updated.update({"canonical": re.sub(r'\s+', ' ', str(self.output[key])).strip()})
-                result_data[data_key] = to_be_updated                
+                            to_be_updated["items"][index].update(
+                                {
+                                    "canonical": re.sub(
+                                        r"\s+", " ", str(self.output[key][index])
+                                    ).strip()
+                                }
+                            )
+                else:
+                    to_be_updated.update(
+                        {
+                            "canonical": re.sub(
+                                r"\s+", " ", str(self.output[key])
+                            ).strip()
+                        }
+                    )
+                result_data[data_key] = to_be_updated
         return None, result_data, []
-

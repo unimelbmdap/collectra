@@ -17,6 +17,7 @@ Classes:
 from collectra.models.base import Model
 from pathlib import Path
 
+
 class DETECTRON2Engine(Model):
     """
     DETECTRON2 object detection engine implementation (placeholder).

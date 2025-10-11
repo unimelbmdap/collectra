@@ -16,6 +16,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 import os
 
+
 class Model(ABC):
     """
     Abstract base class for all machine learning models.
