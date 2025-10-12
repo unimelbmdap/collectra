@@ -26,8 +26,27 @@ def test_get_task(pipeline, debug):
     try:
         pipeline = build_pipeline(pipeline)
         task_name = "field_detector"
-        task = pipeline.task(task_name)
+        task = pipeline.task(task_name)        
         assert isinstance(task, dict) and len(task) > 0, f"Task '{task_name}' should be a non-empty dictionary"
         assert task.get("type", None) == "collectra.ObjectDetectionYOLO", f"Task '{task_name}' should have type 'collectra.ObjectDetectionYOLO'"
     except Exception as e:
         debug(e)
+
+# def test_run_task(pipeline, raw_img_path, debug):
+#     try:
+#         pipeline = build_pipeline(pipeline)
+#         task_name = "field_detector"
+#         result = pipeline(task_name, name=task_name, input=raw_img_path)
+#         assert result is None, "Run method should return None"
+#     except Exception as e:
+#         debug(e)
+
+
+# def test_train_task(pipeline, debug):
+#     try:
+#         pipeline = build_pipeline(pipeline)
+#         task_name = "field_detector"
+#         result = pipeline.train(task_name)
+#         assert result is None, "Train method should return None"
+#     except Exception as e:
+#         debug(e)

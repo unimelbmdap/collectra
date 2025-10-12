@@ -22,7 +22,7 @@ import networkx as nx
 
 from pathlib import Path
 
-from collectra import Task, MachineLearningTask
+from collectra import Task, TaskManager, MachineLearningTask
 from collectra.utils import load_class_from_string
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,10 @@ class Collectra:
         self.path: Path = Path(name) if not path else Path(path)        
         self.data: dict = kwargs
 
-    def task(self, task_name: str, build: bool = False) -> dict | Task:
+    def __call__(self, task_name: str, **kwargs):
+        self.run(task_name, **kwargs)
+
+    def task(self, task_name: str, build: bool = False) -> dict:
         """Get a task from the workflow by name.
 
         Args:
@@ -66,21 +69,18 @@ class Collectra:
             dict | None: Task configuration dictionary or None if not found.
         """
         data = self.data.get(task_name, None)
-        assert data, f"Task {task_name} not found in workflow"
-        if build:
-            type_ = data.pop("type", None)
-            assert type_ is not None, f"Invalid type  {type_} for {task_name}"
-            cls = load_class_from_string(type_)
-            task = cls(name=task_name, **data)            
-            return task
+        assert data, f"Task {task_name} not found in workflow"        
+        data["name"] = task_name
         return data
 
     def run(self, task_name: str, **kwargs):        
-        task = self.task(task_name, build=True)
+        task = TaskManager.build(self.task(task_name))
+        inputs = TaskManager.prepare(task, **kwargs)
         assert isinstance(task, Task)
-        TaskManager.execute(task, **kwargs)
+        task(**inputs)
     
     def train(self, task_name: str, **kwargs):
-        task = self.task(task_name, build=True)
+        task = TaskManager.build(self.task(task_name)) 
+        inputs = TaskManager.prepare_train(task, **kwargs)       
         assert isinstance(task, MachineLearningTask)        
-        TaskManager.train(task, **kwargs)
+        task.train(**inputs)        

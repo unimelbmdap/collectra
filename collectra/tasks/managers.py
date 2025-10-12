@@ -13,8 +13,13 @@ Classes:
     TaskManager: Factory class for creating task instances from configuration
 """
 
+__all__ = ["TaskManager"]
+
+from typing import get_args
+
 from collectra.tasks.base import Task
-import importlib
+from collectra.utils import load_class_from_string
+from utils.get_types import get_param_types
 
 
 class TaskManager:
@@ -43,18 +48,36 @@ class TaskManager:
             ImportError: If the specified module cannot be imported.
             AttributeError: If the specified class does not exist in the module.
         """
-        if not task.get("name") or task["name"] == "":
-            raise ValueError("Task name cannot be empty.")
-        if not task.get("type"):
-            raise ValueError("Task type is required.")
-        node_type = task.pop("type")
-        module_name, class_name = node_type.rsplit(".", 1)
-        cls = getattr(importlib.import_module(module_name), class_name)
-
-        ## Hack
-        # It should just be the constructor.
-        # We shouldn't need a 'build' method
-        if hasattr(cls, "build"):
-            return cls.build(**task)
-        task.pop("name")
+        assert task.get("type"), "Task type is required."
+        cls = load_class_from_string(task.pop("type"))                                        
         return cls(**task)
+    
+    @staticmethod
+    def prepare(task: Task, **kwargs) -> dict:
+        """Prepare inputs for the task execution.
+
+        This method can be extended to include input validation, preprocessing,
+        or transformation logic as needed.
+
+        Args:
+            task (Task): The task instance for which inputs are being prepared.            
+        """
+        for flag, item in kwargs.items():
+            if flag == "file":
+                pass
+
+    @staticmethod
+    def prepare_train(task: Task, **kwargs) -> dict:
+        """Prepare inputs for the task training.
+
+        This method can be extended to include input validation, preprocessing,
+        or transformation logic as needed.
+
+        Args:
+            task (Task): The task instance for which training inputs are being prepared.
+            inputs (dict): A dictionary of input parameters for the task.
+        """
+        param_types = get_param_types(task.train)
+        if not param_types:
+            return kwargs   
+        breakpoint()

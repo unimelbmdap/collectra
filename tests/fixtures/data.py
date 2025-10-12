@@ -51,8 +51,8 @@ def images(root_data_path) -> tuple[list[ImageCrop], list[ImageCrop]]:
 
 
 @pytest.fixture
-def image(root_data_path) -> Image:
-    return Image(name="specimen_sheet", path=root_data_path / "images" / "bar1.jpg")
+def image(raw_img_path) -> Image:
+    return Image(name="specimen_sheet", path=raw_img_path)
 
 
 @pytest.fixture
