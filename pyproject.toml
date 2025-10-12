@@ -19,17 +19,13 @@ classifiers = [
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4"
-rocrate = "^0.14.0"
 typer = "^0.16.0"
 ultralytics = "^8.3.166"
 pydot = "^4.0.1"
 graphviz = "^0.21"
-roc-validator = "^0.7.3"
 wandb = "^0.21.1"
 llmloader = ">=0.1.4"
 langchain-core = "^0.3.75"
-dask = "^2025.9.1"
-ray = "^2.49.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=6.2.5"
