@@ -1,12 +1,14 @@
 __all__ = ["Text"]
 
 from pathlib import Path
+from dataclasses import dataclass
 
-from .base import Type
+from .nodes import Node
 
+@dataclass(kw_only=True)
+class Text(Node, str):
 
-class Text(Type, str):
-    def __new__(cls, data: str | Path) -> str:
+    def __new__(cls, data: str | Path, name: str = "") -> str:
         try:
             if Path(data).exists():
                 data = Path(data)
@@ -17,3 +19,10 @@ class Text(Type, str):
             data = data.read_text()
 
         return super().__new__(cls, data)
+
+
+    def __init__(self, data: str | Path, name: str = ""):
+        # Now initialize Node
+        if name is None:
+            name = str(data)[:20]  # or whatever default makes sense
+        Node.__init__(self, name)

@@ -6,6 +6,7 @@ T = TypeVar("T")
 
 
 class Type(MetaClass):
+    
     def serialize(self) -> dict:
         serialized = dict(type=self.get_class_path())
         for key, value in self.attributes.items():

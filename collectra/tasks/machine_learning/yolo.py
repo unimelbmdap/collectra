@@ -125,7 +125,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
             src = img.get_path()
             dst = log_dir / src.name
             if not dst.exists():  # Only copy if the file does not already exist
-                shutil.copy(src, dst)
+                shutil.copy(src, dst)                 
             name_index = classes.index(img.name) if img.name in classes else -1
             if not name_index:
                 continue

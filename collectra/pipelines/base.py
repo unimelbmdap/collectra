@@ -80,15 +80,17 @@ class Collectra:
         task_config = self.task(task_name)
         inputs = list()
         task = TaskManager.build(task_config)
-        data_nodes = self._check_data_nodes(task_config)
+        data_nodes = self._check_data_nodes(task_config)        
         external_inputs = self._check_external_inputs(task_config, **kwargs)
         if data_nodes:
-            inputs.append(data_nodes)                
+            inputs.extend(data_nodes)                
         if external_inputs:
-            inputs.append(external_inputs)        
-        inputs = self._match_input_types(get_param_types(task.run), inputs)               
+            inputs.append(external_inputs)                           
+        inputs = self._check_input_types(get_param_types(task.run), inputs)                    
+        if len(inputs) == 0:
+            raise Exception(f"No valid inputs found for task {task_name}")        
         for input in inputs:                               
-            task(**input)
+            task(*input)
         os.chdir(current_path)
 
     def train(self, task_name: str, **kwargs):
@@ -97,26 +99,34 @@ class Collectra:
         assert isinstance(task, MachineLearningTask)        
         task.train(**inputs)  
 
-    def _get_task_required_inptus(self, task_config: dict) -> list[str]:
+    def _get_task_required_inputs(self, task_config: dict) -> list[str]:
         task_required_input: list | str = task_config.get("input", [])
         if not isinstance(task_required_input, list):
             task_required_input = [task_required_input]
         return task_required_input    
 
     def _check_data_nodes(self, task_config: dict) -> list:
-        task_required_input: list[str] = self._get_task_required_inptus(task_config)        
-        input_item = dict()                           
-        for name in task_required_input:
-            if name in self.data:
-                data = self.data[name]                
-                data_cls = load_class_from_string(data.pop("type"))
-                data_item = data_cls(**data)
-                input_item[name] = data_item                  
-        return list(input_item.values())
+        inputs = list()
+        task_required_input: list[str] = self._get_task_required_inputs(task_config)          
+        preprocess = task_required_input[0] in self.data        
+        while preprocess and len(task_required_input) > 0:                          
+            input_item = dict.fromkeys(task_required_input)
+            for name in input_item.keys():
+                data = self.data.pop(name, None)                
+                if isinstance(data, dict):
+                    data_cls = load_class_from_string(data.pop("type"))
+                    data_item = data_cls(**data)
+                    input_item[name] = data_item                        
+                else:
+                    input_item[name] = None  
+            if not any(v is None for v in input_item.values()):
+                inputs.append(list(input_item.values()))            
+            preprocess = task_required_input[0] in self.data               
+        return inputs
 
     def _check_external_inputs(self, task_config: dict, **kwargs) -> list:
         inputs = list()
-        task_required_input: list[str] = self._get_task_required_inptus(task_config)                
+        task_required_input: list[str] = self._get_task_required_inputs(task_config)                
         required_input_arr_len = len(task_required_input)
         kwargs_inputs = list(kwargs.items())
         index = 0
@@ -133,19 +143,34 @@ class Collectra:
                         input_item[name] = value
                 if len(input_item) == len(task_required_input):                  
                     inputs.extend(list(input_item.items()))
-            index = index_next                       
+            index = index_next                                
         return inputs        
         
-    def _match_input_types(self, param_types: dict | None, inputs: list) -> list:                
+    def _check_input_types(self, param_types: dict | None, inputs: list) -> list:        
+        task_inputs = list()        
         if not param_types:
             return inputs
-        for input_index, input in enumerate(inputs):
+        for input in inputs:
             input_item_dict = dict()
+            if len(input) != len(param_types):
+                continue
             for index, (param, cls) in enumerate(param_types.items()):
                 value = input[index]                
-                if not isinstance(value, cls):                                        
-                    value = cls(*value) if isinstance(value, tuple) else cls(value)                                            
+                if not isinstance(value, cls):                                                      
+                    value = cls(*value) if isinstance(value, tuple) else cls(value)                                  
                 input_item_dict[param] = value
-            inputs[input_index] = input_item_dict        
-        return inputs
-                            
+            task_inputs.append(input_item_dict)        
+        return task_inputs
+    
+    def connect(self):
+        """ Initialise the DAG representing the workflow. Preparing it for execution.
+        """
+        current_path = Path.cwd()
+        os.chdir(self.path)                
+        for name, data in self.data.items():                        
+            node_cls = load_class_from_string(data.pop("type"))               
+            node = node_cls(name=name, **data)
+            self.flow.add_node(name, node=node)            
+        print(self.flow.nodes)                    
+        os.chdir(current_path)
+        

@@ -38,7 +38,7 @@ def test_object_detection_task(task_data, images, train_yolo, classes, debug):
         assert data[name], f"Task {name} should be in task_data"
         cls = load_class_from_string(data[name].pop("type"))
         task = cls(name=name, **data[name])        
-        assert isinstance(task, ObjectDetectionYOLO), f"Task {name} should be an instance of ObjectDetectionYOLO"
+        assert isinstance(task, ObjectDetectionYOLO), f"Task {name} should be an instance of ObjectDetectionYOLO"        
         results, log_dir = train_yolo(
             task=task,
             train_images=train_images,

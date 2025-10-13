@@ -20,8 +20,8 @@ def convert_images(
     if cls == ImageCrop:
         value["name"] = key
         image_data = root_path / value.pop("path")
-        value["data"] = image_data
-        img_crop = cls(**value)
+        value["data"] = image_data        
+        img_crop = cls(**value)        
         if img_crop:
             if validation:
                 validation_images.append(img_crop)
@@ -58,7 +58,7 @@ def image(raw_img_path) -> Image:
 
 @pytest.fixture
 def classes() -> list[str]:
-    return ["human", "chair", "table", "car"]
+    return ["human", "chair", "table", "car"] 
 
 
 @pytest.fixture

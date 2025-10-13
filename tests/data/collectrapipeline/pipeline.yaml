@@ -8,13 +8,47 @@ bar_img1:
   type: collectra.Image
   data: bar1.jpg
 
+markdown_example1:
+  type: collectra.Text
+  data: page00076-markdown.md
+
+apparatus_image:
+  type: collectra.Image
+  data: bar1.jpg
+
 object_detector:
   type: collectra.ObjectDetectionYOLO
   model: yolo11n.pt
-  input: bar_img1
+  input: 
+  - bar_img1  
   epochs: 1
   output:
   - human
   - chair
   - table
   - car  
+  
+
+markdown_converter:
+  type: collectra.LLM
+  model: gpt-4.1-nano
+  input:
+    - apparatus_image
+    - markdown_example1
+    - bar_img1
+  temperature: 0.8
+  output: markdown
+  output_filename: apparatus.md
+  system: You are a scholar of Roman history and text critic who is extremely careful with details of texts.
+  template: |
+    I am digitizing an apparatus from a scholarly edition of the Roman historian Livy.
+    Your task is to take the image of the apparatus, read the text and output it markdown format.
+ 
+    Example: {markdown_example1}
+
+    Here is the image of the apparatus: {apparatus_image}
+    Here is another image that may help: {bar_img1}
+    
+    See it again!: {bar_img1}
+
+    Please output something like this {markdown_example1}.

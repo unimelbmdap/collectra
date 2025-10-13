@@ -396,7 +396,7 @@ class YOLOModel(Model):
                 # Single image case
                 detections[key] = {
                     "image": value,
-                    "results": self.thread_safe_detect(value.path),
+                    "results": self.thread_safe_detect(value.data),
                 }
             elif isinstance(value, list) and all(
                 isinstance(img, Image) for img in value

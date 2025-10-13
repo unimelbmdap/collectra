@@ -27,9 +27,10 @@ from PIL import Image as ImagePil
 from collectra.utils import crop
 
 from .base import Type
+from .nodes import Node
 
-
-class Image(Type):
+@dataclass(kw_only=True)
+class Image(Type, Node):
     """Base class for handling image data and metadata in Collectra workflows.
 
     Provides core functionality for loading, encoding, and managing image files
@@ -41,20 +42,12 @@ class Image(Type):
         raw_width (int): Width of the image in pixels.
         raw_height (int): Height of the image in pixels.
         format (str | None): Image format (PNG, JPEG, etc.) or None if unknown.
-    """
-
-    # name: str  # Identifying name for the image
-    # data: Path  # Path to the image file
-    # raw_width: int = field(init=False)  # Image width in pixels
-    # raw_height: int = field(init=False)  # Image height in pixels
-    # ext: str | None = field(init=False, default=None)  # Image format (e.g., PNG, JPEG)
-
-    def __init__(self, name: str = "", data: str | Path = ""):      
-        if not data:
-            raise ValueError("Image data path is required.")  
-        self.data = Path(data)        
-        self.name = name if name else self.data.name
-        self.__post_init__()        
+    """            
+    data: Path  # Path to the image file
+    name: str = field(default="")  # Name or identifier for the image
+    raw_width: int = field(init=False)  # Image width in pixels
+    raw_height: int = field(init=False)  # Image height in pixels
+    ext: str | None = field(init=False, default=None)  # Image format (e.g., PNG, JPEG)    
 
     def attributes_to_ignore(self):
         return {"raw_width", "raw_height", "format"}
@@ -83,6 +76,10 @@ class Image(Type):
             FileNotFoundError: If the image file doesn't exist.
             PIL.UnidentifiedImageError: If the file is not a valid image.
         """        
+        if not isinstance(self.data, Path):
+            self.data = Path(self.data)
+        if not self.name:
+            self.name = self.data.name 
         if not self.data.exists() or not self.data.is_file():
             raise FileNotFoundError(f"Image file not found: {self.data}")
         with ImagePil.open(self.data) as imf:
@@ -196,7 +193,7 @@ class Image(Type):
             min_height=min_height,
         )
 
-
+@dataclass
 class ImageCrop(Image):
     """Specialized image class for handling cropped regions of images.
 
@@ -209,20 +206,12 @@ class ImageCrop(Image):
         y_center (float): Normalized y-coordinate of crop center (0.0 to 1.0).
         width_relative (float): Normalized width of crop region (0.0 to 1.0).
         height_relative (float): Normalized height of crop region (0.0 to 1.0).
-    """
-
+    """    
     x_center: float
     y_center: float
     width_relative: float
     height_relative: float
-
-    def __init__(self, data: str | Path, name: str = "", **kwargs):
-        super().__init__(data=data, name=name)
-        self.x_center = float(kwargs.get("x_center", 0.5))
-        self.y_center = float(kwargs.get("y_center", 0.5))
-        self.width_relative = float(kwargs.get("width_relative", 1.0))
-        self.height_relative = float(kwargs.get("height_relative", 1.0))
-
+            
     @property
     def width(self):
         return self.width_relative * self.raw_width

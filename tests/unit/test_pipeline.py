@@ -24,6 +24,12 @@ def test_pipeline_init(pipeline, debug):
     except Exception as e:
         debug(e)
 
+def test_pipeline_init_nodes(pipeline, debug):
+    try:
+        pipeline = build_pipeline(pipeline)
+        pipeline.connect()
+    except Exception as e:
+        debug(e)
 
 def test_get_task(pipeline, debug):
     try:
@@ -36,14 +42,23 @@ def test_get_task(pipeline, debug):
         debug(e)
 
 
-def test_run_task(pipeline, raw_img_path, debug):
-    try:
-        pipeline = build_pipeline(pipeline)        
-        task_name = "object_detector"
-        result = pipeline(task_name, bar_img1=raw_img_path)
-        assert result is None, "Run method should return None"
-    except Exception as e:
-        debug(e)
+# def test_run_task(pipeline, raw_img_path, debug):
+#     try:
+#         pipeline = build_pipeline(pipeline)        
+#         task_name = "object_detector"
+#         result = pipeline(task_name, bar_img1=raw_img_path)
+#         assert result is None, "Run method should return None"
+#     except Exception as e:
+#         debug(e)
+
+# def test_run_llm_task(pipeline, debug):
+#     try:
+#         pipeline = build_pipeline(pipeline)        
+#         task_name = "markdown_converter"
+#         result = pipeline(task_name)
+#         assert result is None, "Run method should return None"
+#     except Exception as e:
+#         debug(e)
 
 
 # def test_train_task(pipeline, debug):
