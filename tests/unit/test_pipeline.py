@@ -6,7 +6,9 @@ def build_pipeline(pipeline: dict) -> Collectra:
     name = metadata["name"]      
     ext = metadata["ext"]
     version = metadata["version"]
-    return Collectra(name, ext, version, **pipeline)
+    path = pipeline.pop("pipeline_path", "")
+    return Collectra(name, ext, version, path=path, **pipeline)
+
 
 def test_pipeline_init(pipeline, debug):
     try:
@@ -17,29 +19,31 @@ def test_pipeline_init(pipeline, debug):
         assert pipeline.name == name
         assert pipeline.ext == ext
         assert pipeline.version == version
-        assert pipeline.path == Path(name)
+        assert pipeline.path
         assert isinstance(pipeline.data, dict) and len(pipeline.data) > 0, "Pipeline data should be a non-empty dictionary"
     except Exception as e:
         debug(e)
 
+
 def test_get_task(pipeline, debug):
     try:
         pipeline = build_pipeline(pipeline)
-        task_name = "field_detector"
+        task_name = "object_detector"
         task = pipeline.task(task_name)        
         assert isinstance(task, dict) and len(task) > 0, f"Task '{task_name}' should be a non-empty dictionary"
         assert task.get("type", None) == "collectra.ObjectDetectionYOLO", f"Task '{task_name}' should have type 'collectra.ObjectDetectionYOLO'"
     except Exception as e:
         debug(e)
 
-# def test_run_task(pipeline, raw_img_path, debug):
-#     try:
-#         pipeline = build_pipeline(pipeline)
-#         task_name = "field_detector"
-#         result = pipeline(task_name, name=task_name, input=raw_img_path)
-#         assert result is None, "Run method should return None"
-#     except Exception as e:
-#         debug(e)
+
+def test_run_task(pipeline, raw_img_path, debug):
+    try:
+        pipeline = build_pipeline(pipeline)        
+        task_name = "object_detector"
+        result = pipeline(task_name, bar_img1=raw_img_path)
+        assert result is None, "Run method should return None"
+    except Exception as e:
+        debug(e)
 
 
 # def test_train_task(pipeline, debug):

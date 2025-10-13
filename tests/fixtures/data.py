@@ -19,7 +19,8 @@ def convert_images(
     cls = load_class_from_string(value.pop("type"))
     if cls == ImageCrop:
         value["name"] = key
-        value["path"] = root_path / value["path"]
+        image_data = root_path / value.pop("path")
+        value["data"] = image_data
         img_crop = cls(**value)
         if img_crop:
             if validation:
@@ -52,7 +53,7 @@ def images(root_data_path) -> tuple[list[ImageCrop], list[ImageCrop]]:
 
 @pytest.fixture
 def image(raw_img_path) -> Image:
-    return Image(name="specimen_sheet", path=raw_img_path)
+    return Image(name="specimen_sheet", data=raw_img_path)
 
 
 @pytest.fixture
@@ -68,7 +69,8 @@ def model(root_data_path) -> Path:
 def pipeline(root_data_path) -> dict:
     pipeline_path = root_data_path / "collectrapipeline" / "pipeline.yaml"
     with open(pipeline_path, "r") as f:
-        config: dict = yaml.safe_load(f)
+        config: dict = yaml.safe_load(f)    
+    config["pipeline_path"] = pipeline_path.parent
     return config
 
 @pytest.fixture

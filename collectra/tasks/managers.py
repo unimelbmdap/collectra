@@ -49,9 +49,10 @@ class TaskManager:
             AttributeError: If the specified class does not exist in the module.
         """
         assert task.get("type"), "Task type is required."
-        cls = load_class_from_string(task.pop("type"))                                        
-        return cls(**task)
-    
+        cls = load_class_from_string(task.pop("type"))  
+        name = task.pop("name")
+        return cls(name=name, **task)
+
     @staticmethod
     def prepare(task: Task, **kwargs) -> dict:
         """Prepare inputs for the task execution.
@@ -62,6 +63,7 @@ class TaskManager:
         Args:
             task (Task): The task instance for which inputs are being prepared.            
         """
+        breakpoint()
         for flag, item in kwargs.items():
             if flag == "file":
                 pass

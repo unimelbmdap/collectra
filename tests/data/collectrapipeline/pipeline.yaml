@@ -4,50 +4,17 @@ collectra_pipeline_metadata:
   ext: arb
   description: pipeline configuration
 
-label_detector:
+bar_img1:
+  type: collectra.Image
+  data: bar1.jpg
+
+object_detector:
   type: collectra.ObjectDetectionYOLO
   model: yolo11n.pt
-  input: specimen_sheet
+  input: bar_img1
   epochs: 1
   output:
-  - primary_specimen_label
-  - handwritten_data
-  - annotation_label
-  - stamp
-  - swing_tag
-  - accession_number
-  - small_database_label
-  - medium_database_label
-  - full_database_label
-  - swatch
-  - scale
-
-
-field_detector:
-  type: collectra.ObjectDetectionYOLO
-  model: yolo11n.pt
-  input: primary_specimen_label
-  output:
-  - family_image
-  - genus_image
-  - species_image
-  - infrasp_taxon_image
-  - authority_image
-  - collector_number_image
-  - collector_image
-  - locality_image
-  - geolocation_image
-  - year_image
-  - month_image
-  - day_image
-  
-
-label_reader:
-  type: collectra.LLM
-  model: dummy
-  input: topic
-  output: poem
-  template: "Write a poem about {topic} in {style}"
-  variables:
-    style: haiku
-
+  - human
+  - chair
+  - table
+  - car  

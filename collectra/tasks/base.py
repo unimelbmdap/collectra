@@ -29,7 +29,8 @@ class Task(Generic[T]):
 
     def __init__(self, name: str, **kwargs) -> None:
         self.name = name
-        self.data = kwargs
+        for key, value in kwargs.items():
+            setattr(self, key, value)   
 
     def get_name(self) -> str:
         """Get the name of the task.

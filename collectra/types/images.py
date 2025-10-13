@@ -29,7 +29,6 @@ from collectra.utils import crop
 from .base import Type
 
 
-@dataclass(kw_only=True)
 class Image(Type):
     """Base class for handling image data and metadata in Collectra workflows.
 
@@ -44,11 +43,18 @@ class Image(Type):
         format (str | None): Image format (PNG, JPEG, etc.) or None if unknown.
     """
 
-    name: str  # Identifying name for the image
-    path: Path  # Path to the image file
-    raw_width: int = field(init=False)  # Image width in pixels
-    raw_height: int = field(init=False)  # Image height in pixels
-    ext: str | None = field(init=False, default=None)  # Image format (e.g., PNG, JPEG)
+    # name: str  # Identifying name for the image
+    # data: Path  # Path to the image file
+    # raw_width: int = field(init=False)  # Image width in pixels
+    # raw_height: int = field(init=False)  # Image height in pixels
+    # ext: str | None = field(init=False, default=None)  # Image format (e.g., PNG, JPEG)
+
+    def __init__(self, name: str = "", data: str | Path = ""):      
+        if not data:
+            raise ValueError("Image data path is required.")  
+        self.data = Path(data)        
+        self.name = name if name else self.data.name
+        self.__post_init__()        
 
     def attributes_to_ignore(self):
         return {"raw_width", "raw_height", "format"}
@@ -68,7 +74,7 @@ class Image(Type):
         and returns a configured Image instance.
 
         Args:
-            path (Path): Path to the image file to load.
+            data (Path): Path to the image file to load.
 
         Returns:
             Image: Configured Image instance with loaded metadata.
@@ -76,11 +82,10 @@ class Image(Type):
         Raises:
             FileNotFoundError: If the image file doesn't exist.
             PIL.UnidentifiedImageError: If the file is not a valid image.
-        """
-        self.path = Path(self.path)
-        if not self.path.exists() or not self.path.is_file():
-            raise FileNotFoundError(f"Image file not found: {self.path}")
-        with ImagePil.open(self.path) as imf:
+        """        
+        if not self.data.exists() or not self.data.is_file():
+            raise FileNotFoundError(f"Image file not found: {self.data}")
+        with ImagePil.open(self.data) as imf:
             self.ext = imf.format
             self.raw_width, self.raw_height = imf.size
 
@@ -90,7 +95,7 @@ class Image(Type):
         Returns:
             Path: The file path of the image.
         """
-        return self.path
+        return self.data
 
     @staticmethod
     def is_image_file(path: Path) -> bool:
@@ -115,7 +120,7 @@ class Image(Type):
             FileNotFoundError: If the image file doesn't exist.
             PermissionError: If the file cannot be read due to permissions.
         """
-        with open(self.path, "rb") as img_file:
+        with open(self.data, "rb") as img_file:
             buffer = img_file.read()
         return buffer
 
@@ -147,11 +152,11 @@ class Image(Type):
         """
         return {
             "type": f"{self.__class__.__module__}.{self.__class__.__name__}",
-            "path": Path(self.path).name,
+            "path": Path(self.data).name,
         }
 
     def pil(self) -> ImagePil.Image:
-        return ImagePil.open(self.path)
+        return ImagePil.open(self.data)
 
     def make_crop(
         self,
@@ -166,7 +171,7 @@ class Image(Type):
 
         return ImageCrop(
             name=self.name,
-            path=self.path,
+            data=self.data,
             x_center=x_center,
             y_center=y_center,
             width_relative=width_relative,
@@ -192,7 +197,6 @@ class Image(Type):
         )
 
 
-@dataclass(kw_only=True)
 class ImageCrop(Image):
     """Specialized image class for handling cropped regions of images.
 
@@ -211,6 +215,13 @@ class ImageCrop(Image):
     y_center: float
     width_relative: float
     height_relative: float
+
+    def __init__(self, data: str | Path, name: str = "", **kwargs):
+        super().__init__(data=data, name=name)
+        self.x_center = float(kwargs.get("x_center", 0.5))
+        self.y_center = float(kwargs.get("y_center", 0.5))
+        self.width_relative = float(kwargs.get("width_relative", 1.0))
+        self.height_relative = float(kwargs.get("height_relative", 1.0))
 
     @property
     def width(self):
@@ -241,7 +252,7 @@ class ImageCrop(Image):
         return (left, upper, right, bottom)
 
     def pil(self) -> ImagePil.Image:
-        return crop(path=self.path, coordinates=self.coordinates())
+        return crop(path=self.data, coordinates=self.coordinates())
 
     def load(self) -> bytes:
         """Load the cropped region as raw bytes.
@@ -339,7 +350,7 @@ class ImageCrop(Image):
 
         return ImageCrop(
             name=self.name,
-            path=self.path,
+            data=self.data,
             x_center=self.x_center + (x_center - 0.5) * self.width_relative,
             y_center=self.y_center + (y_center - 0.5) * self.height_relative,
             width_relative=width_relative * self.width_relative,

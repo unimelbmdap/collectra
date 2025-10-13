@@ -31,7 +31,7 @@ def test_generic_machine_learning_task(generic_type, debug):
     except Exception as e:
         debug(e)
 
-def test_object_detection_task(task_data, images, train_yolo, debug):
+def test_object_detection_task(task_data, images, train_yolo, classes, debug):
     try:
         name, data = task_data
         train_images, validation_images = images
@@ -43,7 +43,7 @@ def test_object_detection_task(task_data, images, train_yolo, debug):
             task=task,
             train_images=train_images,
             validation_images=validation_images,
-            classes=task.data["output"])    
+            classes=classes)    
         assert results, "Training failed to return any results"
         assert results.results_dict is not None, "results_dict should exist"
         shutil.rmtree(log_dir, ignore_errors=True)  

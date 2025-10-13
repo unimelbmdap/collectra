@@ -34,7 +34,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
         self.model = YOLO(model)
 
     @ThreadingLocked()
-    def run(self, input: Image) -> list[ImageCrop]:
+    def run(self, image: Image) -> list[ImageCrop]:
         """Run object detection inference on the provided Image.
 
         This method performs object detection on the provided input image
@@ -51,7 +51,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
                               objects in the input image.
         """
         self._init_model()
-        results: Results = (self.model(input.get_path())).pop()
+        results: Results = (self.model(image.get_path())).pop()
         detections: list[ImageCrop] = []
         coordinates = results.boxes.xywhn if results.boxes else []
         names = (
@@ -63,7 +63,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
             x, y, w, h = coordinates[index]
             image_crop = ImageCrop(
                 name=names[index],
-                path=input.get_path(),
+                data=image.get_path(),
                 x_center=float(x),
                 y_center=float(y),
                 width_relative=float(w),
