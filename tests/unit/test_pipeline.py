@@ -25,14 +25,9 @@ def test_pipeline_init(pipeline, debug):
     except Exception as e:
         debug(e)
 
-@patch('collectra.tasks.llms.llmloader.load')
-def test_pipeline_init_nodes(mock_llm_load, pipeline, debug):
+def test_pipeline_init_nodes(llm_loader_mock, pipeline, debug):
     try:
-        # Mock the llmloader.load to return a fake LLM object
-        mock_llm = Mock()
-        mock_llm.invoke = Mock(return_value="mock response")
-        mock_llm_load.return_value = mock_llm
-
+        llm_loader_mock, llm_instance = llm_loader_mock        
         pipeline = build_pipeline(pipeline)
         pipeline.connect()        
         pipeline.render()
@@ -40,7 +35,7 @@ def test_pipeline_init_nodes(mock_llm_load, pipeline, debug):
         debug(e)
 
 def test_get_task(pipeline, debug):
-    try:
+    try:        
         pipeline = build_pipeline(pipeline)
         task_name = "object_detector"
         task = pipeline.task(task_name)        
@@ -50,8 +45,9 @@ def test_get_task(pipeline, debug):
         debug(e)
 
 
-def test_run_task_invalid_input(pipeline, raw_img_path, debug):
+def test_run_task_invalid_input(llm_loader_mock, pipeline, raw_img_path, debug):
     try:
+        llm_loader_mock, llm_instance = llm_loader_mock
         pipeline = build_pipeline(pipeline)        
         task_name = "object_detector"        
         result = pipeline(task_name, raw_img_path)        
