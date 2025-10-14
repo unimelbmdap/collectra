@@ -17,14 +17,14 @@ Classes:
 
 __all__ = ["Collectra"]
 
-import logging, yaml, os
+import logging, yaml, graphviz
 import networkx as nx
-
 from pathlib import Path
+from rich.progress import track
 
 from collectra import Task, TaskManager, MachineLearningTask
-from collectra.utils import load_class_from_string
-from utils.get_types import get_param_types
+from collectra.utils import load_class_from_string, change_dir
+from utils.get_types import get_param_types, get_return_type, unpack_types
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -74,24 +74,23 @@ class Collectra:
         data["name"] = task_name
         return data
 
-    def run(self, task_name: str, **kwargs):                
-        current_path = Path.cwd()
-        os.chdir(self.path)        
+    def run(self, task_name: str, **kwargs):                                
         task_config = self.task(task_name)
         inputs = list()
-        task = TaskManager.build(task_config)
-        data_nodes = self._check_data_nodes(task_config)        
-        external_inputs = self._check_external_inputs(task_config, **kwargs)
-        if data_nodes:
-            inputs.extend(data_nodes)                
-        if external_inputs:
-            inputs.append(external_inputs)                           
-        inputs = self._check_input_types(get_param_types(task.run), inputs)                    
+        task = TaskManager.build(task_config)    
+        with change_dir(self.path):            
+            data_nodes = self._check_data_nodes(task_config)            
+            external_inputs = self._check_external_inputs(task_config, **kwargs)         
+            if data_nodes:
+                inputs.extend(data_nodes)                
+            if external_inputs:
+                inputs.append(external_inputs)     
+            inputs = self._check_input_types(get_param_types(task.run), inputs)                    
         if len(inputs) == 0:
             raise Exception(f"No valid inputs found for task {task_name}")        
-        for input in inputs:                               
-            task(*input)
-        os.chdir(current_path)
+        with change_dir(self.path):
+            for input in inputs:
+                task(*input)
 
     def train(self, task_name: str, **kwargs):
         task = TaskManager.build(self.task(task_name)) 
@@ -156,21 +155,104 @@ class Collectra:
                 continue
             for index, (param, cls) in enumerate(param_types.items()):
                 value = input[index]                
-                if not isinstance(value, cls):                                                      
+                if not isinstance(value, cls):                                                                        
                     value = cls(*value) if isinstance(value, tuple) else cls(value)                                  
                 input_item_dict[param] = value
             task_inputs.append(input_item_dict)        
         return task_inputs
-    
+
+    def _get_io_list(self, io: list | str) -> list:
+        if isinstance(io, str):
+            io = [io]
+        return io
+
+    def _get_io_nodes(self, param_types: list, items: list) -> list:
+        """
+        Given the parameters of a node, build a list of io nodes.
+
+        If there are options to the parameters, e.g. str | list, then build the node for each option. 
+        
+        This allows for branching in the workflow.
+
+        """                        
+        nodes = list()     
+        if len(items) == 0:
+            return nodes                 
+        for item in items:            
+            for param, types in param_types:                                                                             
+                if not isinstance(types, tuple):
+                    types = (types,)
+                for type_ in types:        
+                    node = type_(item)                                                                                     
+                    nodes.append((str(node), node))
+        return nodes
+
+    def _check_task_io(self, io_type: str, task: Task, task_config: dict) -> list:    
+        io_list = list()    
+        if io_type not in task_config:
+            return io_list
+        if io_type == "input":
+            param_types = list(unpack_types(task.run, get_param_types).items())            
+            inputs = self._get_io_list(task_config.get("input", []))                 
+            io_list = self._get_io_nodes(param_types, inputs)            
+        if io_type == "output":            
+            param_types = list(unpack_types(task.run, get_return_type).items())
+            outputs = self._get_io_list(task_config.get("output", []))                 
+            io_list = self._get_io_nodes(param_types, outputs)
+        return io_list
+
     def connect(self):
         """ Initialise the DAG representing the workflow. Preparing it for execution.
         """
-        current_path = Path.cwd()
-        os.chdir(self.path)                
-        for name, data in self.data.items():                        
-            node_cls = load_class_from_string(data.pop("type"))               
-            node = node_cls(name=name, **data)
-            self.flow.add_node(name, node=node)            
-        print(self.flow.nodes)                    
-        os.chdir(current_path)
-        
+        node_dict = dict()
+        with change_dir(self.path):            
+            updated_data_nodes = dict()
+            for name, data in track(self.data.items(), description="Building workflow..."):
+                # Create a copy to avoid modifying original data
+                data_copy = data.copy()
+                node_cls = load_class_from_string(data_copy.pop("type"))
+                node = node_cls(name, **data_copy)             
+                node_dict[str(node)] = node                
+                if isinstance(node, Task):
+                    # Use consistent key - str(node) for task name
+                    task_key = str(node)
+                    updated_data_nodes[task_key] = {"input": [], "output": []}
+                    self.flow.add_node(task_key, node=node, label=str(node), shape="box", color="blue", fontcolor="white", style="filled")
+                    node_dict[task_key] = node
+                    input_nodes = self._check_task_io("input", node, data_copy)
+                    output_nodes = self._check_task_io("output", node, data_copy)                                   
+                    for io_node in input_nodes:
+                        input_key, input_node_item = io_node
+                        if input_key not in node_dict:                            
+                            self.flow.add_node(input_key, node=input_node_item, label=str(input_node_item), shape="oval", color="salmon", fontcolor="black", style="filled")                     
+                            node_dict[input_key] = input_node_item
+                        updated_data_nodes[task_key]["input"].append(input_key)
+                    for io_node in output_nodes:
+                        output_key, output_node_item = io_node
+                        if output_key not in node_dict:                            
+                            self.flow.add_node(output_key, node=output_node_item, label=str(output_node_item), shape="oval", color="salmon", fontcolor="black", style="filled")                     
+                            node_dict[output_key] = output_node_item
+                        updated_data_nodes[task_key]["output"].append(output_key)
+                else:                    
+                    self.flow.add_node(str(node), node=node, label=str(node), shape="oval", color="salmon", fontcolor="black", style="filled")       
+                    node_dict[str(node)] = node                    
+            for task_key, data in updated_data_nodes.items():                
+                inputs = self._get_io_list(data.get("input", []))
+                outputs = self._get_io_list(data.get("output", []))   
+                for input in inputs:
+                    self.flow.add_edge(input, task_key)
+                for output in outputs:
+                    self.flow.add_edge(task_key, output)
+
+    def render(self, dest: str | Path = ""):
+        visual_graph: nx.DiGraph = self.flow.copy()
+        for node_id in visual_graph.nodes:
+            node_data = visual_graph.nodes[node_id]
+            if 'node' in node_data:
+                del node_data['node']  # Remove the 'node' attribute for visualization    
+        dot_str: str = nx.nx_pydot.to_pydot(visual_graph).to_string()        
+        if not dest:
+            dest = self.path / f"workflow"                
+        graphviz.Source(dot_str).render(filename=dest, format="svg", cleanup=True)
+
+

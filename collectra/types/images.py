@@ -26,11 +26,11 @@ from PIL import Image as ImagePil
 
 from collectra.utils import crop
 
-from .base import Type
-from .nodes import Node
+from .base import Data
 
-@dataclass(kw_only=True)
-class Image(Type, Node):
+
+@dataclass
+class Image(Data):
     """Base class for handling image data and metadata in Collectra workflows.
 
     Provides core functionality for loading, encoding, and managing image files
@@ -42,11 +42,9 @@ class Image(Type, Node):
         raw_width (int): Width of the image in pixels.
         raw_height (int): Height of the image in pixels.
         format (str | None): Image format (PNG, JPEG, etc.) or None if unknown.
-    """            
-    data: Path  # Path to the image file
-    name: str = field(default="")  # Name or identifier for the image
-    raw_width: int = field(init=False)  # Image width in pixels
-    raw_height: int = field(init=False)  # Image height in pixels
+    """                
+    raw_width: int = field(init=False, default=0)  # Image width in pixels
+    raw_height: int = field(init=False, default=0)  # Image height in pixels
     ext: str | None = field(init=False, default=None)  # Image format (e.g., PNG, JPEG)    
 
     def attributes_to_ignore(self):
@@ -75,18 +73,20 @@ class Image(Type, Node):
         Raises:
             FileNotFoundError: If the image file doesn't exist.
             PIL.UnidentifiedImageError: If the file is not a valid image.
-        """        
-        if not isinstance(self.data, Path):
-            self.data = Path(self.data)
-        if not self.name:
-            self.name = self.data.name 
-        if not self.data.exists() or not self.data.is_file():
-            raise FileNotFoundError(f"Image file not found: {self.data}")
-        with ImagePil.open(self.data) as imf:
-            self.ext = imf.format
-            self.raw_width, self.raw_height = imf.size
+        """
+        if self.data:
+            if not isinstance(self.data, Path):
+                self.data = Path(self.data)
+            if not self.name:
+                self.name = self.data.name if isinstance(self.data, Path) else self.data
+            if not self.data.exists() or not self.data.is_file():
+                raise FileNotFoundError(f"Image file not found: {self.data}")
+            with ImagePil.open(self.data) as imf:
+                self.ext = imf.format
+                self.raw_width, self.raw_height = imf.size
+        super().__post_init__()
 
-    def get_path(self) -> Path:
+    def get_path(self) -> Path | str:
         """Get the file path of the image.
 
         Returns:
@@ -167,8 +167,8 @@ class Image(Type, Node):
             height_relative = min_height / self.height
 
         return ImageCrop(
-            name=self.name,
-            data=self.data,
+            self.name,
+            self.data,
             x_center=x_center,
             y_center=y_center,
             width_relative=width_relative,
@@ -207,11 +207,11 @@ class ImageCrop(Image):
         width_relative (float): Normalized width of crop region (0.0 to 1.0).
         height_relative (float): Normalized height of crop region (0.0 to 1.0).
     """    
-    x_center: float
-    y_center: float
-    width_relative: float
-    height_relative: float
-            
+    x_center: float = field(default=0.5)
+    y_center: float = field(default=0.5)
+    width_relative: float = field(default=1.0)
+    height_relative: float = field(default=1.0)
+
     @property
     def width(self):
         return self.width_relative * self.raw_width
@@ -338,8 +338,8 @@ class ImageCrop(Image):
         assert 0.0 <= height_relative <= 1.0, f"y_center is {height_relative}"
 
         return ImageCrop(
-            name=self.name,
-            data=self.data,
+            self.name,
+            self.data,
             x_center=self.x_center + (x_center - 0.5) * self.width_relative,
             y_center=self.y_center + (y_center - 0.5) * self.height_relative,
             width_relative=width_relative * self.width_relative,

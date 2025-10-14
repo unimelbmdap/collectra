@@ -23,9 +23,8 @@ Functions:
     crop: Crop images using specified coordinates
 """
 
-import zipfile, yaml
-import importlib
-
+import zipfile, yaml, os, importlib
+from contextlib import contextmanager
 from typing import List
 from pathlib import Path
 from tqdm import tqdm
@@ -171,7 +170,7 @@ def from_dir(path: Path, config: str = "pipeline.yaml") -> dict:
 
 
 def crop(
-    path: Path, coordinates: tuple[float, float, float, float], show=False
+    path: Path | str, coordinates: tuple[float, float, float, float], show=False
 ) -> ImagePil.Image:
     """Crop an image using the specified coordinates.
 
@@ -217,3 +216,12 @@ def load_class_from_string(path: str | None):
     module = importlib.import_module(module_name)
     cls = getattr(module, class_name)
     return cls
+
+@contextmanager
+def change_dir(path: Path):
+    original = Path.cwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(original)

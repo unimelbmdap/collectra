@@ -9,7 +9,7 @@ Classes:
 
 from typing import Generic
 
-from collectra.types.base import T
+from collectra.commons import T
 
 from ..base import Task
 

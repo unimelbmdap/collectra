@@ -157,10 +157,10 @@ class LLM(Task):
         else:                
             content.append(self.add_text(prompt, key, str(value)))             
         return content
-    
-    def run(self, inputs: str| Text | Image | dict[Text, Image], **kwargs) -> Text:
-        """Execute LLM inference on the provided inputs with template-based prompt generation.                
-        
+
+    def run(self, *args: Text | Image) -> Text:
+        """Execute LLM inference on the provided inputs with template-based prompt generation.
+
         For list inputs, each item is processed individually and results are collected
         in a list. The method supports multimodal inputs (text + images) by creating
         appropriate message structures for the LangChain conversation format.

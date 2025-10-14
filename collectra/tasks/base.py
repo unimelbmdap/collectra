@@ -9,12 +9,12 @@ Classes:
 
 __all__ = ["Task"]
 
-from dataclasses import dataclass, field
 from typing import Generic
-from collectra.types.base import T
+from pathlib import Path    
 
+from collectra.commons import Node, T
 
-class Task(Generic[T]):
+class Task(Node, Generic[T]):
     """Abstract base class for all tasks in Collectra workflows.
 
     Defines the common interface and behavior that all tasks must implement.
@@ -39,6 +39,14 @@ class Task(Generic[T]):
             str: The name of the task.
         """
         return self.name
+    
+    def serialize(self) -> dict:
+        serialized = dict(type=self.get_class_path())
+        for key, value in self.attributes.items():
+            if isinstance(value, Path):
+                value = str(value)
+            serialized[key] = value
+        return serialized
 
     def __representation(self) -> str:
         """Return string representation of the task.
@@ -46,7 +54,7 @@ class Task(Generic[T]):
         Returns:
             str: Task name and class name formatted as 'name of ClassName'.
         """
-        return f"{self.get_name()} of {self.__class__.__name__}"
+        return f"{self.get_name()}\n{self.get_class_path()}"
 
     def __str__(self) -> str:
         """Return string representation of the task.
@@ -66,7 +74,7 @@ class Task(Generic[T]):
         """
         return self.__representation()
 
-    def run(self, **kwargs) -> T:
+    def run(self, *args) -> T:
         """Run the task execution logic.
 
         This method contains the core task execution logic and must be

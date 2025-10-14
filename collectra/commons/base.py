@@ -1,0 +1,70 @@
+import enum
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TypeVar, Generic
+
+__all__ = ["T", "Node", "NodeStatus"]
+
+T = TypeVar("T")
+
+class NodeStatus(enum.Enum):
+    NOT_READY = "not_ready"
+    READY = "ready"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"    
+
+    def __str__(self) -> str:
+        return self.value
+
+@dataclass
+class Node(ABC, Generic[T]):
+
+    name: str    
+    _status: NodeStatus = field(init=False, default=NodeStatus.NOT_READY)
+    
+    @property
+    def status(self) -> NodeStatus:
+        return self._status
+
+    def __str__(self) -> str:
+        return f"{self.name}\n{self.get_class_path()}"
+
+    @status.setter
+    def status(self, status: NodeStatus):
+        self._status = status
+
+    @abstractmethod
+    def __call__(self) -> T:
+        pass
+
+    def serialize(self) -> dict:
+        serialized = dict(type=self.get_class_path())
+        for key, value in self.attributes.items():
+            if isinstance(value, Path):
+                value = str(value)
+            serialized[key] = value
+        return serialized
+
+    @property
+    def attributes(self) -> dict:
+        ignore = self.attributes_to_ignore()
+        return {k: v for k, v in self.__dict__.items() if k not in ignore}
+
+    def attributes_to_ignore(self) -> set:
+        return set()
+
+    @classmethod
+    def get_class_path(cls: type) -> str:
+        """Return the fully qualified path for a class.
+
+        Example:
+            >>> from collectra.images import Image
+            >>> get_class_path(Image)
+            'collectra.images.Image'
+        """
+        return f"{cls.__module__}.{cls.__qualname__}"
+    
+

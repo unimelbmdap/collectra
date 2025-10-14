@@ -1,5 +1,6 @@
 import shutil
 
+from typing import overload
 from ultralytics.models import YOLO
 from ultralytics.engine.results import Results
 from ultralytics.utils.metrics import DetMetrics
@@ -32,9 +33,9 @@ class ObjectDetectionYOLO(MachineLearningTask):
             model (str | Path): The path to the model file or the model itself.
         """
         self.model = YOLO(model)
-
-    @ThreadingLocked()
-    def run(self, image: Image) -> list[ImageCrop]:
+    
+    @ThreadingLocked()     
+    def run(self, *args: Image) -> list[Image]:
         """Run object detection inference on the provided Image.
 
         This method performs object detection on the provided input image
@@ -50,6 +51,11 @@ class ObjectDetectionYOLO(MachineLearningTask):
             list[ImageCrop]: A list of ImageCrop objects representing the detected
                               objects in the input image.
         """
+        if len(args) != 1:
+            raise ValueError("This task only supports a single Image input.")
+        if not isinstance(args[0], Image):
+            raise TypeError("Input must be an instance of Image.")
+        image: Image = args[0]
         self._init_model()
         results: Results = (self.model(image.get_path())).pop()
         detections: list[ImageCrop] = []
