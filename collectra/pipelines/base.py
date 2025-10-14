@@ -57,8 +57,8 @@ class Collectra:
         self.path: Path = Path.cwd() / name if not path else Path(path)        
         self.data: dict = kwargs
 
-    def __call__(self, task_name: str, **kwargs):
-        self.run(task_name, **kwargs)
+    def __call__(self, task_name: str, *args):
+        self.run(task_name, *args)
 
     def task(self, task_name: str) -> dict:
         """Get a task from the workflow by name.
@@ -74,23 +74,14 @@ class Collectra:
         data["name"] = task_name
         return data
 
-    def run(self, task_name: str, **kwargs):                                
-        task_config = self.task(task_name)
-        inputs = list()
-        task = TaskManager.build(task_config)    
-        with change_dir(self.path):            
-            data_nodes = self._check_data_nodes(task_config)            
-            external_inputs = self._check_external_inputs(task_config, **kwargs)         
-            if data_nodes:
-                inputs.extend(data_nodes)                
-            if external_inputs:
-                inputs.append(external_inputs)     
-            inputs = self._check_input_types(get_param_types(task.run), inputs)                    
-        if len(inputs) == 0:
-            raise Exception(f"No valid inputs found for task {task_name}")        
-        with change_dir(self.path):
-            for input in inputs:
-                task(*input)
+    def run(self, task_name: str, *args):                                
+        if self.flow.number_of_nodes() == 0:
+            self.connect()
+        node: dict | None = self.flow.nodes.get(task_name, None)        
+        assert node, f"Task {task_name} not found in workflow"
+        task: Task | None = node.get("node", None)        
+        assert task, f"data for {task_name} not found in workflow. Possible empty node."                
+        task(*args)        
 
     def train(self, task_name: str, **kwargs):
         task = TaskManager.build(self.task(task_name)) 
@@ -215,7 +206,7 @@ class Collectra:
                 node_dict[str(node)] = node                
                 if isinstance(node, Task):
                     # Use consistent key - str(node) for task name
-                    task_key = str(node)
+                    task_key = name
                     updated_data_nodes[task_key] = {"input": [], "output": []}
                     self.flow.add_node(task_key, node=node, label=str(node), shape="box", color="blue", fontcolor="white", style="filled")
                     node_dict[task_key] = node

@@ -83,7 +83,7 @@ class Task(Node, Generic[T]):
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
-    def __call__(self, **kwargs) -> T:
+    def __call__(self, *args) -> T:
         """Run the task with the provided arguments.
 
         Args:
@@ -92,5 +92,5 @@ class Task(Node, Generic[T]):
         Returns:
 
         """
-        return self.run(**kwargs)
+        return self.run(*args)
         
