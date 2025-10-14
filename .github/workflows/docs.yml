@@ -23,6 +23,8 @@ jobs:
         python-version: ["3.11"]
     steps:
       - uses: actions/checkout@v4
+      - name: Setup Graphviz
+        uses: ts-graphviz/setup-graphviz@v2
 
       - name: Install poetry
         run: pipx install poetry
