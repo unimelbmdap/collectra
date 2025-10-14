@@ -31,7 +31,6 @@ from tqdm import tqdm
 from PIL import Image as ImagePil
 
 
-
 def success_msg(message: str):
     """Format a success message with green styling for console output.
 
@@ -196,6 +195,7 @@ def crop(
             im_crop.show()
     return im_crop
 
+
 def load_class_from_string(path: str | None):
     """Dynamically load a class from a string module path.
 
@@ -216,6 +216,7 @@ def load_class_from_string(path: str | None):
     module = importlib.import_module(module_name)
     cls = getattr(module, class_name)
     return cls
+
 
 @contextmanager
 def change_dir(path: Path):

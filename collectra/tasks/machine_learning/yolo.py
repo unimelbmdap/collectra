@@ -33,8 +33,8 @@ class ObjectDetectionYOLO(MachineLearningTask):
             model (str | Path): The path to the model file or the model itself.
         """
         self.model = YOLO(model)
-    
-    @ThreadingLocked()     
+
+    @ThreadingLocked()
     def run(self, *args: Image) -> list[Image]:
         """Run object detection inference on the provided Image.
 
@@ -131,7 +131,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
             src = img.get_path()
             dst = log_dir / src.name
             if not dst.exists():  # Only copy if the file does not already exist
-                shutil.copy(src, dst)                 
+                shutil.copy(src, dst)
             name_index = classes.index(img.name) if img.name in classes else -1
             if not name_index:
                 continue

@@ -8,8 +8,7 @@ pytest_plugins = [
     "tests.fixtures.types",
 ]
 
+
 @pytest.fixture(autouse=True)
 def cleanup_tmp_dir():
     shutil.rmtree("log_dir", ignore_errors=True)
-
-

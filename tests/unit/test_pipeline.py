@@ -2,9 +2,10 @@ from collectra import Collectra
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+
 def build_pipeline(pipeline: dict) -> Collectra:
     metadata: dict = pipeline.pop("collectra_pipeline_metadata")
-    name = metadata["name"]      
+    name = metadata["name"]
     ext = metadata["ext"]
     version = metadata["version"]
     path = pipeline.pop("pipeline_path", "")
@@ -21,26 +22,34 @@ def test_pipeline_init(pipeline, debug):
         assert pipeline.ext == ext
         assert pipeline.version == version
         assert pipeline.path
-        assert isinstance(pipeline.data, dict) and len(pipeline.data) > 0, "Pipeline data should be a non-empty dictionary"
+        assert (
+            isinstance(pipeline.data, dict) and len(pipeline.data) > 0
+        ), "Pipeline data should be a non-empty dictionary"
     except Exception as e:
         debug(e)
 
+
 def test_pipeline_init_nodes(llm_loader_mock, pipeline, debug, tmpdir):
     try:
-        llm_loader_mock, llm_instance = llm_loader_mock        
+        llm_loader_mock, llm_instance = llm_loader_mock
         pipeline = build_pipeline(pipeline)
-        pipeline.connect()        
+        pipeline.connect()
         pipeline.render(Path(tmpdir) / "pipeline_diagram.png")
     except Exception as e:
         debug(e)
 
+
 def test_get_task(pipeline, debug):
-    try:        
+    try:
         pipeline = build_pipeline(pipeline)
         task_name = "object_detector"
-        task = pipeline.task(task_name)        
-        assert isinstance(task, dict) and len(task) > 0, f"Task '{task_name}' should be a non-empty dictionary"
-        assert task.get("type", None) == "collectra.ObjectDetectionYOLO", f"Task '{task_name}' should have type 'collectra.ObjectDetectionYOLO'"
+        task = pipeline.task(task_name)
+        assert (
+            isinstance(task, dict) and len(task) > 0
+        ), f"Task '{task_name}' should be a non-empty dictionary"
+        assert (
+            task.get("type", None) == "collectra.ObjectDetectionYOLO"
+        ), f"Task '{task_name}' should have type 'collectra.ObjectDetectionYOLO'"
     except Exception as e:
         debug(e)
 
@@ -48,15 +57,18 @@ def test_get_task(pipeline, debug):
 def test_run_task_invalid_input(llm_loader_mock, pipeline, raw_img_path, debug):
     try:
         llm_loader_mock, llm_instance = llm_loader_mock
-        pipeline = build_pipeline(pipeline)        
-        task_name = "object_detector"        
-        result = pipeline(task_name, raw_img_path)        
+        pipeline = build_pipeline(pipeline)
+        task_name = "object_detector"
+        result = pipeline(task_name, raw_img_path)
     except Exception as e:
-        assert str(e) == "Input must be an instance of Image.", "Expected TypeError for invalid input type"
+        assert (
+            str(e) == "Input must be an instance of Image."
+        ), "Expected TypeError for invalid input type"
+
 
 # def test_run_llm_task(pipeline, debug):
 #     try:
-#         pipeline = build_pipeline(pipeline)        
+#         pipeline = build_pipeline(pipeline)
 #         task_name = "markdown_converter"
 #         result = pipeline(task_name)
 #         assert result is None, "Run method should return None"=

@@ -10,9 +10,10 @@ Classes:
 __all__ = ["Task"]
 
 from typing import Generic
-from pathlib import Path    
+from pathlib import Path
 
 from collectra.commons import Node, T
+
 
 class Task(Node, Generic[T]):
     """Abstract base class for all tasks in Collectra workflows.
@@ -30,7 +31,7 @@ class Task(Node, Generic[T]):
     def __init__(self, name: str, **kwargs) -> None:
         self.name = name
         for key, value in kwargs.items():
-            setattr(self, key, value)   
+            setattr(self, key, value)
 
     def get_name(self) -> str:
         """Get the name of the task.
@@ -39,7 +40,7 @@ class Task(Node, Generic[T]):
             str: The name of the task.
         """
         return self.name
-    
+
     def serialize(self) -> dict:
         serialized = dict(type=self.get_class_path())
         for key, value in self.attributes.items():
@@ -93,4 +94,3 @@ class Task(Node, Generic[T]):
 
         """
         return self.run(*args)
-        

@@ -34,12 +34,13 @@ def test_train_yolo_temp_dir(classes, images, model, train_yolo, debug):
             task=yolo_task,
             train_images=train_images,
             validation_images=validation_images,
-            classes=classes)      
+            classes=classes,
+        )
         assert results, "Training failed to return any results"
         assert results.results_dict is not None, "results_dict should exist"
         best_model_path = results.save_dir / "weights" / "best.pt"
         assert best_model_path.exists(), f"best.pt not found in {best_model_path}"
-        shutil.rmtree(log_dir, ignore_errors=True)  
+        shutil.rmtree(log_dir, ignore_errors=True)
     except Exception as e:
         debug(e)
 

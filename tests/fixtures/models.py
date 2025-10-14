@@ -53,6 +53,7 @@ def initalised_yolo_model(classes):
         yolo_mock.return_value = yolo_mock_client
         yield yolo_mock, yolo_mock_client
 
+
 @pytest.fixture
 def llm_loader_mock():
     with patch("collectra.tasks.llms.llmloader.load") as llm_loader_mock:

@@ -42,10 +42,11 @@ class Image(Data):
         raw_width (int): Width of the image in pixels.
         raw_height (int): Height of the image in pixels.
         format (str | None): Image format (PNG, JPEG, etc.) or None if unknown.
-    """                
+    """
+
     raw_width: int = field(init=False, default=0)  # Image width in pixels
     raw_height: int = field(init=False, default=0)  # Image height in pixels
-    ext: str | None = field(init=False, default=None)  # Image format (e.g., PNG, JPEG)    
+    ext: str | None = field(init=False, default=None)  # Image format (e.g., PNG, JPEG)
 
     def attributes_to_ignore(self):
         return {"raw_width", "raw_height", "format"}
@@ -193,6 +194,7 @@ class Image(Data):
             min_height=min_height,
         )
 
+
 @dataclass
 class ImageCrop(Image):
     """Specialized image class for handling cropped regions of images.
@@ -206,7 +208,8 @@ class ImageCrop(Image):
         y_center (float): Normalized y-coordinate of crop center (0.0 to 1.0).
         width_relative (float): Normalized width of crop region (0.0 to 1.0).
         height_relative (float): Normalized height of crop region (0.0 to 1.0).
-    """    
+    """
+
     x_center: float = field(default=0.5)
     y_center: float = field(default=0.5)
     width_relative: float = field(default=1.0)

@@ -9,22 +9,24 @@ __all__ = ["T", "Node", "NodeStatus"]
 
 T = TypeVar("T")
 
+
 class NodeStatus(enum.Enum):
     NOT_READY = "not_ready"
     READY = "ready"
     RUNNING = "running"
     COMPLETED = "completed"
-    FAILED = "failed"    
+    FAILED = "failed"
 
     def __str__(self) -> str:
         return self.value
 
+
 @dataclass
 class Node(ABC, Generic[T]):
 
-    name: str    
+    name: str
     _status: NodeStatus = field(init=False, default=NodeStatus.NOT_READY)
-    
+
     @property
     def status(self) -> NodeStatus:
         return self._status
@@ -66,5 +68,3 @@ class Node(ABC, Generic[T]):
             'collectra.images.Image'
         """
         return f"{cls.__module__}.{cls.__qualname__}"
-    
-

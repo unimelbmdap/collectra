@@ -5,10 +5,11 @@ from .base import Data
 
 __all__ = ["Text"]
 
-@dataclass
-class Text(Data):    
 
-    def __post_init__(self):        
+@dataclass
+class Text(Data):
+
+    def __post_init__(self):
         try:
             if self.data and Path(self.data).exists():
                 self.data = Path(self.data)
@@ -18,4 +19,4 @@ class Text(Data):
         if isinstance(self.data, Path) and self.data.exists() and self.data.is_file():
             self.data = self.data.read_text()
 
-        super().__post_init__()        
+        super().__post_init__()

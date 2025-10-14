@@ -49,7 +49,7 @@ class TaskManager:
             AttributeError: If the specified class does not exist in the module.
         """
         assert task.get("type"), "Task type is required."
-        cls = load_class_from_string(task.pop("type"))  
+        cls = load_class_from_string(task.pop("type"))
         name = task.pop("name")
         return cls(name=name, **task)
 
@@ -61,7 +61,7 @@ class TaskManager:
         or transformation logic as needed.
 
         Args:
-            task (Task): The task instance for which inputs are being prepared.            
+            task (Task): The task instance for which inputs are being prepared.
         """
         breakpoint()
         for flag, item in kwargs.items():
@@ -81,5 +81,5 @@ class TaskManager:
         """
         param_types = get_param_types(task.train)
         if not param_types:
-            return kwargs   
+            return kwargs
         breakpoint()
