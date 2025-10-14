@@ -74,14 +74,38 @@ class Collectra:
         data["name"] = task_name
         return data
 
-    def run(self, task_name: str, *args):                                
+    def run(self, task_name: str = "", *args):    
+        parent_tasks = list()                            
         if self.flow.number_of_nodes() == 0:
             self.connect()
-        node: dict | None = self.flow.nodes.get(task_name, None)        
-        assert node, f"Task {task_name} not found in workflow"
+        if task_name:
+            node: dict | None = self.flow.nodes.get(task_name, None)        
+            assert node, f"Task {task_name} not found in workflow"
+            task = self._get_task(node)
+            parent_tasks = [task]
+        else:
+            nodes: list[dict] = [node for node in self.flow.nodes() if len(list(self.flow.predecessors(node))) == 0]
+            for node in nodes:
+                task = self._get_task(node)
+                parent_tasks.append(task)            
+        self._run_nodes(parent_tasks, *args)
+    
+    def _get_task(self, node: dict) -> Task:
         task: Task | None = node.get("node", None)        
-        assert task, f"data for {task_name} not found in workflow. Possible empty node."                
-        task(*args)        
+        assert task, f"data for {node} not found in workflow. Possible empty node."                
+        return task
+
+    def _run_nodes(self, tasks: list[Task], *args):
+        for task in tasks:
+            result: tuple | list = self._run_task(task, *args)
+            children = list(self.flow.successors(str(task)))
+            if children:
+                for child in children:
+                    node = self._get_task(child)
+                    self._run_task(node, *result)
+
+    def _run_task(self, task: Task, *args):        
+        return task(*args)            
 
     def train(self, task_name: str, **kwargs):
         task = TaskManager.build(self.task(task_name)) 
