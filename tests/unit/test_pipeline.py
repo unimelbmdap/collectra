@@ -25,12 +25,12 @@ def test_pipeline_init(pipeline, debug):
     except Exception as e:
         debug(e)
 
-def test_pipeline_init_nodes(llm_loader_mock, pipeline, debug):
+def test_pipeline_init_nodes(llm_loader_mock, pipeline, debug, tmpdir):
     try:
         llm_loader_mock, llm_instance = llm_loader_mock        
         pipeline = build_pipeline(pipeline)
         pipeline.connect()        
-        pipeline.render()
+        pipeline.render(Path(tmpdir) / "pipeline_diagram.png")
     except Exception as e:
         debug(e)
 
