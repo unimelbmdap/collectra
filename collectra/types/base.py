@@ -1,7 +1,10 @@
+from abc import abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
+
 from collectra.commons import Node, NodeStatus
 
+__all__ = ["Data"]
 
 @dataclass
 class Data(Node):
@@ -16,3 +19,8 @@ class Data(Node):
 
     def __call__(self) -> str:
         return self.return_data()
+
+    @abstractmethod
+    def handle(self) -> None:
+        """Handle data preparation or loading logic."""
+        pass

@@ -17,9 +17,10 @@ __all__ = ["TaskManager"]
 
 from typing import get_args
 
-from collectra.tasks.base import Task
+from .base import Task
+from .machine_learning import MachineLearningTask
 from collectra.utils import load_class_from_string
-from utils.get_types import get_param_types
+from utils.get_types import unpack_types, get_param_types
 
 
 class TaskManager:
@@ -69,7 +70,7 @@ class TaskManager:
                 pass
 
     @staticmethod
-    def prepare_train(task: Task, **kwargs) -> dict:
+    def prepare_train(task: MachineLearningTask, **kwargs) -> dict:
         """Prepare inputs for the task training.
 
         This method can be extended to include input validation, preprocessing,
@@ -79,7 +80,7 @@ class TaskManager:
             task (Task): The task instance for which training inputs are being prepared.
             inputs (dict): A dictionary of input parameters for the task.
         """
-        param_types = get_param_types(task.train)
-        if not param_types:
-            return kwargs
+        # This assumes the training function has only one defined type annotation
+        type_ = list(unpack_types(task.train, get_param_types).values())[0]
         breakpoint()
+        

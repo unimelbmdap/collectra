@@ -81,54 +81,54 @@ class ObjectDetectionYOLO(MachineLearningTask):
 
     def train(
         self,
-        train_img: list[ImageCrop],
-        val_img: list[ImageCrop],
-        classes: list[str],
-        **kwargs,
-    ) -> DetMetrics | None:
+        *images: ImageCrop,
+        **kwargs          
+    ) -> DetMetrics | None:        
         self._init_model()
         log_dir: Path = (
             Path(kwargs.pop("log_dir"))
             if kwargs.get("log_dir", None)
-            else Path.cwd() / "logs"
+            else Path.cwd() / "log_dir"
         )
         kwargs["log_dir"] = log_dir
+        classes = kwargs.pop("classes", [])
         log_dir.mkdir(parents=True, exist_ok=True)
         print(f"Training logs will be saved to: {log_dir}")
         kwargs["config_file"] = self._prepare_yolo_config(
-            classes, train_img, val_img, log_dir
+            classes, log_dir, *images
         )
-        self._prepare_assets(classes, train_img + val_img, log_dir)
+        self._prepare_assets(classes, log_dir, *images)
         params = self._prepare_params(**kwargs)
         results: DetMetrics | None = self.model.train(**params)
         return results
 
     def _prepare_yolo_config(
         self,
-        classes: list[str],
-        train_img: list[ImageCrop],
-        val_img: list[ImageCrop],
+        classes: list[str],        
         log_dir: Path,
+        *images: ImageCrop
     ) -> Path:
         config = (
             f"train: train.txt\nval: val.txt\nnc: {len(classes)}\nnames: {classes}\n"
         )
-        train_files = set([f"./{img.get_path().name}" for img in train_img])
-        val_files = set([f"./{img.get_path().name}" for img in val_img])
-
+        train_files = set()
+        val_files = set()
+        for img in images:
+            if img.validation:
+                val_files.add(f"./{Path(img.get_path()).name}")
+            else:
+                train_files.add(f"./{Path(img.get_path()).name}")
         config_file = log_dir / "config.yml"
-        Path(config_file).write_text(config)
-        if train_files:
-            Path(log_dir / "train.txt").write_text("\n".join(train_files))
-        if val_files:
-            Path(log_dir / "val.txt").write_text("\n".join(val_files))
+        Path(config_file).write_text(config)        
+        Path(log_dir / "train.txt").write_text("\n".join(train_files))        
+        Path(log_dir / "val.txt").write_text("\n".join(val_files))
         return config_file
 
     def _prepare_assets(
-        self, classes: list[str], images: list[ImageCrop], log_dir: Path
+        self, classes: list[str], log_dir: Path, *images: ImageCrop
     ) -> None:
         for img in images:
-            src = img.get_path()
+            src = Path(img.get_path())
             dst = log_dir / src.name
             if not dst.exists():  # Only copy if the file does not already exist
                 shutil.copy(src, dst)

@@ -20,3 +20,7 @@ class Text(Data):
             self.data = self.data.read_text()
 
         super().__post_init__()
+
+    def handle(self) -> None:
+        """Handle data preparation or loading logic."""
+        pass

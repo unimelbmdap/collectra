@@ -19,12 +19,12 @@ Classes:
 __all__ = ["Image", "ImageCrop"]
 
 
-import base64, io, copy
+import base64, io, copy, yaml
 from dataclasses import dataclass, field
 from pathlib import Path
 from PIL import Image as ImagePil
 
-from collectra.utils import crop
+from collectra.utils import crop, error_msg, load_class_from_string
 
 from .base import Data
 
@@ -193,8 +193,30 @@ class Image(Data):
             height_relative=height_relative,
             min_height=min_height,
         )
-
-
+    
+    def handle(self) -> list["ImageCrop"]:
+        result_file = Path("results.yaml")
+        images: list[ImageCrop] = list()
+        if not result_file.exists():
+            print(error_msg(f"Invalid file: {Path.cwd()}. Ignoring..."))
+            return images
+        with open(result_file, "r") as f:
+            results: dict = yaml.safe_load(f)
+            validation = results.pop("collectra_results_metadata", dict()).get("validation", False)        
+        for key, value in results.items():
+            if not ("type" in value and "path" in value):
+                continue
+            cls_ = load_class_from_string(value.pop("type"))            
+            if cls_ != ImageCrop:
+                continue
+            value["name"] = key            
+            value["data"] = Path.cwd() / value.pop("path")
+            value["validation"] = validation
+            img_crop = cls_(**value)
+            if img_crop:                
+                images.append(img_crop)
+        return images
+    
 @dataclass
 class ImageCrop(Image):
     """Specialized image class for handling cropped regions of images.
@@ -214,6 +236,7 @@ class ImageCrop(Image):
     y_center: float = field(default=0.5)
     width_relative: float = field(default=1.0)
     height_relative: float = field(default=1.0)
+    validation: bool = field(default=False)
 
     @property
     def width(self):
@@ -277,6 +300,7 @@ class ImageCrop(Image):
             }
         )
         return data
+        
 
     @staticmethod
     def metadata_list(images: list["ImageCrop"]) -> dict:
@@ -347,4 +371,4 @@ class ImageCrop(Image):
             y_center=self.y_center + (y_center - 0.5) * self.height_relative,
             width_relative=width_relative * self.width_relative,
             height_relative=height_relative * self.height_relative,
-        )
+        )        

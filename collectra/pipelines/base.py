@@ -17,12 +17,12 @@ Classes:
 
 __all__ = ["Collectra"]
 
-import logging, yaml, graphviz
+import logging, yaml, graphviz, copy
 import networkx as nx
 from pathlib import Path
 from rich.progress import track
 
-from collectra import Task, TaskManager, MachineLearningTask
+from collectra import Task, Data, MachineLearningTask
 from collectra.utils import load_class_from_string, change_dir
 from utils.get_types import get_param_types, get_return_type, unpack_types
 
@@ -84,7 +84,7 @@ class Collectra:
         if task_name:
             node: dict | None = self.flow.nodes.get(task_name, None)
             assert node, f"Task {task_name} not found in workflow"
-            task = self._get_task(node)
+            task = self._resolve_node(node)
             parent_tasks = [task]
         else:
             nodes: list[dict] = [
@@ -93,12 +93,12 @@ class Collectra:
                 if len(list(self.flow.predecessors(node))) == 0
             ]
             for node in nodes:
-                task = self._get_task(node)
+                task = self._resolve_node(node)
                 parent_tasks.append(task)
         self._run_nodes(parent_tasks, *args)
 
-    def _get_task(self, node: dict) -> Task:
-        task: Task | None = node.get("node", None)
+    def _resolve_node(self, node: dict) -> Task | Data:
+        task: Task | Data | None = node.get("node", None)
         assert task, f"data for {node} not found in workflow. Possible empty node."
         return task
 
@@ -108,80 +108,57 @@ class Collectra:
             children = list(self.flow.successors(str(task)))
             if children:
                 for child in children:
-                    node = self._get_task(child)
+                    node = self._resolve_node(child)
                     self._run_task(node, *result)
 
     def _run_task(self, task: Task, *args):
         return task(*args)
 
     def train(self, task_name: str, **kwargs):
-        task = TaskManager.build(self.task(task_name))
-        inputs = TaskManager.prepare_train(task, **kwargs)
-        assert isinstance(task, MachineLearningTask)
-        task.train(**inputs)
+        if self.flow.number_of_nodes() == 0:
+            self.connect()        
+        node: dict | None = self.flow.nodes.get(task_name, None)
+        assert node, f"Task {task_name} not found in workflow"
+        task = self._resolve_node(node)
+        if not isinstance(task, MachineLearningTask):
+            raise ValueError(f"Task {task_name} is not a MachineLearningTask")
+        parents = [parent for parent in self.flow.predecessors(task_name)]        
+        results: list = list()
+        for parent in parents:
+            parent_node = self.flow.nodes.get(parent, None) 
+            assert parent_node, f"Parent node {parent} not found in workflow"           
+            data_node = self._resolve_node(parent_node)
+            if not isinstance(data_node, Data):
+                continue            
+            for item in kwargs.pop("input", []):
+                item_path = Path(item)
+                if item_path.is_dir():
+                    for item_file in item_path.glob(f"*.{self.ext}"):                        
+                        with change_dir(item_file):
+                            result = data_node.handle()                            
+                            results.extend(result)
+                else:
+                    result = data_node.handle(item_path)
+                    results.extend(result)
+        children = [child for child in self.flow.successors(task_name)]
+        if "classes" not in kwargs:
+            classes = list()
+            for child in children:
+                child_node = self.flow.nodes.get(child, None) 
+                assert child_node, f"Child node {child} not found in workflow"           
+                child_data = self._resolve_node(child_node)
+                if not isinstance(child_data, Data):
+                    continue
+                classes.append(child_data.name)
+            kwargs["classes"] = classes
+        task.train(*results, **kwargs)
+        
 
     def _get_task_required_inputs(self, task_config: dict) -> list[str]:
         task_required_input: list | str = task_config.get("input", [])
         if not isinstance(task_required_input, list):
             task_required_input = [task_required_input]
         return task_required_input
-
-    def _check_data_nodes(self, task_config: dict) -> list:
-        inputs = list()
-        task_required_input: list[str] = self._get_task_required_inputs(task_config)
-        preprocess = task_required_input[0] in self.data
-        while preprocess and len(task_required_input) > 0:
-            input_item = dict.fromkeys(task_required_input)
-            for name in input_item.keys():
-                data = self.data.pop(name, None)
-                if isinstance(data, dict):
-                    data_cls = load_class_from_string(data.pop("type"))
-                    data_item = data_cls(**data)
-                    input_item[name] = data_item
-                else:
-                    input_item[name] = None
-            if not any(v is None for v in input_item.values()):
-                inputs.append(list(input_item.values()))
-            preprocess = task_required_input[0] in self.data
-        return inputs
-
-    def _check_external_inputs(self, task_config: dict, **kwargs) -> list:
-        inputs = list()
-        task_required_input: list[str] = self._get_task_required_inputs(task_config)
-        required_input_arr_len = len(task_required_input)
-        kwargs_inputs = list(kwargs.items())
-        index = 0
-        while index < len(kwargs_inputs):
-            index_next = index + required_input_arr_len
-            if index_next > len(kwargs_inputs):
-                break
-            else:
-                input_item = dict()
-                sub_inputs = kwargs_inputs[index:index_next]
-                for sub_index in range(len(task_required_input)):
-                    name, value = sub_inputs[sub_index]
-                    if name == task_required_input[sub_index]:
-                        input_item[name] = value
-                if len(input_item) == len(task_required_input):
-                    inputs.extend(list(input_item.items()))
-            index = index_next
-        return inputs
-
-    def _check_input_types(self, param_types: dict | None, inputs: list) -> list:
-        task_inputs = list()
-        if not param_types:
-            return inputs
-        for input in inputs:
-            input_item_dict = dict()
-            if len(input) != len(param_types):
-                continue
-            for index, (param, cls) in enumerate(param_types.items()):
-                value = input[index]
-                if not isinstance(value, cls):
-                    value = cls(*value) if isinstance(value, tuple) else cls(value)
-                input_item_dict[param] = value
-            task_inputs.append(input_item_dict)
-        return task_inputs
 
     def _get_io_list(self, io: list | str) -> list:
         if isinstance(io, str):
@@ -232,12 +209,11 @@ class Collectra:
                 self.data.items(), description="Building workflow..."
             ):
                 # Create a copy to avoid modifying original data
-                data_copy = data.copy()
+                data_copy = copy.deepcopy(data)                
                 node_cls = load_class_from_string(data_copy.pop("type"))
                 node = node_cls(name, **data_copy)
                 node_dict[str(node)] = node
-                if isinstance(node, Task):
-                    # Use consistent key - str(node) for task name
+                if isinstance(node, Task):                    
                     task_key = name
                     updated_data_nodes[task_key] = {"input": [], "output": []}
                     self.flow.add_node(

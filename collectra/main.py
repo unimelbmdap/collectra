@@ -15,15 +15,16 @@ Example:
     $ collectra run --workflow pipeline.yaml --task detection
 """
 
+import os, shutil, logging, sys, traceback
+
 from datetime import datetime
 from pathlib import Path
 from rich import print
 from typer import Typer, Option, Argument, Context
 from typing_extensions import Annotated
+
 from collectra.pipelines.managers import CollectraManager
 from collectra.utils import success_msg, error_msg
-
-import os, shutil, logging, sys
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(stream=sys.stdout)
@@ -153,9 +154,7 @@ def train(
             log_cache = Path(f"{log}.cache")
             if log_cache.exists():
                 os.remove(log_cache)
-    except Exception as e:
-        import traceback
-
+    except Exception as e:        
         traceback.print_exc()
         print(error_msg(f"Failed to train task: {e}"))
 
