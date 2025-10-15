@@ -42,13 +42,12 @@ def test_object_detection_task(task_data, images, train_yolo, classes, debug):
         assert isinstance(
             task, ObjectDetectionYOLO
         ), f"Task {name} should be an instance of ObjectDetectionYOLO"
-        results, log_dir = train_yolo(
+        results, _, log_dir = train_yolo(
             task,
             *images,
             classes=classes,
         )
         assert results, "Training failed to return any results"
-        assert results.results_dict is not None, "results_dict should exist"
-        shutil.rmtree(log_dir, ignore_errors=True)
+        assert results.results_dict is not None, "results_dict should exist"        
     except Exception as e:
         debug(e)

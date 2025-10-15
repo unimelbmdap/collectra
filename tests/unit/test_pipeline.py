@@ -66,18 +66,19 @@ def build_pipeline(pipeline: dict) -> Collectra:
 #         ), "Expected TypeError for invalid input type"
 
 
-def test_train(llm_loader_mock, classes, pipeline, debug, tmpdir):
+def test_train(llm_loader_mock, pipeline, debug, tmpdir):
     try:
         llm_loader_mock, llm_instance = llm_loader_mock
         pipeline = build_pipeline(pipeline)
         task_name = "object_detector"
         log_dir = Path(tmpdir) / "train_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        result = pipeline.train(task_name, input=["tests/data/images"])
-        assert result is None, "Train method should return None"
+        result, validation_result  = pipeline.train(task_name, input=["tests/data/images"], log_dir=log_dir)        
+        pipeline.save()
+        assert result, "Train method should not return None"
+        assert validation_result, "Validation result should not be None"
     except Exception as e:
-        debug(e)
-
+        debug(e)    
 
 # def test_train_task(pipeline, debug):
 #     try:

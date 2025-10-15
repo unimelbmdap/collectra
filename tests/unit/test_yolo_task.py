@@ -26,7 +26,7 @@ def test_train_yolo_temp_dir(classes, images, model, train_yolo, debug):
         assert isinstance(yolo_task.model, str) or isinstance(
             yolo_task.model, Path
         ), "Model should be a string or path initially"
-        results, log_dir = train_yolo(
+        results, _, log_dir = train_yolo(
             yolo_task,
             *images,
             classes=classes,
@@ -34,8 +34,7 @@ def test_train_yolo_temp_dir(classes, images, model, train_yolo, debug):
         assert results, "Training failed to return any results"
         assert results.results_dict is not None, "results_dict should exist"
         best_model_path = results.save_dir / "weights" / "best.pt"
-        assert best_model_path.exists(), f"best.pt not found in {best_model_path}"
-        shutil.rmtree(log_dir, ignore_errors=True)
+        assert best_model_path.exists(), f"best.pt not found in {best_model_path}"        
     except Exception as e:
         debug(e)
 

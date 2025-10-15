@@ -27,14 +27,14 @@ def train_yolo():
         task: ObjectDetectionYOLO,
         *images: ImageCrop,
         **kwargs
-    ) -> tuple[DetMetrics | None, Path]:
+    ) -> tuple[DetMetrics | None, DetMetrics | None, Path]:
         log_dir = Path.cwd() / "log_dir"
         Path(log_dir).mkdir(exist_ok=True)
-        results = task.train(
+        results, validation_results = task.train(
             *images,
             log_dir=log_dir,
             **kwargs,            
         )
-        return results, log_dir
+        return results, validation_results, log_dir
 
     return _train_yolo
