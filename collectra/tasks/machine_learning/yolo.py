@@ -20,9 +20,9 @@ class ObjectDetectionYOLO(MachineLearningTask):
     model: str | Path | YOLO
 
     def _init_model(self) -> None:
-        """Ensure that the YOLO model is loaded before performing any operations."""
+        """Ensure that the YOLO model is loaded before performing any operations."""        
         if self.model and isinstance(self.model, (str, Path)):
-            self._load(self.model)
+            self._load(Path(self.model))
         if not isinstance(self.model, YOLO):
             raise ValueError("Model must be a YOLO instance")
 
@@ -31,8 +31,9 @@ class ObjectDetectionYOLO(MachineLearningTask):
 
         Args:
             model (str | Path): The path to the model file or the model itself.
-        """
-        self.model = YOLO(model)
+        """        
+        self.model = YOLO(model)    
+        
 
     @ThreadingLocked()
     def run(self, *args: Image) -> list[Image]:
@@ -82,8 +83,8 @@ class ObjectDetectionYOLO(MachineLearningTask):
     def train(
         self,
         *images: ImageCrop,
-        **kwargs          
-    ) -> DetMetrics | None:        
+        **kwargs
+    ) -> tuple[DetMetrics | None, DetMetrics | None]:        
         self._init_model()
         log_dir: Path = (
             Path(kwargs.pop("log_dir"))
@@ -99,8 +100,9 @@ class ObjectDetectionYOLO(MachineLearningTask):
         )
         self._prepare_assets(classes, log_dir, *images)
         params = self._prepare_params(**kwargs)
-        results: DetMetrics | None = self.model.train(**params)
-        return results
+        results: DetMetrics | None = self.model.train(**params)                
+        validation_results = YOLO(results.save_dir / "weights" / "best.pt").val()
+        return results, validation_results
 
     def _prepare_yolo_config(
         self,
@@ -148,8 +150,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
                     )
 
     def _prepare_params(self, **kwargs) -> dict:
-        import platform, torch
-
+        import platform, torch        
         params = {
             "data": kwargs["config_file"],
             "project": kwargs["config_file"].parent,
@@ -160,5 +161,5 @@ class ObjectDetectionYOLO(MachineLearningTask):
             ),
             "epochs": kwargs.get("epochs", 1),
             "imgsz": kwargs.get("imgsz", 640),
-        }
+        }        
         return params

@@ -17,10 +17,12 @@ Classes:
 
 __all__ = ["Collectra"]
 
-import logging, yaml, graphviz, copy
+import logging, yaml, graphviz, copy, datetime, shutil, os
 import networkx as nx
 from pathlib import Path
 from rich.progress import track
+from ultralytics.utils.metrics import DetMetrics
+
 
 from collectra import Task, Data, MachineLearningTask
 from collectra.utils import load_class_from_string, change_dir
@@ -42,7 +44,7 @@ yaml.add_representer(str, str_presenter)
 
 class Collectra:
 
-    def __init__(self, name: str, ext: str, version: str, path: str = "", **kwargs):
+    def __init__(self, name: str, ext: str, version: str, path: str | Path = "", **kwargs):
         """Initialize the Collectra workflow.
 
         Args:
@@ -114,7 +116,7 @@ class Collectra:
     def _run_task(self, task: Task, *args):
         return task(*args)
 
-    def train(self, task_name: str, **kwargs):
+    def train(self, task_name: str, **kwargs) -> tuple:
         if self.flow.number_of_nodes() == 0:
             self.connect()        
         node: dict | None = self.flow.nodes.get(task_name, None)
@@ -129,9 +131,9 @@ class Collectra:
             assert parent_node, f"Parent node {parent} not found in workflow"           
             data_node = self._resolve_node(parent_node)
             if not isinstance(data_node, Data):
-                continue            
+                continue                        
             for item in kwargs.pop("input", []):
-                item_path = Path(item)
+                item_path = Path(item)                
                 if item_path.is_dir():
                     for item_file in item_path.glob(f"*.{self.ext}"):                        
                         with change_dir(item_file):
@@ -150,9 +152,39 @@ class Collectra:
                 if not isinstance(child_data, Data):
                     continue
                 classes.append(child_data.name)
-            kwargs["classes"] = classes
-        task.train(*results, **kwargs)
-        
+            kwargs["classes"] = classes             
+        kwargs = kwargs | self.data.get(task_name, dict()).get("params", dict())
+        with change_dir(self.path):                        
+            results, validation_results = task.train(*results, **kwargs)
+            self.save_train(task, results)        
+        return results, validation_results
+    
+    def save_train(self, task: MachineLearningTask, results: DetMetrics):        
+        new_model_path = f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{task.name}.pt"  
+        best_model_path = results.save_dir / "weights" / "best.pt"              
+        task_data = self.data.get(task.name, dict())
+        if best_model_path.name != task_data["model"]:
+            shutil.copy(best_model_path, new_model_path)
+            if Path(task_data["model"]).exists():
+                os.remove(task_data["model"])
+            self.data[task.name]["model"] = new_model_path        
+
+    def metadata(self) -> dict:
+        return {
+            "collectra_pipeline_metadata": {
+                "name": self.name,
+                "ext": self.ext,
+                "version": self.version,
+            }
+        }
+
+    def save(self):
+        with change_dir(self.path):
+            new_metadata = self.metadata() | self.data
+            with open("pipeline.yaml", "w") as f:
+                for key, value in new_metadata.items():
+                    yaml.dump({key: value}, f, sort_keys=False)
+                    f.write("\n")            
 
     def _get_task_required_inputs(self, task_config: dict) -> list[str]:
         task_required_input: list | str = task_config.get("input", [])
