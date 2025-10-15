@@ -19,21 +19,16 @@ def test_train_yolo_temp_dir(classes, images, model, train_yolo, debug):
     """
     import shutil
 
-    try:
-        train_images, validation_images = images
-        assert len(train_images) > 0, "No images provided for training. Check fixture"
-        assert (
-            len(validation_images) > 0
-        ), "No images provided for validation. Check fixture"
+    try:        
+        assert len(images) > 0, "No images provided for training. Check fixture"
         yolo_task = ObjectDetectionYOLO(name="label-detector", model=model)
         assert isinstance(yolo_task, ObjectDetectionYOLO)
         assert isinstance(yolo_task.model, str) or isinstance(
             yolo_task.model, Path
         ), "Model should be a string or path initially"
         results, log_dir = train_yolo(
-            task=yolo_task,
-            train_images=train_images,
-            validation_images=validation_images,
+            yolo_task,
+            *images,
             classes=classes,
         )
         assert results, "Training failed to return any results"
