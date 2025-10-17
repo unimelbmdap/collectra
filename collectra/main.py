@@ -154,6 +154,7 @@ def train(
         version = initials["version"]        
         pipeline = Collectra(name, ext, version, path=str(workflow), **metadata)
         pipeline.train(task, **config)        
+        pipeline.save()
         if not keep_log:
             shutil.rmtree(log, ignore_errors=True)
             log_cache = Path(f"{log}.cache")
