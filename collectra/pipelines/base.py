@@ -140,7 +140,8 @@ class Collectra:
                             result = data_node.handle()                            
                             results.extend(result)
                 else:                    
-                    breakpoint()
+                    if not item_path.suffix == self.ext:
+                        continue
                     with change_dir(item_path):
                         result = data_node.handle()
                         results.extend(result)
