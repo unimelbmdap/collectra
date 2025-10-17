@@ -192,9 +192,9 @@ class Image(Data):
             width_relative=width_relative,
             height_relative=height_relative,
             min_height=min_height,
-        )
+        )    
     
-    def handle(self) -> list["ImageCrop"]:
+    def handle(self) -> list["ImageCrop"]:        
         result_file = Path("results.yaml")
         images: list[ImageCrop] = list()
         if not result_file.exists():
@@ -204,17 +204,31 @@ class Image(Data):
             results: dict = yaml.safe_load(f)
             validation = results.pop("collectra_results_metadata", dict()).get("validation", False)        
         for key, value in results.items():
-            if not ("type" in value and "path" in value):
-                continue
-            cls_ = load_class_from_string(value.pop("type"))            
-            if cls_ != ImageCrop:
-                continue
-            value["name"] = key            
-            value["data"] = Path.cwd() / value.pop("path")
-            value["validation"] = validation
-            img_crop = cls_(**value)
-            if img_crop:                
-                images.append(img_crop)
+            if isinstance(value, list):
+                for item in value:
+                    if not ("type" in item and "path" in item):
+                        continue
+                    cls_ = load_class_from_string(item.pop("type"))            
+                    if cls_ != ImageCrop:
+                        continue
+                    item["name"] = key
+                    item["data"] = Path.cwd() / item.pop("path")
+                    item["validation"] = validation
+                    img_crop = cls_(**item)
+                    if img_crop:
+                        images.append(img_crop)
+            else:
+                if not ("type" in value and "path" in value):
+                    continue
+                cls_ = load_class_from_string(value.pop("type"))            
+                if cls_ != ImageCrop:
+                    continue
+                value["name"] = key
+                value["data"] = Path.cwd() / value.pop("path")
+                value["validation"] = validation
+                img_crop = cls_(**value)
+                if img_crop:
+                    images.append(img_crop)
         return images
     
 @dataclass
