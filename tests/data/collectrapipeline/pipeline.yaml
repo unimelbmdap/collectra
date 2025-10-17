@@ -1,8 +1,7 @@
 collectra_pipeline_metadata:
   name: CollectraPipeline
-  version: 0.1.0
   ext: arb
-  description: pipeline configuration
+  version: 0.1.0
 
 bar_img1:
   type: collectra.Image
@@ -14,20 +13,20 @@ markdown_example1:
 
 object_detector:
   type: collectra.ObjectDetectionYOLO
-  model: yolo11n.pt
-  input: 
-  - bar_img1  
+  model: 20251017_200944_object_detector.pt
+  input:
+  - bar_img1
   epochs: 1
   output:
   - human
   - chair
   - table
-  - car  
-  
+  - car
+
 text-detector:
   type: collectra.ObjectDetectionYOLO
   model: yolo11n.pt
-  input: 
+  input:
   - human
   - chair
   output:
@@ -37,21 +36,22 @@ markdown_converter:
   type: collectra.LLM
   model: gpt-4.1-nano
   input:
-    - markdown_example1
-    - bar_img1    
+  - markdown_example1
+  - bar_img1
   temperature: 0.8
   output: markdown
   output_filename: apparatus.md
   system: You are a helpful assistant that spots objects for me
-  template: |
+  template: |-
     I am identifying objects from an image
     Your task is to take the image and identify objects in it.
- 
+
     Example: {markdown_example1}
 
     Here is the image: {bar_img1}
     Here is another image that may help: {car}
-    
+
     See it again!: {bar_img1}
 
     Please output something like this {markdown_example1}.
+

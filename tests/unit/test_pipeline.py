@@ -39,31 +39,31 @@ def build_pipeline(pipeline: dict) -> Collectra:
 #         debug(e)
 
 
-# def test_get_task(pipeline, debug):
-#     try:
-#         pipeline = build_pipeline(pipeline)
-#         task_name = "object_detector"
-#         task = pipeline.task(task_name)
-#         assert (
-#             isinstance(task, dict) and len(task) > 0
-#         ), f"Task '{task_name}' should be a non-empty dictionary"
-#         assert (
-#             task.get("type", None) == "collectra.ObjectDetectionYOLO"
-#         ), f"Task '{task_name}' should have type 'collectra.ObjectDetectionYOLO'"
-#     except Exception as e:
-#         debug(e)
+def test_get_task(pipeline, debug):
+    try:
+        pipeline = build_pipeline(pipeline)
+        task_name = "object_detector"
+        task = pipeline.task(task_name)
+        assert (
+            isinstance(task, dict) and len(task) > 0
+        ), f"Task '{task_name}' should be a non-empty dictionary"
+        assert (
+            task.get("type", None) == "collectra.ObjectDetectionYOLO"
+        ), f"Task '{task_name}' should have type 'collectra.ObjectDetectionYOLO'"
+    except Exception as e:
+        debug(e)
 
 
-# def test_run_task_invalid_input(llm_loader_mock, pipeline, raw_img_path, debug):
-#     try:
-#         llm_loader_mock, llm_instance = llm_loader_mock
-#         pipeline = build_pipeline(pipeline)
-#         task_name = "object_detector"
-#         result = pipeline(task_name, raw_img_path)
-#     except Exception as e:
-#         assert (
-#             str(e) == "Input must be an instance of Image."
-#         ), "Expected TypeError for invalid input type"
+def test_run_task_invalid_input(llm_loader_mock, pipeline, raw_img_path, debug):
+    try:
+        llm_loader_mock, llm_instance = llm_loader_mock
+        pipeline = build_pipeline(pipeline)
+        task_name = "object_detector"
+        result = pipeline(task_name, raw_img_path)
+    except Exception as e:
+        assert (
+            str(e) == "Input must be an instance of Image."
+        ), "Expected TypeError for invalid input type"
 
 
 def test_train(llm_loader_mock, pipeline, debug, tmpdir):
