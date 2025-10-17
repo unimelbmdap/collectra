@@ -13,7 +13,7 @@ markdown_example1:
 
 object_detector:
   type: collectra.ObjectDetectionYOLO
-  model: 20251017_200944_object_detector.pt
+  model: yolo11n.pt
   input:
   - bar_img1
   epochs: 1
