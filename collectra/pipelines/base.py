@@ -139,9 +139,11 @@ class Collectra:
                         with change_dir(item_file):
                             result = data_node.handle()                            
                             results.extend(result)
-                else:
-                    result = data_node.handle(item_path)
-                    results.extend(result)
+                else:                    
+                    breakpoint()
+                    with change_dir(item_path):
+                        result = data_node.handle()
+                        results.extend(result)
         children = [child for child in self.flow.successors(task_name)]
         if "classes" not in kwargs:
             classes = list()
