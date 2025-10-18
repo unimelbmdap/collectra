@@ -20,7 +20,7 @@ import os, shutil, logging, sys, traceback, yaml
 from datetime import datetime
 from pathlib import Path
 from rich import print
-from typer import Typer, Option, Argument
+from typer import Typer, Option, Argument, Context
 from typing_extensions import Annotated
 
 from collectra import Collectra
@@ -32,65 +32,20 @@ logging.basicConfig(stream=sys.stdout)
 app = Typer()
 
 
-# @app.command()
-# def make(
-#     workflow_path: Annotated[
-#         str, Option("--workflow", "-w", help="name of the workflow")
-#     ],
-#     version: Annotated[str, Option("--version", "-v", help="version of the workflow")],
-#     format: Annotated[
-#         str,
-#         Option(
-#             "--file-format",
-#             "-f",
-#             help="File format for the workflow, e.g., grapto, json, yaml",
-#         ),
-#     ] = "",
-#     as_dir: Annotated[
-#         bool,
-#         Option("--as-dir", help="Create the workflow as a directory instead of a file"),
-#     ] = False,
-# ):
-#     """Create a new Collectra workflow.
-
-#     Creates a new workflow configuration with the specified parameters and saves it
-#     to the filesystem. The workflow can be created as a file or directory structure
-#     depending on the as_dir parameter.
-
-#     Args:
-#         workflow_path (str): Name of the workflow to create.
-#         version (str): Version identifier for the workflow.
-#         format (str, optional): File format for the workflow (e.g., grapto, hespi).
-#             Defaults to empty string.
-#         as_dir (bool, optional): Whether to create the workflow as a directory
-#             structure instead of a single file. Defaults to False.
-
-#     Raises:
-#         Exception: If the workflow cannot be created due to invalid parameters
-#             or filesystem errors.
-#     """
-#     try:
-#         metadata = {
-#             "name": Path(workflow_path).name,
-#             "version": version,
-#             "description": "",
-#             "format": format,
-#             "out_dir": workflow_path,
-#             "as_dir": as_dir,
-#         }
-#         manager = CollectraManager()
-#         manager.build(metadata=metadata)
-#         manager.save()
-#         workflow = manager.get_pipeline()
-#         print(success_msg(f"Workflow '{workflow}' created at {workflow.name}"))
-#     except Exception as e:
-#         print(error_msg(f"Failed to create workflow: {e}"))
-
+def resolve_workflow_path(workflow: Path, **kwargs) -> Collectra:
+    with open(workflow / "pipeline.yaml", "r") as f:
+        metadata = yaml.safe_load(f)
+    initials: dict = metadata.pop("collectra_pipeline_metadata")
+    name = initials["name"]
+    ext = initials["ext"]
+    version = initials["version"]        
+    pipeline = Collectra(name, ext, version, path=str(workflow), **metadata)
+    return pipeline
 
 @app.command()
 def render(
     workflow: Annotated[Path, Option("-w", "--workflow", help="path to workflow")],
-    raw: Annotated[bool, Option(help="print raw pipeline if set")] = False,
+    dest: Annotated[Path, Option("-d", "--dest", help="output file")],    
 ):
     """Render the Collectra workflow as a visual diagram.
 
@@ -108,10 +63,10 @@ def render(
             invalid format or missing dependencies.
     """
     try:
-        # manager = CollectraManager()
-        # manager.load(workflow)
-        # manager.get_pipeline().render(raw=raw)
-        pass
+        pipeline = resolve_workflow_path(workflow)
+        pipeline.connect()        
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        pipeline.render(dest)
     except Exception as e:
         print(error_msg(f"{e}"))
 
@@ -146,13 +101,7 @@ def train(
     try:
         log = f"{task}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         config = {"input": input_files, "log_dir": log}
-        with open(workflow / "pipeline.yaml", "r") as f:
-            metadata = yaml.safe_load(f)
-        initials: dict = metadata.pop("collectra_pipeline_metadata")
-        name = initials["name"]
-        ext = initials["ext"]
-        version = initials["version"]        
-        pipeline = Collectra(name, ext, version, path=str(workflow), **metadata)
+        pipeline = resolve_workflow_path(workflow)
         pipeline.train(task, **config)        
         pipeline.save()
         if not keep_log:
@@ -165,52 +114,49 @@ def train(
         traceback.print_exc()        
 
 
-# @app.command(
-#     context_settings={"allow_extra_args": True, "ignore_unknown_options": True}
-# )
-# def run(
-#     workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
-#     ctx: Context,
-#     task: Annotated[str, Option("--task", "-t", help="task to run")] = "",
-#     output: Annotated[
-#         Path | None, Option("--output", "-o", help="output directory")
-#     ] = None,
-#     force: bool = False,
-# ):
-#     """Execute a Collectra workflow or specific task within a workflow.
+@app.command(
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True}
+)
+def run(
+    workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
+    ctx: Context,
+    task: Annotated[str, Option("--task", "-t", help="task to run")] = "",
+    output: Annotated[
+        Path | None, Option("--output", "-o", help="output directory")
+    ] = None,        
+):
+    """Execute a Collectra workflow or specific task within a workflow.
 
-#     Runs the specified workflow starting from either a specific task or from
-#     the root tasks if no task is specified. Additional command-line arguments
-#     are parsed and passed to the workflow execution as input parameters.
+    Runs the specified workflow starting from either a specific task or from
+    the root tasks if no task is specified. Additional command-line arguments
+    are parsed and passed to the workflow execution as input parameters.
 
-#     Args:
-#         workflow (Path): Path to the workflow configuration file to execute.
-#         ctx (Context): Typer context containing additional command-line arguments.
-#         task (str, optional): Name of the specific task to run. If empty, runs
-#             from root tasks in the workflow. Defaults to empty string.
-#         output (Path, optional): Directory path where workflow results will be
-#             saved. Defaults to current working directory.
+    Args:
+        workflow (Path): Path to the workflow configuration file to execute.
+        ctx (Context): Typer context containing additional command-line arguments.
+        task (str, optional): Name of the specific task to run. If empty, runs
+            from root tasks in the workflow. Defaults to empty string.
+        output (Path, optional): Directory path where workflow results will be
+            saved. Defaults to current working directory.
 
-#     Raises:
-#         Exception: If the workflow execution fails due to invalid workflow file,
-#             missing task, or runtime errors during execution.
-#     """
-#     try:
-#         additional_args = ctx.args
-#         inputs = {
-#             additional_args[args_id].replace("--", ""): additional_args[args_id + 1]
-#             for args_id in range(0, len(additional_args), 2)
-#             if additional_args[args_id].startswith("--")
-#         }
-#         manager = CollectraManager()
-#         manager.load(workflow)
-#         pipeline = manager.get_pipeline()
-#         pipeline(task, output, force=force, **inputs)
-#     except Exception as e:
-#         import traceback
-
-#         traceback.print_exc()
-#         print(error_msg(f"Failed to run task: {e}"))
+    Raises:
+        Exception: If the workflow execution fails due to invalid workflow file,
+            missing task, or runtime errors during execution.
+    """
+    try:
+        additional_args = ctx.args
+        data = {
+            additional_args[args_id].replace("--", ""): additional_args[args_id + 1]
+            for args_id in range(0, len(additional_args), 2)
+            if additional_args[args_id].startswith("--")
+        }   
+        data["output"] = output             
+        pipeline = resolve_workflow_path(workflow)                        
+        pipeline(task, **data)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(error_msg(f"Failed to run task: {e}"))
 
 
 if __name__ == "__main__":

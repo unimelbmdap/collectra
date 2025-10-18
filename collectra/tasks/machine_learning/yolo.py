@@ -57,7 +57,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
         if not isinstance(args[0], Image):
             raise TypeError("Input must be an instance of Image.")
         image: Image = args[0]
-        self._init_model()
+        self._init_model()                
         results: Results = (self.model(image.get_path())).pop()
         detections: list[ImageCrop] = []
         coordinates = results.boxes.xywhn if results.boxes else []
@@ -76,7 +76,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 width_relative=float(w),
                 height_relative=float(h),
             )
-            detections.append(image_crop)
+            detections.append(image_crop)        
         print(f"Found {len(detections)} objects in the image.")
         return detections
 
@@ -99,7 +99,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
             classes, log_dir, *images
         )
         self._prepare_assets(classes, log_dir, *images)
-        params = self._prepare_params(**kwargs)
+        params = self._prepare_params(**kwargs)        
         results: DetMetrics | None = self.model.train(**params)                
         validation_results = YOLO(results.save_dir / "weights" / "best.pt").val()
         return results, validation_results
@@ -129,13 +129,13 @@ class ObjectDetectionYOLO(MachineLearningTask):
     def _prepare_assets(
         self, classes: list[str], log_dir: Path, *images: ImageCrop
     ) -> None:
-        for img in images:
+        for img in images:            
             src = Path(img.get_path())
             dst = log_dir / src.name
             if not dst.exists():  # Only copy if the file does not already exist
-                shutil.copy(src, dst)
+                shutil.copy(src, dst)                        
             name_index = classes.index(img.name) if img.name in classes else -1
-            if not name_index:
+            if name_index == -1:
                 continue
             text_dst = log_dir / f"{src.stem}.txt"
             if not text_dst.exists():
@@ -147,7 +147,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 with open(text_dst, "a") as f:
                     f.write(
                         f"{name_index} {img.x_center:.6f} {img.y_center:.6f} {img.width_relative:.6f} {img.height_relative:.6f}\n"
-                    )
+                    )            
 
     def _prepare_params(self, **kwargs) -> dict:
         import platform, torch        

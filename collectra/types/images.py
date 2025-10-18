@@ -77,7 +77,7 @@ class Image(Data):
         """
         if self.data:
             if not isinstance(self.data, Path):
-                self.data = Path(self.data)
+                self.data = Path.cwd() / self.data
             if not self.name:
                 self.name = self.data.name if isinstance(self.data, Path) else self.data
             if not self.data.exists() or not self.data.is_file():
@@ -194,7 +194,9 @@ class Image(Data):
             min_height=min_height,
         )    
     
-    def handle(self) -> list["ImageCrop"]:        
+    def handle(self, key: str = "", value: str | Path = "") -> list["Image"]:        
+        if key and value:
+            return [Image(key, value)]
         result_file = Path("results.yaml")
         images: list[ImageCrop] = list()
         if not result_file.exists():
@@ -212,7 +214,7 @@ class Image(Data):
                     if cls_ != ImageCrop:
                         continue
                     item["name"] = key
-                    item["data"] = Path.cwd() / item.pop("path")
+                    item["data"] = item.pop("path")
                     item["validation"] = validation
                     img_crop = cls_(**item)
                     if img_crop:
@@ -224,7 +226,7 @@ class Image(Data):
                 if cls_ != ImageCrop:
                     continue
                 value["name"] = key
-                value["data"] = Path.cwd() / value.pop("path")
+                value["data"] = value.pop("path")
                 value["validation"] = validation
                 img_crop = cls_(**value)
                 if img_crop:
