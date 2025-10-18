@@ -12,31 +12,31 @@ def build_pipeline(pipeline: dict) -> Collectra:
     return Collectra(name, ext, version, path=path, **pipeline)
 
 
-# def test_pipeline_init(pipeline, debug):
-#     try:
-#         name = pipeline["collectra_pipeline_metadata"]["name"]
-#         ext = pipeline["collectra_pipeline_metadata"]["ext"]
-#         version = pipeline["collectra_pipeline_metadata"]["version"]
-#         pipeline = build_pipeline(pipeline)
-#         assert pipeline.name == name
-#         assert pipeline.ext == ext
-#         assert pipeline.version == version
-#         assert pipeline.path
-#         assert (
-#             isinstance(pipeline.data, dict) and len(pipeline.data) > 0
-#         ), "Pipeline data should be a non-empty dictionary"
-#     except Exception as e:
-#         debug(e)
+def test_pipeline_init(pipeline, debug):
+    try:
+        name = pipeline["collectra_pipeline_metadata"]["name"]
+        ext = pipeline["collectra_pipeline_metadata"]["ext"]
+        version = pipeline["collectra_pipeline_metadata"]["version"]
+        pipeline = build_pipeline(pipeline)
+        assert pipeline.name == name
+        assert pipeline.ext == ext
+        assert pipeline.version == version
+        assert pipeline.path
+        assert (
+            isinstance(pipeline.data, dict) and len(pipeline.data) > 0
+        ), "Pipeline data should be a non-empty dictionary"
+    except Exception as e:
+        debug(e)
 
 
-# def test_pipeline_init_nodes(llm_loader_mock, pipeline, debug, tmpdir):
-#     try:
-#         llm_loader_mock, llm_instance = llm_loader_mock
-#         pipeline = build_pipeline(pipeline)
-#         pipeline.connect()
-#         pipeline.render(Path(tmpdir) / "pipeline_diagram.png")
-#     except Exception as e:
-#         debug(e)
+def test_pipeline_init_nodes(llm_loader_mock, pipeline, debug, tmpdir):
+    try:
+        llm_loader_mock, llm_instance = llm_loader_mock
+        pipeline = build_pipeline(pipeline)
+        pipeline.connect()
+        pipeline.render(Path(tmpdir) / "pipeline_diagram")
+    except Exception as e:
+        debug(e)
 
 
 def test_get_task(pipeline, debug):
@@ -59,7 +59,8 @@ def test_run_task_invalid_input(llm_loader_mock, pipeline, raw_img_path, debug):
         llm_loader_mock, llm_instance = llm_loader_mock
         pipeline = build_pipeline(pipeline)
         task_name = "object_detector"
-        result = pipeline(task_name, raw_img_path)
+        pipeline(task_name, raw_img_path)
+        assert False, "Expected TypeError for invalid input type"
     except Exception as e:
         assert (
             str(e) == "Input must be an instance of Image."
@@ -73,18 +74,8 @@ def test_train(llm_loader_mock, pipeline, debug, tmpdir):
         task_name = "object_detector"
         log_dir = Path(tmpdir) / "train_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        result, validation_result  = pipeline.train(task_name, input=["tests/data/images"], log_dir=log_dir)        
-        pipeline.save()
+        result, validation_result  = pipeline.train(task_name, input=["tests/data/images"], log_dir=log_dir)                
         assert result, "Train method should not return None"
         assert validation_result, "Validation result should not be None"
     except Exception as e:
         debug(e)    
-
-# def test_train_task(pipeline, debug):
-#     try:
-#         pipeline = build_pipeline(pipeline)
-#         task_name = "field_detector"
-#         result = pipeline.train(task_name)
-#         assert result is None, "Train method should return None"
-#     except Exception as e:
-#         debug(e)
