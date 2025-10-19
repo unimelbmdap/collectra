@@ -7,7 +7,7 @@ bar_img1:
   type: collectra.Image
   data: bar1.jpg
 
-markdown_example1:
+md_example1:
   type: collectra.Text
   data: page00076-markdown.md
 
@@ -36,8 +36,9 @@ markdown_converter:
   type: collectra.LLM
   model: gpt-4.1-nano
   input:
-  - markdown_example1
+  - md_example1
   - bar_img1
+  - car
   temperature: 0.8
   output: markdown
   output_filename: apparatus.md
@@ -46,12 +47,10 @@ markdown_converter:
     I am identifying objects from an image
     Your task is to take the image and identify objects in it.
 
-    Example: {markdown_example1}
+    Then you will generate a markdown document that includes the identified objects as images and references to them.
+
+    Example: {md_example1}
 
     Here is the image: {bar_img1}
-    Here is another image that may help: {car}
-
-    See it again!: {bar_img1}
-
-    Please output something like this {markdown_example1}.
+    Here is another image that may help: {car}        
 

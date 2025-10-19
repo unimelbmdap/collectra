@@ -58,5 +58,6 @@ def initalised_yolo_model(classes):
 def llm_loader_mock():
     with patch("collectra.tasks.llms.llmloader.load") as llm_loader_mock:
         llm_instance = MagicMock()
+        llm_instance.run = list()
         llm_loader_mock.return_value = llm_instance
         yield llm_loader_mock, llm_instance
