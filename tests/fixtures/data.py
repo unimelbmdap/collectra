@@ -2,8 +2,8 @@ import pytest, yaml
 
 from pathlib import Path
 
-from collectra.types.images import Image, ImageCrop
-from collectra.utils import change_dir
+from collectra import Image, ImageCrop
+from collectra.utils import change_dir, load_class_from_string
 
 @pytest.fixture
 def images(root_data_path) -> list[ImageCrop]:
@@ -11,7 +11,32 @@ def images(root_data_path) -> list[ImageCrop]:
     images = list()    
     for image in images_path.glob("*.arb"):
         with change_dir(image):
-            result = Image.handle(image)
+            data = Path("results.yaml")
+            if not data.exists():
+                continue
+            with open(data, "r") as f:
+                results: dict = yaml.safe_load(f)
+                validation = results.pop("collectra_results_metadata", dict()).get("validation", None)
+            for key, value in results.items():
+                result = list()
+                values = value if isinstance(value, list) else [value]
+                for item in values:
+                    if not isinstance(item, dict) or not ("type" in item and "path" in item):
+                        continue                                        
+                    cls_ = load_class_from_string(item.pop("type"))
+                    if cls_ != ImageCrop:
+                        continue
+                    item["name"] = key
+                    item["data"] = item.pop("path")                    
+                    if validation is not None:
+                        item["validation"] = validation
+                    try:                         
+                        instance = ImageCrop(**item)                                
+                        if instance:
+                            result.append(instance)
+                    except Exception as e:
+                        print(f"Failed to load data item {key} from {value}: {e}")
+                        continue        
         images.extend(result)
     return images
 
