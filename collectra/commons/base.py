@@ -5,42 +5,28 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeVar, Generic
 
-__all__ = ["T", "Node", "NodeStatus"]
+__all__ = ["T", "BaseEntity", "Node", "NodeStatus"]
 
 T = TypeVar("T")
 
-
-class NodeStatus(enum.Enum):
-    NOT_READY = "not_ready"
-    READY = "ready"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-    def __str__(self) -> str:
-        return self.value
-
-
-@dataclass
-class Node(ABC, Generic[T]):
+class BaseEntity(ABC, Generic[T]):
 
     name: str
-    _status: NodeStatus = field(init=False, default=NodeStatus.NOT_READY)
-
-    @property
-    def status(self) -> NodeStatus:
-        return self._status
 
     def __str__(self) -> str:
         return f"{self.name}\n{self.get_class_path()}"
 
-    @status.setter
-    def status(self, status: NodeStatus):
-        self._status = status
-
     @abstractmethod
     def __call__(self) -> T:
         pass
+
+    def get_name(self) -> str:
+        """Get the name of the task.
+
+        Returns:
+            str: The name of the task.
+        """
+        return self.name
 
     def serialize(self) -> dict:
         serialized = dict(type=self.get_class_path())
@@ -68,3 +54,34 @@ class Node(ABC, Generic[T]):
             'collectra.images.Image'
         """
         return f"{cls.__module__}.{cls.__qualname__}"
+
+
+class NodeStatus(enum.Enum):
+    NOT_READY = "not_ready"
+    READY = "ready"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+@dataclass
+class Node():
+
+    name: str
+    _status: NodeStatus = field(init=False, default=NodeStatus.NOT_READY)
+
+    def get_name(self) -> str:
+        return self.name
+    
+    @property
+    def status(self) -> NodeStatus:
+        return self._status
+
+    @status.setter
+    def status(self, status: NodeStatus):
+        self._status = status
+
+    

@@ -85,7 +85,6 @@ class Image(Data):
             with ImagePil.open(self.data) as imf:
                 self.ext = imf.format
                 self.raw_width, self.raw_height = imf.size
-        super().__post_init__()
 
     def get_path(self) -> Path | str:
         """Get the file path of the image.

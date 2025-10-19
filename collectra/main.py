@@ -15,12 +15,11 @@ Example:
     $ collectra run --workflow pipeline.yaml --task detection
 """
 
-import os, shutil, logging, sys, traceback, yaml
+import os, shutil, logging, sys, traceback, typer, yaml
 
 from datetime import datetime
 from pathlib import Path
 from rich import print
-from typer import Typer, Option, Argument, Context
 from typing_extensions import Annotated
 
 from collectra import Collectra
@@ -29,10 +28,9 @@ from collectra.utils import error_msg
 logger = logging.getLogger(__name__)
 logging.basicConfig(stream=sys.stdout)
 
-app = Typer()
+app = typer.Typer()
 
-
-def resolve_workflow_path(workflow: Path, **kwargs) -> Collectra:
+def resolve_workflow_path(workflow: Path) -> Collectra:
     with open(workflow / "pipeline.yaml", "r") as f:
         metadata = yaml.safe_load(f)
     initials: dict = metadata.pop("collectra_pipeline_metadata")
@@ -44,8 +42,8 @@ def resolve_workflow_path(workflow: Path, **kwargs) -> Collectra:
 
 @app.command()
 def render(
-    workflow: Annotated[Path, Option("-w", "--workflow", help="path to workflow")],
-    dest: Annotated[Path, Option("-d", "--dest", help="output file")],    
+    workflow: Annotated[Path, typer.Option(..., "-w", "--workflow", help="path to workflow")],
+    dest: Annotated[Path, typer.Option(..., "-d", "--dest", help="output file")],
 ):
     """Render the Collectra workflow as a visual diagram.
 
@@ -63,21 +61,21 @@ def render(
             invalid format or missing dependencies.
     """
     try:
-        pipeline = resolve_workflow_path(workflow)
-        pipeline.connect()        
+        pipeline = resolve_workflow_path(workflow)        
         dest.parent.mkdir(parents=True, exist_ok=True)
         pipeline.render(dest)
     except Exception as e:
+        traceback.print_exc()
         print(error_msg(f"{e}"))
 
 
 @app.command()
 def train(
-    workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
-    task: Annotated[str, Option("--task", "-t", help="task to train")],
-    input_files: Annotated[list[str], Argument(help="Input directory of files")],
+    workflow: Annotated[Path, typer.Option("--workflow", "-w", help="path to workflow")],
+    task: Annotated[str,typer.Option("--task", "-t", help="task to train")],
+    input_files: Annotated[list[str], typer.Argument(help="Input directory of files")],
     keep_log: Annotated[
-        bool, Option("--keep-log", help="Keep previous log files")
+        bool, typer.Option("--keep-log", help="Keep previous log files")
     ] = True,
 ):
     """Train a specific machine learning task in the Collectra workflow.
@@ -117,12 +115,13 @@ def train(
 @app.command(
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True}
 )
+@app.command()
 def run(
-    workflow: Annotated[Path, Option("--workflow", "-w", help="path to workflow")],
-    ctx: Context,
-    task: Annotated[str, Option("--task", "-t", help="task to run")] = "",
+    workflow: Annotated[Path, typer.Option("--workflow", "-w", help="path to workflow")],
+    ctx: typer.Context,
+    task: Annotated[str, typer.Option("--task", "-t", help="task to run")] = "",
     output: Annotated[
-        Path | None, Option("--output", "-o", help="output directory")
+        Path | None, typer.Option("--output", "-o", help="output directory")
     ] = None,        
 ):
     """Execute a Collectra workflow or specific task within a workflow.
@@ -150,7 +149,8 @@ def run(
             for args_id in range(0, len(additional_args), 2)
             if additional_args[args_id].startswith("--")
         }   
-        data["output"] = output             
+        if output:
+            data["output"] = str(output)
         pipeline = resolve_workflow_path(workflow)                        
         pipeline(task, **data)
     except Exception as e:

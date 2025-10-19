@@ -7,15 +7,15 @@ Classes:
     Task: Base class for all workflow tasks
 """
 
-__all__ = ["Task"]
+__all__ = ["Task", "TaskNode"]
 
 from typing import Generic
-from pathlib import Path
+from dataclasses import dataclass
 
-from collectra.commons import Node, T
+from collectra.commons import BaseEntity, T, Node, NodeStatus
 
 
-class Task(Node, Generic[T]):
+class Task(BaseEntity, Generic[T]):
     """Abstract base class for all tasks in Collectra workflows.
 
     Defines the common interface and behavior that all tasks must implement.
@@ -26,54 +26,10 @@ class Task(Node, Generic[T]):
         output (list[str]): List of output names.
     """
 
-    name: str
-
     def __init__(self, name: str, **kwargs) -> None:
         self.name = name
         for key, value in kwargs.items():
             setattr(self, key, value)
-
-    def get_name(self) -> str:
-        """Get the name of the task.
-
-        Returns:
-            str: The name of the task.
-        """
-        return self.name
-
-    def serialize(self) -> dict:
-        serialized = dict(type=self.get_class_path())
-        for key, value in self.attributes.items():
-            if isinstance(value, Path):
-                value = str(value)
-            serialized[key] = value
-        return serialized
-
-    def __representation(self) -> str:
-        """Return string representation of the task.
-
-        Returns:
-            str: Task name and class name formatted as 'name of ClassName'.
-        """
-        return f"{self.get_name()}\n{self.get_class_path()}"
-
-    def __str__(self) -> str:
-        """Return string representation of the task.
-
-        Returns:
-            str: Task name and class name formatted as 'name of ClassName'.
-
-        """
-        return self.__representation()
-
-    def __repr__(self) -> str:
-        """Return string representation of the task.
-
-        Returns:
-            str: Task name and class name formatted as 'name of ClassName'.
-
-        """
-        return self.__representation()
 
     def run(self, *args) -> T:
         """Run the task execution logic.
@@ -94,3 +50,11 @@ class Task(Node, Generic[T]):
 
         """
         return self.run(*args)
+
+@dataclass    
+class TaskNode(Node):
+
+    task: Task
+
+    def __post_init__(self):
+        self._status = NodeStatus.READY if self.task else NodeStatus.NOT_READY

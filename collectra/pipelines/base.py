@@ -21,10 +21,11 @@ import logging, yaml, graphviz, copy, datetime, shutil, os
 import networkx as nx
 from pathlib import Path
 from rich.progress import track
+from rich import print
 from ultralytics.utils.metrics import DetMetrics
 
 
-from collectra import Task, Data, MachineLearningTask
+from collectra import Task, TaskNode, Data, DataNode, MachineLearningTask
 from collectra.utils import load_class_from_string, change_dir
 from utils.get_types import get_param_types, get_return_type, unpack_types
 
@@ -109,6 +110,13 @@ class Collectra:
                 if isinstance(node, Task):
                     roots.append(node)                
         self._run_nodes(roots, **kwargs)
+        for node_name in self.flow.nodes():
+            node = self._resolve_node(node_name)
+            if isinstance(node, Data):
+                if node.status == node.status.READY:
+                    print(node.serialize())
+            
+
 
     def _resolve_node(self, node_name: str) -> Task | Data:        
         node: dict | None = self.flow.nodes.get(node_name, None)
@@ -126,24 +134,25 @@ class Collectra:
                 parents.append(parent_node)
         return parents
 
-    def _run_nodes(self, nodes: list[Task | Data], *args, **kwargs):
+    def _run_nodes(self, nodes: list[Task | Data], *args, **kwargs):                
         for node in nodes:
             if isinstance(node, Task):                
                 parents = self._get_parents(node)                                
-                result: tuple | list = self._run_task(node, parents=parents, **kwargs)
+                results: list = self._run_task(node, parents=parents, **kwargs)                                
                 children = list(self.flow.successors(str(node.name)))
-                children = [self._resolve_node(child) for child in children]                
-                self._run_nodes(children, *result, **kwargs)                    
+                children = [self._resolve_node(child) for child in children]              
+                self._run_nodes(children, *results, **kwargs)                            
             if isinstance(node, Data):  
                 for arg in args:  
-                    if isinstance(arg, Data) and arg.name == node.name and arg.status == arg.status.READY:                        
-                        self.flow.add_node(str(node), node=arg)
+                    if isinstance(arg, Data) and arg.name == node.name and arg.status == arg.status.READY:  
+                        if node.status != node.status.READY:  
+                            self.flow.add_node(str(node), node=arg)
                         break                
                 children = list(self.flow.successors(str(node)))
-                children = [self._resolve_node(child) for child in children]
-                self._run_nodes(children, **kwargs)
+                children = [self._resolve_node(child) for child in children]                
+                self._run_nodes(children, *args, **kwargs)                                
 
-    def _run_task(self, task: Task, parents: list[Data], **kwargs):
+    def _run_task(self, task: Task, parents: list[Data], **kwargs) -> list:
         entries = list()
         for parent in parents:
             if parent.status == parent.status.READY:
@@ -209,8 +218,9 @@ class Collectra:
             shutil.copy(best_model_path, new_model_path)
             if Path(task_data["model"]).exists():
                 os.remove(task_data["model"])
-            self.data[task.name]["model"] = new_model_path        
+            self.data[task.name]["model"] = new_model_path     
 
+    @property
     def metadata(self) -> dict:
         return {
             "collectra_pipeline_metadata": {
@@ -222,7 +232,7 @@ class Collectra:
 
     def save(self):
         with change_dir(self.path):
-            new_metadata = self.metadata() | self.data
+            new_metadata = self.metadata | self.data
             with open("pipeline.yaml", "w") as f:
                 for key, value in new_metadata.items():
                     yaml.dump({key: value}, f, sort_keys=False)
@@ -247,17 +257,14 @@ class Collectra:
 
         This allows for branching in the workflow.
 
-        """
-        nodes = list()
-        if len(items) == 0:
-            return nodes
+        """        
+        nodes: list = list()
         for item in items:
-            for param, types in param_types:
+            for _, types in param_types:                 
                 if not isinstance(types, tuple):
                     types = (types,)
-                for type_ in types:
-                    node = type_(item)
-                    nodes.append((str(node), node))
+                for type_ in types:                                     
+                    nodes.append((item, type_))
         return nodes
 
     def _check_task_io(self, io_type: str, task: Task, task_config: dict) -> list:
@@ -265,91 +272,91 @@ class Collectra:
         if io_type not in task_config:
             return io_list
         if io_type == "input":
-            param_types = list(unpack_types(task.run, get_param_types).items())
-            inputs = self._get_io_list(task_config.get("input", []))
+            param_types = list(unpack_types(task.run, get_param_types).items())            
+            inputs = self._get_io_list(task_config.get("input", []))            
             io_list = self._get_io_nodes(param_types, inputs)
         if io_type == "output":
             param_types = list(unpack_types(task.run, get_return_type).items())
             outputs = self._get_io_list(task_config.get("output", []))
-            io_list = self._get_io_nodes(param_types, outputs)
+            io_list = self._get_io_nodes(param_types, outputs)        
         return io_list
 
     def connect(self):
-        """Initialise the DAG representing the workflow. Preparing it for execution."""
-        node_dict = dict()
-        with change_dir(self.path):
-            updated_data_nodes = dict()
-            for name, data in track(
-                self.data.items(), description="Building workflow..."
-            ):
-                # Create a copy to avoid modifying original data
-                data_copy = copy.deepcopy(data)                
-                node_cls = load_class_from_string(data_copy.pop("type"))
-                node = node_cls(name, **data_copy)
-                node_dict[str(node)] = node
-                if isinstance(node, Task):                    
-                    task_key = name
-                    updated_data_nodes[task_key] = {"input": [], "output": []}
+        """Initialise the DAG representing the workflow. Preparing it for execution.""" 
+        relations: dict[str, dict] = dict()                    
+        with change_dir(self.path):            
+            for name, value in self.data.items():                
+                data = copy.deepcopy(value)
+                cls_ = load_class_from_string(data.pop("type"))
+                obj = cls_(name, **data)
+                if isinstance(obj, Task):
+                    task_key = obj.name
+                    relations[task_key] = {
+                        "input": data.get("input", []),
+                        "output": data.get("output", []),
+                    } 
+                    node = TaskNode(task_key, obj)
                     self.flow.add_node(
                         task_key,
                         node=node,
-                        label=str(node),
+                        label=str(obj),
                         shape="box",
                         color="blue",
                         fontcolor="white",
                         style="filled",
-                    )
-                    node_dict[task_key] = node
-                    input_nodes = self._check_task_io("input", node, data_copy)
-                    output_nodes = self._check_task_io("output", node, data_copy)
-                    for io_node in input_nodes:
-                        input_key, input_node_item = io_node
-                        if input_key not in node_dict:
+                    )                                                                                                                         
+                    inputs: list[tuple[str, type]] = self._check_task_io("input", obj, data)
+                    outputs: list[tuple[str, type]] = self._check_task_io("output", obj, data)
+                    ios = inputs + outputs
+                    for io_key, io_type in ios:
+                        node = self.flow.nodes.get(io_key, None)
+                        if not node:
+                            node = DataNode(io_key, types=[io_type])
                             self.flow.add_node(
-                                input_key,
-                                node=input_node_item,
-                                label=str(input_node_item),
+                                io_key,
+                                node=node,
+                                label=str(node),
                                 shape="oval",
                                 color="salmon",
                                 fontcolor="black",
-                                style="filled",
+                                style="filled"
                             )
-                            node_dict[input_key] = input_node_item
-                        updated_data_nodes[task_key]["input"].append(input_key)
-                    for io_node in output_nodes:
-                        output_key, output_node_item = io_node
-                        if output_key not in node_dict:
-                            self.flow.add_node(
-                                output_key,
-                                node=output_node_item,
-                                label=str(output_node_item),
-                                shape="oval",
-                                color="salmon",
-                                fontcolor="black",
-                                style="filled",
-                            )
-                            node_dict[output_key] = output_node_item
-                        updated_data_nodes[task_key]["output"].append(output_key)
+                        else:                             
+                            data = node["node"]
+                            if not data.check_type(io_type):
+                                data.add_type(io_type)                                                                                                               
                 else:
-                    self.flow.add_node(
-                        str(node),
-                        node=node,
-                        label=str(node),
-                        shape="oval",
-                        color="salmon",
-                        fontcolor="black",
-                        style="filled",
-                    )
-                    node_dict[str(node)] = node
-            for task_key, data in updated_data_nodes.items():
-                inputs = self._get_io_list(data.get("input", []))
-                outputs = self._get_io_list(data.get("output", []))
+                    node = self.flow.nodes.get(name, None)
+                    if not node:
+                        node = DataNode(name, items=[obj], types=[type(obj)])
+                        self.flow.add_node(
+                            name,
+                            node=node,
+                            label=str(node),
+                            shape="oval",
+                            color="salmon",
+                            fontcolor="black",
+                            style="filled",
+                        )
+                    else:                             
+                        data = node["node"]
+                        if not data.check_type(io_type):
+                            data.add_type(io_type)   
+                            data.add_item(obj)
+            
+            for task_name, io in relations.items():
+                inputs = io.get("input", [])
+                outputs = io.get("output", [])
                 for input in inputs:
-                    self.flow.add_edge(input, task_key)
-                for output in outputs:
-                    self.flow.add_edge(task_key, output)
+                    if self.flow.has_node(input):
+                        self.flow.add_edge(input, task_name)
+                for output_key in self._get_io_list(outputs):
+                    if self.flow.has_node(output_key):
+                        self.flow.add_edge(task_name, output_key)
 
     def render(self, dest: str | Path = ""):
+        if self.flow.number_of_nodes() == 0:
+            self.connect()
         visual_graph: nx.DiGraph = self.flow.copy()
         for node_id in visual_graph.nodes:
             node_data = visual_graph.nodes[node_id]
