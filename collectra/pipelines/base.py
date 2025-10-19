@@ -79,110 +79,121 @@ class Collectra:
         data["name"] = task_name
         return data
 
+    def _check_is_root(self, node_name: str) -> bool:
+        parents = list(self.flow.predecessors(node_name))
+        for parent in parents:
+            grand_parents = list(self.flow.predecessors(parent))
+            if len(grand_parents) > 0:
+                return False
+            parent_node = self._resolve_node(parent)                        
+            if isinstance(parent_node, Task):
+                return False        
+        return True
+
     def run(self, task_name: str = "", **kwargs):
-        origins = list()
+        """Runs the workflow from the specified task or from all root tasks.        
+        """        
         if self.flow.number_of_nodes() == 0:
             self.connect()
+        roots: list = list()
         if task_name:
-            node: dict | None = self.flow.nodes.get(task_name, None)
-            assert node, f"Task {task_name} not found in workflow"
-            task = self._resolve_node(node)
-            origins = [task]
+            task = self._resolve_node(task_name)
+            roots.append(task)
         else:
             node_names = self.flow.nodes()
-            for node_name in node_names:                                
-                node: dict | None = self.flow.nodes.get(node_name, None)
-                resolved_node: Task | Data | None = self._resolve_node(node)
-                if not isinstance(resolved_node, Task):
+            for node_name in node_names:                         
+                is_root = self._check_is_root(node_name)
+                if not is_root:
                     continue
-                parents = list(self.flow.predecessors(node_name))
-                resolved_parents = list()
-                if len(parents) == 0:
-                    origins.append((resolved_node, resolved_parents))
-                else:
-                    all_data = True                                        
-                    for parent_node in parents:
-                        parent: dict | None = self.flow.nodes.get(parent_node, None)
-                        parent_resolved = self._resolve_node(parent)
-                        all_data = isinstance(parent_resolved, Data)                            
-                        predecessors = list(self.flow.predecessors(parent_node))
-                        if len(predecessors) > 0:
-                            all_data = False
-                        if not all_data:
-                            break
-                        resolved_parents.append(parent_resolved)
-                    if all_data:
-                        origins.append((resolved_node, resolved_parents))
-        self._run_nodes(origins, **kwargs)
+                node = self._resolve_node(node_name)
+                if isinstance(node, Task):
+                    roots.append(node)                
+        self._run_nodes(roots, **kwargs)
 
-    def _resolve_node(self, node: dict) -> Task | Data:        
-        task: Task | Data | None = node.get("node", None)
-        assert task, f"data for {node} not found in workflow. Possible empty node."
-        return task
+    def _resolve_node(self, node_name: str) -> Task | Data:        
+        node: dict | None = self.flow.nodes.get(node_name, None)
+        assert node, f"{node_name} not found in workflow"
+        data: Task | Data | None = node.get("node", None)
+        assert data, f"data for {node_name} not found in workflow. Possible empty node."
+        return data
+    
+    def _get_parents(self, task: Task) -> list[Data]:
+        parents = list()
+        parent_names = list(self.flow.predecessors(str(task.name)))        
+        for parent_name in parent_names:
+            parent_node = self._resolve_node(parent_name)            
+            if isinstance(parent_node, Data):
+                parents.append(parent_node)
+        return parents
 
-    def _run_nodes(self, tasks: list[Task, list[Data]], **kwargs):
-        for task, parents in tasks:
-            result: tuple | list = self._run_task(task, parents=parents, **kwargs)            
-            children = list(self.flow.successors(str(task)))
-            if children:
-                for child in children:
-                    node = self._resolve_node(child)
-                    self._run_task(node, *result)
+    def _run_nodes(self, nodes: list[Task | Data], *args, **kwargs):
+        for node in nodes:
+            if isinstance(node, Task):                
+                parents = self._get_parents(node)                                
+                result: tuple | list = self._run_task(node, parents=parents, **kwargs)
+                children = list(self.flow.successors(str(node.name)))
+                children = [self._resolve_node(child) for child in children]                
+                self._run_nodes(children, *result, **kwargs)                    
+            if isinstance(node, Data):  
+                for arg in args:  
+                    if isinstance(arg, Data) and arg.name == node.name and arg.status == arg.status.READY:                        
+                        self.flow.add_node(str(node), node=arg)
+                        break                
+                children = list(self.flow.successors(str(node)))
+                children = [self._resolve_node(child) for child in children]
+                self._run_nodes(children, **kwargs)
 
     def _run_task(self, task: Task, parents: list[Data], **kwargs):
         entries = list()
-        for key, value in kwargs.items():
-            for parent in parents:
-                if parent.name == key:                                                            
-                    entry = parent.handle(key, value)                                                                        
-                    entries.extend(entry)     
-        results: list = list()        
+        for parent in parents:
+            if parent.status == parent.status.READY:
+                entries.append(parent)
+                continue
+            value = kwargs.get(parent.name, None)
+            new_entries = parent.handle(parent.name, value)
+            if new_entries:
+                entries.extend(new_entries)            
+        results: list = list()
         with change_dir(self.path):                                       
             for entry in entries:                
                 result = task.run(entry)
-                results.append(result)
-        breakpoint()
+                if isinstance(result, list):
+                    results.extend(result)
+                else:
+                    results.append(result)                
         return results
 
     def train(self, task_name: str, **kwargs) -> tuple:
         if self.flow.number_of_nodes() == 0:
-            self.connect()        
-        node: dict | None = self.flow.nodes.get(task_name, None)
-        assert node, f"Task {task_name} not found in workflow"
-        task = self._resolve_node(node)
+            self.connect()                
+        task = self._resolve_node(task_name)
         if not isinstance(task, MachineLearningTask):
             raise ValueError(f"Task {task_name} is not a MachineLearningTask")
-        parents = [parent for parent in self.flow.predecessors(task_name)]        
-        results: list = list()
-        for parent in parents:
-            parent_node = self.flow.nodes.get(parent, None) 
-            assert parent_node, f"Parent node {parent} not found in workflow"           
-            data_node = self._resolve_node(parent_node)
-            if not isinstance(data_node, Data):
-                continue                        
+        parents = self._get_parents(task)       
+        results: list = list()        
+        for parent in parents:                                          
             for item in kwargs.pop("input", []):
                 item_path = Path(item)                
                 if item_path.is_dir():
                     for item_file in item_path.glob(f"*.{self.ext}"):                        
                         with change_dir(item_file):
-                            result = data_node.handle()                            
+                            result = parent.handle()
                             results.extend(result)
                 else:                    
                     if not item_path.suffix == self.ext:
                         continue
                     with change_dir(item_path):
-                        result = data_node.handle()
-                        results.extend(result)
+                        result = parent.handle()
+                        if result:                            
+                            results.extend(result)
         children = [child for child in self.flow.successors(task_name)]
         if "classes" not in kwargs:
             classes = list()
             for child in children:
-                child_node = self.flow.nodes.get(child, None) 
-                assert child_node, f"Child node {child} not found in workflow"           
-                child_data = self._resolve_node(child_node)
-                if not isinstance(child_data, Data):
+                child_node = self._resolve_node(child)                
+                if not isinstance(child_node, Data):
                     continue
-                classes.append(child_data.name)
+                classes.append(child_node.name)
             kwargs["classes"] = classes             
         kwargs = kwargs | self.data.get(task_name, dict()).get("params", dict())
         with change_dir(self.path):                        

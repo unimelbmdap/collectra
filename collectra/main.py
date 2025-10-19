@@ -99,7 +99,7 @@ def train(
             missing input files, or training process failures.
     """
     try:
-        log = f"{task}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        log = Path.cwd() / f"{task}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"        
         config = {"input": input_files, "log_dir": log}
         pipeline = resolve_workflow_path(workflow)
         pipeline.train(task, **config)        

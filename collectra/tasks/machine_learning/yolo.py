@@ -77,7 +77,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 height_relative=float(h),
             )
             detections.append(image_crop)        
-        print(f"Found {len(detections)} objects in the image.")
+        print(f"Found {len(detections)} objects in the image.")        
         return detections
 
     def train(

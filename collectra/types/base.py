@@ -21,6 +21,6 @@ class Data(Node):
         return self.return_data()
 
     @abstractmethod
-    def handle(self) -> None:
+    def handle(self, *args) -> None:
         """Handle data preparation or loading logic."""
         pass
