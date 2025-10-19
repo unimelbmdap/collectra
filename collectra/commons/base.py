@@ -32,7 +32,7 @@ class BaseEntity(ABC, Generic[T]):
         serialized = dict(type=self.get_class_path())
         for key, value in self.attributes.items():
             if isinstance(value, Path):
-                value = str(value)
+                value = value.name
             serialized[key] = value
         return serialized
 
@@ -84,4 +84,6 @@ class Node():
     def status(self, status: NodeStatus):
         self._status = status
 
+    def process(self) -> list:
+        return []
     

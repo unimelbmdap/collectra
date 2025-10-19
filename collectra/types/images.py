@@ -47,6 +47,7 @@ class Image(Data):
     raw_width: int = field(init=False, default=0)  # Image width in pixels
     raw_height: int = field(init=False, default=0)  # Image height in pixels
     ext: str | None = field(init=False, default=None)  # Image format (e.g., PNG, JPEG)
+    validation: bool = field(default=False)
 
     def attributes_to_ignore(self):
         return {"raw_width", "raw_height", "format"}
@@ -74,10 +75,10 @@ class Image(Data):
         Raises:
             FileNotFoundError: If the image file doesn't exist.
             PIL.UnidentifiedImageError: If the file is not a valid image.
-        """
+        """        
         if self.data:
-            if not isinstance(self.data, Path):
-                self.data = Path.cwd() / self.data
+            if not isinstance(self.data, Path):                
+                self.data = Path.cwd() / self.data                
             if not self.name:
                 self.name = self.data.name if isinstance(self.data, Path) else self.data
             if not self.data.exists() or not self.data.is_file():
@@ -193,45 +194,6 @@ class Image(Data):
             min_height=min_height,
         )    
     
-    def handle(self, key: str = "", value: str | Path = "") -> list["Image"]:        
-        if key and value:
-            return [Image(key, value)]
-        result_file = Path("results.yaml")
-        images: list[ImageCrop] = list()
-        if not result_file.exists():
-            print(error_msg(f"Invalid file: {Path.cwd()}. Ignoring..."))
-            return images
-        with open(result_file, "r") as f:
-            results: dict = yaml.safe_load(f)
-            validation = results.pop("collectra_results_metadata", dict()).get("validation", False)        
-        for key, value in results.items():
-            if isinstance(value, list):
-                for item in value:
-                    if not ("type" in item and "path" in item):
-                        continue
-                    cls_ = load_class_from_string(item.pop("type"))            
-                    if cls_ != ImageCrop:
-                        continue
-                    item["name"] = key
-                    item["data"] = item.pop("path")
-                    item["validation"] = validation
-                    img_crop = cls_(**item)
-                    if img_crop:
-                        images.append(img_crop)
-            else:
-                if not ("type" in value and "path" in value):
-                    continue
-                cls_ = load_class_from_string(value.pop("type"))            
-                if cls_ != ImageCrop:
-                    continue
-                value["name"] = key
-                value["data"] = value.pop("path")
-                value["validation"] = validation
-                img_crop = cls_(**value)
-                if img_crop:
-                    images.append(img_crop)
-        return images
-    
 @dataclass
 class ImageCrop(Image):
     """Specialized image class for handling cropped regions of images.
@@ -251,7 +213,6 @@ class ImageCrop(Image):
     y_center: float = field(default=0.5)
     width_relative: float = field(default=1.0)
     height_relative: float = field(default=1.0)
-    validation: bool = field(default=False)
 
     @property
     def width(self):
@@ -260,6 +221,7 @@ class ImageCrop(Image):
     @property
     def height(self):
         return self.height_relative * self.raw_height
+    
 
     def coordinates(self) -> tuple[float, float, float, float]:
         """Calculate absolute pixel coordinates for the crop region.

@@ -17,9 +17,7 @@ class Text(Data):
             pass
 
         if isinstance(self.data, Path) and self.data.exists() and self.data.is_file():
-            self.data = self.data.read_text()
-
-        super().__post_init__()
+            self.data = self.data.read_text()        
 
     def handle(self) -> None:
         """Handle data preparation or loading logic."""
