@@ -48,17 +48,13 @@ class LLM(Task):
         variables (dict): Additional variables for template substitution.
     """
 
-    name: str
-    model: str
-    template: str | Path = field(init=False, default="")
-    temperature: float = field(init=False, default=0.8)
-    max_tokens: int = field(init=False, default=250)
-    variables: dict = field(default_factory=dict)
+    @property
+    def input_nums(self) -> int:
+        return 3
 
     def __init__(self, name: str, model: str, **kwargs):
-        self.name = name
-        for key, value in kwargs.items():
-            setattr(self, key, value)
+        super().__init__(name, **kwargs)
+        self.template: str = kwargs.get("template", "")
         self.temperature = kwargs.get("temperature", 0.8)
         self.max_tokens = kwargs.get("max_tokens", 250)
         self.llm = llmloader.load(
@@ -91,84 +87,15 @@ class LLM(Task):
             "mime_type": image.mime(),
         }
 
-    def add_text(self, prompt: str, key: str, value: str = ""):
-        """Create text content dictionary with template substitution.
+    def _add_content(self, value: Image | Text) -> dict:
+        if isinstance(value, Image):
+            return self.image_content(value)
+        return self._add_text(value())
 
-        Processes a prompt template by replacing placeholders with actual values
-        and formats it for LLM input.
+    def _add_text(self, text: str) -> dict:
+        return {"type": "text", "data": text}
 
-        Args:
-            prompt (str): The prompt template string containing placeholders.
-            key (str): The key to replace in the template (e.g., for {key} placeholder).
-            value (str, optional): The value to substitute for the key. Defaults to "".
-
-        Returns:
-            dict: Dictionary containing formatted text for LLM input with
-                 'type' and 'text' fields.
-        """
-        return {
-            "type": "text",
-            "text": prompt.replace(f"{{{key}}}", value)
-            .replace("{input}", value)
-            .strip(),
-        }
-
-    def replace_in_template(self, prompt, key, value) -> list[dict | str]:
-        """Replace template placeholders with appropriate content based on value type.
-
-        Handles different types of input values (images, files, text, lists) and creates
-        the appropriate content structure for LLM processing. Supports multimodal
-        inputs by detecting images and converting them to the proper format.
-
-        Args:
-            prompt: The prompt template string to process.
-            key: The template key to replace.
-            value: The value to substitute, can be Image, ImageCrop, Path, string, or list of these.
-
-        Returns:
-            list[dict | str]: List of content dictionaries formatted for LLM input,
-                            may include both text and image content.
-        """
-        content = []
-
-        # Handle list of values (e.g., multiple ImageCrop instances)
-        if isinstance(value, list):
-            # Add the text prompt once at the beginning
-            content.append(self.add_text(prompt, key))
-
-            # Process each item in the list
-            for item in value:
-                if isinstance(item, (Image)):
-                    content.append(self.image_content(item))
-                elif isinstance(item, Path) and item.is_file():
-                    try:
-                        image = Image.build(item)
-                        content.append(self.image_content(image))
-                    except Exception:
-                        # If it's not an image file, treat as text
-                        text_content = item.read_text()
-                        content.append(self.add_text("", key, str(text_content)))
-                else:
-                    # Treat as text
-                    content.append(self.add_text("", key, str(item)))
-
-        # Handle single values (existing logic)
-        elif isinstance(value, Image):
-            content.append(self.add_text(prompt, key))
-            content.append(self.image_content(value))
-        elif isinstance(value, Path) and value.is_file():
-            try:
-                image = Image(value)
-                content.append(self.add_text(prompt, key))
-                content.append(self.image_content(image))
-            except Exception as e:
-                text_content = value.read_text()
-                content.append(self.add_text(prompt, key, str(text_content)))
-        else:
-            content.append(self.add_text(prompt, key, str(value)))
-        return content
-
-    def run(self, *args: Text | Image) -> Text:
+    def run(self, *args: Text | Image) -> Text:        
         """Execute LLM inference on the provided inputs with template-based prompt generation.
 
         For list inputs, each item is processed individually and results are collected
@@ -184,101 +111,25 @@ class LLM(Task):
             Updates self.output dictionary with generated text responses. Output keys
             that contain the input key as a substring will be populated with LLM results.
             Prints a success message when inference completes.
-        """
+        """        
         prompt = str(self.template)
-        prompt = str(self.template)
-        items = self.process_inputs(**kwargs)
+        locations: dict[str, tuple[int, int]] = {m.group(1) : m.span() for m in re.finditer(r"\{(.*?)\}", prompt)}
+        items = dict()
+        for arg in args:
+            key = arg.name
+            if key in locations.keys():
+                items[key] = arg            
         parser = StrOutputParser()
-        for key, value in items:
-            if not bool(value) or (isinstance(value, str) and not value):
-                continue
-            content = self.replace_in_template(prompt, key, value)
-            if isinstance(value, list):
-                prompt_text = content.pop(0)
-                for file_content in content:
-                    message = self.messages.copy()
-                    message.append(HumanMessage(content=[prompt_text, file_content]))
-                    message.append(AIMessage(content="Here is the text:"))
-                    for output_key in self.output.keys():
-                        if not self.output[output_key] or not isinstance(
-                            self.output[output_key], list
-                        ):
-                            self.output[output_key] = list()
-                        resulting_text = parser.invoke(self.llm.invoke(message))
-                        print(resulting_text)
-                        self.output[output_key].append(resulting_text)
-            else:
-                message = self.messages.copy()
-                message.append(HumanMessage(content=content))
-                message.append(AIMessage(content="Here is the text:"))
-                for output_key in self.output.keys():
-                    resulting_text = parser.invoke(self.llm.invoke(message))
-                    print(resulting_text)
-                    self.output[output_key] = resulting_text
-
-                    if self.output_filename:
-                        output_filepath = Path(self.output_filename)
-                        output_filepath.parent.mkdir(exist_ok=True, parents=True)
-                        output_filepath.write_text(
-                            resulting_text
-                        )  # Only works for single output
-
-        print(f"{self} output:", self.output)
-        print(success_msg(f"[yellow]Inference Complete.[/yellow]"))
-
-    def save(self, output_path: Path, **kwargs) -> tuple[Path | None, dict, list[Path]]:
-        """Save LLM task results by merging generated text with existing structured data.
-
-        The method supports two data structure patterns:
-        - Direct objects: Updates with {"text": generated_text}
-        - Item collections: Updates each item in ["items"] list with text field
-
-        Text processing includes regex normalization to replace multiple whitespace
-        characters with single spaces and strip leading/trailing whitespace.
-
-        Args:
-            output_path (Path): Directory path where results should be saved (unused
-                               by this method as no files are written to disk).
-            **kwargs: Additional arguments. Must include 'output_data' containing
-                     the existing structured data to merge with LLM results.
-
-        Returns:
-            tuple[Path | None, dict, list[Path]]: A tuple containing:
-                - None: No specific output file path (LLM results are merged, not saved)
-                - dict: Merged result data with LLM-generated text integrated into
-                       existing data structures under their original keys
-                - list[Path]: Empty list (no additional files are created by this method)
-        """
-        output_data = kwargs.get("output_data", dict())
-        result_data = dict()
-        for key in self.output:
-            # Save to path
-            if self.output_filename:
-                output_filepath = output_path / self.output_filename
-                output_filepath.parent.mkdir(exist_ok=True, parents=True)
-                output_filepath.write_text(
-                    self.output[key]
-                )  # Only works for single output
-
-            output_is_list = isinstance(self.output[key], list)
-            data_key = key.replace("_text", "")
-            if data_key in output_data:
-                to_be_updated = copy.deepcopy(output_data[data_key])
-                if "items" in to_be_updated and isinstance(
-                    to_be_updated["items"], list
-                ):
-                    for index in range(len(to_be_updated["items"])):
-                        if output_is_list and index < len(self.output[key]):
-                            to_be_updated["items"][index].update(
-                                {
-                                    "text": re.sub(
-                                        r"\s+", " ", str(self.output[key][index])
-                                    ).strip()
-                                }
-                            )
-                else:
-                    to_be_updated.update(
-                        {"text": re.sub(r"\s+", " ", str(self.output[key])).strip()}
-                    )
-                result_data[data_key] = to_be_updated
-        return None, result_data, []
+        messages: list[str | dict] = list()
+        for location, (start, end) in sorted(locations.items(), key=lambda x: x[1][0]):
+            messages.append(self._add_text(prompt[:start]))
+            if location in items:
+                value = items[location]
+                messages.append(self._add_content(value))            
+            prompt = prompt[end:]
+        self.messages.append(HumanMessage(content=messages))                
+        response = parser.invoke(self.llm.invoke(self.messages))        
+        name = f"{self.get_name()}_output" if not hasattr(self, "output") else self.output[0] if isinstance(self.output, list) else self.output
+        output = Text(name=name, data=response)         
+        return output
+   

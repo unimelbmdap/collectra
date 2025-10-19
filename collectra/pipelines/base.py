@@ -190,21 +190,23 @@ class Collectra:
                 self._run_nodes(children, *args, **kwargs)                                
 
     def _run_task(self, task_node: TaskNode, parents: list[DataNode], **kwargs) -> list:        
-        task = task_node.get_task()
-        assert isinstance(task, Task), f"Node {task_node.name} is not a Task"
+        task = task_node.get_task()        
+        assert isinstance(task, Task), f"Node {task_node.name} is not a Task"        
         entries: list = list()                    
         for parent in parents:
             value = kwargs.get(parent.name, None)
             parent.process(parent.name, value)                                
             entries.extend(parent._items)
         results: list = list()        
-        with change_dir(self.path):                                             
-            for entry in entries:                
-                result = task.run(entry)
+        with change_dir(self.path):                                                      
+            for index in range(0, len(entries), task.input_nums):
+                endindex = len(entries) if index + task.input_nums > len(entries) else index + task.input_nums
+                sub_entries = entries[index : endindex]
+                result = task.run(*sub_entries)                    
                 if isinstance(result, list):
                     results.extend(result)
                 else:
-                    results.append(result)                  
+                    results.append(result)                              
         return results
 
     def train(self, task_name: str, **kwargs) -> tuple:

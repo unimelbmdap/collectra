@@ -33,7 +33,10 @@ class ObjectDetectionYOLO(MachineLearningTask):
             model (str | Path): The path to the model file or the model itself.
         """        
         self.model = YOLO(model)    
-        
+
+    @property
+    def input_nums(self) -> int:
+        return 1
 
     @ThreadingLocked()
     def run(self, *args: Image) -> list[Image]:

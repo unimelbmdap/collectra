@@ -31,6 +31,10 @@ class Task(BaseEntity, Generic[T]):
         for key, value in kwargs.items():
             setattr(self, key, value)
 
+    @property
+    def input_nums(self) -> int:
+        raise NotImplementedError("Subclasses must implement this property.")
+
     def run(self, *args) -> T:
         """Run the task execution logic.
 
