@@ -185,7 +185,7 @@ class Collectra:
                 nodes.append(node)
         return nodes
 
-    def _run_nodes(self, nodes: list[TaskNode | DataNode], *args, **kwargs):                    
+    def _run_nodes(self, nodes: list[TaskNode | DataNode], *args, **kwargs):                            
         for node in nodes:
             if isinstance(node, TaskNode):
                 parents = self._get_parents_data(node)                
@@ -221,7 +221,7 @@ class Collectra:
                 if isinstance(result, list):
                     results.extend(result)
                 else:
-                    results.append(result)                                                   
+                    results.append(result)                                                       
         return results
 
     def train(self, task_name: str, **kwargs) -> tuple:
@@ -299,16 +299,16 @@ class Collectra:
             for name, value in self.data.items():                
                 data = copy.deepcopy(value)
                 cls_ = load_class_from_string(data.pop("type"))
-                obj = cls_(name, **data)
+                obj = cls_(name, **data)                
                 if isinstance(obj, Task):
                     task_key = obj.name
                     relations[task_key] = {
-                        "input": data.get("input", []),
-                        "output": data.get("output", []),
+                        "input": self._get_io_list(data.get("input", [])),
+                        "output": self._get_io_list(data.get("output", [])),
                     } 
                     self._add_task_node(task_key, obj)   
                     ios: list[tuple[str, type]] = list()                                                                                                                      
-                    ios.extend(self._check_task_io("input", obj, data))
+                    ios.extend(self._check_task_io("input", obj, data))                    
                     ios.extend(self._check_task_io("output", obj, data))                    
                     for io_key, io_type in ios:
                         self._add_data_node(io_key, type_=io_type)                                                                                                                                    
@@ -317,7 +317,7 @@ class Collectra:
             
             for task_name, io in relations.items():
                 inputs = io.get("input", [])
-                outputs = io.get("output", [])
+                outputs = io.get("output", [])                            
                 for input in inputs:
                     if self.flow.has_node(input):
                         self.flow.add_edge(input, task_name)
