@@ -1,6 +1,5 @@
 from collectra import Collectra
 from pathlib import Path
-from unittest.mock import Mock, patch
 
 
 def build_pipeline(pipeline: dict) -> Collectra:
@@ -29,9 +28,8 @@ def test_pipeline_init(pipeline, debug):
         debug(e)
 
 
-def test_pipeline_init_nodes(llm_loader_mock, pipeline, debug, tmpdir):
+def test_pipeline_init_nodes(pipeline, debug, tmpdir):
     try:
-        llm_loader_mock, llm_instance = llm_loader_mock
         pipeline = build_pipeline(pipeline)
         pipeline.connect()
         pipeline.render(Path(tmpdir) / "pipeline_diagram")
@@ -54,9 +52,8 @@ def test_get_task(pipeline, debug):
         debug(e)
 
 
-def test_train(llm_loader_mock, pipeline, debug, tmpdir):
-    try:
-        llm_loader_mock, llm_instance = llm_loader_mock
+def test_train(pipeline, debug, tmpdir):
+    try:        
         pipeline = build_pipeline(pipeline)
         task_name = "object_detector"
         log_dir = Path(tmpdir) / "train_logs"
