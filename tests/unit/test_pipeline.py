@@ -67,12 +67,12 @@ def test_train(llm_loader_mock, pipeline, debug, tmpdir):
     except Exception as e:
         debug(e)    
 
-# def test_run(llm_loader_mock, pipeline, debug, tmpdir, raw_img_path):
-#     try:
-#         llm_loader_mock, llm_instance = llm_loader_mock
-#         pipeline = build_pipeline(pipeline)
-#         log_dir = Path(tmpdir) / "run_logs"
-#         log_dir.mkdir(parents=True, exist_ok=True)
-#         pipeline.run(log_dir=log_dir, bar_img1=raw_img_path)        
-#     except Exception as e:
-#         debug(e)
+def test_run(pipeline, debug, tmpdir, raw_img_path):
+    try:
+        # llm_loader_mock, llm_instance = llm_loader_mock
+        pipeline = build_pipeline(pipeline)
+        log_dir = Path(tmpdir) / "run_logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        pipeline.run(log_dir=log_dir, bar_img1=raw_img_path)        
+    except Exception as e:
+        debug(e)
