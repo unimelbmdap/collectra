@@ -128,8 +128,8 @@ class LLM(Task):
             if location in items:
                 value = items[location]
                 messages.append(self._add_content(value))            
-            prompt = prompt[end:]
-        self.messages.append(HumanMessage(content=messages))                
+            prompt = prompt[end:]        
+        self.messages.append(HumanMessage(content=messages))                        
         response = parser.invoke(self.llm.invoke(self.messages))        
         name = f"{self.get_name()}_output" if not hasattr(self, "output") else self.output[0] if isinstance(self.output, list) else self.output
         output = Text(name=name, data=response)         

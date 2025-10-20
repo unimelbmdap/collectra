@@ -106,11 +106,14 @@ class Collectra:
             for task_node in task_nodes:                
                 is_root = self._check_is_root(task_node._name)                                    
                 if is_root:                 
-                    roots.append(task_node)        
-        for key, value in kwargs.items():        
-            input = {key: value}
-            self._run_nodes(roots, **input)
-            self.save_run(key, value)
+                    roots.append(task_node)     
+        
+        for key, value in kwargs.items():  
+            if key == 'log_dir':
+                continue                  
+            input = {key: value}            
+            self._run_nodes(roots, **input)                
+            self.save_run(key, value)            
 
     def save_run(self, key: str, value: str | Path):           
         savef = Path(value)
@@ -174,12 +177,12 @@ class Collectra:
     def _run_nodes(self, nodes: list[TaskNode | DataNode], *args, **kwargs):                    
         for node in nodes:
             if isinstance(node, TaskNode):
-                parents = self._get_parents_data(node)
+                parents = self._get_parents_data(node)                
                 results: list = self._run_task(node, parents=parents, **kwargs)
                 children = list(self.flow.successors(str(node._name)))
                 children = [self._resolve_node(child) for child in children]              
                 self._run_nodes(children, *results, **kwargs)                            
-            if isinstance(node, DataNode):  
+            if isinstance(node, DataNode):                  
                 for arg in args:  
                     if not isinstance(arg, Data):
                         continue
@@ -192,21 +195,22 @@ class Collectra:
     def _run_task(self, task_node: TaskNode, parents: list[DataNode], **kwargs) -> list:        
         task = task_node.get_task()        
         assert isinstance(task, Task), f"Node {task_node.name} is not a Task"        
-        entries: list = list()                    
-        for parent in parents:            
+        entries: list = list()                         
+        for parent in parents:                        
             value = kwargs.get(parent.name, None)
-            parent.process(parent.name, value)                                
-            entries.extend(parent._items)
-        results: list = list()                
+            if parent.status != NodeStatus.READY:
+                parent.process(parent.name, value)                                
+            entries.extend(parent._items)                
+        results: list = list()                    
         with change_dir(self.path):                                                      
             for index in range(0, len(entries), task.input_nums):
-                endindex = len(entries) if index + task.input_nums > len(entries) else index + task.input_nums
-                sub_entries = entries[index : endindex]
+                endindex = len(entries) if index + task.input_nums > len(entries) else index + task.input_nums                
+                sub_entries = entries[index : endindex]                
                 result = task.run(*sub_entries)                    
                 if isinstance(result, list):
                     results.extend(result)
                 else:
-                    results.append(result)                              
+                    results.append(result)                                                 
         return results
 
     def train(self, task_name: str, **kwargs) -> tuple:

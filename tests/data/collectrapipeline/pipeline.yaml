@@ -32,25 +32,25 @@ text-detector:
   output:
   - text
 
-# markdown_converter:
-#   type: collectra.LLM
-#   model: gpt-4.1-nano
-#   input:
-#   - md_example1
-#   - bar_img1
-#   - car
-#   temperature: 0.8
-#   output: markdown
-#   output_filename: apparatus.md
-#   system: You are a helpful assistant that spots objects for me
-#   template: |-
-#     I am identifying objects from an image
-#     Your task is to take the image and identify objects in it.
+markdown_converter:
+  type: collectra.LLM
+  model: gpt-4.1-nano
+  input:
+  - md_example1
+  - bar_img1
+  - car
+  temperature: 0.8
+  output: markdown
+  output_filename: apparatus.md
+  system: You are a helpful assistant that spots objects for me
+  template: |-
+    I am identifying objects from an image
+    Your task is to take the image and identify objects in it.
 
-#     Then you will generate a markdown document that includes the identified objects as images and references to them.
+    Then you will generate a markdown document that includes the identified objects as images and references to them.
 
-#     Example: {md_example1}
+    Example: {md_example1}
 
-#     Here is the image: {bar_img1}
-#     Here is another image that may help: {car}        
+    Here is the image to describe: {bar_img1}
+    Here is another image: {car}        
 

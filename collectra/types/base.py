@@ -43,7 +43,7 @@ class DataNode(Node):
     def __post_init__(self) -> None:
         self._status = NodeStatus.READY if self._items else NodeStatus.NOT_READY
     
-    def add_item(self, item: Data) -> None:
+    def add_item(self, item: Data) -> None:        
         self._items.append(item)
         self._status = NodeStatus.READY
     
