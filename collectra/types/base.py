@@ -109,7 +109,7 @@ class DataNode(Node):
         with open(result_file, "r") as f:
             file_data: dict = yaml.safe_load(f)
             validation = file_data.get("collectra_results_metadata", dict()).get("validation", None)        
-        names = [data_node.name() for data_node in data_nodes]        
+        names = [data_node.name for data_node in data_nodes]        
         for i, name in enumerate(names):        
             if name not in file_data:
                 continue
