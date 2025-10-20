@@ -1,5 +1,5 @@
 collectra_results_metadata:
-  timestamp: '2025-08-16T04:25:51.126362+00:00'
+  timestamp: '2025-10-20T19:27:29.715192'
   validation: false
 
 image_sheet:
@@ -7,18 +7,18 @@ image_sheet:
   path: bar1.jpg
 
 human:
-  - type: collectra.ImageCrop
-    path: bar1.jpg
-    x_center: 0.146729 
-    y_center: 0.329624
-    width_relative: 0.073699
-    height_relative: 0.343065
-  - type: collectra.ImageCrop
-    path: bar1.jpg
-    x_center: 0.227609
-    y_center: 0.309103
-    width_relative: 0.082134
-    height_relative: 0.295184
+- type: collectra.ImageCrop
+  path: bar1.jpg
+  x_center: 0.146729
+  y_center: 0.329624
+  width_relative: 0.073699
+  height_relative: 0.343065
+- type: collectra.ImageCrop
+  path: bar1.jpg
+  x_center: 0.227609
+  y_center: 0.309103
+  width_relative: 0.082134
+  height_relative: 0.295184
 
 chair:
   type: collectra.ImageCrop
@@ -28,5 +28,24 @@ chair:
   width_relative: 0.118196
   height_relative: 0.398343
 
+bar_img1:
+  type: collectra.types.images.Image
+  data: bar1.jpg
+  ext: JPEG
+  validation: false
 
+md_example1:
+  type: collectra.types.texts.Text
+  data: |-
+    {
+        object: "car",
+        description: "it looks like a sedan",
+    }
+
+markdown:
+- type: collectra.types.texts.Text
+  data: "System: You are a helpful assistant that spots objects for me\nHuman: "
+- type: collectra.types.texts.Text
+  data: "System: You are a helpful assistant that spots objects for me\nHuman: \n\
+    Human: "
 

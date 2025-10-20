@@ -121,29 +121,40 @@ class Collectra:
         if savef.is_file():
             savef = Path(savef.name.replace(savef.suffix, f".{self.ext}"))            
             savef.mkdir(parents=True, exist_ok=True)
-        if savef.is_dir():
-            with change_dir(savef):                
-                results: dict = {
-                    "collectra_results_metadata": {
+        if savef.is_dir():                        
+            with change_dir(savef):            
+                results = dict()    
+                resultsf = Path("results.yaml")                
+                if resultsf.exists():
+                    with open(resultsf, "r") as f:
+                        results = yaml.safe_load(f)
+                    results["collectra_results_metadata"]["timestamp"] = datetime.datetime.now().isoformat()
+                else:
+                    results["collectra_results_metadata"] = {
                         "workflow": self.name,
                         "version": self.version,
                         "timestamp": datetime.datetime.now().isoformat(),
-                    }
-                }
+                    }                                    
+                
                 for data_node in data_nodes:
                     if data_node.status != NodeStatus.READY:
                         continue                
+                    name = data_node.name
+                    if name in results:
+                        results[name] = None
                     for item in data_node.items:
-                        item_data = item.serialize()
-                        if data_node._name not in results:
-                            results[data_node._name] = list()                    
-                        results[data_node._name].append(item_data)
-                    if len(results[data_node._name]) == 1:
-                        results[data_node._name] = results[data_node._name][0]
+                        item_data = item.serialize()                        
+                        if name not in results or results[name] is None:
+                            results[name] = list()                         
+                        results[name].append(item_data)
+                    if len(results[name]) == 1:
+                        results[name] = results[name][0]
+
                 with open("results.yaml", "w") as f:
                     for key, data in results.items():
                         yaml.dump({key: data}, f, sort_keys=False)
                         f.write("\n")                      
+
             if Path(value).is_file():
                 shutil.copy(Path(value), savef / Path(value).name)      
         
@@ -197,11 +208,11 @@ class Collectra:
         assert isinstance(task, Task), f"Node {task_node.name} is not a Task"        
         entries: list = list()                         
         for parent in parents:                        
-            value = kwargs.get(parent.name, None)
-            if parent.status != NodeStatus.READY:
-                parent.process(parent.name, value)                                
-            entries.extend(parent._items)                
-        results: list = list()                    
+            value = kwargs.get(parent.name, None)            
+            if parent.status != NodeStatus.READY:                
+                parent.process(parent.name, value, **kwargs)                                
+            entries.extend(parent._items)        
+        results: list = list()                              
         with change_dir(self.path):                                                      
             for index in range(0, len(entries), task.input_nums):
                 endindex = len(entries) if index + task.input_nums > len(entries) else index + task.input_nums                
@@ -210,7 +221,7 @@ class Collectra:
                 if isinstance(result, list):
                     results.extend(result)
                 else:
-                    results.append(result)                                                 
+                    results.append(result)                                                   
         return results
 
     def train(self, task_name: str, **kwargs) -> tuple:

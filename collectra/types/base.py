@@ -11,14 +11,7 @@ __all__ = ["Data", "DataNode"]
 @dataclass
 class Data(BaseEntity):
 
-    name: str
-    data: str | Path = field(default="")
-
-    def return_data(self) -> str:
-        return str(self.data)
-
-    def __call__(self) -> str:
-        return self.return_data()
+    name: str    
     
     def serialize(self) -> dict:
         serialized = super().serialize()
@@ -57,37 +50,36 @@ class DataNode(Node):
         types_str = "\n".join([t.get_class_path() for t in self._types])
         return f"{self._name}\n{types_str}"
 
-    def process(self, key: str = "", value: str | Path | None = None) -> None:                                        
-        if not value:
-            return 
-        value = Path(value)        
+    def process(self, key: str, value: str | Path | None = None, **kwargs) -> None:                                        
+        value = value if value else kwargs.get("file", None)
+        if value:
+            value = Path(value)
         if value and value.exists() and value.is_dir():
             with change_dir(value):
-                result_file = Path("results.yaml")            
-                if result_file.exists():
-                    print(error_msg(f"Invalid file: {Path.cwd()}. Ignoring..."))
+                try:                    
+                    result_file = Path("results.yaml")                                                
                     with open(result_file, "r") as f:
                         results: dict = yaml.safe_load(f)
-                        validation = results.pop("collectra_results_metadata", dict()).get("validation", None)        
-                    for key, value in results.items():
-                        values = value if isinstance(value, list) else [value]
-                        for item in values:
-                            if not isinstance(item, dict) or not ("type" in item and "path" in item):
-                                continue
-                            cls_ = load_class_from_string(item.pop("type"))            
+                        validation = results.pop("collectra_results_metadata", dict()).get("validation", None)       
+                        data = results.get(key, None)
+                        assert data, f"{key} could not be found in {value}"         
+                        data = data if isinstance(data, list) else [data]                                                                       
+                        for item in data:                                                        
+                            if not isinstance(item, dict) or not ("type" in item and ("path" in item or "data" in item)):
+                                raise ValueError(f"Item does not have the correct data format: {item}")                           
+                            cls_ = load_class_from_string(item.pop("type"))                                        
                             if not self.check_type(cls_):
-                                continue
+                                raise ValueError(f"{cls_} is not a subclass or not defined in {self.types}")
                             item["name"] = key
-                            item["data"] = item.pop("path")
+                            item["data"] = item.pop("path") if "path" in item else item["data"]
                             if validation is not None:
-                                item["validation"] = validation
-                            try:
-                                instance = cls_(**item)                                
-                                if instance:
-                                    self.add_item(instance)
-                            except Exception as e:
-                                print(error_msg(f"Failed to load data item {key} from {value}: {e}"))
-                                continue
+                                item["validation"] = validation                            
+                            instance = cls_(**item)                                
+                            if not instance:
+                                raise ValueError(f"Failed to load {item} with {cls_}")
+                            self.add_item(instance)                                                            
+                except Exception as e:
+                    print(error_msg(f"Failed to read data: {e}"))
         elif key:                   
             for cls_ in self.types:
                 try:                    

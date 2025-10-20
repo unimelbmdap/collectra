@@ -34,11 +34,10 @@ text-detector:
 
 markdown_converter:
   type: collectra.LLM
-  model: gpt-4.1-nano
+  model: dummy
   input:
   - md_example1
-  - bar_img1
-  - car
+  - bar_img1  
   temperature: 0.8
   output: markdown
   output_filename: apparatus.md

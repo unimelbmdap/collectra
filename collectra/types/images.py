@@ -44,9 +44,10 @@ class Image(Data):
         format (str | None): Image format (PNG, JPEG, etc.) or None if unknown.
     """
 
+    data: str | Path
     raw_width: int = field(init=False, default=0)  # Image width in pixels
     raw_height: int = field(init=False, default=0)  # Image height in pixels
-    ext: str | None = field(init=False, default=None)  # Image format (e.g., PNG, JPEG)
+    ext: str | None = field(default="")  # Image format (e.g., PNG, JPEG)
     validation: bool = field(default=False)
 
     def attributes_to_ignore(self):
@@ -58,7 +59,7 @@ class Image(Data):
 
     @property
     def height(self):
-        return self.raw_height
+        return self.raw_height    
 
     def __post_init__(self):
         """Create an Image instance from a file path.
@@ -86,6 +87,9 @@ class Image(Data):
             with ImagePil.open(self.data) as imf:
                 self.ext = imf.format
                 self.raw_width, self.raw_height = imf.size
+
+    def __call__(self) -> str:
+        return str(self.data)
 
     def get_path(self) -> Path | str:
         """Get the file path of the image.
