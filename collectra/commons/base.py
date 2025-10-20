@@ -70,11 +70,12 @@ class NodeStatus(enum.Enum):
 @dataclass
 class Node():
 
-    name: str
+    _name: str
     _status: NodeStatus = field(init=False, default=NodeStatus.NOT_READY)
-
-    def get_name(self) -> str:
-        return self.name
+    
+    @property
+    def name(self) -> str:
+        return self._name
     
     @property
     def status(self) -> NodeStatus:

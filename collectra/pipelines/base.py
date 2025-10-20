@@ -104,7 +104,7 @@ class Collectra:
         else:
             task_nodes = [node["node"] for node in self.flow.nodes.values() if isinstance(node["node"], TaskNode)]
             for task_node in task_nodes:                
-                is_root = self._check_is_root(task_node.name)                                    
+                is_root = self._check_is_root(task_node._name)                                    
                 if is_root:                 
                     roots.append(task_node)        
         for key, value in kwargs.items():        
@@ -132,11 +132,11 @@ class Collectra:
                         continue                
                     for item in data_node.items:
                         item_data = item.serialize()
-                        if data_node.name not in results:
-                            results[data_node.name] = list()                    
-                        results[data_node.name].append(item_data)
-                    if len(results[data_node.name]) == 1:
-                        results[data_node.name] = results[data_node.name][0]
+                        if data_node._name not in results:
+                            results[data_node._name] = list()                    
+                        results[data_node._name].append(item_data)
+                    if len(results[data_node._name]) == 1:
+                        results[data_node._name] = results[data_node._name][0]
                 with open("results.yaml", "w") as f:
                     for key, data in results.items():
                         yaml.dump({key: data}, f, sort_keys=False)
@@ -153,7 +153,7 @@ class Collectra:
     
     def _get_parents_data(self, node: Node) -> list[DataNode]:
         parents: list[DataNode] = list()
-        parent_names = list(self.flow.predecessors(str(node.name)))        
+        parent_names = list(self.flow.predecessors(str(node._name)))        
         for parent_name in parent_names:
             parent_node = self._resolve_node(parent_name)            
             if isinstance(parent_node, DataNode):
@@ -161,7 +161,7 @@ class Collectra:
         return parents
 
     def _get_children_data(self, node: Node) -> list[DataNode]:
-        return self._get_data_nodes(list(self.flow.successors(str(node.name))))
+        return self._get_data_nodes(list(self.flow.successors(str(node._name))))
 
     def _get_data_nodes(self, node_names: list[str]) -> list[DataNode]:
         nodes: list[DataNode] = list()
@@ -176,16 +176,16 @@ class Collectra:
             if isinstance(node, TaskNode):
                 parents = self._get_parents_data(node)
                 results: list = self._run_task(node, parents=parents, **kwargs)
-                children = list(self.flow.successors(str(node.name)))
+                children = list(self.flow.successors(str(node._name)))
                 children = [self._resolve_node(child) for child in children]              
                 self._run_nodes(children, *results, **kwargs)                            
             if isinstance(node, DataNode):  
                 for arg in args:  
                     if not isinstance(arg, Data):
                         continue
-                    if node.get_name() == arg.get_name() and node.check_type(type(arg)):                    
+                    if node.name == arg.get_name() and node.check_type(type(arg)):                    
                         node.add_item(arg)                        
-                children = list(self.flow.successors(node.get_name()))
+                children = list(self.flow.successors(node.name))
                 children = [self._resolve_node(child) for child in children]                
                 self._run_nodes(children, *args, **kwargs)                                
 
@@ -193,11 +193,11 @@ class Collectra:
         task = task_node.get_task()        
         assert isinstance(task, Task), f"Node {task_node.name} is not a Task"        
         entries: list = list()                    
-        for parent in parents:
+        for parent in parents:            
             value = kwargs.get(parent.name, None)
             parent.process(parent.name, value)                                
             entries.extend(parent._items)
-        results: list = list()        
+        results: list = list()                
         with change_dir(self.path):                                                      
             for index in range(0, len(entries), task.input_nums):
                 endindex = len(entries) if index + task.input_nums > len(entries) else index + task.input_nums
@@ -225,7 +225,7 @@ class Collectra:
             for item_file in item_files:                
                 with change_dir(item_file):                                          
                     processed_inputs.extend(DataNode.batch_process(children))                                                                                       
-        kwargs["classes"] = [child.name for child in children] if not "classes" in kwargs else kwargs["classes"]
+        kwargs["classes"] = [child._name for child in children] if not "classes" in kwargs else kwargs["classes"]
         kwargs = kwargs | self.data.get(task_name, dict()).get("params", dict())
         with change_dir(self.path):                                 
             processed_inputs, validation_results = task.train(*processed_inputs, **kwargs)

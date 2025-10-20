@@ -19,6 +19,12 @@ class Data(BaseEntity):
 
     def __call__(self) -> str:
         return self.return_data()
+    
+    def serialize(self) -> dict:
+        serialized = super().serialize()
+        if "name" in serialized:
+            serialized.pop("name")
+        return serialized
 
 @dataclass
 class DataNode(Node):
@@ -49,7 +55,7 @@ class DataNode(Node):
 
     def __str__(self) -> str:        
         types_str = "\n".join([t.get_class_path() for t in self._types])
-        return f"{self.name}\n{types_str}"
+        return f"{self._name}\n{types_str}"
 
     def process(self, key: str = "", value: str | Path | None = None) -> None:                                        
         if not value:
@@ -103,7 +109,7 @@ class DataNode(Node):
         with open(result_file, "r") as f:
             file_data: dict = yaml.safe_load(f)
             validation = file_data.get("collectra_results_metadata", dict()).get("validation", None)        
-        names = [data_node.get_name() for data_node in data_nodes]        
+        names = [data_node.name() for data_node in data_nodes]        
         for i, name in enumerate(names):        
             if name not in file_data:
                 continue

@@ -50,7 +50,9 @@ class LLM(Task):
 
     @property
     def input_nums(self) -> int:
-        return 3
+        if hasattr(self, "input") and isinstance(self.input, (list, tuple)):
+            return len(self.input)
+        return 1
 
     def __init__(self, name: str, model: str, **kwargs):
         super().__init__(name, **kwargs)
