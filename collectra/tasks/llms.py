@@ -114,22 +114,25 @@ class LLM(Task):
             that contain the input key as a substring will be populated with LLM results.
             Prints a success message when inference completes.
         """        
-        prompt = str(self.template)
-        locations: dict[str, tuple[int, int]] = {m.group(1) : m.span() for m in re.finditer(r"\{(.*?)\}", prompt)}
-        items = dict()
-        for arg in args:
-            key = arg.name
-            if key in locations.keys():
-                items[key] = arg            
         parser = StrOutputParser()
+        prompt = str(self.template)        
+        pattern = r"\{(.*?)\}"
         messages: list[str | dict] = list()
-        for location, (start, end) in sorted(locations.items(), key=lambda x: x[1][0]):
-            messages.append(self._add_text(prompt[:start]))
-            if location in items:
-                value = items[location]
-                messages.append(self._add_content(value))            
-            prompt = prompt[end:]        
-        self.messages.append(HumanMessage(content=messages))                        
+        while re.search(pattern, prompt):            
+            match = next(re.finditer(pattern, prompt))
+            start, end = match.span()
+            item = match[1]
+            if prompt[:start]:
+                messages.append(self._add_text(prompt[:start]))
+            for arg in args:
+                key = arg.name
+                if item == key:                    
+                    messages.append(self._add_content(arg))
+                    break            
+            prompt = prompt[end:].strip()
+        if prompt:
+            messages.append(self._add_text(prompt.strip()))                
+        self.messages.append(HumanMessage(content=messages))                                
         response = parser.invoke(self.llm.invoke(self.messages))        
         name = f"{self.get_name()}_output" if not hasattr(self, "output") else self.output[0] if isinstance(self.output, list) else self.output
         output = Text(name=name, data=response)         

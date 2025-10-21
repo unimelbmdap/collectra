@@ -21,5 +21,5 @@ class Text(Data):
         if isinstance(self.data, Path) and self.data.exists() and self.data.is_file():            
             self.data = self.data.read_text()
 
-    def __call__(self) -> str:
-        return str(self.data)            
+    def __call__(self) -> str | Path:
+        return self.data            

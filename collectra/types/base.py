@@ -79,7 +79,7 @@ class DataNode(Node):
                                 raise ValueError(f"Failed to load {item} with {cls_}")
                             self.add_item(instance)                                                            
                 except Exception as e:
-                    print(error_msg(f"Failed to read data: {e}"))
+                    print(error_msg(f"Failed to load data: {e}"))
         elif key:                   
             for cls_ in self.types:
                 try:                    

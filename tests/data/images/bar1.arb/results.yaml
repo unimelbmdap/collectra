@@ -1,5 +1,5 @@
 collectra_results_metadata:
-  timestamp: '2025-10-21T12:30:55.563880'
+  timestamp: '2025-10-21T21:47:33.401817'
   validation: false
 
 image_sheet:
@@ -7,14 +7,18 @@ image_sheet:
   path: bar1.jpg
 
 human:
-- type: collectra.ImageCrop
-  path: bar1.jpg
+- type: collectra.types.images.ImageCrop
+  data: bar1.jpg
+  ext: JPEG
+  validation: false
   x_center: 0.146729
   y_center: 0.329624
   width_relative: 0.073699
   height_relative: 0.343065
-- type: collectra.ImageCrop
-  path: bar1.jpg
+- type: collectra.types.images.ImageCrop
+  data: bar1.jpg
+  ext: JPEG
+  validation: false
   x_center: 0.227609
   y_center: 0.309103
   width_relative: 0.082134
