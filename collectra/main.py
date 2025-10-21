@@ -165,7 +165,7 @@ def run(
 
 @app.command()
 def view(
-    file: Path = typer.Argument(help="The collectra result file to be viewed")
+    file: Path = typer.Option("--file", help="The collectra result file to be viewed")
 ):   
     try:
         editor = Editor(file)
