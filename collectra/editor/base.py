@@ -35,7 +35,7 @@ class Editor:
                     v = [v]
                 for item in v:                    
                     type_ = item.get("type", "")
-                    if type_ not in ["collectra.types.images.Image", "collectra.types.images.ImageCrop"]:
+                    if type_ not in ["collectra.Image", "collectra.ImageCrop", "collectra.types.images.Image", "collectra.types.images.ImageCrop"]:
                         continue
                     src_img = item.get("data", src_img)
                     src_img = item.get("path", src_img)
