@@ -22,7 +22,7 @@ from pathlib import Path
 from rich import print
 from typing_extensions import Annotated
 
-from collectra import Collectra
+from collectra import Collectra, Editor
 from collectra.utils import error_msg
 
 logger = logging.getLogger(__name__)
@@ -161,7 +161,17 @@ def run(
         pipeline = resolve_workflow_path(workflow)                                
         pipeline(task, **data)
     except Exception as e:        
-        traceback_error(e, "Failed to run task")        
+        traceback_error(e, "Failed to run task")     
+
+@app.command()
+def view(
+    file: Path = typer.Argument(help="The collectra result file to be viewed")
+):   
+    try:
+        editor = Editor(file)
+        editor.view()
+    except Exception as e:
+        traceback_error(e, "Failed to view item")
 
 if __name__ == "__main__":
     app()
