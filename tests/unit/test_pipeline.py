@@ -73,11 +73,20 @@ def test_run_full(pipeline, debug, tmpdir, raw_img_path):
     except Exception as e:
         debug(e)
 
-def test_run_single(pipeline, debug, tmpdir, raw_img_path):
+def test_run_one_task(pipeline, debug, tmpdir, raw_img_path):
     try:                
         pipeline = build_pipeline(pipeline)
         log_dir = Path(tmpdir) / "run_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         pipeline.run("markdown_converter", log_dir=log_dir, bar_img1=raw_img_path, file="tests/data/images/bar1.arb")        
+    except Exception as e:
+        debug(e)
+
+def test_run_single_task(pipeline, debug, tmpdir, raw_img_path):
+    try:                
+        pipeline = build_pipeline(pipeline)
+        log_dir = Path(tmpdir) / "run_logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        pipeline.run("object_detector", log_dir=log_dir, single=True, file="tests/data/images/bar1.arb")        
     except Exception as e:
         debug(e)

@@ -107,12 +107,12 @@ class Collectra:
                 is_root = self._check_is_root(task_node._name)                                    
                 if is_root:                 
                     roots.append(task_node)     
-        
-        for key, value in kwargs.items():  
-            if key == 'log_dir':
-                continue                  
+
+        single = kwargs.pop("single", False)        
+        output = kwargs.pop("output", None)        
+        for key, value in kwargs.items():                  
             input = {key: value}            
-            self._run_nodes(roots, **input)                
+            self._run_nodes(roots, single=single, **input)                  
             self.save_run(key, value)            
 
     def save_run(self, key: str, value: str | Path):           
@@ -185,22 +185,23 @@ class Collectra:
                 nodes.append(node)
         return nodes
 
-    def _run_nodes(self, nodes: list[TaskNode | DataNode], *args, **kwargs):                            
+    def _run_nodes(self, nodes: list[TaskNode | DataNode] | list[TaskNode] | list[DataNode], *args, **kwargs): 
+        single_run = kwargs.get("single", False)                                
         for node in nodes:
+            children = list(self.flow.successors(str(node._name)))
+            children = [self._resolve_node(child) for child in children]                    
+            if single_run:                                
+                children = [child for child in children if isinstance(child, DataNode)]                
             if isinstance(node, TaskNode):
                 parents = self._get_parents_data(node)                
-                results: list = self._run_task(node, parents=parents, **kwargs)
-                children = list(self.flow.successors(str(node._name)))
-                children = [self._resolve_node(child) for child in children]              
+                results: list = self._run_task(node, parents=parents, **kwargs)                                      
                 self._run_nodes(children, *results, **kwargs)                            
-            if isinstance(node, DataNode):                  
+            elif isinstance(node, DataNode):                                  
                 for arg in args:  
                     if not isinstance(arg, Data):
                         continue
                     if node.name == arg.get_name() and node.check_type(type(arg)):                    
-                        node.add_item(arg)                        
-                children = list(self.flow.successors(node.name))
-                children = [self._resolve_node(child) for child in children]                
+                        node.add_item(arg)                                                            
                 self._run_nodes(children, *args, **kwargs)                                
 
     def _run_task(self, task_node: TaskNode, parents: list[DataNode], **kwargs) -> list:        

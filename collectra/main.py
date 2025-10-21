@@ -30,6 +30,10 @@ logging.basicConfig(stream=sys.stdout)
 
 app = typer.Typer()
 
+def traceback_error(e: Exception, message: str):
+    traceback.print_exc()   
+    print(error_msg(f"{message}\n{e}"))     
+
 def resolve_workflow_path(workflow: Path) -> Collectra:
     with open(workflow / "pipeline.yaml", "r") as f:
         metadata = yaml.safe_load(f)
@@ -65,8 +69,7 @@ def render(
         dest.parent.mkdir(parents=True, exist_ok=True)
         pipeline.render(dest)
     except Exception as e:
-        traceback.print_exc()
-        print(error_msg(f"{e}"))
+        traceback_error(e, "")
 
 
 @app.command()
@@ -107,9 +110,9 @@ def train(
             log_cache = Path(f"{log}.cache")
             if log_cache.exists():
                 os.remove(log_cache)
-    except Exception as e:   
-        print(error_msg(f"Failed to train task: {e}"))     
-        traceback.print_exc()        
+    except Exception as e:              
+        traceback_error(e, "Failed to train task")  
+             
 
 
 @app.command(
@@ -123,6 +126,9 @@ def run(
     output: Annotated[
         Path | None, typer.Option("--output", "-o", help="output directory")
     ] = None,        
+    single: Annotated[
+        bool, typer.Option("--single", help="Runs only the designated task")
+    ] = False,
 ):
     """Execute a Collectra workflow or specific task within a workflow.
 
@@ -142,22 +148,20 @@ def run(
         Exception: If the workflow execution fails due to invalid workflow file,
             missing task, or runtime errors during execution.
     """
-    try:
+    try:        
         additional_args = ctx.args
-        data = {
+        data: dict[str, str | bool] = {
             additional_args[args_id].replace("--", ""): additional_args[args_id + 1]
             for args_id in range(0, len(additional_args), 2)
             if additional_args[args_id].startswith("--")
         }   
+        data["single"] = single
         if output:
-            data["output"] = str(output)
-        pipeline = resolve_workflow_path(workflow)                        
+            data["output"] = str(output)                        
+        pipeline = resolve_workflow_path(workflow)                                
         pipeline(task, **data)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(error_msg(f"Failed to run task: {e}"))
-
+    except Exception as e:        
+        traceback_error(e, "Failed to run task")        
 
 if __name__ == "__main__":
     app()
