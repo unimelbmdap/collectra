@@ -84,7 +84,7 @@
             <h3>Extracted Text Items:</h3>    
             <ul>
                 {% for text in text_items %}
-                    <li>{{ text }}</li>
+                    <li><strong>{{ text.name }}:</strong> {{ text.text }}</li>
                 {% endfor %}
             </ul>
         </div>

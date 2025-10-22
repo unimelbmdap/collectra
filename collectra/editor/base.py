@@ -48,7 +48,7 @@ class Editor:
                         bounding_boxes.append(bb)
                     elif type_ in ["collectra.Text", "collectra.types.texts.Text"]:
                         text = item.get("data", "")
-                        text_items.append(text)
+                        text_items.append({"name": k, "text": text})
             # --- Prepare Context for Jinja2 Template ---              
             context = {                
                 "src_img": src_img,                             
