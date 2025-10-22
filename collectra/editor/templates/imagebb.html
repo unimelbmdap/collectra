@@ -28,6 +28,14 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
             line-height: 0; /* Remove extra space below image */
         }
+        .text_data {
+            margin-left: 20px;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            max-width: 35%;
+        }
         #mainImage {
             max-width: 100%;
             height: auto; /* Maintain aspect ratio */
@@ -65,12 +73,23 @@
     <h1>Annotated Image Viewer</h1>
     <h2>Viewing Image: {{src_img}}</h2>
 
-    <div class="image-viewer">
-        <!-- Jinja2 will inject the image path here -->
-        <img id="mainImage" src="{{ src_img }}" alt="Annotated Image">
-        <canvas id="bboxCanvas"></canvas>
-        <div id="bboxPopup"></div> <!-- The popup box for labels -->
+    <div style="display: flex; justify-content: center; align-items: start;">
+        <div class="image-viewer">
+            <!-- Jinja2 will inject the image path here -->
+            <img id="mainImage" src="{{ src_img }}" alt="Annotated Image">
+            <canvas id="bboxCanvas"></canvas>
+            <div id="bboxPopup"></div> <!-- The popup box for labels -->
+        </div>
+        <div class="text_data">
+            <h3>Extracted Text Items:</h3>    
+            <ul>
+                {% for text in text_items %}
+                    <li>{{ text }}</li>
+                {% endfor %}
+            </ul>
+        </div>
     </div>
+    
 
     <script>
         // --- CONFIGURATION ---

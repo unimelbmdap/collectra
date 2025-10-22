@@ -30,26 +30,30 @@ class Editor:
             header = data.pop("collectra_results_metadata", "")
             src_img = ""
             bounding_boxes: list = list()
+            text_items: list = list()
             for k, v in data.items():
                 if not isinstance(v, list):
                     v = [v]
                 for item in v:                    
                     type_ = item.get("type", "")
-                    if type_ not in ["collectra.Image", "collectra.ImageCrop", "collectra.types.images.Image", "collectra.types.images.ImageCrop"]:
-                        continue
-                    src_img = item.get("data", src_img)
-                    src_img = item.get("path", src_img)
-                    keys = list(item.keys())
-                    bb_params = set(['x_center', 'y_center', 'width_relative', 'height_relative'])
-                    if not bb_params.issubset(keys):
-                        continue
-                    bb = {bb_param: item[bb_param] for bb_param in bb_params}   
-                    bb["label"] = k                 
-                    bounding_boxes.append(bb)
-            # --- Prepare Context for Jinja2 Template ---
+                    if type_ in ["collectra.Image", "collectra.ImageCrop", "collectra.types.images.Image", "collectra.types.images.ImageCrop"]:                        
+                        src_img = item.get("data", src_img)
+                        src_img = item.get("path", src_img)
+                        keys = list(item.keys())
+                        bb_params = set(['x_center', 'y_center', 'width_relative', 'height_relative'])
+                        if not bb_params.issubset(keys):
+                            continue
+                        bb = {bb_param: item[bb_param] for bb_param in bb_params}   
+                        bb["label"] = k                 
+                        bounding_boxes.append(bb)
+                    elif type_ in ["collectra.Text", "collectra.types.texts.Text"]:
+                        text = item.get("data", "")
+                        text_items.append(text)
+            # --- Prepare Context for Jinja2 Template ---              
             context = {                
                 "src_img": src_img,                             
-                "bounding_boxes": json.dumps(bounding_boxes)
+                "bounding_boxes": json.dumps(bounding_boxes),
+                "text_items": text_items
             }
 
             # --- Render Template ---
