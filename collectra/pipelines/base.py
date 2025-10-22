@@ -188,7 +188,7 @@ class Collectra:
 
     def _run_nodes(self, nodes: list[TaskNode | DataNode] | list[TaskNode] | list[DataNode], *args, **kwargs): 
         single_run = kwargs.get("single", False)    
-        children_tasks_of_data: list[TaskNode] = list()               
+        children_tasks_of_data: list[TaskNode] = list()                      
         for node in nodes:                                              
             if isinstance(node, TaskNode):
                 parents = self._get_parents_data(node)                
@@ -220,6 +220,7 @@ class Collectra:
 
     def _run_task(self, task_node: TaskNode, parents: list[DataNode], **kwargs) -> list:        
         task = task_node.get_task()        
+        print(f"running task: [blue]{task.name}[/blue]")
         assert isinstance(task, Task), f"Node {task_node.name} is not a Task"        
         entries: list = list()                         
         for parent in parents:                        
