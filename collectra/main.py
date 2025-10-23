@@ -30,9 +30,11 @@ logging.basicConfig(stream=sys.stdout)
 
 app = typer.Typer()
 
+
 def traceback_error(e: Exception, message: str):
-    traceback.print_exc()   
-    print(error_msg(f"{message}\n{e}"))     
+    traceback.print_exc()
+    print(error_msg(f"{message}\n{e}"))
+
 
 def resolve_workflow_path(workflow: Path) -> Collectra:
     with open(workflow / "pipeline.yaml", "r") as f:
@@ -40,13 +42,16 @@ def resolve_workflow_path(workflow: Path) -> Collectra:
     initials: dict = metadata.pop("collectra_pipeline_metadata")
     name = initials["name"]
     ext = initials["ext"]
-    version = initials["version"]        
+    version = initials["version"]
     pipeline = Collectra(name, ext, version, path=str(workflow), **metadata)
     return pipeline
 
+
 @app.command()
 def render(
-    workflow: Annotated[Path, typer.Option(..., "-w", "--workflow", help="path to workflow")],
+    workflow: Annotated[
+        Path, typer.Option(..., "-w", "--workflow", help="path to workflow")
+    ],
     dest: Annotated[Path, typer.Option(..., "-d", "--dest", help="output file")],
 ):
     """Render the Collectra workflow as a visual diagram.
@@ -65,7 +70,7 @@ def render(
             invalid format or missing dependencies.
     """
     try:
-        pipeline = resolve_workflow_path(workflow)        
+        pipeline = resolve_workflow_path(workflow)
         dest.parent.mkdir(parents=True, exist_ok=True)
         pipeline.render(dest)
     except Exception as e:
@@ -74,8 +79,10 @@ def render(
 
 @app.command()
 def train(
-    workflow: Annotated[Path, typer.Option("--workflow", "-w", help="path to workflow")],
-    task: Annotated[str,typer.Option("--task", "-t", help="task to train")],
+    workflow: Annotated[
+        Path, typer.Option("--workflow", "-w", help="path to workflow")
+    ],
+    task: Annotated[str, typer.Option("--task", "-t", help="task to train")],
     input_files: Annotated[list[str], typer.Argument(help="Input directory of files")],
     keep_log: Annotated[
         bool, typer.Option("--keep-log", help="Keep previous log files")
@@ -100,19 +107,18 @@ def train(
             missing input files, or training process failures.
     """
     try:
-        log = Path.cwd() / f"{task}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"        
+        log = Path.cwd() / f"{task}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         config = {"input": input_files, "log_dir": log}
         pipeline = resolve_workflow_path(workflow)
-        pipeline.train(task, **config)        
+        pipeline.train(task, **config)
         pipeline.save()
         if not keep_log:
             shutil.rmtree(log, ignore_errors=True)
             log_cache = Path(f"{log}.cache")
             if log_cache.exists():
                 os.remove(log_cache)
-    except Exception as e:              
-        traceback_error(e, "Failed to train task")  
-             
+    except Exception as e:
+        traceback_error(e, "Failed to train task")
 
 
 @app.command(
@@ -120,12 +126,14 @@ def train(
 )
 @app.command()
 def run(
-    workflow: Annotated[Path, typer.Option("--workflow", "-w", help="path to workflow")],
+    workflow: Annotated[
+        Path, typer.Option("--workflow", "-w", help="path to workflow")
+    ],
     ctx: typer.Context,
     task: Annotated[str, typer.Option("--task", "-t", help="task to run")] = "",
     output: Annotated[
         Path | None, typer.Option("--output", "-o", help="output directory")
-    ] = None,        
+    ] = None,
     single: Annotated[
         bool, typer.Option("--single", help="Runs only the designated task")
     ] = False,
@@ -148,30 +156,32 @@ def run(
         Exception: If the workflow execution fails due to invalid workflow file,
             missing task, or runtime errors during execution.
     """
-    try:        
+    try:
         additional_args = ctx.args
         data: dict[str, str | bool] = {
             additional_args[args_id].replace("--", ""): additional_args[args_id + 1]
             for args_id in range(0, len(additional_args), 2)
             if additional_args[args_id].startswith("--")
-        }   
+        }
         data["single"] = single
         if output:
-            data["output"] = str(output)                        
-        pipeline = resolve_workflow_path(workflow)                                
+            data["output"] = str(output)
+        pipeline = resolve_workflow_path(workflow)
         pipeline(task, **data)
-    except Exception as e:        
-        traceback_error(e, "Failed to run task")     
+    except Exception as e:
+        traceback_error(e, "Failed to run task")
+
 
 @app.command()
 def view(
     file: Path = typer.Option("--file", help="The collectra result file to be viewed")
-):   
+):
     try:
         editor = Editor(file)
         editor.view()
     except Exception as e:
         traceback_error(e, "Failed to view item")
+
 
 if __name__ == "__main__":
     app()

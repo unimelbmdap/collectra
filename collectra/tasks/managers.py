@@ -83,4 +83,3 @@ class TaskManager:
         # This assumes the training function has only one defined type annotation
         type_ = list(unpack_types(task.train, get_param_types).values())[0]
         breakpoint()
-        

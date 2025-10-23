@@ -9,6 +9,7 @@ __all__ = ["T", "BaseEntity", "Node", "NodeStatus"]
 
 T = TypeVar("T")
 
+
 class BaseEntity(ABC, Generic[T]):
 
     name: str
@@ -68,15 +69,15 @@ class NodeStatus(enum.Enum):
 
 
 @dataclass
-class Node():
+class Node:
 
     _name: str
     _status: NodeStatus = field(init=False, default=NodeStatus.NOT_READY)
-    
+
     @property
     def name(self) -> str:
         return self._name
-    
+
     @property
     def status(self) -> NodeStatus:
         return self._status
@@ -87,4 +88,3 @@ class Node():
 
     def process(self) -> list:
         return []
-    

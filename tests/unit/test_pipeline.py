@@ -55,41 +55,49 @@ def build_pipeline(pipeline: dict) -> Collectra:
 
 
 # def test_train(pipeline, debug, tmpdir):
-#     try:        
+#     try:
 #         pipeline = build_pipeline(pipeline)
 #         task_name = "object_detector"
 #         log_dir = Path(tmpdir) / "train_logs"
 #         log_dir.mkdir(parents=True, exist_ok=True)
-#         result, validation_result  = pipeline.train(task_name, input=["tests/data/images"], log_dir=log_dir)                
+#         result, validation_result  = pipeline.train(task_name, input=["tests/data/images"], log_dir=log_dir)
 #         assert result, "Train method should not return None"
 #         assert validation_result, "Validation result should not be None"
 #     except Exception as e:
-#         debug(e)    
+#         debug(e)
+
 
 def test_run_full(pipeline, debug, tmpdir, raw_img_path):
-    try:        
+    try:
         pipeline = build_pipeline(pipeline)
         log_dir = Path(tmpdir) / "run_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy(raw_img_path, tmpdir / "bar1.jpg")
-        pipeline.run(log_dir=log_dir, bar_img1=tmpdir / "bar1.jpg")        
+        pipeline.run(log_dir=log_dir, bar_img1=tmpdir / "bar1.jpg")
     except Exception as e:
         debug(e)
+
 
 def test_run_one_task(pipeline, debug, tmpdir, raw_img_path):
-    try:                
+    try:
         pipeline = build_pipeline(pipeline)
         log_dir = Path(tmpdir) / "run_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        file_path = "tests/data/images/bar1.arb"    
-        tempfile = shutil.copytree(file_path, tmpdir / "bar1.arb")        
+        file_path = "tests/data/images/bar1.arb"
+        tempfile = shutil.copytree(file_path, tmpdir / "bar1.arb")
         shutil.copy(raw_img_path, tmpdir / "bar1.jpg")
-        pipeline.run("markdown_converter", log_dir=log_dir, bar_img1=tmpdir / "bar1.jpg", file=tempfile)
+        pipeline.run(
+            "markdown_converter",
+            log_dir=log_dir,
+            bar_img1=tmpdir / "bar1.jpg",
+            file=tempfile,
+        )
     except Exception as e:
         debug(e)
 
+
 def test_run_single_task(pipeline, debug, tmpdir):
-    try:                
+    try:
         pipeline = build_pipeline(pipeline)
         log_dir = Path(tmpdir) / "run_logs"
         log_dir.mkdir(parents=True, exist_ok=True)

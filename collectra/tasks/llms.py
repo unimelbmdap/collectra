@@ -97,7 +97,7 @@ class LLM(Task):
     def _add_text(self, text: str) -> dict:
         return {"type": "text", "data": text}
 
-    def run(self, *args: Text | Image) -> Text:        
+    def run(self, *args: Text | Image) -> Text:
         """Execute LLM inference on the provided inputs with template-based prompt generation.
 
         For list inputs, each item is processed individually and results are collected
@@ -113,12 +113,12 @@ class LLM(Task):
             Updates self.output dictionary with generated text responses. Output keys
             that contain the input key as a substring will be populated with LLM results.
             Prints a success message when inference completes.
-        """        
+        """
         parser = StrOutputParser()
-        prompt = str(self.template)        
+        prompt = str(self.template)
         pattern = r"\{(.*?)\}"
         messages: list[str | dict] = list()
-        while re.search(pattern, prompt):            
+        while re.search(pattern, prompt):
             match = next(re.finditer(pattern, prompt))
             start, end = match.span()
             item = match[1]
@@ -126,15 +126,18 @@ class LLM(Task):
                 messages.append(self._add_text(prompt[:start]))
             for arg in args:
                 key = arg.name
-                if item == key:                    
+                if item == key:
                     messages.append(self._add_content(arg))
-                    break            
+                    break
             prompt = prompt[end:].strip()
         if prompt:
-            messages.append(self._add_text(prompt.strip()))                
-        self.messages.append(HumanMessage(content=messages))                                
-        response = parser.invoke(self.llm.invoke(self.messages))        
-        name = f"{self.get_name()}_output" if not hasattr(self, "output") else self.output[0] if isinstance(self.output, list) else self.output
-        output = Text(name=name, data=response)         
+            messages.append(self._add_text(prompt.strip()))
+        self.messages.append(HumanMessage(content=messages))
+        response = parser.invoke(self.llm.invoke(self.messages))
+        name = (
+            f"{self.get_name()}_output"
+            if not hasattr(self, "output")
+            else self.output[0] if isinstance(self.output, list) else self.output
+        )
+        output = Text(name=name, data=response)
         return output
-   

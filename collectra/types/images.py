@@ -59,7 +59,7 @@ class Image(Data):
 
     @property
     def height(self):
-        return self.raw_height    
+        return self.raw_height
 
     def __post_init__(self):
         """Create an Image instance from a file path.
@@ -76,10 +76,10 @@ class Image(Data):
         Raises:
             FileNotFoundError: If the image file doesn't exist.
             PIL.UnidentifiedImageError: If the file is not a valid image.
-        """        
+        """
         if self.data:
-            if not isinstance(self.data, Path):                
-                self.data = Path.cwd() / self.data                
+            if not isinstance(self.data, Path):
+                self.data = Path.cwd() / self.data
             if not self.name:
                 self.name = self.data.name if isinstance(self.data, Path) else self.data
             if not self.data.exists() or not self.data.is_file():
@@ -196,8 +196,9 @@ class Image(Data):
             width_relative=width_relative,
             height_relative=height_relative,
             min_height=min_height,
-        )    
-    
+        )
+
+
 @dataclass
 class ImageCrop(Image):
     """Specialized image class for handling cropped regions of images.
@@ -225,7 +226,6 @@ class ImageCrop(Image):
     @property
     def height(self):
         return self.height_relative * self.raw_height
-    
 
     def coordinates(self) -> tuple[float, float, float, float]:
         """Calculate absolute pixel coordinates for the crop region.
@@ -281,7 +281,6 @@ class ImageCrop(Image):
             }
         )
         return data
-        
 
     @staticmethod
     def metadata_list(images: list["ImageCrop"]) -> dict:
@@ -352,4 +351,4 @@ class ImageCrop(Image):
             y_center=self.y_center + (y_center - 0.5) * self.height_relative,
             width_relative=width_relative * self.width_relative,
             height_relative=height_relative * self.height_relative,
-        )        
+        )

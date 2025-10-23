@@ -20,7 +20,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
     model: str | Path | YOLO
 
     def _init_model(self) -> None:
-        """Ensure that the YOLO model is loaded before performing any operations."""        
+        """Ensure that the YOLO model is loaded before performing any operations."""
         if self.model and isinstance(self.model, (str, Path)):
             self._load(Path(self.model))
         if not isinstance(self.model, YOLO):
@@ -31,8 +31,8 @@ class ObjectDetectionYOLO(MachineLearningTask):
 
         Args:
             model (str | Path): The path to the model file or the model itself.
-        """        
-        self.model = YOLO(model)    
+        """
+        self.model = YOLO(model)
 
     @property
     def input_nums(self) -> int:
@@ -60,7 +60,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
         if not isinstance(args[0], Image):
             raise TypeError("Input must be an instance of Image.")
         image: Image = args[0]
-        self._init_model()                
+        self._init_model()
         results: Results = (self.model(image.get_path())).pop()
         detections: list[ImageCrop] = []
         coordinates = results.boxes.xywhn if results.boxes else []
@@ -79,15 +79,13 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 width_relative=float(w),
                 height_relative=float(h),
             )
-            detections.append(image_crop)        
-        print(f"Found {len(detections)} objects in the image.")        
+            detections.append(image_crop)
+        print(f"Found {len(detections)} objects in the image.")
         return detections
 
     def train(
-        self,
-        *images: ImageCrop,
-        **kwargs
-    ) -> tuple[DetMetrics | None, DetMetrics | None]:        
+        self, *images: ImageCrop, **kwargs
+    ) -> tuple[DetMetrics | None, DetMetrics | None]:
         self._init_model()
         log_dir: Path = (
             Path(kwargs.pop("log_dir"))
@@ -98,20 +96,15 @@ class ObjectDetectionYOLO(MachineLearningTask):
         classes = kwargs.pop("classes", [])
         log_dir.mkdir(parents=True, exist_ok=True)
         print(f"Training logs will be saved to: {log_dir}")
-        kwargs["config_file"] = self._prepare_yolo_config(
-            classes, log_dir, *images
-        )
+        kwargs["config_file"] = self._prepare_yolo_config(classes, log_dir, *images)
         self._prepare_assets(classes, log_dir, *images)
-        params = self._prepare_params(**kwargs)        
-        results: DetMetrics | None = self.model.train(**params)                
+        params = self._prepare_params(**kwargs)
+        results: DetMetrics | None = self.model.train(**params)
         validation_results = YOLO(results.save_dir / "weights" / "best.pt").val()
         return results, validation_results
 
     def _prepare_yolo_config(
-        self,
-        classes: list[str],        
-        log_dir: Path,
-        *images: ImageCrop
+        self, classes: list[str], log_dir: Path, *images: ImageCrop
     ) -> Path:
         config = (
             f"train: train.txt\nval: val.txt\nnc: {len(classes)}\nnames: {classes}\n"
@@ -124,19 +117,19 @@ class ObjectDetectionYOLO(MachineLearningTask):
             else:
                 train_files.add(f"./{Path(img.get_path()).name}")
         config_file = log_dir / "config.yml"
-        Path(config_file).write_text(config)        
-        Path(log_dir / "train.txt").write_text("\n".join(train_files))        
+        Path(config_file).write_text(config)
+        Path(log_dir / "train.txt").write_text("\n".join(train_files))
         Path(log_dir / "val.txt").write_text("\n".join(val_files))
         return config_file
 
     def _prepare_assets(
         self, classes: list[str], log_dir: Path, *images: ImageCrop
     ) -> None:
-        for img in images:            
+        for img in images:
             src = Path(img.get_path())
             dst = log_dir / src.name
             if not dst.exists():  # Only copy if the file does not already exist
-                shutil.copy(src, dst)                        
+                shutil.copy(src, dst)
             name_index = classes.index(img.name) if img.name in classes else -1
             if name_index == -1:
                 continue
@@ -150,10 +143,11 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 with open(text_dst, "a") as f:
                     f.write(
                         f"{name_index} {img.x_center:.6f} {img.y_center:.6f} {img.width_relative:.6f} {img.height_relative:.6f}\n"
-                    )            
+                    )
 
     def _prepare_params(self, **kwargs) -> dict:
-        import platform, torch        
+        import platform, torch
+
         params = {
             "data": kwargs["config_file"],
             "project": kwargs["config_file"].parent,
@@ -164,5 +158,5 @@ class ObjectDetectionYOLO(MachineLearningTask):
             ),
             "epochs": kwargs.get("epochs", 1),
             "imgsz": kwargs.get("imgsz", 640),
-        }        
+        }
         return params

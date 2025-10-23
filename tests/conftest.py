@@ -1,5 +1,5 @@
 import pytest, shutil, os
-from pathlib import Path    
+from pathlib import Path
 
 pytest_plugins = [
     "tests.fixtures.functions",
@@ -13,6 +13,7 @@ pytest_plugins = [
 @pytest.fixture(autouse=True)
 def cleanup_tmp_dir():
     shutil.rmtree("log_dir", ignore_errors=True)
+
 
 @pytest.fixture(autouse=True)
 def cleanup_pt(root_data_path):

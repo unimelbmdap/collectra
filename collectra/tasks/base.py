@@ -55,13 +55,14 @@ class Task(BaseEntity, Generic[T]):
         """
         return self.run(*args)
 
-@dataclass    
+
+@dataclass
 class TaskNode(Node):
 
     task: Task
 
     def __post_init__(self):
         self._status = NodeStatus.READY if self.task else NodeStatus.NOT_READY
-    
+
     def get_task(self) -> Task:
-        return self.task   
+        return self.task

@@ -19,7 +19,7 @@ def test_train_yolo_temp_dir(classes, images, model, train_yolo, debug):
     """
     import shutil
 
-    try:        
+    try:
         assert len(images) > 0, "No images provided for training. Check fixture"
         yolo_task = ObjectDetectionYOLO(name="label-detector", model=model)
         assert isinstance(yolo_task, ObjectDetectionYOLO)
@@ -34,7 +34,7 @@ def test_train_yolo_temp_dir(classes, images, model, train_yolo, debug):
         assert results, "Training failed to return any results"
         assert results.results_dict is not None, "results_dict should exist"
         best_model_path = results.save_dir / "weights" / "best.pt"
-        assert best_model_path.exists(), f"best.pt not found in {best_model_path}"        
+        assert best_model_path.exists(), f"best.pt not found in {best_model_path}"
     except Exception as e:
         debug(e)
 

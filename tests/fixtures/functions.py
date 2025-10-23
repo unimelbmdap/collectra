@@ -24,16 +24,14 @@ def train_yolo():
     from ultralytics.utils.metrics import DetMetrics
 
     def _train_yolo(
-        task: ObjectDetectionYOLO,
-        *images: ImageCrop,
-        **kwargs
+        task: ObjectDetectionYOLO, *images: ImageCrop, **kwargs
     ) -> tuple[DetMetrics | None, DetMetrics | None, Path]:
         log_dir = Path.cwd() / "log_dir"
         Path(log_dir).mkdir(exist_ok=True)
         results, validation_results = task.train(
             *images,
             log_dir=log_dir,
-            **kwargs,            
+            **kwargs,
         )
         return results, validation_results, log_dir
 

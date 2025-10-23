@@ -29,7 +29,7 @@ class MockYOLOType(MagicMock):
         required_keys = ["source", "conf", "iou", "device"]
         for key in required_keys:
             if key not in kwargs:
-                raise ValueError(f"Missing '{key}' parameter")        
+                raise ValueError(f"Missing '{key}' parameter")
         with patch("collectra.tasks.machine_learning.yolo.Results") as results_mock:
             results_instance = MagicMock()
             results_mock.return_value = results_instance
