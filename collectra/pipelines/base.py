@@ -119,7 +119,7 @@ class Collectra:
         savef = Path(value)
         data_nodes = [node["node"] for node in self.flow.nodes.values() if isinstance(node["node"], DataNode)]                              
         if savef.is_file():
-            savef = Path(savef.name.replace(savef.suffix, f".{self.ext}"))            
+            savef = savef.parent / Path(savef.name.replace(savef.suffix, f".{self.ext}"))            
             savef.mkdir(parents=True, exist_ok=True)
         if savef.is_dir():                        
             with change_dir(savef):            
@@ -157,7 +157,8 @@ class Collectra:
 
             if Path(value).is_file():
                 shutil.copy(Path(value), savef / Path(value).name)    
-              
+        
+        print(f"Results saved to [green]{savef}[/green]")
         
     def _resolve_node(self, node_name: str) -> TaskNode | DataNode:        
         node: dict | None = self.flow.nodes.get(node_name, None)
