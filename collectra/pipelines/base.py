@@ -215,7 +215,7 @@ class Collectra:
         nodes: list[TaskNode | DataNode] | list[TaskNode] | list[DataNode],
         *args,
         **kwargs,
-    ):
+    ):        
         single_run = kwargs.get("single", False)
         children_tasks_of_data: list[TaskNode] = list()
         for node in nodes:
@@ -244,7 +244,7 @@ class Collectra:
                             if existing.name == child.name:
                                 exists = True
                                 break
-                        if not exists:
+                        if not exists and not single_run:
                             children_tasks_of_data.append(child)
         if len(children_tasks_of_data) > 0:
             self._run_nodes(children_tasks_of_data, *args, **kwargs)
