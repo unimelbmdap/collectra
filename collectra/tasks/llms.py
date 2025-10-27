@@ -95,7 +95,7 @@ class LLM(Task):
         return self._add_text(value())
 
     def _add_text(self, text: str) -> dict:
-        return {"type": "text", "data": text}
+        return {"type": "text", "text": text}
 
     def run(self, *args: Text | Image) -> Text:
         """Execute LLM inference on the provided inputs with template-based prompt generation.
