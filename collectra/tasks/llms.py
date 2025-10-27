@@ -22,8 +22,8 @@ from collectra.types.texts import Text
 from collectra.utils import success_msg, processing_msg
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
-from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.messages import SystemMessage, HumanMessage
 from pathlib import Path
 from rich import print
 import copy, llmloader, re
