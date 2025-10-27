@@ -54,7 +54,7 @@ class BaseEntity(ABC, Generic[T]):
             >>> get_class_path(Image)
             'collectra.images.Image'
         """
-        return f"{cls.__module__}.{cls.__qualname__}"
+        return f"{cls.__module__.split('.')[0]}.{cls.__name__}"
 
 
 class NodeStatus(enum.Enum):
