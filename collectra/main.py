@@ -15,13 +15,13 @@ Example:
     $ collectra run --workflow pipeline.yaml --task detection
 """
 
-import os, shutil, logging, sys, typer, yaml, traceback
+import os, shutil, logging, sys, typer, yaml, traceback, webview
 
 from datetime import datetime
 from pathlib import Path
 from typing_extensions import Annotated
 
-from collectra import Collectra, Editor
+from collectra import Collectra, Editor, Viewer
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(stream=sys.stdout)
@@ -167,14 +167,27 @@ def run(
 
 @app.command()
 def view(
-    file: Path = typer.Option("--file", help="The collectra result file to be viewed")
+    file: Annotated[Path | None, typer.Option("--file", help="The collectra result file to be viewed")] = None,
 ):
     try:
-        editor = Editor(file)
-        editor.view()
+        if file:
+            editor = Editor(file)
+            editor.view()
     except Exception as e:
         traceback.print_exc()
 
+@app.command()
+def edit(
+    file: Annotated[Path | None, typer.Option("--file", help="The collectra result file to be edited")] = None,
+):
+    try:
+        if not file:            
+            api = Viewer()
+            webview.create_window("Collectra viewer", url= str(Path.cwd() / "collectra/editor/templates/index.html"), js_api=api, min_size=(600,450))
+            webview.start(ssl=True)
+        else:   
+            editor = Editor(file)         
+            editor.edit()
+    except Exception as e:
+        traceback.print_exc()
 
-if __name__ == "__main__":
-    app()

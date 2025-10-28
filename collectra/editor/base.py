@@ -6,8 +6,12 @@ from pathlib import Path
 
 from collectra.utils import change_dir
 
-__all__ = ["Editor"]
+__all__ = ["Editor", "Viewer"]
 
+
+class Viewer:
+    def setItem(self):
+        print("setting item")
 
 @dataclass
 class Editor:
@@ -18,6 +22,9 @@ class Editor:
         self.env = Environment(
             loader=PackageLoader("collectra.editor"), autoescape=select_autoescape()
         )
+
+    def edit(self):
+        pass
 
     def view(self):
         template = self.env.get_template("imagebb.html")
