@@ -15,25 +15,18 @@ Example:
     $ collectra run --workflow pipeline.yaml --task detection
 """
 
-import os, shutil, logging, sys, traceback, typer, yaml
+import os, shutil, logging, sys, typer, yaml, traceback
 
 from datetime import datetime
 from pathlib import Path
-from rich import print
 from typing_extensions import Annotated
 
 from collectra import Collectra, Editor
-from collectra.utils import error_msg
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(stream=sys.stdout)
 
 app = typer.Typer()
-
-
-def traceback_error(e: Exception, message: str):
-    traceback.print_exc()
-    print(error_msg(f"{message}\n{e}"))
 
 
 def resolve_workflow_path(workflow: Path) -> Collectra:
@@ -74,7 +67,7 @@ def render(
         dest.parent.mkdir(parents=True, exist_ok=True)
         pipeline.render(dest)
     except Exception as e:
-        traceback_error(e, "")
+        traceback.print_exc()
 
 
 @app.command()
@@ -118,7 +111,7 @@ def train(
             if log_cache.exists():
                 os.remove(log_cache)
     except Exception as e:
-        traceback_error(e, "Failed to train task")
+        traceback.print_exc()
 
 
 @app.command(
@@ -169,8 +162,7 @@ def run(
         pipeline = resolve_workflow_path(workflow)
         pipeline(task, **data)
     except Exception as e:
-        traceback_error(e, "Failed to run task")
-
+        traceback.print_exc()
 
 @app.command()
 def view(
@@ -180,8 +172,7 @@ def view(
         editor = Editor(file)
         editor.view()
     except Exception as e:
-        traceback_error(e, "Failed to view item")
-
+        traceback.print_exc()   
 
 if __name__ == "__main__":
     app()
