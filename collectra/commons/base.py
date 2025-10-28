@@ -15,7 +15,7 @@ class BaseEntity(ABC, Generic[T]):
     name: str
 
     def __str__(self) -> str:
-        return f"{self.name}\n{self.get_class_path()}"
+        return f"{self.name}\n{self.get_class_path()}"    
 
     @abstractmethod
     def __call__(self) -> T:
@@ -71,20 +71,8 @@ class NodeStatus(enum.Enum):
 @dataclass
 class Node:
 
-    _name: str
-    _status: NodeStatus = field(init=False, default=NodeStatus.NOT_READY)
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def status(self) -> NodeStatus:
-        return self._status
-
-    @status.setter
-    def status(self, status: NodeStatus):
-        self._status = status
+    name: str
+    status: NodeStatus = field(init=False, default=NodeStatus.NOT_READY)
 
     def process(self) -> list:
         return []
