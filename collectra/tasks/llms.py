@@ -16,21 +16,17 @@ Classes:
 
 __all__ = ["LLM"]
 
-from collectra.tasks.base import Task
-from collectra.types.images import Image
-from collectra.types.texts import Text
-from collectra.utils import success_msg, processing_msg
-from dataclasses import dataclass, field
+import llmloader, re
+
 from dotenv import load_dotenv
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import SystemMessage, HumanMessage
-from pathlib import Path
-from rich import print
-import copy, llmloader, re
 
+from collectra.tasks.base import Task
+from collectra.types.images import Image
+from collectra.types.texts import Text
 
 load_dotenv()
-
 
 class LLM(Task):
     """Task for Large Language Model inference operations.
@@ -131,13 +127,13 @@ class LLM(Task):
                     break
             prompt = prompt[end:].strip()
         if prompt:
-            messages.append(self._add_text(prompt.strip()))
-        self.messages.append(HumanMessage(content=messages))
+            messages.append(self._add_text(prompt.strip()))        
+        self.messages.append(HumanMessage(content=messages))        
         response = parser.invoke(self.llm.invoke(self.messages))
         name = (
             f"{self.get_name()}_output"
             if not hasattr(self, "output")
             else self.output[0] if isinstance(self.output, list) else self.output
         )
-        output = Text(name=name, data=response)
+        output = Text(name=name, data=response)        
         return output
