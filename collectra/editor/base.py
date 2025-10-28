@@ -18,8 +18,8 @@ class Viewer:
 
         items = self.window.create_file_dialog(
             webview.FileDialog.OPEN, allow_multiple=True, file_types=file_types
-        )
-        files: list[Path] = [Path(file) for file in items]
+        )        
+        files: list[Path] = [Path(file) for file in items] if items else []
         return files
     
     def loadItems(self):
