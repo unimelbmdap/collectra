@@ -15,7 +15,7 @@ class BaseEntity(ABC, Generic[T]):
     name: str
 
     def __str__(self) -> str:
-        return f"{self.name}\n{self.get_class_path()}"    
+        return f"{self.name}\n{self.get_class_path()}"
 
     @abstractmethod
     def __call__(self) -> T:

@@ -43,7 +43,7 @@ logger.setLevel(logging.INFO)
 
 def str_presenter(dumper, data):
     """Represent multi-line strings using block style |"""
-    if "\n" in data:  # only use | when the string has newlines            
+    if "\n" in data:  # only use | when the string has newlines
         return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
     return dumper.represent_scalar("tag:yaml.org,2002:str", data)
 
@@ -136,7 +136,7 @@ class Collectra:
             node["node"]
             for node in self.flow.nodes.values()
             if isinstance(node["node"], DataNode)
-        ]        
+        ]
         if savef.is_file():
             savef = savef.parent / Path(
                 savef.name.replace(savef.suffix, f".{self.ext}")
@@ -174,7 +174,7 @@ class Collectra:
                         results[name] = results[name][0]
 
                 with open("results.yaml", "w") as f:
-                    for key, data in results.items():                        
+                    for key, data in results.items():
                         yaml.dump({key: data}, f, sort_keys=False, allow_unicode=True)
                         f.write("\n")
 
@@ -215,7 +215,7 @@ class Collectra:
         nodes: list[TaskNode | DataNode] | list[TaskNode] | list[DataNode],
         *args,
         **kwargs,
-    ):        
+    ):
         single_run = kwargs.get("single", False)
         children_tasks_of_data: list[TaskNode] = list()
         for node in nodes:
@@ -227,19 +227,19 @@ class Collectra:
                 if single_run:
                     children = [
                         child for child in children if isinstance(child, DataNode)
-                    ]                
+                    ]
                 self._run_nodes(children, *results, **kwargs)
             elif isinstance(node, DataNode):
                 for arg in args:
                     if not isinstance(arg, Data):
-                        continue                                              
-                    if node.name == arg.get_name() and node.check_type(type(arg)):                        
+                        continue
+                    if node.name == arg.get_name() and node.check_type(type(arg)):
                         node.add_item(arg)
-                children = list(self.flow.successors(str(node.name)))                
+                children = list(self.flow.successors(str(node.name)))
                 children = [self._resolve_node(child) for child in children]
                 for child in children:
                     if isinstance(child, TaskNode):
-                        exists = False                        
+                        exists = False
                         for existing in children_tasks_of_data:
                             if existing.name == child.name:
                                 exists = True
@@ -308,7 +308,7 @@ class Collectra:
         with change_dir(self.path):
             processed_inputs, validation_results = task.train(
                 *processed_inputs, **kwargs
-            )            
+            )
             self.save_train(task, processed_inputs)
         return processed_inputs, validation_results
 
@@ -338,7 +338,7 @@ class Collectra:
         with change_dir(self.path):
             new_metadata = self.metadata | self.data
             with open("pipeline.yaml", "w") as f:
-                for key, value in new_metadata.items():                    
+                for key, value in new_metadata.items():
                     yaml.dump({key: value}, f, sort_keys=False)
                     f.write("\n")
 
@@ -352,13 +352,13 @@ class Collectra:
             unpack_types(
                 task.run, get_param_types if io_type == "input" else get_return_type
             ).items()
-        )        
-        io = self._get_io_list(task_config.get(io_type, []))        
+        )
+        io = self._get_io_list(task_config.get(io_type, []))
         nodes: list = list()
         for item in io:
             for _, types in param_types:
                 if not isinstance(types, tuple):
-                    types = (types,)                
+                    types = (types,)
                 nodes.append((item, types))
         return nodes
 
@@ -379,10 +379,10 @@ class Collectra:
                     self._add_task_node(task_key, obj)
                     ios: list[tuple[str, list[type]]] = list()
                     ios.extend(self._check_task_io("input", obj, data))
-                    ios.extend(self._check_task_io("output", obj, data))                    
+                    ios.extend(self._check_task_io("output", obj, data))
                     for io_key, io_types in ios:
                         self._add_data_node(io_key, types=io_types)
-                else:                    
+                else:
                     self._add_data_node(name, obj=obj)
 
             for task_name, io in relations.items():
@@ -407,7 +407,9 @@ class Collectra:
             style="filled",
         )
 
-    def _add_data_node(self, name, obj: Data | None = None, types: list[type] | set[type] = []):
+    def _add_data_node(
+        self, name, obj: Data | None = None, types: list[type] | set[type] = []
+    ):
         node = self.flow.nodes.get(name, None)
         if len(types) == 0 and obj:
             types = set([type(obj)])
@@ -423,7 +425,7 @@ class Collectra:
                 color="salmon",
                 fontcolor="black",
                 style="filled",
-            )        
+            )
 
     def render(self, dest: str | Path = ""):
         if self.flow.number_of_nodes() == 0:

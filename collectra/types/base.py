@@ -4,7 +4,12 @@ from pathlib import Path
 import yaml
 
 from collectra.commons import BaseEntity, Node, NodeStatus
-from collectra.utils import error_msg, load_class_from_string, change_dir, traceback_error
+from collectra.utils import (
+    error_msg,
+    load_class_from_string,
+    change_dir,
+    traceback_error,
+)
 
 __all__ = ["Data", "DataNode"]
 
@@ -21,14 +26,20 @@ class Data(BaseEntity):
 
     @classmethod
     def all_attributes(cls):
-        return set([attribute for attribute in dir(cls) if not attribute.startswith("_") and not callable(attribute)])
+        return set(
+            [
+                attribute
+                for attribute in dir(cls)
+                if not attribute.startswith("_") and not callable(attribute)
+            ]
+        )
 
 
 @dataclass
 class DataNode(Node):
 
     items: list[Data] = field(default_factory=list)
-    types: set[type] = field(default_factory=set)    
+    types: set[type] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         self.status = NodeStatus.READY if self.items else NodeStatus.NOT_READY
@@ -81,23 +92,25 @@ class DataNode(Node):
                             item["name"] = key
                             item["data"] = (
                                 item.pop("path") if "path" in item else item["data"]
-                            )                            
-                            if validation is not None and "validation" in cls_.all_attributes():
-                                item["validation"] = validation                                                        
+                            )
+                            if (
+                                validation is not None
+                                and "validation" in cls_.all_attributes()
+                            ):
+                                item["validation"] = validation
                             instance = cls_(**item)
                             if not instance:
                                 raise ValueError(f"Failed to load {item} with {cls_}")
                             self.add_item(instance)
-                except Exception as e:                    
-                    traceback_error(e, f"Failed to load data: {e}")                    
+                except Exception as e:
+                    traceback_error(e, f"Failed to load data: {e}")
         elif key:
             for cls_ in self.types:
                 try:
                     instance = cls_(key, value)
                     self.add_item(instance)
                 except Exception as e:
-                    traceback_error(e, f"Failed to load data: {e}")                    
-                    
+                    traceback_error(e, f"Failed to load data: {e}")
 
     @staticmethod
     def batch_process(
@@ -141,5 +154,8 @@ class DataNode(Node):
                     if instance:
                         data.append(instance)
                 except Exception as e:
-                    traceback_error(e, f"Failed to load data item {name} from {item.get('data', '')}: {e}")                                        
+                    traceback_error(
+                        e,
+                        f"Failed to load data item {name} from {item.get('data', '')}: {e}",
+                    )
         return data

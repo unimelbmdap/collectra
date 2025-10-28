@@ -164,6 +164,7 @@ def run(
     except Exception as e:
         traceback.print_exc()
 
+
 @app.command()
 def view(
     file: Path = typer.Option("--file", help="The collectra result file to be viewed")
@@ -172,7 +173,8 @@ def view(
         editor = Editor(file)
         editor.view()
     except Exception as e:
-        traceback.print_exc()   
+        traceback.print_exc()
+
 
 if __name__ == "__main__":
     app()

@@ -30,10 +30,12 @@ from pathlib import Path
 from tqdm import tqdm
 from PIL import Image as ImagePil
 
+
 def traceback_error(e: Exception, message: str):
     traceback.print_exc()
-    print(error_msg(f"{message}\n{e}"))  
-    raise e  
+    print(error_msg(f"{message}\n{e}"))
+    raise e
+
 
 def success_msg(message: str):
     """Format a success message with green styling for console output.

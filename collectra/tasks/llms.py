@@ -28,6 +28,7 @@ from collectra.types.texts import Text
 
 load_dotenv()
 
+
 class LLM(Task):
     """Task for Large Language Model inference operations.
 
@@ -127,13 +128,13 @@ class LLM(Task):
                     break
             prompt = prompt[end:].strip()
         if prompt:
-            messages.append(self._add_text(prompt.strip()))        
-        self.messages.append(HumanMessage(content=messages))        
+            messages.append(self._add_text(prompt.strip()))
+        self.messages.append(HumanMessage(content=messages))
         response = parser.invoke(self.llm.invoke(self.messages))
         name = (
             f"{self.get_name()}_output"
             if not hasattr(self, "output")
             else self.output[0] if isinstance(self.output, list) else self.output
         )
-        output = Text(name=name, data=response)        
+        output = Text(name=name, data=response)
         return output
