@@ -28,6 +28,9 @@ class BaseEntity(ABC, Generic[T]):
             str: The name of the task.
         """
         return self.name
+    
+    def __getstate__(self):
+        return self.serialize()
 
     def serialize(self) -> dict:
         serialized = dict(type=self.get_class_path())

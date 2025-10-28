@@ -19,12 +19,12 @@ Classes:
 __all__ = ["Image", "ImageCrop"]
 
 
-import base64, io, copy, yaml
+import base64, io, copy
 from dataclasses import dataclass, field
 from pathlib import Path
 from PIL import Image as ImagePil
 
-from collectra.utils import crop, error_msg, load_class_from_string
+from collectra.utils import crop
 
 from .base import Data
 
@@ -125,6 +125,9 @@ class Image(Data):
         with open(self.data, "rb") as img_file:
             buffer = img_file.read()
         return buffer
+    
+    def __getstate__(self):
+        return self.get_encoding()
 
     def get_encoding(self) -> str:
         """Get the base64 encoded representation of the image.
