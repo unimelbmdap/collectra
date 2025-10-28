@@ -62,7 +62,7 @@ class TaskNode(Node):
     task: Task
 
     def __post_init__(self):
-        self._status = NodeStatus.READY if self.task else NodeStatus.NOT_READY
+        self.status = NodeStatus.READY if self.task else NodeStatus.NOT_READY
 
     def get_task(self) -> Task:
         return self.task
