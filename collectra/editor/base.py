@@ -1,17 +1,50 @@
-import yaml, json, webbrowser
+import yaml, json, webbrowser, webview
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 from dataclasses import dataclass
 from pathlib import Path
 
-from collectra.utils import change_dir
+from collectra.utils import change_dir, load_class_from_string
 
 __all__ = ["Editor", "Viewer"]
 
 
 class Viewer:
-    def setItem(self):
-        print("setting item")
+
+    window: webview.Window
+
+    def open_file_dialog(self) -> list[Path]:
+        file_types = ('Collectra file (*.grapto)', 'All files (*.*)')
+
+        items = self.window.create_file_dialog(
+            webview.FileDialog.OPEN, allow_multiple=True, file_types=file_types
+        )
+        files: list[Path] = [Path(file) for file in items]
+        return files
+    
+    def loadItems(self):
+        files: list[Path] = self.open_file_dialog()
+        file_data: dict = dict()
+        for file in files:
+            with change_dir(file):
+                with open("results.yaml", "r") as f:
+                    data = yaml.safe_load(f) or {}
+                for key, value in data.items():
+                    if not isinstance(value, list):
+                        data[key] = [value]
+                        value = data[key]                            
+                    for index, item in enumerate(value):   
+                        if "type" not in item:
+                            continue             
+                        type_ = load_class_from_string(item.pop("type"))
+                        item_data = type_(key, **item)
+                        value[index]["data"] = item_data.__getstate__()
+                    if len(value) == 1:
+                        data[key] = value[0]
+            file_data[file.name] = data
+        return file_data
+        
+
 
 @dataclass
 class Editor:

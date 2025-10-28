@@ -7,12 +7,21 @@
 </head>
 <body>
     <h1>This is the viewer</h1>
-    <button onclick="testAPI()">Click to check</button>
+    <button onclick="testAPI()">Click to check</button>   
+    <div id="image_holder">
+
+    </div> 
 </body>
 </html>
 
 <script>
-function testAPI(){
-    window.pywebview.api.setItem()
+async function testAPI(){
+    const holder = document.querySelector("#image_holder");
+    const items = await window.pywebview.api.loadItems();
+    for (const [key, value] of Object.entries(items)) {
+        const image = document.createElement("img");
+        image.src = `data:image/jpg;base64,${value["specimen_sheet"]["data"]}`;
+        holder.appendChild(image);
+    }
 }
 </script>

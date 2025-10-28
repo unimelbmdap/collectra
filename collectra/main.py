@@ -182,9 +182,11 @@ def edit(
 ):
     try:
         if not file:            
-            api = Viewer()
-            webview.create_window("Collectra viewer", url= str(Path.cwd() / "collectra/editor/templates/index.html"), js_api=api, min_size=(600,450))
-            webview.start(ssl=True)
+            viewer = Viewer()
+            window = webview.create_window("Collectra viewer", url= str(Path.cwd() / "collectra/editor/templates/index.html"), js_api=viewer, min_size=(600,450))
+            if window:
+                viewer.window = window
+            webview.start(ssl=True, debug=True, gui="mshtml")
         else:   
             editor = Editor(file)         
             editor.edit()
