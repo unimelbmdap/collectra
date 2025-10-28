@@ -2447,6 +2447,22 @@ typer = ">=0.12.3"
 llama = ["accelerate (>=0.31.0)", "bitsandbytes (>=0.43.1)", "langchain-huggingface (>=0.1.2)", "torch (>=2.2)", "transformers (>=4.41.2)"]
 
 [[package]]
+name = "markdown"
+version = "3.9"
+description = "Python implementation of John Gruber's Markdown."
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "markdown-3.9-py3-none-any.whl", hash = "sha256:9f4d91ed810864ea88a6f32c07ba8bee1346c0cc1f6b1f9f6c822f2a9667d280"},
+    {file = "markdown-3.9.tar.gz", hash = "sha256:d2900fe1782bd33bdbbd56859defef70c2e78fc46668f8eb9df3128138f2cb6a"},
+]
+
+[package.extras]
+docs = ["mdx_gh_links (>=0.2)", "mkdocs (>=1.6)", "mkdocs-gen-files", "mkdocs-literate-nav", "mkdocs-nature (>=0.6)", "mkdocs-section-index", "mkdocstrings[python]"]
+testing = ["coverage", "pyyaml"]
+
+[[package]]
 name = "markdown-it-py"
 version = "3.0.0"
 description = "Python port of markdown-it. Markdown parsing, done right!"
@@ -7110,4 +7126,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<4"
-content-hash = "9e3888b911304017b9634085dde9e312dd46f5621d89ab0de72c8065d7dd980f"
+content-hash = "d58193a27f6aa9117649e13d028c92b923e75679eb301826c42557abc0e8cf7e"
