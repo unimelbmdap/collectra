@@ -51,7 +51,9 @@ class Image(Data):
     validation: bool = field(default=False)
 
     def attributes_to_ignore(self):
-        return {"raw_width", "raw_height", "format"}
+        attributes = super().attributes_to_ignore()
+        [attributes.add(attr) for attr in ["raw_width", "raw_height", "ext"]]
+        return attributes
 
     @property
     def width(self):
