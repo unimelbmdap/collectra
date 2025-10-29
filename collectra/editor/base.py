@@ -1,6 +1,4 @@
 import yaml, webview
-
-from jinja2 import Environment, PackageLoader, select_autoescape
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -8,27 +6,39 @@ from collectra.utils import change_dir, load_class_from_string
 
 __all__ = ["Viewer"]
 
-
 @dataclass
 class Viewer:
 
-    file: Path | None = field(default=None)
+    ROOT_PAGE: str = str(Path.cwd() / "collectra" / "editor" / "index.html")
+    file: Path | None = field(default=None)    
+
+    def __post_init__(self):        
+        self.index = self.ROOT_PAGE
 
     @property
     def window(self) -> webview.Window | None:
         return webview.active_window()    
-
-    def open_file_dialog(self) -> list[Path]:
-        file_types = ('Collectra file (*.*)', 'All files (*.*)')
-
-        items = self.window.create_file_dialog(
-            dialog_type=webview.FileDialog.FOLDER, allow_multiple=True, file_types=file_types
-        )        
-        files: list[Path] = [Path(file) for file in items] if items else []
-        return files
     
-    def loadItems(self):
-        files: list[Path] = self.open_file_dialog()
+    @property
+    def ftypes(self) -> tuple[str, str]:
+        return ('Collectra Files (*.*)', 'All files (*.*)')
+    
+    def getFile(self):
+        items = self.window.create_file_dialog(
+            dialog_type=webview.FileDialog.OPEN, allow_multiple=False, file_types=self.ftypes
+        )
+        files: list[Path] = [Path(file) for file in items] if items else []
+        return self.loadItems(files)
+        
+
+    def getFolder(self):
+        items = self.window.create_file_dialog(
+            dialog_type=webview.FileDialog.FOLDER, allow_multiple=True, file_types=self.ftypes
+        )
+        files: list[Path] = [Path(file) for file in items] if items else []
+        return self.loadItems(files)
+    
+    def loadItems(self, files: list[Path] = []) -> dict:        
         file_data: dict = dict()
         for file in files:
             with change_dir(file):
@@ -48,8 +58,7 @@ class Viewer:
                         value[index]["data"] = item_data.__getstate__()
                     if len(value) == 1:
                         data[key] = value[0]
-            file_data[file.name] = data
-        print(file_data)
+            file_data[file.name] = data        
         return file_data
         
     def edit(self) -> None:
