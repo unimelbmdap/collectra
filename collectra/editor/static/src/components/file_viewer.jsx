@@ -1,11 +1,49 @@
 import { useState } from "react";
-import { Box, List, ListItem } from "@mui/material";
+import { Box, List, ListItem, Paper } from "@mui/material";
+
+function ItemDisplay({key, value}){  
+
+  if(!value["data"] || value["data"] == undefined){
+    return null;
+  }
+
+  return <Box sx={{width: "100%"}} key={key}>
+    {
+      value["data"] &&
+      <img 
+        sx={{
+          maxWidth: "100px",
+          height: "auto",
+          objectFit: "contain",
+          display: "block",
+        }}
+        src={`data:image/jpg;base64,${value["data"]}`}
+        alt={key}
+      />
+    }
+  </Box>
+}
 
 function FileDetail({ item }) {
   return (
-    <Box>
-      {
-        item && <h1>{item.key}</h1>
+    <Box sx={{
+      display: 'flex',
+      flexDirection: 'column',
+      width: '100%',
+    }}>
+      {item &&
+        <Box sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          width: '100%',                  
+        }}>                                     
+          {Object.entries(item).map(([key, value]) => {
+            if (value.constructor == Array){
+              return value.map((subitem, index) => ItemDisplay({key: `${key}-${index}`, value: subitem}));
+            }
+            return ItemDisplay({key: key, value: value});
+          })}                    
+        </Box>
       }      
     </Box>
   )
