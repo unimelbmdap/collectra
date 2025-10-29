@@ -22,6 +22,7 @@ from pathlib import Path
 from typing_extensions import Annotated
 
 from collectra import Collectra, Viewer
+from collectra.utils import change_dir
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(stream=sys.stdout)
@@ -171,15 +172,14 @@ def edit(
     ssl: Annotated[bool, typer.Option("--ssl", help="Enable SSL for the webview")] = False,
     debug: Annotated[bool, typer.Option("--debug", help="Enable debug mode for the webview")] = False,
 ):
-    import platform, time
-    try:
+    import platform
+    try:        
         if not file:            
             viewer = Viewer()                        
-            webview.create_window("Collectra viewer", url=viewer.index, js_api=viewer, min_size=(600,450))     
-            time.sleep(0.5)  # Give time for the window to initialize
+            webview.create_window("Collectra viewer", url=viewer.index, js_api=viewer, min_size=(600,450))                 
             if platform.system() == "Windows":
                 webview.start(ssl=ssl, debug=debug, gui="edgechromium")
-            else:
+            else:                
                 webview.start(ssl=ssl, debug=debug)
         else:   
             editor = Viewer(file)                     

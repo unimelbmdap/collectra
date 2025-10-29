@@ -11,11 +11,10 @@ function ItemDisplay({key, value}){
     {
       value["data"] &&
       <img 
-        sx={{
-          maxWidth: "100px",
-          height: "auto",
-          objectFit: "contain",
+        style={{          
+          maxWidth: "100%",                    
           display: "block",
+          height: "auto",
         }}
         src={`data:image/jpg;base64,${value["data"]}`}
         alt={key}
@@ -30,6 +29,7 @@ function FileDetail({ item }) {
       display: 'flex',
       flexDirection: 'column',
       width: '100%',
+      gap: "1.5rem",
     }}>
       {item &&
         <Box sx={{
