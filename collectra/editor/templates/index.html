@@ -18,6 +18,7 @@
 async function testAPI(){
     const holder = document.querySelector("#image_holder");
     const items = await window.pywebview.api.loadItems();
+    console.log(items);
     for (const [key, value] of Object.entries(items)) {
         const image = document.createElement("img");
         image.src = `data:image/jpg;base64,${value["specimen_sheet"]["data"]}`;

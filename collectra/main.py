@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing_extensions import Annotated
 
-from collectra import Collectra, Editor, Viewer
+from collectra import Collectra, Viewer
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(stream=sys.stdout)
@@ -166,29 +166,18 @@ def run(
 
 
 @app.command()
-def view(
-    file: Annotated[Path | None, typer.Option("--file", help="The collectra result file to be viewed")] = None,
-):
-    try:
-        if file:
-            editor = Editor(file)
-            editor.view()
-    except Exception as e:
-        traceback.print_exc()
-
-@app.command()
 def edit(
     file: Annotated[Path | None, typer.Option("--file", help="The collectra result file to be edited")] = None,
+    ssl: Annotated[bool, typer.Option("--ssl", help="Enable SSL for the webview")] = False,
+    debug: Annotated[bool, typer.Option("--debug", help="Enable debug mode for the webview")] = False,
 ):
     try:
         if not file:            
             viewer = Viewer()
-            window = webview.create_window("Collectra viewer", url= str(Path.cwd() / "collectra/editor/templates/index.html"), js_api=viewer, min_size=(600,450))
-            if window:
-                viewer.window = window
-            webview.start(ssl=True, debug=True, gui="mshtml")
+            webview.create_window("Collectra viewer", url= str(Path.cwd() / "collectra/editor/templates/index.html"), js_api=viewer, min_size=(600,450))            
+            webview.start(ssl=ssl, debug=debug)
         else:   
-            editor = Editor(file)         
+            editor = Viewer(file)         
             editor.edit()
     except Exception as e:
         traceback.print_exc()
