@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Button, Container, Typography } from '@mui/material';
- 
+import { Button, Container, Box, Typography } from '@mui/material';
+import Content from './components/content.jsx';
+
+
 export default function App() {
   
   const [items, setItems] = useState([]);
@@ -23,20 +25,36 @@ export default function App() {
   }, [items]);
  
   return (
-    <Container maxWidth="lg">
-        <Typography variant="h1" gutterBottom>
-          Collectra Editor
-        </Typography>     
+    <Container minWidth="lg" sx={{
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: "1.5rem"      
+    }}>      
+      <Typography variant="h1" gutterBottom fontSize={24}>
+        Collectra Editor
+      </Typography>             
+      <Box sx={{
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        gap: "1rem"
+      }}>
         <Button
           onClick={() => getItems("single")}
+          variant="outlined"
         >
           Open File
         </Button>
         <Button
           onClick={() => getItems("folder")}
-          >
+          variant="outlined"
+        >
           Open Folder
-        </Button>
+        </Button>                
+      </Box>
+      <Content items={items} />
     </Container>      
   );
 }

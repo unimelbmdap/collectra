@@ -25,7 +25,7 @@ class Viewer:
     
     def getFile(self):
         items = self.window.create_file_dialog(
-            dialog_type=webview.FileDialog.OPEN, allow_multiple=False, file_types=self.ftypes
+            dialog_type=webview.FileDialog.FOLDER, allow_multiple=False, file_types=self.ftypes
         )
         files: list[Path] = [Path(file) for file in items] if items else []
         return self.loadItems(files)
