@@ -30,6 +30,7 @@ function ItemDisplay({key, value}){
       </Paper>
     }
     <Paper elevation={1} sx={{padding: "1rem", marginLeft: "1rem", overflowY: "auto"}}>
+      <Typography variant="subtitle1">{key}</Typography>
       {
         Object.entries(value).map(([subkey, subvalue]) => {
           if(subkey == "data"){

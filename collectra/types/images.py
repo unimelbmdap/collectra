@@ -22,12 +22,14 @@ __all__ = ["Image", "ImageCrop"]
 import base64, io, copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from PIL import Image as ImagePil, ImageDraw
+from PIL import Image as ImagePil, ImageDraw, ImageFont
 
 from collectra.utils import crop
 
 from .base import Data
 
+font_size = 48
+font = ImageFont.truetype(Path.cwd() / "collectra/editor/static/fonts/PlayfairDisplay-Regular.ttf", size=font_size)
 
 @dataclass
 class Image(Data):
@@ -260,8 +262,10 @@ class ImageCrop(Image):
         # add bounding box on the image        
         draw = ImageDraw.Draw(image)
         coordinates = self.coordinates()
-        draw.rectangle(coordinates, outline="red", width=10)        
-        draw.text((coordinates[0], coordinates[1]), self.name)
+        draw.rectangle(coordinates, outline="red", width=10)
+        left, upper, _, _ = coordinates
+        upper = upper - font_size*1.1 if upper - font_size*1.1 >= 0 else 0
+        draw.text((left, upper), self.name, stroke_width=2, fill="red", font=font)
         buffer = self.load(image)
         return base64.b64encode(buffer).decode("utf-8")
 
