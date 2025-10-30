@@ -260,14 +260,12 @@ class ImageCrop(Image):
         # add bounding box on the image        
         draw = ImageDraw.Draw(image)
         coordinates = self.coordinates()
-        draw.rectangle(coordinates, outline="red", width=3)        
+        draw.rectangle(coordinates, outline="red", width=10)        
         draw.text((coordinates[0], coordinates[1]), self.name)
-        buffer = io.BytesIO()
-        image.save(buffer, format=self.ext)
-        buffer.seek(0)
-        return base64.b64encode(buffer.getvalue()).decode("utf-8")
+        buffer = self.load(image)
+        return base64.b64encode(buffer).decode("utf-8")
 
-    def load(self) -> bytes:
+    def load(self, img: ImagePil.Image | None) -> bytes:
         """Load the cropped region as raw bytes.
         Performs the actual crop operation using the calculated coordinates
         and returns the cropped image data as bytes.
@@ -275,7 +273,8 @@ class ImageCrop(Image):
         Returns:
             bytes: Raw binary content of the cropped image region.
         """
-        img = self.pil()
+        if img is None:
+            img = self.pil()
         buffer = io.BytesIO()
         img.save(buffer, format=self.ext)
         buffer.seek(0)
