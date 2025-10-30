@@ -22,7 +22,6 @@ from pathlib import Path
 from typing_extensions import Annotated
 
 from collectra import Collectra, Viewer
-from collectra.utils import change_dir
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(stream=sys.stdout)
