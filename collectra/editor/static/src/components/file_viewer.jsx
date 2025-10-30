@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, List, ListItem, Paper } from "@mui/material";
+import { Box, List, ListItem, Paper, Typography } from "@mui/material";
 
 function ItemDisplay({key, value}){  
 
@@ -7,19 +7,46 @@ function ItemDisplay({key, value}){
     return null;
   }
 
-  return <Box sx={{width: "100%"}} key={key}>
+  return <Box sx={{width: "100%", display: "grid", gridTemplateColumns: "2fr 1fr"}} key={key}>
     {
       value["data"] &&
+      value["type"] == "collectra.Image" || value["type"] == "collectra.ImageCrop" ?
       <img 
         style={{          
-          maxWidth: "100%",                    
+          width: "100%",                    
           display: "block",
           height: "auto",
         }}
         src={`data:image/jpg;base64,${value["data"]}`}
         alt={key}
       />
+      :
+      <Paper elevation={1} sx={{padding: "1rem", marginRight: "1rem", overflowY: "auto"}}>
+        <Typography 
+          variant="subtitle1"
+        >          
+          {String(value["data"]).slice(0, 1000)}{String(value["data"]).length > 1000 ? "..." : ""}
+        </Typography>
+      </Paper>
     }
+    <Paper elevation={1} sx={{padding: "1rem", marginLeft: "1rem", overflowY: "auto"}}>
+      {
+        Object.entries(value).map(([subkey, subvalue]) => {
+          if(subkey == "data"){
+            return null;
+          }
+          return <Typography 
+            key={subkey}              
+            sx={{padding: "0.5rem"}}
+            variant="subtitle2"
+          >
+            <strong>{subkey}:</strong>
+            <br />
+            {String(subvalue)}
+          </Typography>
+        })
+      }
+    </Paper>    
   </Box>
 }
 
@@ -35,7 +62,8 @@ function FileDetail({ item }) {
         <Box sx={{
           display: 'flex',
           flexDirection: 'column',
-          width: '100%',                  
+          width: '100%',            
+          rowGap: "1.5rem",      
         }}>                                     
           {Object.entries(item).map(([key, value]) => {
             if (value.constructor == Array){
@@ -51,7 +79,7 @@ function FileDetail({ item }) {
 
 function FileList({ items, onSelectItem }) {  
   return (
-    <Box>
+    <Box sx={{borderRight: '1px solid #ccc', paddingRight: '1rem'}}>
       <List>
         { items && 
           Object.entries(items).map(([key, item]) => (
@@ -81,7 +109,7 @@ export default function FileViewer({ items }) {
       sx={{
         width: '100%',
         display: 'grid',        
-        gridTemplateColumns: '1fr 2fr',
+        gridTemplateColumns: '1fr 3fr',
         gap: '1rem',
       }}
     >

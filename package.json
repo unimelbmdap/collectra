@@ -1,5 +1,6 @@
 {
   "scripts": {
+    "init": "npm install && vite build",    
     "build": "vite build",
     "dev": "vite"
   },

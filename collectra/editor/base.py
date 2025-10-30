@@ -20,12 +20,12 @@ class Viewer:
         return webview.active_window()    
     
     @property
-    def ftypes(self) -> tuple[str, str]:
+    def ext(self) -> tuple[str, str]:
         return ('Collectra Files (*.*)', 'All files (*.*)')
     
     def getFile(self):
         items = self.window.create_file_dialog(
-            dialog_type=webview.FileDialog.FOLDER, allow_multiple=False, file_types=self.ftypes
+            dialog_type=webview.FileDialog.FOLDER, allow_multiple=False, file_types=self.ext
         )
         files: list[Path] = [Path(file) for file in items] if items else []
         return self.loadItems(files)
@@ -33,32 +33,40 @@ class Viewer:
 
     def getFolder(self):
         items = self.window.create_file_dialog(
-            dialog_type=webview.FileDialog.FOLDER, allow_multiple=True, file_types=self.ftypes
+            dialog_type=webview.FileDialog.FOLDER, allow_multiple=True, file_types=self.ext
         )
         files: list[Path] = [Path(file) for file in items] if items else []
         return self.loadItems(files)
     
-    def loadItems(self, files: list[Path] = []) -> dict:        
+    def _loadInstance(self, data: dict) -> dict:
+        for key, value in data.items():
+            if not isinstance(value, list):
+                data[key] = [value]
+                value = data[key]                            
+            for item in value:   
+                if "type" not in item:
+                    continue             
+                item_data = item.copy()
+                type_ = load_class_from_string(item_data.pop("type"))
+                item_data["name"] = key
+                item_data["data"] = item_data.pop("path") if "path" in item_data else item_data["data"]
+                item_data = type_(**item_data)
+                item["data"] = item_data.__getstate__()
+            if len(value) == 1:
+                data[key] = value[0]
+        return data
+
+    def _loadItem(self, file: Path) -> dict:
+        with change_dir(file):
+            with open("results.yaml", "r") as f:
+                data = yaml.safe_load(f) or dict()
+            data = self._loadInstance(data)
+        return data
+
+    def loadItems(self, files: list[Path] = []) -> dict:
         file_data: dict = dict()
-        for file in files:
-            with change_dir(file):
-                with open("results.yaml", "r") as f:
-                    data = yaml.safe_load(f) or {}
-                for key, value in data.items():
-                    if not isinstance(value, list):
-                        data[key] = [value]
-                        value = data[key]                            
-                    for index, item in enumerate(value):   
-                        if "type" not in item:
-                            continue             
-                        type_ = load_class_from_string(item.pop("type"))
-                        item["name"] = key
-                        item["data"] = item.pop("path") if "path" in item else item["data"]
-                        item_data = type_(**item)
-                        value[index]["data"] = item_data.__getstate__()
-                    if len(value) == 1:
-                        data[key] = value[0]
-            file_data[file.name] = data        
+        for file in files:            
+            file_data[file.name] = self._loadItem(file)
         return file_data
         
     def edit(self) -> None:

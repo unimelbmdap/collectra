@@ -22,7 +22,7 @@ __all__ = ["Image", "ImageCrop"]
 import base64, io, copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from PIL import Image as ImagePil
+from PIL import Image as ImagePil, ImageDraw
 
 from collectra.utils import crop
 
@@ -254,10 +254,21 @@ class ImageCrop(Image):
 
     def pil(self) -> ImagePil.Image:
         return crop(path=self.data, coordinates=self.coordinates())
+    
+    def __getstate__(self):
+        image = super().pil()
+        # add bounding box on the image        
+        draw = ImageDraw.Draw(image)
+        coordinates = self.coordinates()
+        draw.rectangle(coordinates, outline="red", width=3)        
+        draw.text((coordinates[0], coordinates[1]), self.name)
+        buffer = io.BytesIO()
+        image.save(buffer, format=self.ext)
+        buffer.seek(0)
+        return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
     def load(self) -> bytes:
         """Load the cropped region as raw bytes.
-
         Performs the actual crop operation using the calculated coordinates
         and returns the cropped image data as bytes.
 
