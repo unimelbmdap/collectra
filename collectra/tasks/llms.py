@@ -19,14 +19,10 @@ __all__ = ["LLM"]
 from collectra.tasks.base import Task
 from collectra.types.images import Image
 from collectra.types.texts import Text
-from collectra.utils import success_msg, processing_msg
-from dataclasses import dataclass, field
 from dotenv import load_dotenv
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import SystemMessage, HumanMessage
-from pathlib import Path
-from rich import print
-import copy, llmloader, re
+import llmloader, re
 
 
 load_dotenv()
@@ -58,10 +54,14 @@ class LLM(Task):
         super().__init__(name, **kwargs)
         self.template: str = kwargs.get("template", "")
         self.temperature = kwargs.get("temperature", 0.8)
-        self.max_tokens = kwargs.get("max_tokens", 250)
+        self.max_tokens = kwargs.get("max_tokens", None)
         self.llm = llmloader.load(
-            model, temperature=self.temperature, max_tokens=self.max_tokens
+            model, 
+            temperature=self.temperature, 
+            max_tokens=self.max_tokens
         )
+        self.chain = self.llm | StrOutputParser()
+        
         init_messages = (
             SystemMessage(content=kwargs.get("system", ""))
             if kwargs.get("system", "")
@@ -114,7 +114,6 @@ class LLM(Task):
             that contain the input key as a substring will be populated with LLM results.
             Prints a success message when inference completes.
         """
-        parser = StrOutputParser()
         prompt = str(self.template)
         pattern = r"\{(.*?)\}"
         messages: list[str | dict] = list()
@@ -133,7 +132,8 @@ class LLM(Task):
         if prompt:
             messages.append(self._add_text(prompt.strip()))
         self.messages.append(HumanMessage(content=messages))
-        response = parser.invoke(self.llm.invoke(self.messages))
+        
+        response = self.chain.invoke(self.messages)
         name = (
             f"{self.get_name()}_output"
             if not hasattr(self, "output")
@@ -141,3 +141,4 @@ class LLM(Task):
         )
         output = Text(name=name, data=response)
         return output
+
