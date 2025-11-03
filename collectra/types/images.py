@@ -28,8 +28,9 @@ from collectra.utils import crop
 
 from .base import Data
 
+font_path = Path(__file__).parent.parent / "editor/static/fonts/PlayfairDisplay-Regular.ttf"
 font_size = 48
-font = ImageFont.truetype(Path.cwd() / "collectra/editor/static/fonts/PlayfairDisplay-Regular.ttf", size=font_size)
+font = ImageFont.truetype(Path(font_path), size=font_size)
 
 @dataclass
 class Image(Data):
@@ -205,7 +206,6 @@ class Image(Data):
             min_height=min_height,
         )
 
-
 @dataclass
 class ImageCrop(Image):
     """Specialized image class for handling cropped regions of images.
@@ -259,13 +259,15 @@ class ImageCrop(Image):
     
     def __getstate__(self):
         image = super().pil()
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
         # add bounding box on the image        
         draw = ImageDraw.Draw(image)
         coordinates = self.coordinates()
         draw.rectangle(coordinates, outline="red", width=10)
         left, upper, _, _ = coordinates
-        upper = upper - font_size*1.1 if upper - font_size*1.1 >= 0 else 0
-        draw.text((left, upper), self.name, stroke_width=2, fill="red", font=font)
+        upper = upper - font_size*1.1 if upper - font_size*1.1 >= 0 else 0                     
+        draw.text((left, upper), self.name, fill="red", font=font)
         buffer = self.load(image)
         return base64.b64encode(buffer).decode("utf-8")
 

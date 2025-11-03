@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Box, List, ListItem, Paper, Typography } from "@mui/material";
+import ReactMarkdown from "react-markdown";
 
 function ItemDisplay({key, value}){  
 
@@ -24,8 +25,10 @@ function ItemDisplay({key, value}){
       <Paper elevation={1} sx={{padding: "1rem", marginRight: "1rem", overflowY: "auto"}}>
         <Typography 
           variant="subtitle1"
-        >          
-          {String(value["data"]).slice(0, 1000)}{String(value["data"]).length > 1000 ? "..." : ""}
+        >
+          <ReactMarkdown>
+            {String(value["data"])}
+          </ReactMarkdown>
         </Typography>
       </Paper>
     }

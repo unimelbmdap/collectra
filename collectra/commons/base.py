@@ -30,7 +30,7 @@ class BaseEntity(ABC, Generic[T]):
         return self.name
     
     def __getstate__(self):
-        return self.serialize()
+        return self.data if self.data else ""
 
     def serialize(self) -> dict:
         serialized = dict(type=self.get_class_path())

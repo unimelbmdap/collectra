@@ -9,7 +9,7 @@ __all__ = ["Viewer"]
 @dataclass
 class Viewer:
 
-    ROOT_PAGE: str = str(Path.cwd() / "collectra" / "editor" / "index.html")
+    ROOT_PAGE: str = str(Path(__file__).parent / "index.html")
     file: Path | None = field(default=None)    
 
     def __post_init__(self):        
