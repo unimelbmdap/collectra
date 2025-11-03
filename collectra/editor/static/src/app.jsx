@@ -51,7 +51,7 @@ export default function App() {
           onClick={() => getItems("folder")}
           variant="outlined"
         >
-          Open Folder
+          Open Files
         </Button>                
       </Box>
       <Content items={items} />
