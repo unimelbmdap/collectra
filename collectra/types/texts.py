@@ -48,8 +48,8 @@ class Text(Data):
     def __call__(self) -> str | Path:
         return self.data
 
-    def serialize(self) -> dict:
-        serialized = super().serialize()
-        if "data" in serialized:
-            serialized["data"] = unmark(serialized["data"])
-        return serialized
+    # def serialize(self) -> dict:
+    #     serialized = super().serialize()
+    #     if "data" in serialized:
+    #         serialized["data"] = unmark(serialized["data"])
+    #     return serialized
