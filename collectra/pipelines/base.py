@@ -119,7 +119,7 @@ class Collectra:
                 if isinstance(node["node"], TaskNode)
             ]
             for task_node in task_nodes:
-                is_root = self._check_is_root(task_node._name)
+                is_root = self._check_is_root(task_node.name)
                 if is_root:
                     roots.append(task_node)
 
@@ -175,7 +175,7 @@ class Collectra:
 
                 with open("results.yaml", "w") as f:
                     for key, data in results.items():
-                        yaml.dump({key: data}, f, sort_keys=False)
+                        yaml.dump({key: data}, f, sort_keys=False, allow_unicode=True)
                         f.write("\n")
 
             if Path(value).is_file():
@@ -192,7 +192,7 @@ class Collectra:
 
     def _get_parents_data(self, node: Node) -> list[DataNode]:
         parents: list[DataNode] = list()
-        parent_names = list(self.flow.predecessors(str(node._name)))
+        parent_names = list(self.flow.predecessors(str(node.name)))
         for parent_name in parent_names:
             parent_node = self._resolve_node(parent_name)
             if isinstance(parent_node, DataNode):
@@ -200,7 +200,7 @@ class Collectra:
         return parents
 
     def _get_children_data(self, node: Node) -> list[DataNode]:
-        return self._get_data_nodes(list(self.flow.successors(str(node._name))))
+        return self._get_data_nodes(list(self.flow.successors(str(node.name))))
 
     def _get_data_nodes(self, node_names: list[str]) -> list[DataNode]:
         nodes: list[DataNode] = list()
@@ -222,7 +222,7 @@ class Collectra:
             if isinstance(node, TaskNode):
                 parents = self._get_parents_data(node)
                 results: list = self._run_task(node, parents=parents, **kwargs)
-                children = list(self.flow.successors(str(node._name)))
+                children = list(self.flow.successors(str(node.name)))
                 children = [self._resolve_node(child) for child in children]
                 if single_run:
                     children = [
@@ -235,7 +235,7 @@ class Collectra:
                         continue
                     if node.name == arg.get_name() and node.check_type(type(arg)):
                         node.add_item(arg)
-                children = list(self.flow.successors(str(node._name)))
+                children = list(self.flow.successors(str(node.name)))
                 children = [self._resolve_node(child) for child in children]
                 for child in children:
                     if isinstance(child, TaskNode):
@@ -244,7 +244,7 @@ class Collectra:
                             if existing.name == child.name:
                                 exists = True
                                 break
-                        if not exists:
+                        if not exists and not single_run:
                             children_tasks_of_data.append(child)
         if len(children_tasks_of_data) > 0:
             self._run_nodes(children_tasks_of_data, *args, **kwargs)
@@ -258,7 +258,7 @@ class Collectra:
             value = kwargs.get(parent.name, None)
             if parent.status != NodeStatus.READY:
                 parent.process(parent.name, value, **kwargs)
-            entries.extend(parent._items)
+            entries.extend(parent.items)
         results: list = list()
         with change_dir(self.path):
             for index in range(0, len(entries), task.input_nums):
@@ -300,7 +300,7 @@ class Collectra:
                 with change_dir(item_file):
                     processed_inputs.extend(DataNode.batch_process(children))
         kwargs["classes"] = (
-            [child._name for child in children]
+            [child.name for child in children]
             if not "classes" in kwargs
             else kwargs["classes"]
         )
@@ -359,8 +359,7 @@ class Collectra:
             for _, types in param_types:
                 if not isinstance(types, tuple):
                     types = (types,)
-                for type_ in types:
-                    nodes.append((item, type_))
+                nodes.append((item, types))
         return nodes
 
     def connect(self):
@@ -378,11 +377,11 @@ class Collectra:
                         "output": self._get_io_list(data.get("output", [])),
                     }
                     self._add_task_node(task_key, obj)
-                    ios: list[tuple[str, type]] = list()
+                    ios: list[tuple[str, list[type]]] = list()
                     ios.extend(self._check_task_io("input", obj, data))
                     ios.extend(self._check_task_io("output", obj, data))
-                    for io_key, io_type in ios:
-                        self._add_data_node(io_key, type_=io_type)
+                    for io_key, io_types in ios:
+                        self._add_data_node(io_key, types=io_types)
                 else:
                     self._add_data_node(name, obj=obj)
 
@@ -408,13 +407,16 @@ class Collectra:
             style="filled",
         )
 
-    def _add_data_node(self, name, obj: Data | None = None, type_: type | None = None):
+    def _add_data_node(
+        self, name, obj: Data | None = None, types: list[type] | set[type] = []
+    ):
         node = self.flow.nodes.get(name, None)
-        type_ = type(obj) if obj else type_
+        if len(types) == 0 and obj:
+            types = set([type(obj)])
         if not node:
             items = [obj] if obj else []
-            types = set([type_]) if type_ else set()
-            node = DataNode(name, _items=items, _types=types)
+            types = set(types)
+            node = DataNode(name, items=items, types=types)
             self.flow.add_node(
                 name,
                 node=node,
@@ -424,12 +426,6 @@ class Collectra:
                 fontcolor="black",
                 style="filled",
             )
-        else:
-            data = node["node"]
-            if type_:
-                data.add_type(type_)
-            if obj:
-                data.add_item(obj)
 
     def render(self, dest: str | Path = ""):
         if self.flow.number_of_nodes() == 0:

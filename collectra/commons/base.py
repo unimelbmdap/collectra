@@ -54,7 +54,7 @@ class BaseEntity(ABC, Generic[T]):
             >>> get_class_path(Image)
             'collectra.images.Image'
         """
-        return f"{cls.__module__}.{cls.__qualname__}"
+        return f"{cls.__module__.split('.')[0]}.{cls.__name__}"
 
 
 class NodeStatus(enum.Enum):
@@ -71,20 +71,8 @@ class NodeStatus(enum.Enum):
 @dataclass
 class Node:
 
-    _name: str
-    _status: NodeStatus = field(init=False, default=NodeStatus.NOT_READY)
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def status(self) -> NodeStatus:
-        return self._status
-
-    @status.setter
-    def status(self, status: NodeStatus):
-        self._status = status
+    name: str
+    status: NodeStatus = field(init=False, default=NodeStatus.NOT_READY)
 
     def process(self) -> list:
         return []

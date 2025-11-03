@@ -23,12 +23,18 @@ Functions:
     crop: Crop images using specified coordinates
 """
 
-import zipfile, yaml, os, importlib
+import zipfile, yaml, os, importlib, traceback
 from contextlib import contextmanager
 from typing import List
 from pathlib import Path
 from tqdm import tqdm
 from PIL import Image as ImagePil
+
+
+def traceback_error(e: Exception, message: str):
+    traceback.print_exc()
+    print(error_msg(f"{message}\n{e}"))
+    raise e
 
 
 def success_msg(message: str):

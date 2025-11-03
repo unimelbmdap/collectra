@@ -16,14 +16,15 @@ Classes:
 
 __all__ = ["LLM"]
 
-from collectra.tasks.base import Task
-from collectra.types.images import Image
-from collectra.types.texts import Text
+import llmloader, re
+
 from dotenv import load_dotenv
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import SystemMessage, HumanMessage
-import llmloader, re
 
+from collectra.tasks.base import Task
+from collectra.types.images import Image
+from collectra.types.texts import Text
 
 load_dotenv()
 
@@ -61,7 +62,7 @@ class LLM(Task):
             max_tokens=self.max_tokens
         )
         self.chain = self.llm | StrOutputParser()
-        
+
         init_messages = (
             SystemMessage(content=kwargs.get("system", ""))
             if kwargs.get("system", "")

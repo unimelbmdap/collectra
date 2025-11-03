@@ -4,7 +4,12 @@ from pathlib import Path
 import yaml
 
 from collectra.commons import BaseEntity, Node, NodeStatus
-from collectra.utils import error_msg, load_class_from_string, change_dir
+from collectra.utils import (
+    error_msg,
+    load_class_from_string,
+    change_dir,
+    traceback_error,
+)
 
 __all__ = ["Data", "DataNode"]
 
@@ -14,43 +19,47 @@ class Data(BaseEntity):
 
     name: str
 
-    def serialize(self) -> dict:
-        serialized = super().serialize()
-        if "name" in serialized:
-            serialized.pop("name")
-        return serialized
+    def attributes_to_ignore(self) -> set:
+        attributes = super().attributes_to_ignore()
+        attributes.add("name")
+        return attributes
+
+    @classmethod
+    def all_attributes(cls):
+        return set(
+            [
+                attribute
+                for attribute in dir(cls)
+                if not attribute.startswith("_") and not callable(attribute)
+            ]
+        )
 
 
 @dataclass
 class DataNode(Node):
 
-    _items: list[Data] = field(default_factory=list)
-    _types: set[type] = field(default_factory=set)
-
-    @property
-    def types(self) -> set[type]:
-        return self._types
-
-    @property
-    def items(self) -> list[Data]:
-        return self._items
+    items: list[Data] = field(default_factory=list)
+    types: set[type] = field(default_factory=set)
 
     def __post_init__(self) -> None:
-        self._status = NodeStatus.READY if self._items else NodeStatus.NOT_READY
+        self.status = NodeStatus.READY if self.items else NodeStatus.NOT_READY
 
     def add_item(self, item: Data) -> None:
-        self._items.append(item)
-        self._status = NodeStatus.READY
+        self.items.append(item)
+        self.status = NodeStatus.READY
 
     def add_type(self, type_: type) -> None:
-        self._types.add(type_)
+        self.types.add(type_)
 
     def check_type(self, type_: type) -> bool:
-        return any(issubclass(type_, t) for t in self._types)
+        for t in self.types:
+            if issubclass(type_, t):
+                return True
+        return False
 
     def __str__(self) -> str:
-        types_str = "\n".join([t.get_class_path() for t in self._types])
-        return f"{self._name}\n{types_str}"
+        types_str = "\n".join([t.get_class_path() for t in self.types])
+        return f"{self.name}\n{types_str}"
 
     def process(self, key: str, value: str | Path | None = None, **kwargs) -> None:
         value = value if value else kwargs.get("file", None)
@@ -84,24 +93,24 @@ class DataNode(Node):
                             item["data"] = (
                                 item.pop("path") if "path" in item else item["data"]
                             )
-                            if validation is not None:
+                            if (
+                                validation is not None
+                                and "validation" in cls_.all_attributes()
+                            ):
                                 item["validation"] = validation
                             instance = cls_(**item)
                             if not instance:
                                 raise ValueError(f"Failed to load {item} with {cls_}")
                             self.add_item(instance)
                 except Exception as e:
-                    print(error_msg(f"Failed to load data: {e}"))
+                    traceback_error(e, f"Failed to load data: {e}")
         elif key:
             for cls_ in self.types:
                 try:
-                    instance = cls_(key, str(value))
+                    instance = cls_(key, value)
                     self.add_item(instance)
                 except Exception as e:
-                    print(
-                        error_msg(f"Failed to load data item {key} from {value}: {e}")
-                    )
-                    continue
+                    traceback_error(e, f"Failed to load data: {e}")
 
     @staticmethod
     def batch_process(
@@ -130,7 +139,7 @@ class DataNode(Node):
                     continue
                 cls_ = load_class_from_string(item.pop("type"))
                 match = False
-                for type_ in data_nodes[i]._types:
+                for type_ in data_nodes[i].types:
                     if issubclass(cls_, type_) or cls_ == type_:
                         match = True
                         break
@@ -145,10 +154,8 @@ class DataNode(Node):
                     if instance:
                         data.append(instance)
                 except Exception as e:
-                    print(
-                        error_msg(
-                            f"Failed to load data item {name} from {item.get('data', '')}: {e}"
-                        )
+                    traceback_error(
+                        e,
+                        f"Failed to load data item {name} from {item.get('data', '')}: {e}",
                     )
-                    continue
         return data
