@@ -121,7 +121,7 @@ class LLM(Task):
         while re.search(pattern, prompt):
             match = next(re.finditer(pattern, prompt))
             start, end = match.span()
-            item = match[1]
+            item = match[1].strip()
             if prompt[:start]:
                 messages.append(self._add_text(prompt[:start]))
             for arg in args:
