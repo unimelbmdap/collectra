@@ -22,6 +22,7 @@ class Data(BaseEntity):
     def attributes_to_ignore(self) -> set:
         attributes = super().attributes_to_ignore()
         attributes.add("name")
+        attributes.add("validation")
         return attributes
 
     @classmethod
