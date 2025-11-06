@@ -22,6 +22,7 @@ class Data(BaseEntity):
     def attributes_to_ignore(self) -> set:
         attributes = super().attributes_to_ignore()
         attributes.add("name")
+        attributes.add("validation")
         return attributes
 
     @classmethod
@@ -78,30 +79,33 @@ class DataNode(Node):
                         assert data, f"{key} could not be found in {value}"
                         data = data if isinstance(data, list) else [data]
                         for item in data:
-                            if not isinstance(item, dict) or not (
-                                "type" in item and ("path" in item or "data" in item)
-                            ):
-                                raise ValueError(
-                                    f"Item does not have the correct data format: {item}"
+                            try:
+                                if not isinstance(item, dict) or not (
+                                    "type" in item and ("path" in item or "data" in item)
+                                ):
+                                    raise ValueError(
+                                        f"Item does not have the correct data format: {item}"
+                                    )
+                                cls_ = load_class_from_string(item.pop("type"))
+                                if not self.check_type(cls_):
+                                    raise ValueError(
+                                        f"{cls_} is not a subclass or not defined in {self.types}"
+                                    )
+                                item["name"] = key
+                                item["data"] = (
+                                    item.pop("path") if "path" in item else item["data"]
                                 )
-                            cls_ = load_class_from_string(item.pop("type"))
-                            if not self.check_type(cls_):
-                                raise ValueError(
-                                    f"{cls_} is not a subclass or not defined in {self.types}"
-                                )
-                            item["name"] = key
-                            item["data"] = (
-                                item.pop("path") if "path" in item else item["data"]
-                            )
-                            if (
-                                validation is not None
-                                and "validation" in cls_.all_attributes()
-                            ):
-                                item["validation"] = validation
-                            instance = cls_(**item)
-                            if not instance:
-                                raise ValueError(f"Failed to load {item} with {cls_}")
-                            self.add_item(instance)
+                                if (
+                                    validation is not None
+                                    and "validation" in cls_.all_attributes()
+                                ):
+                                    item["validation"] = validation
+                                instance = cls_(**item)
+                                if not instance:
+                                    raise ValueError(f"Failed to load {item} with {cls_}")
+                                self.add_item(instance)
+                            except Exception as e:
+                                traceback_error(e, f"Failed to load data item: {e}")
                 except Exception as e:
                     traceback_error(e, f"Failed to load data: {e}")
         elif key:
