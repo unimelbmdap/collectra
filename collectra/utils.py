@@ -29,12 +29,12 @@ from typing import List
 from pathlib import Path
 from tqdm import tqdm
 from PIL import Image as ImagePil
+from rich import print
 
 
 def traceback_error(e: Exception, message: str):
     traceback.print_exc()
-    print(error_msg(f"{message}\n{e}"))
-    raise e
+    print(error_msg(f"{message}\n{e}"))    
 
 
 def success_msg(message: str):
