@@ -296,9 +296,8 @@ class Collectra:
                 if input_path.is_dir()
                 else [input_path] if input_path.suffix == self.ext else []
             )
-            for item_file in item_files:
-                with change_dir(item_file):
-                    processed_inputs.extend(DataNode.batch_process(children))
+            for item_file in item_files:                
+                processed_inputs.extend(DataNode.batch_process(item_file, children))
         kwargs["classes"] = (
             [child.name for child in children]
             if not "classes" in kwargs

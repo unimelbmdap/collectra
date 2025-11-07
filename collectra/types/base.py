@@ -117,48 +117,55 @@ class DataNode(Node):
 
     @staticmethod
     def batch_process(
-        data_nodes: list["DataNode"],
+        item_file: Path, data_nodes: list["DataNode"],
     ) -> list[Data]:
-        data: list[Data] = list()
-        result_file = Path("results.yaml")
-        if not result_file.exists():
-            print(error_msg(f"Invalid file: {Path.cwd()}. Ignoring..."))
-            return data
-        with open(result_file, "r") as f:
-            file_data: dict = yaml.safe_load(f)
-            validation = file_data.get("collectra_results_metadata", dict()).get(
-                "validation", None
-            )
-        names = [data_node.name for data_node in data_nodes]
-        for i, name in enumerate(names):
-            if name not in file_data:
-                continue
-            value = file_data[name]
-            value = value if isinstance(value, list) else [value]
-            for item in value:
-                if not isinstance(item, dict) or not (
-                    "type" in item and "path" in item
-                ):
-                    continue
-                cls_ = load_class_from_string(item.pop("type"))
-                match = False
-                for type_ in data_nodes[i].types:
-                    if issubclass(cls_, type_) or cls_ == type_:
-                        match = True
-                        break
-                if not match:
-                    continue
-                item["name"] = name
-                item["data"] = item.pop("path", "")
-                if validation is not None:
-                    item["validation"] = validation
-                try:
-                    instance = cls_(**item)
-                    if instance:
-                        data.append(instance)
-                except Exception as e:
-                    traceback_error(
-                        e,
-                        f"Failed to load data item {name} from {item.get('data', '')}: {e}",
+        with change_dir(item_file):
+            try:
+                data: list[Data] = list()
+                result_file = Path("results.yaml")
+                if not result_file.exists():
+                    print(error_msg(f"Invalid file: {Path.cwd()}. Ignoring..."))
+                    return data
+                with open(result_file, "r") as f:
+                    file_data: dict = yaml.safe_load(f)
+                    validation = file_data.get("collectra_results_metadata", dict()).get(
+                        "validation", None
                     )
-        return data
+                names = [data_node.name for data_node in data_nodes]
+                for i, name in enumerate(names):
+                    if name not in file_data:
+                        continue
+                    value = file_data[name]
+                    if not value:
+                        raise Warning(f"Data seems to be empty for {name} in {item_file}. Provided: {value}")
+                    value = value if isinstance(value, list) else [value]
+                    for item in value:
+                        if not isinstance(item, dict) or not (
+                            "type" in item and "path" in item
+                        ):
+                            continue
+                        cls_ = load_class_from_string(item.pop("type"))
+                        match = False
+                        for type_ in data_nodes[i].types:
+                            if issubclass(cls_, type_) or cls_ == type_:
+                                match = True
+                                break
+                        if not match:
+                            continue
+                        item["name"] = name
+                        item["data"] = item.pop("path", "")
+                        if validation is not None:
+                            item["validation"] = validation
+                        try:
+                            instance = cls_(**item)
+                            if instance:
+                                data.append(instance)
+                        except Exception as e:
+                            traceback_error(
+                                e,
+                                f"Failed to load data item {name} from {item.get('data', '')}: {e}",
+                            )
+                return data
+            except Exception as e:
+                traceback_error(e, f"Failed to batch process data: {e}")            
+                return list()
