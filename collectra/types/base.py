@@ -63,10 +63,9 @@ class DataNode(Node):
         return f"{self.name}\n{types_str}"
 
     def process(self, key: str, value: str | Path | None = None, **kwargs) -> None:
-        value = value if value else kwargs.get("file", None)
-        if value:
+        value = value if value else kwargs.get("file", None)                    
+        if value and Path(value).exists() and Path(value).is_dir():
             value = Path(value)
-        if value and value.exists() and value.is_dir():
             with change_dir(value):
                 try:
                     result_file = Path("results.yaml")
@@ -110,7 +109,7 @@ class DataNode(Node):
                     traceback_error(e, f"Failed to load data: {e}")
         elif key:
             for cls_ in self.types:
-                try:
+                try:                                        
                     instance = cls_(key, value)
                     self.add_item(instance)
                 except Exception as e:
