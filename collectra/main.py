@@ -101,7 +101,7 @@ def train(
     """
     try:
         log = Path.cwd() / f"{task}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        config = {"input": input_files, "log_dir": log}
+        config = {"input": input_files, "log_dir": log, "project": f"{workflow.name}-{task}"}
         pipeline = resolve_workflow_path(workflow)
         pipeline.train(task, **config)
         pipeline.save()

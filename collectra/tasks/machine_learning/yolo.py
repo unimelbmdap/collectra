@@ -146,17 +146,17 @@ class ObjectDetectionYOLO(MachineLearningTask):
                     )
 
     def _prepare_params(self, **kwargs) -> dict:
-        import platform, torch
-
+        import platform, torch        
         params = {
+            "name": kwargs["config_file"].parent,
             "data": kwargs["config_file"],
-            "project": kwargs["config_file"].parent,
+            "project": kwargs["project"],
             "device": (
                 "mps"
                 if platform.system() == "Darwin"
                 else "cuda" if torch.cuda.is_available() else "cpu"
             ),
             "epochs": kwargs.get("epochs", 1),
-            "imgsz": kwargs.get("imgsz", 640),
-        }
+            "imgsz": kwargs.get("imgsz", 640),            
+        }        
         return params
