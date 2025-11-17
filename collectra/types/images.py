@@ -160,7 +160,14 @@ class Image(Data):
         }
 
     def pil(self) -> ImagePil.Image:
-        return ImagePil.open(self.data)
+        img = ImagePil.open(self.data)
+        # Apply EXIF orientation if available
+        try:
+            from PIL import ImageOps
+            img = ImageOps.exif_transpose(img)
+        except:
+            pass # If no EXIF data
+        return img
 
     def make_crop(
         self,

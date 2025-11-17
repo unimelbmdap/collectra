@@ -196,6 +196,12 @@ def crop(
         PIL.UnidentifiedImageError: If the file is not a valid image format.
     """
     with ImagePil.open(path) as imf:
+        # Apply EXIF orientation if present
+        try:
+            from PIL import ImageOps
+            imf = ImageOps.exif_transpose(imf)
+        except:
+            pass # If no EXIF data
         im_crop = imf.crop(coordinates)
         if show:
             im_crop.show()
