@@ -30,7 +30,7 @@ class BaseEntity(ABC, Generic[T]):
         return self.name
 
     def serialize(self) -> dict:
-        serialized = dict(type=self.get_class_path())
+        serialized = dict(type=self.get_class_path())        
         for key, value in self.attributes.items():
             if isinstance(value, Path):
                 value = value.name

@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-import yaml
+import yaml, uuid
 
 from collectra.commons import BaseEntity, Node, NodeStatus
 from collectra.utils import (
@@ -16,8 +16,30 @@ __all__ = ["Data", "DataNode"]
 
 @dataclass
 class Data(BaseEntity):
-
+    
     name: str
+    id: str = field(default="")
+    parents: list[str] = field(default_factory=list)
+
+    def set_parents(self, parents: list["Data"]) -> None:
+        self.parents = [parent.id for parent in parents]
+
+    def serialize(self) -> dict:
+        serialized = super().serialize()        
+        if "parents" in serialized:
+            if len(serialized["parents"]) == 0:
+                serialized.pop("parents")
+            elif len(serialized["parents"]) == 1:                            
+                serialized["parents"] = serialized["parents"][0]            
+        return serialized
+
+    def _generate_id(self) -> str:
+        # Generate a unique ID based on the name and other attributes
+        return f"{self.name}-{uuid.uuid4()}"
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            self.id = self._generate_id()
 
     def attributes_to_ignore(self) -> set:
         attributes = super().attributes_to_ignore()
@@ -39,14 +61,14 @@ class Data(BaseEntity):
 @dataclass
 class DataNode(Node):
 
-    items: list[Data] = field(default_factory=list)
+    items: dict[str, Data] = field(default_factory=dict)
     types: set[type] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         self.status = NodeStatus.READY if self.items else NodeStatus.NOT_READY
 
-    def add_item(self, item: Data) -> None:
-        self.items.append(item)
+    def add_item(self, item: Data) -> None:        
+        self.items[item.id] = item
         self.status = NodeStatus.READY
 
     def add_type(self, type_: type) -> None:
@@ -94,11 +116,13 @@ class DataNode(Node):
                                 item["data"] = (
                                     item.pop("path") if "path" in item else item["data"]
                                 )
+                                if "parents" in item and not isinstance(item["parents"], list):
+                                    item["parents"] = [item["parents"]]
                                 if (
                                     validation is not None
                                     and "validation" in cls_.all_attributes()
                                 ):
-                                    item["validation"] = validation
+                                    item["validation"] = validation                                                                                             
                                 instance = cls_(**item)
                                 if not instance:
                                     raise ValueError(f"Failed to load {item} with {cls_}")

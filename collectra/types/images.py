@@ -44,7 +44,7 @@ class Image(Data):
         format (str | None): Image format (PNG, JPEG, etc.) or None if unknown.
     """
 
-    data: str | Path
+    data: str | Path = field(default="")  # Path to the image file
     raw_width: int = field(init=False, default=0)  # Image width in pixels
     raw_height: int = field(init=False, default=0)  # Image height in pixels
     ext: str | None = field(default="")  # Image format (e.g., PNG, JPEG)
@@ -79,6 +79,7 @@ class Image(Data):
             FileNotFoundError: If the image file doesn't exist.
             PIL.UnidentifiedImageError: If the file is not a valid image.
         """
+        super().__post_init__()
         if self.data:
             if not isinstance(self.data, Path):
                 self.data = Path.cwd() / self.data

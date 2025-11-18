@@ -17,7 +17,7 @@ Classes:
 
 __all__ = ["Collectra"]
 
-import logging, yaml, graphviz, copy, datetime, shutil, os
+import logging, yaml, graphviz, copy, datetime, shutil, os, json
 import networkx as nx
 from pathlib import Path
 from rich.progress import track
@@ -91,6 +91,7 @@ class Collectra:
         return data
 
     def _check_is_root(self, node_name: str) -> bool:
+        """Check if a node is a root node (no parents or only data parents)."""
         parents = list(self.flow.predecessors(node_name))
         for parent in parents:
             grand_parents = list(self.flow.predecessors(parent))
@@ -103,15 +104,16 @@ class Collectra:
 
     def run(self, task_name: str = "", **kwargs):
         """Runs the workflow from the specified task or from all root tasks."""
+        # Initialize the workflow if not already done so
         if self.flow.number_of_nodes() == 0:
-            self.connect()
-        roots: list = list()
+            self.connect()        
+        starting_nodes: list = list()
         if task_name:
             task_node = self._resolve_node(task_name)
             assert isinstance(
                 task_node, TaskNode
             ), f"Task {task_name} not found in workflow"
-            roots.append(task_node)
+            starting_nodes.append(task_node)
         else:
             task_nodes = [
                 node["node"]
@@ -121,14 +123,43 @@ class Collectra:
             for task_node in task_nodes:
                 is_root = self._check_is_root(task_node.name)
                 if is_root:
-                    roots.append(task_node)
-
-        single = kwargs.pop("single", False)
-        output = kwargs.pop("output", None)
+                    starting_nodes.append(task_node)
+        single = kwargs.pop("single", False)                    
+        output = kwargs.pop("output", None)                        
         for key, value in kwargs.items():
             input = {key: value}
-            self._run_nodes(roots, single=single, **input)
+            self._init_input_data(starting_nodes, **input)            
+            self._run_nodes(starting_nodes, single=single)
             self.save_run(key, value)
+
+    def _populate_active_paths(self, nodes: list[TaskNode | DataNode], **kwargs):        
+        for node in nodes:
+            if isinstance(node, DataNode):
+                value = kwargs.get(node.name, None)
+                node.process(node.name, value, **kwargs)
+            children = list(self.flow.successors(str(node.name)))
+            children = [self._resolve_node(child) for child in children]
+            self._populate_active_paths(children, **kwargs)            
+
+    def _init_input_data(self, starting_nodes: list[TaskNode | DataNode], **kwargs):
+        self._wipe_data_nodes()                           
+        for node in starting_nodes:
+            parents = self._get_parents_data(node)            
+            for parent in parents:                
+                value = kwargs.get(parent.name, None)                                
+                parent.process(parent.name, value, **kwargs)
+        self._populate_active_paths(starting_nodes, **kwargs)                        
+
+    def _wipe_data_nodes(self):
+        # Reset all data nodes in the workflow
+        data_nodes = [
+            node["node"]
+            for node in self.flow.nodes.values()
+            if isinstance(node["node"], DataNode)
+        ]
+        for data_node in data_nodes:
+            data_node.items = dict()
+            data_node.status = NodeStatus.NOT_READY
 
     def save_run(self, key: str, value: str | Path):
         savef = Path(value)
@@ -165,7 +196,7 @@ class Collectra:
                     name = data_node.name
                     if name in results:
                         results[name] = None
-                    for item in data_node.items:
+                    for item in data_node.items.values():
                         item_data = item.serialize()
                         if name not in results or results[name] is None:
                             results[name] = list()
@@ -219,9 +250,8 @@ class Collectra:
         single_run = kwargs.get("single", False)
         children_tasks_of_data: list[TaskNode] = list()
         for node in nodes:
-            if isinstance(node, TaskNode):
-                parents = self._get_parents_data(node)
-                results: list = self._run_task(node, parents=parents, **kwargs)
+            if isinstance(node, TaskNode):                                
+                results: list = self._run_task(node, **kwargs)
                 children = list(self.flow.successors(str(node.name)))
                 children = [self._resolve_node(child) for child in children]
                 if single_run:
@@ -229,14 +259,14 @@ class Collectra:
                         child for child in children if isinstance(child, DataNode)
                     ]
                 self._run_nodes(children, *results, **kwargs)
-            elif isinstance(node, DataNode):
+            elif isinstance(node, DataNode):                
                 for arg in args:
                     if not isinstance(arg, Data):
-                        continue
+                        continue                    
                     if node.name == arg.get_name() and node.check_type(type(arg)):
-                        node.add_item(arg)
+                        self._check_existing(node, arg)                        
                 children = list(self.flow.successors(str(node.name)))
-                children = [self._resolve_node(child) for child in children]
+                children = [self._resolve_node(child) for child in children]                
                 for child in children:
                     if isinstance(child, TaskNode):
                         exists = False
@@ -246,20 +276,51 @@ class Collectra:
                                 break
                         if not exists and not single_run:
                             children_tasks_of_data.append(child)
-        if len(children_tasks_of_data) > 0:
+        if len(children_tasks_of_data) > 0:            
             self._run_nodes(children_tasks_of_data, *args, **kwargs)
 
-    def _run_task(self, task_node: TaskNode, parents: list[DataNode], **kwargs) -> list:
-        task = task_node.get_task()
+    def _check_existing(self, node, new_item: Data) -> None:
+
+        def is_identical(original_item: Data, new_item: Data) -> bool:
+            same_parents = set(new_item.parents) == set(original_item.parents)
+            temp_original_item = copy.deepcopy(original_item).serialize()
+            temp_new_item = copy.deepcopy(new_item).serialize()
+
+            temp_original_item.pop("parents", None)
+            if isinstance(temp_original_item["data"], str):
+                temp_original_item["data"] = temp_original_item["data"].strip().lower()
+            if isinstance(temp_new_item["data"], str):
+                temp_new_item["data"] = temp_new_item["data"].strip().lower()   
+            temp_new_item.pop("parents", None)
+            temp_original_item.pop("id", None)
+            temp_new_item.pop("id", None)
+            same_attributes = json.dumps(temp_original_item, sort_keys=True) == json.dumps(temp_new_item, sort_keys=True)
+            return same_parents and same_attributes
+
+        found_identical = False
+        items = node.items
+
+        for id in items.keys():            
+            found_identical = is_identical(items[id], new_item)
+            if not found_identical:
+                continue
+            new_item.id = items[id].id            
+            items[id] = new_item
+            break
+
+        if not found_identical:
+            node.add_item(new_item)
+                    
+
+    def _run_task(self, task_node: TaskNode, **kwargs) -> list:
+        parents = self._get_parents_data(task_node)
+        task = task_node.get_task()        
         print(f"running task: [blue]{task.name}[/blue]")
         assert isinstance(task, Task), f"Node {task_node.name} is not a Task"
-        entries: list = list()
-        for parent in parents:
-            value = kwargs.get(parent.name, None)
-            if parent.status != NodeStatus.READY:
-                parent.process(parent.name, value, **kwargs)
-            entries.extend(parent.items)
-        results: list = list()
+        entries = list() 
+        for parent in parents:            
+            entries.extend(parent.items.values())
+        results: list = list()        
         with change_dir(self.path):
             for index in range(0, len(entries), task.input_nums):
                 endindex = (
@@ -268,10 +329,15 @@ class Collectra:
                     else index + task.input_nums
                 )
                 sub_entries = entries[index:endindex]
-                result = task.run(*sub_entries)
+                if task.name == "previous_number_reader":
+                    breakpoint()
+                result: Data | list[Data]= task.run(*sub_entries)
                 if isinstance(result, list):
+                    for result_item in result:
+                        result_item.set_parents(sub_entries)
                     results.extend(result)
                 else:
+                    result.set_parents(sub_entries)
                     results.append(result)
         return results
 
@@ -367,6 +433,8 @@ class Collectra:
         with change_dir(self.path):
             for name, value in self.data.items():
                 data = copy.deepcopy(value)
+                if not isinstance(data, dict) or "type" not in data:
+                    continue
                 cls_ = load_class_from_string(data.pop("type"))
                 obj = cls_(name, **data)
                 if isinstance(obj, Task):
@@ -413,7 +481,7 @@ class Collectra:
         if len(types) == 0 and obj:
             types = set([type(obj)])
         if not node:
-            items = [obj] if obj else []
+            items = {obj.id: obj} if obj else {}
             types = set(types)
             node = DataNode(name, items=items, types=types)
             self.flow.add_node(

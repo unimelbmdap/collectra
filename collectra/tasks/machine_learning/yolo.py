@@ -77,8 +77,8 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 x_center=float(x),
                 y_center=float(y),
                 width_relative=float(w),
-                height_relative=float(h),
-            )
+                height_relative=float(h),                
+            )            
             detections.append(image_crop)
         print(f"Found {len(detections)} objects in the image.")
         return detections

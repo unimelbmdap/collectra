@@ -36,6 +36,7 @@ class Text(Data):
     data: str | Path = field(default="")
 
     def __post_init__(self):
+        super().__post_init__()
         try:
             if self.data and Path(self.data).exists():
                 self.data = Path(self.data)
