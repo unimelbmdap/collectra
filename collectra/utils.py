@@ -195,13 +195,7 @@ def crop(
         FileNotFoundError: If the image file doesn't exist.
         PIL.UnidentifiedImageError: If the file is not a valid image format.
     """
-    with ImagePil.open(path) as imf:
-        # Apply EXIF orientation if present
-        try:
-            from PIL import ImageOps
-            imf = ImageOps.exif_transpose(imf)
-        except:
-            pass # If no EXIF data
+    with ImagePil.open(path) as imf:                    
         im_crop = imf.crop(coordinates)
         if show:
             im_crop.show()
