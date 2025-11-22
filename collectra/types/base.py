@@ -152,8 +152,8 @@ class DataNode(Node):
                                 break
                         if not match:
                             continue
-                        item["name"] = name
-                        item["data"] = item.pop("data", "")
+                        item["name"] = name                        
+                        item["data"] = item.pop("path") if "path" in item else item["data"]
                         if validation is not None:
                             item["validation"] = validation
                         try:
