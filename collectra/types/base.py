@@ -118,7 +118,7 @@ class DataNode(Node):
     @staticmethod
     def batch_process(
         item_file: Path, data_nodes: list["DataNode"],
-    ) -> list[Data]:
+    ) -> list[Data]:        
         with change_dir(item_file):
             try:
                 data: list[Data] = list()
@@ -131,7 +131,7 @@ class DataNode(Node):
                     validation = file_data.get("collectra_results_metadata", dict()).get(
                         "validation", None
                     )
-                names = [data_node.name for data_node in data_nodes]
+                names = [data_node.name for data_node in data_nodes]                
                 for i, name in enumerate(names):
                     if name not in file_data:
                         continue
@@ -141,10 +141,10 @@ class DataNode(Node):
                     value = value if isinstance(value, list) else [value]
                     for item in value:
                         if not isinstance(item, dict) or not (
-                            "type" in item and "path" in item
+                            "type" in item and ("data" in item or "path" in item)
                         ):
                             continue
-                        cls_ = load_class_from_string(item.pop("type"))
+                        cls_ = load_class_from_string(item.pop("type"))                        
                         match = False
                         for type_ in data_nodes[i].types:
                             if issubclass(cls_, type_) or cls_ == type_:
@@ -153,7 +153,7 @@ class DataNode(Node):
                         if not match:
                             continue
                         item["name"] = name
-                        item["data"] = item.pop("path", "")
+                        item["data"] = item.pop("data", "")
                         if validation is not None:
                             item["validation"] = validation
                         try:
