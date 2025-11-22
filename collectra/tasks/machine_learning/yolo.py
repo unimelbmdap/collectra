@@ -86,7 +86,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
     def train(
         self, *images: ImageCrop, **kwargs
     ) -> tuple[DetMetrics | None, DetMetrics | None]:
-        self._init_model()
+        self._init_model()        
         log_dir: Path = (
             Path(kwargs.pop("log_dir"))
             if kwargs.get("log_dir", None)
@@ -98,7 +98,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
         print(f"Training logs will be saved to: {log_dir}")
         kwargs["config_file"] = self._prepare_yolo_config(classes, log_dir, *images)
         self._prepare_assets(classes, log_dir, *images)
-        params = self._prepare_params(**kwargs)
+        params = self._prepare_params(**kwargs)        
         results: DetMetrics | None = self.model.train(**params)
         validation_results = YOLO(results.save_dir / "weights" / "best.pt").val()
         return results, validation_results
@@ -148,7 +148,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
     def _prepare_params(self, **kwargs) -> dict:
         import platform, torch        
         params = {
-            "name": kwargs["config_file"].parent,
+            "name": kwargs["config_file"].stem,
             "data": kwargs["config_file"],
             "project": kwargs["project"],
             "device": (
@@ -158,5 +158,5 @@ class ObjectDetectionYOLO(MachineLearningTask):
             ),
             "epochs": kwargs.get("epochs", 1),
             "imgsz": kwargs.get("imgsz", 640),            
-        }        
+        }                
         return params
