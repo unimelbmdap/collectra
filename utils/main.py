@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from typing_extensions import Annotated
 
-import os, pytz, re, shutil, tempfile, tqdm, yaml, zipfile
+import os, pytz, re, shutil, tempfile, tqdm, yaml, zipfile,traceback
 import typer as tp
 
 app = tp.Typer()
@@ -11,24 +11,26 @@ app = tp.Typer()
 def get_files(config: dict) -> list[dict[str, str]]:
     files = []
     parent_dir = Path(config.get("parent_dir", "."))
-    train_file = parent_dir / config.get("train", "")
-    with open(train_file, "r") as file:
-        files.extend(
-            [
-                {"path": parent_dir / line.strip(), "split": "train"}
-                for line in file
-                if line.strip()
-            ]
+    train_file = parent_dir / config.get("train", "")    
+    if train_file.is_file():
+        with open(train_file, "r") as file:
+            files.extend(
+                [
+                    {"path": parent_dir / line.strip(), "split": "train"}
+                    for line in file
+                    if line.strip()
+                ]
         )
     val_file = parent_dir / config.get("val", "")
-    with open(val_file, "r") as file:
-        files.extend(
-            [
-                {"path": parent_dir / line.strip(), "split": "val"}
-                for line in file
-                if line.strip()
-            ]
-        )
+    if val_file.is_file():
+        with open(val_file, "r") as file:
+            files.extend(
+                [
+                    {"path": parent_dir / line.strip(), "split": "val"}
+                    for line in file
+                    if line.strip()
+                ]
+            )    
     return files
 
 
@@ -47,7 +49,7 @@ def get_label_paths(config: dict, files: list[dict[str, str]]) -> list[Path]:
 
 def convert_files(config: dict) -> None:
     files = get_files(config)
-    names = config.get("names", [])
+    names = config.get("names", [])    
     output_dir = Path(config.get("output_dir", "output"))
     format = re.sub(r"[^0-9a-zA-Z]+", "", config.get("format", "grapto").lower())
     label_paths = get_label_paths(config, files)
@@ -58,7 +60,7 @@ def convert_files(config: dict) -> None:
                 "timestamp": datetime.now(pytz.utc).isoformat(),
                 "validation": files[index]["split"] == "val",
             },
-            "primary_specimen_label": {"type": "Image", "path": image.name},
+            "specimen_sheet": {"type": "collectra.Image", "data": image.name},
         }
         label_path = label_paths[index]
         bbox = []
@@ -70,36 +72,30 @@ def convert_files(config: dict) -> None:
             )
             class_name = names[int(class_id)]
             item_dimensions = {
+                "type": "collectra.ImageCrop",
+                "data": image.name,
                 "x_center": float(x_center),
                 "y_center": float(y_center),
                 "width_relative": float(width_relative),
                 "height_relative": float(height_relative),
             }
             if class_name not in results_yaml:
-                results_yaml[class_name] = {
-                    "type": "ImageCrop",
-                    "image": "primary_specimen_label",
-                    "items": [item_dimensions],
-                }
+                results_yaml[class_name] = [item_dimensions]
             else:
-                results_yaml[class_name]["items"].append(item_dimensions)
+                results_yaml[class_name].append(item_dimensions)
         for key in results_yaml:
             if (
-                key not in ["collectra_results_metadata", "primary_specimen_label"]
-                and len(results_yaml[key]["items"]) == 1
+                key not in ["collectra_results_metadata", "specimen_sheet"]
+                and len(results_yaml[key]) == 1
             ):
-                results_yaml[key] = {
-                    **results_yaml[key],
-                    **results_yaml[key]["items"][0],
-                }
-                results_yaml[key].pop("items", None)
+                results_yaml[key] = results_yaml[key][0]                                    
 
         output_path = (
             output_dir
             / "images"
             / image.name.replace(".jpg", f".{format}").replace(".png", f".{format}")
-        )
-        output_path.mkdir(parents=True, exist_ok=True)
+        )                
+        output_path.mkdir(parents=True, exist_ok=True)        
         shutil.copyfile(image, output_path / image.name)
         with open(output_path / "results.yaml", "w") as f:
             for key in results_yaml:
@@ -110,8 +106,7 @@ def convert_files(config: dict) -> None:
                         sort_keys=False,
                     )
                 )
-                f.write("\n")
-
+                f.write("\n")        
 
 @app.command()
 def convert(
@@ -145,6 +140,7 @@ def convert(
             config["parent_dir"] = yolo_config.parent
             convert_files(config)
     except Exception as e:
+        traceback.print_exc()
         print(f"Error: {e}")
 
 
