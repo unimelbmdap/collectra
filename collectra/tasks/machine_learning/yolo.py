@@ -98,7 +98,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
         print(f"Training logs will be saved to: {log_dir}")
         kwargs["config_file"] = self._prepare_yolo_config(classes, log_dir, *images)
         self._prepare_assets(classes, log_dir, *images)
-        params = self._prepare_params(**kwargs)        
+        params = self._prepare_params(**kwargs)                
         results: DetMetrics | None = self.model.train(**params)
         validation_results = YOLO(results.save_dir / "weights" / "best.pt").val()
         return results, validation_results
@@ -124,10 +124,10 @@ class ObjectDetectionYOLO(MachineLearningTask):
 
     def _prepare_assets(
         self, classes: list[str], log_dir: Path, *images: ImageCrop
-    ) -> None:
+    ) -> None:        
         for img in images:
             src = Path(img.get_path())
-            dst = log_dir / src.name
+            dst = log_dir / src.name            
             if not dst.exists():  # Only copy if the file does not already exist
                 shutil.copy(src, dst)
             name_index = classes.index(img.name) if img.name in classes else -1
@@ -148,7 +148,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
     def _prepare_params(self, **kwargs) -> dict:
         import platform, torch        
         params = {
-            "name": kwargs["config_file"].stem,
+            "name": kwargs["config_file"].parent.name,
             "data": kwargs["config_file"],
             "project": kwargs["project"],
             "device": (
@@ -158,5 +158,5 @@ class ObjectDetectionYOLO(MachineLearningTask):
             ),
             "epochs": kwargs.get("epochs", 1),
             "imgsz": kwargs.get("imgsz", 640),            
-        }                
+        }                        
         return params
