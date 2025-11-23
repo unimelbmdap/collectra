@@ -1,7 +1,8 @@
 from datetime import datetime
 from pathlib import Path
 from typing_extensions import Annotated
-
+from rich import print
+from rich.progress import track
 import os, pytz, re, shutil, tempfile, tqdm, yaml, zipfile,traceback
 import typer as tp
 
@@ -200,28 +201,34 @@ def cluster(
         print(f"Total count for class '{class_name}': {count}")
 
 
-def convert_image_objects(results_yaml: dict) -> dict:
-    image_path = ""
-    for key in results_yaml:
+def convert_image_objects(results_yaml: dict) -> dict:        
+    for key in results_yaml:        
         data = results_yaml[key]
         if "type" in data:
-            if (
-                data["type"] == "ImageCrop"
-                or data["type"] == "collectra.images.ImageCrop"
-            ):
-                data["type"] = "collectra.images.base.ImageCrop"
-            elif data["type"] == "Image" or data["type"] == "collectra.images.Image":
-                data["type"] = "collectra.images.base.Image"
-                image_path = data["path"]
-        if "image" in data:
-            new_data = {
-                "type": data["type"],
-                "path": image_path if image_path else data["image"],
-            }
-            data.pop("type", None)
-            data.pop("image", None)
-            new_data.update(data)
-            results_yaml[key] = new_data
+            if data["type"] in ["ImageCrop", "Image"]:                            
+                if "path" in data:
+                    data["data"] = data.pop("path")
+                elif "image" in data:
+                    data["data"] = results_yaml[data.pop("image")]["data"]
+                data["type"] = f"collectra.{data["type"]}"
+                if "items" in data:
+                    for item in data["items"]:                        
+                        item["data"] = data["data"]
+                        item["type"] = data["type"]
+                    results_yaml[key] = data["items"]                                                
+        #         data["type"] = "collectra.images.base.ImageCrop"
+        #     elif data["type"] == "Image" or data["type"] == "collectra.images.Image":
+        #         data["type"] = "collectra.images.base.Image"
+        #         image_path = data["path"]
+        # if "image" in data:
+        #     new_data = {
+        #         "type": data["type"],
+        #         "path": image_path if image_path else data["image"],
+        #     }
+        #     data.pop("type", None)
+        #     data.pop("image", None)
+        #     new_data.update(data)
+        #     results_yaml[key] = new_data    
     return results_yaml
 
 
@@ -360,6 +367,36 @@ def show(
 
     except Exception as e:
         print(f"Failed to display annotations: {e}")
+
+@app.command()
+def legacy_fix(
+    folder: Annotated[
+        Path,
+        tp.Option(
+            "--folder", "-d", help="Path to folder containing legacy collectra files"
+        ),
+    ],
+    format: Annotated[
+        str, tp.Option("--format", "-f", help="File format of collectra files")
+    ],
+):    
+    for image in track(folder.glob(f"*.{format}")):            
+        results_yaml_path = ""
+        if not image.is_dir():
+            raise Warning(f"Expected directory for image: {image}")
+        results_yaml_path = image / "results.yaml"            
+        with open(results_yaml_path, "r") as file:
+            results_yaml = yaml.safe_load(file)
+        results_yaml = convert_image_objects(results_yaml)
+        with open(results_yaml_path, "w") as file:
+            for result in results_yaml:
+                yaml.dump(
+                    {result: results_yaml[result]},
+                    file,
+                    default_flow_style=False,
+                    sort_keys=False,
+                )
+                file.write("\n")
 
 
 if __name__ == "__main__":
