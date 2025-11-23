@@ -125,9 +125,11 @@ class Image(Data):
             FileNotFoundError: If the image file doesn't exist.
             PermissionError: If the file cannot be read due to permissions.
         """
-        with open(self.data, "rb") as img_file:
-            buffer = img_file.read()
-        return buffer
+        img = self.pil()
+        buffer = io.BytesIO()
+        img.save(buffer, format=self.ext)
+        buffer.seek(0)
+        return buffer.read()
 
     def get_encoding(self) -> str:
         """Get the base64 encoded representation of the image.
@@ -161,14 +163,7 @@ class Image(Data):
         }
 
     def pil(self) -> ImagePil.Image:
-        img = ImagePil.open(self.data)
-        # Apply EXIF orientation if available
-        try:
-            from PIL import ImageOps
-            img = ImageOps.exif_transpose(img)
-        except:
-            pass # If no EXIF data
-        return img
+        return ImagePil.open(self.data)                
 
     def make_crop(
         self,
@@ -259,21 +254,6 @@ class ImageCrop(Image):
 
     def pil(self) -> ImagePil.Image:
         return crop(path=self.data, coordinates=self.coordinates())
-
-    def load(self) -> bytes:
-        """Load the cropped region as raw bytes.
-
-        Performs the actual crop operation using the calculated coordinates
-        and returns the cropped image data as bytes.
-
-        Returns:
-            bytes: Raw binary content of the cropped image region.
-        """
-        img = self.pil()
-        buffer = io.BytesIO()
-        img.save(buffer, format=self.ext)
-        buffer.seek(0)
-        return buffer.read()
 
     def metadata(self) -> dict:
         """Extract metadata dictionary including crop coordinates.

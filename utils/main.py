@@ -1,8 +1,9 @@
 from datetime import datetime
 from pathlib import Path
 from typing_extensions import Annotated
-
-import os, pytz, re, shutil, tempfile, tqdm, yaml, zipfile
+from rich import print
+from rich.progress import track
+import os, pytz, re, shutil, tempfile, tqdm, yaml, zipfile,traceback
 import typer as tp
 
 app = tp.Typer()
@@ -11,24 +12,26 @@ app = tp.Typer()
 def get_files(config: dict) -> list[dict[str, str]]:
     files = []
     parent_dir = Path(config.get("parent_dir", "."))
-    train_file = parent_dir / config.get("train", "")
-    with open(train_file, "r") as file:
-        files.extend(
-            [
-                {"path": parent_dir / line.strip(), "split": "train"}
-                for line in file
-                if line.strip()
-            ]
+    train_file = parent_dir / config.get("train", "")    
+    if train_file.is_file():
+        with open(train_file, "r") as file:
+            files.extend(
+                [
+                    {"path": parent_dir / line.strip(), "split": "train"}
+                    for line in file
+                    if line.strip()
+                ]
         )
     val_file = parent_dir / config.get("val", "")
-    with open(val_file, "r") as file:
-        files.extend(
-            [
-                {"path": parent_dir / line.strip(), "split": "val"}
-                for line in file
-                if line.strip()
-            ]
-        )
+    if val_file.is_file():
+        with open(val_file, "r") as file:
+            files.extend(
+                [
+                    {"path": parent_dir / line.strip(), "split": "val"}
+                    for line in file
+                    if line.strip()
+                ]
+            )    
     return files
 
 
@@ -40,6 +43,9 @@ def get_label_paths(config: dict, files: list[dict[str, str]]) -> list[Path]:
         label_path = Path(file_str)
         if label_path.exists():
             label_paths.append(label_path)
+        else:
+            print(f"Label file not found for image: {file['path']}")
+            print(f"Expected label path: {label_path}")
     if len(label_paths) != len(files):
         raise ValueError("Mismatch between number of image files and label files.")
     return label_paths
@@ -47,7 +53,7 @@ def get_label_paths(config: dict, files: list[dict[str, str]]) -> list[Path]:
 
 def convert_files(config: dict) -> None:
     files = get_files(config)
-    names = config.get("names", [])
+    names = config.get("names", [])    
     output_dir = Path(config.get("output_dir", "output"))
     format = re.sub(r"[^0-9a-zA-Z]+", "", config.get("format", "grapto").lower())
     label_paths = get_label_paths(config, files)
@@ -58,7 +64,7 @@ def convert_files(config: dict) -> None:
                 "timestamp": datetime.now(pytz.utc).isoformat(),
                 "validation": files[index]["split"] == "val",
             },
-            "primary_specimen_label": {"type": "Image", "path": image.name},
+            "specimen_sheet": {"type": "collectra.Image", "data": image.name},
         }
         label_path = label_paths[index]
         bbox = []
@@ -70,36 +76,30 @@ def convert_files(config: dict) -> None:
             )
             class_name = names[int(class_id)]
             item_dimensions = {
+                "type": "collectra.ImageCrop",
+                "data": image.name,
                 "x_center": float(x_center),
                 "y_center": float(y_center),
                 "width_relative": float(width_relative),
                 "height_relative": float(height_relative),
             }
             if class_name not in results_yaml:
-                results_yaml[class_name] = {
-                    "type": "ImageCrop",
-                    "image": "primary_specimen_label",
-                    "items": [item_dimensions],
-                }
+                results_yaml[class_name] = [item_dimensions]
             else:
-                results_yaml[class_name]["items"].append(item_dimensions)
+                results_yaml[class_name].append(item_dimensions)
         for key in results_yaml:
             if (
-                key not in ["collectra_results_metadata", "primary_specimen_label"]
-                and len(results_yaml[key]["items"]) == 1
+                key not in ["collectra_results_metadata", "specimen_sheet"]
+                and len(results_yaml[key]) == 1
             ):
-                results_yaml[key] = {
-                    **results_yaml[key],
-                    **results_yaml[key]["items"][0],
-                }
-                results_yaml[key].pop("items", None)
+                results_yaml[key] = results_yaml[key][0]                                    
 
         output_path = (
             output_dir
             / "images"
             / image.name.replace(".jpg", f".{format}").replace(".png", f".{format}")
-        )
-        output_path.mkdir(parents=True, exist_ok=True)
+        )                
+        output_path.mkdir(parents=True, exist_ok=True)        
         shutil.copyfile(image, output_path / image.name)
         with open(output_path / "results.yaml", "w") as f:
             for key in results_yaml:
@@ -110,8 +110,7 @@ def convert_files(config: dict) -> None:
                         sort_keys=False,
                     )
                 )
-                f.write("\n")
-
+                f.write("\n")        
 
 @app.command()
 def convert(
@@ -145,6 +144,7 @@ def convert(
             config["parent_dir"] = yolo_config.parent
             convert_files(config)
     except Exception as e:
+        traceback.print_exc()
         print(f"Error: {e}")
 
 
@@ -170,8 +170,9 @@ def cluster(
     with open(yolo_config, "r") as file:
         config = yaml.safe_load(file)
 
-    class_counts = {name: 0 for name in config.get("names", [])}
-
+    class_counts = {name: 0 for name in config.get("names", [])}    
+    num_training_files = 0
+    num_validation_files = 0    
     for image in image_folder.glob(f"*.{format}"):
         results_yaml_path = ""
         if image.is_dir():
@@ -181,17 +182,18 @@ def cluster(
         with open(results_yaml_path, "r") as file:
             results_yaml = yaml.safe_load(file)
 
-        if (
-            results_yaml["collectra_results_metadata"]["validation"]
-            != is_file_for_validation
-        ):
-            continue
+        validation = results_yaml["collectra_results_metadata"]["validation"]
+        if validation != is_file_for_validation:        
+            num_training_files += 1
+            continue        
+        
+        num_validation_files += 1
 
         for key in results_yaml:
             if key not in ["collectra_results_metadata", "specimen_sheet"]:
                 label = results_yaml[key]
-                if "items" in label:
-                    class_counts[key] += len(label["items"])
+                if isinstance(label, list):
+                    class_counts[key] += len(label)
                 else:
                     class_counts[key] += 1
 
@@ -199,28 +201,34 @@ def cluster(
         print(f"Total count for class '{class_name}': {count}")
 
 
-def convert_image_objects(results_yaml: dict) -> dict:
-    image_path = ""
-    for key in results_yaml:
+def convert_image_objects(results_yaml: dict) -> dict:        
+    for key in results_yaml:        
         data = results_yaml[key]
         if "type" in data:
-            if (
-                data["type"] == "ImageCrop"
-                or data["type"] == "collectra.images.ImageCrop"
-            ):
-                data["type"] = "collectra.images.base.ImageCrop"
-            elif data["type"] == "Image" or data["type"] == "collectra.images.Image":
-                data["type"] = "collectra.images.base.Image"
-                image_path = data["path"]
-        if "image" in data:
-            new_data = {
-                "type": data["type"],
-                "path": image_path if image_path else data["image"],
-            }
-            data.pop("type", None)
-            data.pop("image", None)
-            new_data.update(data)
-            results_yaml[key] = new_data
+            if data["type"] in ["ImageCrop", "Image"]:                            
+                if "path" in data:
+                    data["data"] = data.pop("path")
+                elif "image" in data:
+                    data["data"] = results_yaml[data.pop("image")]["data"]
+                data["type"] = f"collectra.{data["type"]}"
+                if "items" in data:
+                    for item in data["items"]:                        
+                        item["data"] = data["data"]
+                        item["type"] = data["type"]
+                    results_yaml[key] = data["items"]                                                
+        #         data["type"] = "collectra.images.base.ImageCrop"
+        #     elif data["type"] == "Image" or data["type"] == "collectra.images.Image":
+        #         data["type"] = "collectra.images.base.Image"
+        #         image_path = data["path"]
+        # if "image" in data:
+        #     new_data = {
+        #         "type": data["type"],
+        #         "path": image_path if image_path else data["image"],
+        #     }
+        #     data.pop("type", None)
+        #     data.pop("image", None)
+        #     new_data.update(data)
+        #     results_yaml[key] = new_data    
     return results_yaml
 
 
@@ -359,6 +367,36 @@ def show(
 
     except Exception as e:
         print(f"Failed to display annotations: {e}")
+
+@app.command()
+def legacy_fix(
+    folder: Annotated[
+        Path,
+        tp.Option(
+            "--folder", "-d", help="Path to folder containing legacy collectra files"
+        ),
+    ],
+    format: Annotated[
+        str, tp.Option("--format", "-f", help="File format of collectra files")
+    ],
+):    
+    for image in track(folder.glob(f"*.{format}")):            
+        results_yaml_path = ""
+        if not image.is_dir():
+            raise Warning(f"Expected directory for image: {image}")
+        results_yaml_path = image / "results.yaml"            
+        with open(results_yaml_path, "r") as file:
+            results_yaml = yaml.safe_load(file)
+        results_yaml = convert_image_objects(results_yaml)
+        with open(results_yaml_path, "w") as file:
+            for result in results_yaml:
+                yaml.dump(
+                    {result: results_yaml[result]},
+                    file,
+                    default_flow_style=False,
+                    sort_keys=False,
+                )
+                file.write("\n")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-import shutil
+from pathlib import Path
 
 from collectra import Task, MachineLearningTask, ObjectDetectionYOLO
 from collectra.utils import load_class_from_string
@@ -46,7 +46,7 @@ def test_object_detection_task(task_data, images, train_yolo, classes, debug):
             task,
             *images,
             classes=classes,
-            project=f"{task.name}-test",
+            project=Path.cwd() / f"{task.name}-test",
         )
         assert results, "Training failed to return any results"
         assert results.results_dict is not None, "results_dict should exist"

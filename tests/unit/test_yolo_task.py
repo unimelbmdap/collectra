@@ -30,7 +30,7 @@ def test_train_yolo_temp_dir(classes, images, model, train_yolo, debug):
             yolo_task,
             *images,
             classes=classes,
-            project=f"{yolo_task.name}-test",
+            project= Path.cwd() / f"{yolo_task.name}-test",
         )
         assert results, "Training failed to return any results"
         assert results.results_dict is not None, "results_dict should exist"

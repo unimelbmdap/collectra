@@ -355,20 +355,20 @@ class Collectra:
         children = self._get_children_data(task_node)
         processed_inputs: list = list()
         inputs = kwargs.pop("input", [])
+        kwargs["classes"] = (
+            [child.name for child in children]
+            if not "classes" in kwargs
+            else kwargs["classes"]
+        )        
         for input in inputs:
             input_path = Path(input)
             item_files = (
                 list(input_path.glob(f"*.{self.ext}"))
                 if input_path.is_dir()
                 else [input_path] if input_path.suffix == self.ext else []
-            )
+            )                        
             for item_file in item_files:                
-                processed_inputs.extend(DataNode.batch_process(item_file, children))
-        kwargs["classes"] = (
-            [child.name for child in children]
-            if not "classes" in kwargs
-            else kwargs["classes"]
-        )
+                processed_inputs.extend(DataNode.batch_process(item_file, children))           
         kwargs = kwargs | self.data.get(task_name, dict()).get("params", dict())
         with change_dir(self.path):
             processed_inputs, validation_results = task.train(
@@ -380,13 +380,16 @@ class Collectra:
     def save_train(self, task: MachineLearningTask, results: DetMetrics):
         new_model_path = (
             f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{task.name}.pt"
-        )
+        )        
         best_model_path = results.save_dir / "weights" / "best.pt"
+        if not best_model_path.exists():
+            raise Exception(f"[red]Best model file not found at {best_model_path}[/red]")            
+        else:
+            print(f"Best model found at: [green]{best_model_path}[/green]")
         task_data = self.data.get(task.name, dict())
         if best_model_path.name != task_data["model"]:
-            shutil.copy(best_model_path, new_model_path)
-            if Path(task_data["model"]).exists():
-                os.remove(task_data["model"])
+            print(f"Updating model for task {task.name} to {new_model_path}")
+            shutil.copy(best_model_path, new_model_path)            
             self.data[task.name]["model"] = new_model_path
 
     @property
