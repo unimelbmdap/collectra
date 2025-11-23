@@ -169,8 +169,9 @@ def cluster(
     with open(yolo_config, "r") as file:
         config = yaml.safe_load(file)
 
-    class_counts = {name: 0 for name in config.get("names", [])}
-
+    class_counts = {name: 0 for name in config.get("names", [])}    
+    num_training_files = 0
+    num_validation_files = 0    
     for image in image_folder.glob(f"*.{format}"):
         results_yaml_path = ""
         if image.is_dir():
@@ -180,17 +181,18 @@ def cluster(
         with open(results_yaml_path, "r") as file:
             results_yaml = yaml.safe_load(file)
 
-        if (
-            results_yaml["collectra_results_metadata"]["validation"]
-            != is_file_for_validation
-        ):
-            continue
+        validation = results_yaml["collectra_results_metadata"]["validation"]
+        if validation != is_file_for_validation:        
+            num_training_files += 1
+            continue        
+        
+        num_validation_files += 1
 
         for key in results_yaml:
             if key not in ["collectra_results_metadata", "specimen_sheet"]:
                 label = results_yaml[key]
-                if "items" in label:
-                    class_counts[key] += len(label["items"])
+                if isinstance(label, list):
+                    class_counts[key] += len(label)
                 else:
                     class_counts[key] += 1
 
