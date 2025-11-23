@@ -132,8 +132,13 @@ class DataNode(Node):
                         "validation", None
                     )
                 names = [data_node.name for data_node in data_nodes]                
+                all_names_not_found = all(name not in file_data for name in names)
+                if all_names_not_found:
+                    raise Warning(
+                        f"No matching data found in {item_file} for names: {', '.join(names)}. Ignoring..."
+                    )
                 for i, name in enumerate(names):
-                    if name not in file_data:
+                    if name not in file_data:                        
                         continue
                     value = file_data[name]
                     if not value:
