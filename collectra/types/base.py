@@ -117,7 +117,7 @@ class DataNode(Node):
 
     @staticmethod
     def batch_process(
-        item_file: Path, data_nodes: list["DataNode"],
+        item_file: Path, data_nodes: list["DataNode"]
     ) -> list[Data]:        
         with change_dir(item_file):
             try:
@@ -163,7 +163,7 @@ class DataNode(Node):
                             item["validation"] = validation
                         try:
                             instance = cls_(**item)
-                            if instance:
+                            if instance:                                
                                 data.append(instance)
                         except Exception as e:
                             traceback_error(
