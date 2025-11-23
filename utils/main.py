@@ -42,6 +42,9 @@ def get_label_paths(config: dict, files: list[dict[str, str]]) -> list[Path]:
         label_path = Path(file_str)
         if label_path.exists():
             label_paths.append(label_path)
+        else:
+            print(f"Label file not found for image: {file['path']}")
+            print(f"Expected label path: {label_path}")
     if len(label_paths) != len(files):
         raise ValueError("Mismatch between number of image files and label files.")
     return label_paths
