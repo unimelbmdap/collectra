@@ -67,7 +67,7 @@ class DataNode(Node):
     def __post_init__(self) -> None:
         self.status = NodeStatus.READY if self.items else NodeStatus.NOT_READY
 
-    def add_item(self, item: Data) -> None:        
+    def add_item(self, item: Data) -> None:      
         self.items[item.id] = item
         self.status = NodeStatus.READY
 
@@ -80,7 +80,7 @@ class DataNode(Node):
                 return True
         return False
 
-    def __str__(self) -> str:
+    def __str__(self) -> str:                
         types_str = "\n".join([t.get_class_path() for t in self.types])
         return f"{self.name}\n{types_str}"
 
@@ -104,12 +104,12 @@ class DataNode(Node):
                                 if not isinstance(item, dict) or not (
                                     "type" in item and ("path" in item or "data" in item)
                                 ):
-                                    raise ValueError(
+                                    raise Warning(
                                         f"Item does not have the correct data format: {item}"
                                     )
                                 cls_ = load_class_from_string(item.pop("type"))
                                 if not self.check_type(cls_):
-                                    raise ValueError(
+                                    raise Warning(
                                         f"{cls_} is not a subclass or not defined in {self.types}"
                                     )
                                 item["name"] = key
@@ -125,7 +125,7 @@ class DataNode(Node):
                                     item["validation"] = validation                                                                                             
                                 instance = cls_(**item)
                                 if not instance:
-                                    raise ValueError(f"Failed to load {item} with {cls_}")
+                                    raise Warning(f"Failed to load {item} with {cls_}")
                                 self.add_item(instance)
                             except Exception as e:
                                 traceback_error(e, f"Failed to load data item: {e}")
@@ -134,7 +134,7 @@ class DataNode(Node):
         elif key:
             for cls_ in self.types:
                 try:                                        
-                    instance = cls_(key, value)
+                    instance = cls_(key, data=value)
                     self.add_item(instance)
                 except Exception as e:
                     traceback_error(e, f"Failed to load data: {e}")

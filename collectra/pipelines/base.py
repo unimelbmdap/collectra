@@ -146,7 +146,7 @@ class Collectra:
         for node in starting_nodes:
             parents = self._get_parents_data(node)            
             for parent in parents:                
-                value = kwargs.get(parent.name, None)                                
+                value = kwargs.get(parent.name, None)                                                
                 parent.process(parent.name, value, **kwargs)
         self._populate_active_paths(starting_nodes, **kwargs)                        
 
@@ -162,6 +162,7 @@ class Collectra:
             data_node.status = NodeStatus.NOT_READY
 
     def save_run(self, key: str, value: str | Path):
+
         savef = Path(value)
         data_nodes = [
             node["node"]
@@ -257,9 +258,9 @@ class Collectra:
                 if single_run:
                     children = [
                         child for child in children if isinstance(child, DataNode)
-                    ]
+                    ]                
                 self._run_nodes(children, *results, **kwargs)
-            elif isinstance(node, DataNode):                
+            elif isinstance(node, DataNode):                    
                 for arg in args:
                     if not isinstance(arg, Data):
                         continue                    
@@ -281,8 +282,15 @@ class Collectra:
 
     def _check_existing(self, node, new_item: Data) -> None:
 
+        """
+        Check if an identical item already exists in the data node.
+        If an identical item is found, update the existing item with the new item's ID.
+        If no identical item is found, add the new item to the data node.
+        """
+
         def is_identical(original_item: Data, new_item: Data) -> bool:
             same_parents = set(new_item.parents) == set(original_item.parents)
+            
             temp_original_item = copy.deepcopy(original_item).serialize()
             temp_new_item = copy.deepcopy(new_item).serialize()
 
@@ -291,9 +299,12 @@ class Collectra:
                 temp_original_item["data"] = temp_original_item["data"].strip().lower()
             if isinstance(temp_new_item["data"], str):
                 temp_new_item["data"] = temp_new_item["data"].strip().lower()   
+            
             temp_new_item.pop("parents", None)
-            temp_original_item.pop("id", None)
             temp_new_item.pop("id", None)
+            temp_original_item.pop("id", None)            
+            temp_original_item.pop("parents", None)
+
             same_attributes = json.dumps(temp_original_item, sort_keys=True) == json.dumps(temp_new_item, sort_keys=True)
             return same_parents and same_attributes
 
@@ -312,15 +323,27 @@ class Collectra:
             node.add_item(new_item)
                     
 
-    def _run_task(self, task_node: TaskNode, **kwargs) -> list:
-        parents = self._get_parents_data(task_node)
+    def _run_task(self, task_node: TaskNode, **kwargs) -> list:        
         task = task_node.get_task()        
-        print(f"running task: [blue]{task.name}[/blue]")
+        print(f"Attempting to run task: [blue]{task.name}[/blue]")
         assert isinstance(task, Task), f"Node {task_node.name} is not a Task"
         entries = list() 
+        parents = self._get_parents_data(task_node)
+        not_ready_parents = [parent for parent in parents if parent.status != NodeStatus.READY]
+        if not_ready_parents:
+            print(
+                f"[yellow]Skipping task {task_node.name} as the following input data is not ready:[/yellow]"
+            )
+            for parent in not_ready_parents:
+                print(f" - {parent.name}")            
+            return list()
         for parent in parents:            
             entries.extend(parent.items.values())
-        results: list = list()        
+        results: list = list()                
+        if len(entries) == 0:
+            print(f"[yellow]No input data for task {task.name}, skipping...[/yellow]")
+        else:
+            print(entries)        
         with change_dir(self.path):
             for index in range(0, len(entries), task.input_nums):
                 endindex = (
@@ -328,17 +351,15 @@ class Collectra:
                     if index + task.input_nums > len(entries)
                     else index + task.input_nums
                 )
-                sub_entries = entries[index:endindex]
-                if task.name == "previous_number_reader":
-                    breakpoint()
+                sub_entries = entries[index:endindex]                      
                 result: Data | list[Data]= task.run(*sub_entries)
                 if isinstance(result, list):
-                    for result_item in result:
+                    for result_item in result:                        
                         result_item.set_parents(sub_entries)
                     results.extend(result)
                 else:
                     result.set_parents(sub_entries)
-                    results.append(result)
+                    results.append(result)        
         return results
 
     def train(self, task_name: str, **kwargs) -> tuple:
@@ -413,7 +434,7 @@ class Collectra:
     def _get_io_list(self, io: list | str) -> list:
         return [io] if isinstance(io, str) else io
 
-    def _check_task_io(self, io_type: str, task: Task, task_config: dict) -> list:
+    def _check_task_io(self, io_type: str, task: Task, task_config: dict) -> list:        
         if io_type not in task_config:
             return list()
         param_types = list(
@@ -429,6 +450,12 @@ class Collectra:
                     types = (types,)
                 nodes.append((item, types))
         return nodes
+    
+    def _check_data_assignment(self, collectra_data: dict, data: dict) -> dict:
+        for key, value in data.items():
+            if isinstance(value, str) and value in collectra_data:
+                data[key] = collectra_data[value]        
+        return data
 
     def connect(self):
         """Initialise the DAG representing the workflow. Preparing it for execution."""
@@ -439,6 +466,7 @@ class Collectra:
                 if not isinstance(data, dict) or "type" not in data:
                     continue
                 cls_ = load_class_from_string(data.pop("type"))
+                data = self._check_data_assignment(self.data, data)
                 obj = cls_(name, **data)
                 if isinstance(obj, Task):
                     task_key = obj.name

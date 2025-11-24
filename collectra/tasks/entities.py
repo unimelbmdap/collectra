@@ -13,15 +13,16 @@ Classes:
     EntityCanonicalizer: Task for canonicalizing entities in text
 """
 
+__all__ = ["LLMCanonicalizer"]
+
 from pathlib import Path
 from difflib import get_close_matches, SequenceMatcher
-from collectra.tasks.base import Task
+from collectra.types.texts import Text
+from collectra.tasks.llms import LLM as CollectraLLM
 from dataclasses import dataclass, field
 import copy, re
 
-
-@dataclass(kw_only=True)
-class EntityCanonicalizer(Task):
+class LLMCanonicalizer(CollectraLLM):
     """Task for canonicalizing entities in text using fuzzy string matching.
 
     Matches input text against a list of known entities and returns the best
@@ -58,7 +59,7 @@ class EntityCanonicalizer(Task):
         """
         return str
 
-    def run(self, **kwargs) -> str:
+    def run(self, *args: Text) -> Text:
         """Canonicalize the input text against known entities.
 
         Args:
@@ -67,6 +68,10 @@ class EntityCanonicalizer(Task):
         Returns:
             str: Canonicalized text if a match is found, otherwise original text.
         """
+        name="placeholder"
+        response = "placeholder_data"
+        output = Text(name=name, data=response)
+        return output
         if not isinstance(self.entities, list):
             for output_key in self.output.keys():
                 input_key = output_key.replace("_actual", "_text")

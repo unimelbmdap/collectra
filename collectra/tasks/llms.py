@@ -51,7 +51,7 @@ class LLM(Task):
             return len(self.input)
         return 1
 
-    def __init__(self, name: str, model: str, **kwargs):
+    def __init__(self, name: str, model: str, **kwargs):             
         super().__init__(name, **kwargs)
         self.template: str = kwargs.get("template", "")
         self.temperature = kwargs.get("temperature", 0.8)
@@ -114,7 +114,7 @@ class LLM(Task):
             Updates self.output dictionary with generated text responses. Output keys
             that contain the input key as a substring will be populated with LLM results.
             Prints a success message when inference completes.
-        """
+        """        
         prompt = str(self.template)
         pattern = r"\{(.*?)\}"
         messages: list[str | dict] = list()
@@ -122,18 +122,21 @@ class LLM(Task):
             match = next(re.finditer(pattern, prompt))
             start, end = match.span()
             item = match[1].strip()
+            replaced = False
             if prompt[:start]:
                 messages.append(self._add_text(prompt[:start]))
             for arg in args:
-                key = arg.name
-                if item == key:
+                key = arg.name                
+                if item == key and arg is not None:
                     messages.append(self._add_content(arg))
+                    replaced = True
                     break
+            if not replaced:
+                messages.append(self._add_text(f"No content provided for {item}. Ignore this part."))
             prompt = prompt[end:].strip()
         if prompt:
             messages.append(self._add_text(prompt.strip()))
-        self.messages.append(HumanMessage(content=messages))
-        
+        self.messages.append(HumanMessage(content=messages))        
         response = self.chain.invoke(self.messages)
         name = (
             f"{self.get_name()}_output"
