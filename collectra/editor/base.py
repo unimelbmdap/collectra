@@ -50,6 +50,8 @@ class Viewer:
                 type_ = load_class_from_string(item_data.pop("type"))
                 item_data["name"] = key
                 item_data["data"] = item_data.pop("path") if "path" in item_data else item_data["data"]
+                item_data.pop("id", None)
+                item_data.pop("parents", None)
                 item_data = type_(**item_data)
                 item["data"] = item_data.__getstate__()
             if len(value) == 1:
