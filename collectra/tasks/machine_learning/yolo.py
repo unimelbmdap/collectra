@@ -1,4 +1,4 @@
-import shutil
+import shutil, tempfile
 
 from typing import overload
 from ultralytics.models import YOLO
@@ -59,27 +59,39 @@ class ObjectDetectionYOLO(MachineLearningTask):
             raise ValueError("This task only supports a single Image input.")
         if not isinstance(args[0], Image):
             raise TypeError("Input must be an instance of Image.")
-        image: Image = args[0]
+        image: Image = args[0]                
         self._init_model()
-        results: Results = (self.model(image.get_path())).pop()
-        detections: list[ImageCrop] = []
-        coordinates = results.boxes.xywhn if results.boxes else []
-        names = (
-            [results.names[cls.item()] for cls in results.boxes.cls.int()]
-            if results.boxes
-            else []
-        )
+
+        if isinstance(image, ImageCrop):
+            with tempfile.TemporaryDirectory() as temp_dir:
+                img = image.pil()
+                img_path = Path(temp_dir) / Path(image.get_path()).name
+                img.save(img_path)
+                results: Results = (self.model(img_path))[0]
+        else:
+            results: Results = (self.model(image.get_path()))[0]
+
+        detections: list[Image] = []     
+
+        if results.boxes is None or len(results.boxes) == 0:
+            return detections
+                   
+        coordinates = results.boxes.xywhn.clone()
+        names = [results.names[class_name.int().item()] for class_name in results.boxes.cls]
+
+        if len(names) == 0:
+            # No objects detected, return empty list
+            return detections
         for index in range(len(coordinates)):
-            x, y, w, h = coordinates[index]
-            image_crop = ImageCrop(
-                name=names[index],
-                data=image.get_path(),
+            x, y, w, h = coordinates[index]   
+            image_crop  = image.make_crop(
                 x_center=float(x),
                 y_center=float(y),
                 width_relative=float(w),
-                height_relative=float(h),                
-            )            
-            detections.append(image_crop)
+                height_relative=float(h),
+                name=names[index],
+            )                     
+            detections.append(image_crop)            
         print(f"Found {len(detections)} objects in the image.")
         return detections
 

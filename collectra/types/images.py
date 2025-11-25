@@ -19,13 +19,10 @@ Classes:
 __all__ = ["Image", "ImageCrop"]
 
 
-import base64, io, copy, yaml
+import base64, io
 from dataclasses import dataclass, field
 from pathlib import Path
 from PIL import Image as ImagePil
-
-from collectra.utils import crop, error_msg, load_class_from_string
-
 from .base import Data
 
 
@@ -44,11 +41,11 @@ class Image(Data):
         format (str | None): Image format (PNG, JPEG, etc.) or None if unknown.
     """
 
-    data: str | Path = field(default="")  # Path to the image file
+    data: str | Path | ImagePil.Image = field(default="")  # Path to the image file
     raw_width: int = field(init=False, default=0)  # Image width in pixels
     raw_height: int = field(init=False, default=0)  # Image height in pixels
-    ext: str | None = field(default="")  # Image format (e.g., PNG, JPEG)
-    validation: bool = field(default=False)
+    ext: str | None = field(default="")  # Image format (e.g., PNG, JPEG)    
+    imagepil: ImagePil.Image | None = field(init=False, default=None)
 
     def attributes_to_ignore(self):
         attributes = super().attributes_to_ignore()
@@ -80,26 +77,30 @@ class Image(Data):
             PIL.UnidentifiedImageError: If the file is not a valid image.
         """
         super().__post_init__()
-        if self.data:
-            if not isinstance(self.data, Path):
-                self.data = Path.cwd() / self.data
-            if not self.name:
-                self.name = self.data.name if isinstance(self.data, Path) else self.data
-            if not self.data.exists() or not self.data.is_file():
-                raise FileNotFoundError(f"Image file not found: {self.data}")
-            with ImagePil.open(self.data) as imf:
-                self.ext = imf.format
-                self.raw_width, self.raw_height = imf.size
+        if not self.data:
+            raise ValueError("Image data path is empty.")        
+        assert isinstance(self.data, (str, Path)), "Image data must be a file path."
+        if not isinstance(self.data, Path):
+            self.data = Path.cwd() / self.data        
+        if not self.data.exists() or not self.data.is_file():
+            raise FileNotFoundError(f"Image file not found: {self.data}")
+        with ImagePil.open(self.data) as imf:            
+            self.raw_width, self.raw_height = imf.size
+            self.ext = imf.format
 
     def __call__(self) -> str:
-        return str(self.data)
+        return str(self.get_path())
 
-    def get_path(self) -> Path | str:
+    def get_path(self) -> Path:
         """Get the file path of the image.
 
         Returns:
             Path: The file path of the image.
-        """
+        """        
+        if not isinstance(self.data, Path):
+            if not isinstance(self.data, Image):
+                raise Exception("This appear to be not an Image object. Data path is only available for Image object.")
+            raise Exception("Image data is not a valid Path object.")
         return self.data
 
     @staticmethod
@@ -114,6 +115,12 @@ class Image(Data):
         """
         image_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp"}
         return path.suffix.lower() in image_extensions
+    
+    def _load_buffer(self, img: ImagePil.Image) -> bytes:
+        buffer = io.BytesIO()        
+        img.save(buffer, format=self.ext)
+        buffer.seek(0)
+        return buffer.read()
 
     def load(self) -> bytes:
         """Load the image file content as raw bytes.
@@ -124,12 +131,9 @@ class Image(Data):
         Raises:
             FileNotFoundError: If the image file doesn't exist.
             PermissionError: If the file cannot be read due to permissions.
-        """
-        img = self.pil()
-        buffer = io.BytesIO()
-        img.save(buffer, format=self.ext)
-        buffer.seek(0)
-        return buffer.read()
+        """        
+        img = self.pil()        
+        return self._load_buffer(img)                  
 
     def get_encoding(self) -> str:
         """Get the base64 encoded representation of the image.
@@ -139,9 +143,8 @@ class Image(Data):
 
         Returns:
             str: Base64 encoded string representation of the image.
-        """
-        buffer = self.load()
-        return base64.b64encode(buffer).decode("utf-8")
+        """                         
+        return base64.b64encode(self.load()).decode("utf-8")
 
     def mime(self) -> str:
         """Get the MIME type for the image format.
@@ -151,34 +154,51 @@ class Image(Data):
         """
         return f"image/{self.ext.lower()}" if self.ext else "image"
 
-    def metadata(self) -> dict:
-        """Extract metadata dictionary for the image.
+    def pil(self) -> ImagePil.Image:        
+        return ImagePil.open(self.get_path())
+    
+    def check_valid_relative_crop_values(
+        self,
+        x_center: float,
+        y_center: float,
+        width_relative: float,
+        height_relative: float,  
+    ):
+        if not (0.0 <= x_center <= 1.0):
+            raise ValueError(f"x_center is {x_center}")
 
-        Returns:
-            dict: Dictionary containing type information and file name.
-        """
-        return {
-            "type": f"{self.__class__.__module__}.{self.__class__.__name__}",
-            "path": Path(self.data).name,
-        }
+        if not (0.0 <= y_center <= 1.0):
+            raise ValueError(f"y_center is {y_center}")
 
-    def pil(self) -> ImagePil.Image:
-        return ImagePil.open(self.data)                
+        if not (0.0 <= width_relative <= 1.0):
+            raise ValueError(f"width_relative is {width_relative}")
+
+        if not (0.0 <= height_relative <= 1.0):
+            raise ValueError(f"height_relative is {height_relative}")
+
 
     def make_crop(
         self,
         x_center: float,
         y_center: float,
         width_relative: float,
-        height_relative: float,
-        min_height: float = 0.0,
+        height_relative: float,  
+        name: str = "",     
     ) -> "ImageCrop":
-        if height_relative < min_height / self.height:
-            height_relative = min_height / self.height
+
+        self.check_valid_relative_crop_values(
+            x_center,
+            y_center,
+            width_relative,
+            height_relative,
+        )
+        
+        data = self.data
+        name = name if name else self.name
 
         return ImageCrop(
             self.name,
-            self.data,
+            data=data,
             x_center=x_center,
             y_center=y_center,
             width_relative=width_relative,
@@ -187,7 +207,7 @@ class Image(Data):
 
     def make_crop_bounding_box(
         self, left, top, right, bottom, min_height: float = 0.0
-    ) -> "ImageCrop":
+    ) -> "ImageCrop":        
         bbox_width = right - left
         bbox_height = bottom - top
         x_center = (left + 0.5 * bbox_width) / self.width
@@ -199,10 +219,8 @@ class Image(Data):
             x_center=x_center,
             y_center=y_center,
             width_relative=width_relative,
-            height_relative=height_relative,
-            min_height=min_height,
+            height_relative=height_relative,            
         )
-
 
 @dataclass
 class ImageCrop(Image):
@@ -230,7 +248,13 @@ class ImageCrop(Image):
 
     @property
     def height(self):
-        return self.height_relative * self.raw_height
+        return self.height_relative * self.raw_height    
+    
+    def pil(self) -> ImagePil.Image:
+        coordinates = self.coordinates()
+        with ImagePil.open(self.get_path()) as imf:                
+            im_crop = imf.crop(coordinates)                    
+        return im_crop        
 
     def coordinates(self) -> tuple[float, float, float, float]:
         """Calculate absolute pixel coordinates for the crop region.
@@ -250,95 +274,33 @@ class ImageCrop(Image):
         upper = max(0, min(int(y_center - actual_height_half), self.raw_height))
         right = max(0, min(int(x_center + actual_width_half), self.raw_width))
         bottom = max(0, min(int(y_center + actual_height_half), self.raw_height))
+
         return (left, upper, right, bottom)
 
-    def pil(self) -> ImagePil.Image:
-        return crop(path=self.data, coordinates=self.coordinates())
-
-    def metadata(self) -> dict:
-        """Extract metadata dictionary including crop coordinates.
-
-        Returns:
-            dict: Dictionary containing base metadata plus crop coordinates.
-        """
-        data = super().metadata()
-        data.update(
-            {
-                "x_center": self.x_center,
-                "y_center": self.y_center,
-                "width_relative": self.width_relative,
-                "height_relative": self.height_relative,
-            }
-        )
-        return data
-
-    @staticmethod
-    def metadata_list(images: list["ImageCrop"]) -> dict:
-        """Generate combined metadata for a list of ImageCrop instances.
-
-        Creates a unified metadata structure for multiple crop regions from
-        the same source image, useful for batch processing operations.
-
-        Args:
-            images (list[ImageCrop]): List of ImageCrop instances to process.
-
-        Returns:
-            dict: Combined metadata with list of crop coordinates.
-
-        Raises:
-            ValueError: If the images list is empty or contains invalid types.
-        """
-        if not images:
-            raise ValueError("The images list is empty.")
-        metadata = copy.deepcopy(images[0].metadata())
-        list_to_pop = ["x_center", "y_center", "width_relative", "height_relative"]
-        for key in list_to_pop:
-            metadata.pop(key, None)
-        metadata["items"] = list()
-        for img in images:
-            if not isinstance(img, ImageCrop):
-                raise ValueError(
-                    f"Invalid image type. Expected ImageCrop, got {type(img)}"
-                )
-            metadata["items"].append(
-                {
-                    "x_center": img.x_center,
-                    "y_center": img.y_center,
-                    "width_relative": img.width_relative,
-                    "height_relative": img.height_relative,
-                }
-            )
-        return metadata
-
     def make_crop(
-        self,
+        self,        
         x_center: float,
         y_center: float,
         width_relative: float,
-        height_relative: float,
-        min_height: float = 0.0,
+        height_relative: float,        
+        name: str = "",
     ) -> "ImageCrop":
-        x_center = float(x_center)
-        y_center = float(y_center)
-        width_relative = float(width_relative)
-        height_relative = float(height_relative)
-
-        if min_height > self.height:
-            y_center = 0.0
-            height_relative = 1.0
-        elif height_relative < min_height / self.height:
-            height_relative = min_height / self.height
-
-        assert 0.0 <= x_center <= 1.0, f"x_center is {x_center}"
-        assert 0.0 <= y_center <= 1.0, f"y_center is {y_center}"
-        assert 0.0 <= width_relative <= 1.0, f"y_center is {width_relative}"
-        assert 0.0 <= height_relative <= 1.0, f"y_center is {height_relative}"
+        
+        self.check_valid_relative_crop_values(
+            x_center,
+            y_center,
+            width_relative,
+            height_relative,
+        )        
+                
+        name = name if name else self.name
 
         return ImageCrop(
-            self.name,
-            self.data,
+            name,
+            data=self.data,
             x_center=self.x_center + (x_center - 0.5) * self.width_relative,
             y_center=self.y_center + (y_center - 0.5) * self.height_relative,
             width_relative=width_relative * self.width_relative,
             height_relative=height_relative * self.height_relative,
         )
+        

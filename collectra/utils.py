@@ -174,32 +174,7 @@ def from_dir(path: Path, config: str = "pipeline.yaml") -> dict:
         return data
 
 
-def crop(
-    path: Path | str, coordinates: tuple[float, float, float, float], show=False
-) -> ImagePil.Image:
-    """Crop an image using the specified coordinates.
 
-    Opens an image file and crops it to the specified rectangular region
-    defined by the coordinates tuple. Optionally displays the cropped image.
-
-    Args:
-        path (Path): Path to the image file to crop.
-        coordinates (tuple[float, float, float, float]): Crop coordinates as
-            (left, upper, right, lower) in pixels.
-        show (bool, optional): Whether to display the cropped image. Defaults to False.
-
-    Returns:
-        ImagePil.Image: The cropped image object.
-
-    Raises:
-        FileNotFoundError: If the image file doesn't exist.
-        PIL.UnidentifiedImageError: If the file is not a valid image format.
-    """
-    with ImagePil.open(path) as imf:                    
-        im_crop = imf.crop(coordinates)
-        if show:
-            im_crop.show()
-    return im_crop
 
 
 def load_class_from_string(path: str | None):
