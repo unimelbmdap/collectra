@@ -129,8 +129,7 @@ class Collectra:
         for key, value in kwargs.items():
             input = {key: value}
             self._init_input_data(starting_nodes, **input)            
-            self._run_nodes(starting_nodes, single=single)
-            self.save_run(key, value)
+            self._run_nodes(starting_nodes, single=single, key=key, value=value)            
 
     def _populate_active_paths(self, nodes: list[TaskNode | DataNode], **kwargs):        
         for node in nodes:
@@ -142,11 +141,11 @@ class Collectra:
             self._populate_active_paths(children, **kwargs)            
 
     def _init_input_data(self, starting_nodes: list[TaskNode | DataNode], **kwargs):
-        self._wipe_data_nodes()                           
+        self._wipe_data_nodes()                   
         for node in starting_nodes:
             parents = self._get_parents_data(node)            
-            for parent in parents:                
-                value = kwargs.get(parent.name, None)                                                
+            for parent in parents:                              
+                value = kwargs.get(parent.name, None)
                 parent.process(parent.name, value, **kwargs)
         self._populate_active_paths(starting_nodes, **kwargs)                        
 
@@ -161,19 +160,30 @@ class Collectra:
             data_node.items = dict()
             data_node.status = NodeStatus.NOT_READY
 
-    def save_run(self, key: str, value: str | Path):
+    def save_run(self, key: str, value: str | Path, data_node: DataNode | None = None):  
 
-        savef = Path(value)
+        if not key or not value:
+            print("[yellow]No save location specified, skipping save.[/yellow]")
+            return
+
+        savef = Path(value)     
+
         data_nodes = [
             node["node"]
             for node in self.flow.nodes.values()
             if isinstance(node["node"], DataNode)
-        ]
+        ] if data_node is None else [data_node]
+
+        if data_node is not None and not data_node.status == NodeStatus.READY:
+            print(f"[yellow]No new data for {data_node.name}, skipping save.[/yellow]")
+            return
+
         if savef.is_file():
             savef = savef.parent / Path(
                 savef.name.replace(savef.suffix, f".{self.ext}")
             )
             savef.mkdir(parents=True, exist_ok=True)
+
         if savef.is_dir():
             with change_dir(savef):
                 results = dict()
@@ -206,14 +216,15 @@ class Collectra:
                         results[name] = results[name][0]
 
                 with open("results.yaml", "w") as f:
-                    for key, data in results.items():
-                        yaml.dump({key: data}, f, sort_keys=False, allow_unicode=True)
-                        f.write("\n")
-
+                    for file_key, data in results.items():
+                        yaml.dump({file_key: data}, f, sort_keys=False, allow_unicode=True)
+                        f.write("\n")                
             if Path(value).is_file():
                 shutil.copy(Path(value), savef / Path(value).name)
-
-        print(f"Results saved to [green]{savef}[/green]")
+        if data_node:
+            print(f"Results saved to [green]{savef}[/green] for [blue]{data_node.name}[/blue]")
+        else:
+            print(f"All results saved to [green]{savef}[/green]")
 
     def _resolve_node(self, node_name: str) -> TaskNode | DataNode:
         node: dict | None = self.flow.nodes.get(node_name, None)
@@ -249,36 +260,45 @@ class Collectra:
         **kwargs,
     ):
         single_run = kwargs.get("single", False)
-        children_tasks_of_data: list[TaskNode] = list()
+        child_tasks_of_data_nodes = dict()
         for node in nodes:
-            if isinstance(node, TaskNode):                                
+            if isinstance(node, TaskNode):
+                if not self._check_task_ready(node) == NodeStatus.READY:
+                    print(f"[yellow]Task {node.name} is not ready, skipping.[/yellow]")
+                    continue                                
                 results: list = self._run_task(node, **kwargs)
                 children = list(self.flow.successors(str(node.name)))
-                children = [self._resolve_node(child) for child in children]
-                if single_run:
-                    children = [
-                        child for child in children if isinstance(child, DataNode)
-                    ]                
+                children = [self._resolve_node(child) for child in children]                
                 self._run_nodes(children, *results, **kwargs)
-            elif isinstance(node, DataNode):                    
+            elif isinstance(node, DataNode):                                    
                 for arg in args:
                     if not isinstance(arg, Data):
                         continue                    
-                    if node.name == arg.get_name() and node.check_type(type(arg)):
-                        self._check_existing(node, arg)                        
+                    if node.name == arg.get_name() and node.check_type(type(arg)):                        
+                        self._check_existing(node, arg)  
+                self.save_run(kwargs.get("key", ""), kwargs.get("value", ""), data_node=node)                   
                 children = list(self.flow.successors(str(node.name)))
                 children = [self._resolve_node(child) for child in children]                
                 for child in children:
-                    if isinstance(child, TaskNode):
-                        exists = False
-                        for existing in children_tasks_of_data:
-                            if existing.name == child.name:
-                                exists = True
-                                break
-                        if not exists and not single_run:
-                            children_tasks_of_data.append(child)
-        if len(children_tasks_of_data) > 0:            
-            self._run_nodes(children_tasks_of_data, *args, **kwargs)
+                    if not isinstance(child, TaskNode):
+                        continue
+                    if child.name not in child_tasks_of_data_nodes and not single_run:
+                        child_tasks_of_data_nodes[child.name] = child
+        
+        child_tasks = self._check_tasks_ready(list(child_tasks_of_data_nodes.values()))   
+        if child_tasks:
+            self._run_nodes(child_tasks, *args, **kwargs)
+
+    def _check_task_ready(self, task_node: TaskNode) -> NodeStatus:
+        parents = self._get_parents_data(task_node)            
+        if all(parent.status == NodeStatus.READY for parent in parents):
+            task_node.status = NodeStatus.READY
+        return task_node.status
+
+    def _check_tasks_ready(self, task_nodes: list[TaskNode]) -> list[TaskNode]:
+        ready_tasks: list[TaskNode] = list()
+        ready_tasks = [task_node for task_node in task_nodes if self._check_task_ready(task_node) == NodeStatus.READY]
+        return ready_tasks
 
     def _check_existing(self, node, new_item: Data) -> None:
 
@@ -309,8 +329,7 @@ class Collectra:
             return same_parents and same_attributes
 
         found_identical = False
-        items = node.items
-
+        items = node.items        
         for id in items.keys():            
             found_identical = is_identical(items[id], new_item)
             if not found_identical:
@@ -325,42 +344,36 @@ class Collectra:
 
     def _run_task(self, task_node: TaskNode, **kwargs) -> list:        
         task = task_node.get_task()        
-        print(f"Attempting to run task: [blue]{task.name}[/blue]")
-        assert isinstance(task, Task), f"Node {task_node.name} is not a Task"
-        entries = list() 
-        parents = self._get_parents_data(task_node)
-        not_ready_parents = [parent for parent in parents if parent.status != NodeStatus.READY]
-        if not_ready_parents:
-            print(
-                f"[yellow]Skipping task {task_node.name} as the following input data is not ready:[/yellow]"
-            )
-            for parent in not_ready_parents:
-                print(f" - {parent.name}")            
-            return list()
-        for parent in parents:            
-            entries.extend(parent.items.values())
-        results: list = list()                
+        assert isinstance(task, Task), f"Node {task_node.name} is not a Task"        
+        print(f"Attempting to run task: [blue]{task.name}[/blue]")        
+        parents = self._get_parents_data(task_node)        
+        entries = task.prepare_inputs(parents)      
+        results = list()  
         if len(entries) == 0:
-            print(f"[yellow]No input data for task {task.name}, skipping...[/yellow]")
-        else:
-            print(entries)        
-        with change_dir(self.path):
-            for index in range(0, len(entries), task.input_nums):
-                endindex = (
-                    len(entries)
-                    if index + task.input_nums > len(entries)
-                    else index + task.input_nums
-                )
-                sub_entries = entries[index:endindex]                      
-                result: Data | list[Data]= task.run(*sub_entries)
-                if isinstance(result, list):
-                    for result_item in result:                        
-                        result_item.set_parents(sub_entries)
-                    results.extend(result)
-                else:
-                    result.set_parents(sub_entries)
-                    results.append(result)        
+            print(f"[yellow]No input data found for task {task.name}, skipping.[/yellow]")
+            return results                            
+        with change_dir(self.path):                                                   
+            for entry in entries:     
+                if not isinstance(entry, list):
+                    entry = list(entry)
+                entry_result = self._execute_entries(entry, task)
+                results.extend(entry_result)                              
         return results
+    
+    def _execute_entries(self, entries: list[Data], task: Task) -> list[Data]:        
+        try:                     
+            print(f"[blue]Processing input batch[/blue]")                                  
+            output: Data | list[Data]= task.run(*entries)
+            if not isinstance(output, list):
+                output = [output]            
+            for result in output:                        
+                result.set_parents(entries)                    
+            return output
+        except Exception as e:
+            print(f"[red]Error running task {task.name}: {e}[/red]")                    
+            print("[blue]Affected input data:[/blue]")
+            print(entries)   
+        return list()
 
     def train(self, task_name: str, **kwargs) -> tuple:
         if self.flow.number_of_nodes() == 0:
