@@ -11,6 +11,7 @@ __all__ = ["Task", "TaskNode"]
 
 from typing import Generic
 from dataclasses import dataclass
+from itertools import product
 
 from collectra.commons import BaseEntity, T, Node, NodeStatus
 
@@ -32,8 +33,25 @@ class Task(BaseEntity, Generic[T]):
             setattr(self, key, value)
 
     @property
-    def input_nums(self) -> int:
-        raise NotImplementedError("Subclasses must implement this property.")
+    def input_dict(self) -> dict[str, list]:     
+        input_dict = dict()
+        if hasattr(self, "input"):
+            if not isinstance(self.input, list):
+                input_list = [self.input]       
+            else:
+                input_list = self.input.copy()
+            input_dict = {k: [] for k in input_list}
+        return input_dict
+    
+    def prepare_inputs(self, parents: list) -> list:        
+        input_dict = self.input_dict
+        for parent in parents:
+            if parent.name in input_dict:
+                input_dict[parent.name].extend(parent.items.values())    
+        value_lists = [inputs for inputs in input_dict.values()]
+        all_combinations = list(product(*value_lists))
+        entries = [list(combination) for combination in all_combinations]
+        return entries
 
     def run(self, *args) -> T:
         """Run the task execution logic.
@@ -59,10 +77,7 @@ class Task(BaseEntity, Generic[T]):
 @dataclass
 class TaskNode(Node):
 
-    task: Task
-
-    def __post_init__(self):
-        self.status = NodeStatus.READY if self.task else NodeStatus.NOT_READY
+    task: Task    
 
     def get_task(self) -> Task:
         return self.task
