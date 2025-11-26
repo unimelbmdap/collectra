@@ -50,6 +50,5 @@ markdown_converter:
 
     Example: {md_example1}
 
-    Here is the image to describe: {bar_img1}
-    Here is another image: {car}        
+    Here is the image to describe: {bar_img1}     
 
