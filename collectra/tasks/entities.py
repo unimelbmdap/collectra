@@ -15,12 +15,19 @@ Classes:
 
 __all__ = ["LLMCanonicalizer"]
 
+import re, yaml, re
+
+from dotenv import load_dotenv
 from pathlib import Path
-from difflib import get_close_matches, SequenceMatcher
+from langchain_openai import AzureOpenAIEmbeddings
+from langchain_chroma import Chroma
+from langchain_core.documents import Document
+from langchain_core.messages import HumanMessage
+
 from collectra.types.texts import Text
 from collectra.tasks.llms import LLM as CollectraLLM
-from dataclasses import dataclass, field
-import copy, re
+
+load_dotenv()
 
 class LLMCanonicalizer(CollectraLLM):
     """Task for canonicalizing entities in text using fuzzy string matching.
@@ -34,30 +41,50 @@ class LLMCanonicalizer(CollectraLLM):
         threshold (float): Minimum similarity threshold for matches (0.0 to 1.0).
     """
 
-    entities: list[str] | Path = field(default_factory=list)
-    threshold: float = 0.8
+    def __init__(self, name: str, model: str, **kwargs):
+        super().__init__(name, model, **kwargs)
+        self.embedding_model = kwargs.get("embedding_model", "text-embedding-3-large")        
+        self.threshold = kwargs.get("threshold", 0.8)
+        self.count = kwargs.get("count", 5)
+        self.entities = kwargs.get("entities", [])
+        entities_path = Path(self.entities)
+        if not entities_path.exists() and entities_path.suffix == "":
+            if isinstance(self.entities, str) or not isinstance(self.entities, list):
+                self.entities = [entity for entity in str(self.entities).split(",")]
+        else:
+            self.entities = entities_path
 
-    def __post_init__(self):
-        """Load entities from file if a Path is provided."""
-        if isinstance(self.entities, Path) and self.entities.is_file():
-            with open(self.entities, "r") as f:
-                self.entities = [line.strip() for line in f if line.strip()]
+    def retrieve_entities(self, query_data: str) -> dict:                        
+        index_path = Path(self.entities.stem + "_index")        
+        embeddings = AzureOpenAIEmbeddings(model = self.embedding_model)
+        if index_path.exists() and index_path.is_dir():                        
+            print(f"Loading existing vector store from {index_path}")
+            vector_store = Chroma(
+                collection_name=f"{self.entities.stem}_collection",
+                embedding_function=embeddings,
+                persist_directory=str(index_path),
+            )                           
+        else:                        
+            with open(self.entities, 'r') as f:
+                raw_data = yaml.safe_load(f)
+                ids = [str(id) for id in list(raw_data.keys())]
+                documents = [Document(page_content=content) for content in raw_data.values()]
+            vector_store = Chroma(
+                collection_name=f"{self.entities.stem}_collection",
+                embedding_function=embeddings,
+                persist_directory=str(index_path),
+            )   
+            vector_store.add_documents(documents=documents, ids=ids)                                        
 
-    def input_type(self) -> type:
-        """Define input type as string text.
+        entities = dict()
 
-        Returns:
-            type: String type for text input.
-        """
-        return str
-
-    def output_type(self) -> type:
-        """Define output type as string text.
-
-        Returns:
-            type: String type for canonicalized text output.
-        """
-        return str
+        results = vector_store.similarity_search_with_score(query_data, k=self.count)
+        for result in results:
+            if result[0].page_content in entities:
+                entities[result[0].page_content].append(result[0].id)
+            else:
+                entities[result[0].page_content] = [result[0].id]              
+        return entities      
 
     def run(self, *args: Text) -> Text:
         """Canonicalize the input text against known entities.
@@ -67,62 +94,62 @@ class LLMCanonicalizer(CollectraLLM):
 
         Returns:
             str: Canonicalized text if a match is found, otherwise original text.
-        """
-        name="placeholder"
-        response = "placeholder_data"
-        output = Text(name=name, data=response)
-        return output
-        if not isinstance(self.entities, list):
-            for output_key in self.output.keys():
-                input_key = output_key.replace("_actual", "_text")
-                value = kwargs.pop(input_key, [])
-                self.output[output_key] = value
-        else:
-            for key in self.input_keys:
-                text_list = self.input.get(key, [])
-                new_text_list = self.input.get(key, [])
-                for index in range(len(text_list)):
-                    close_matches = get_close_matches(
-                        text_list[index], self.entities, n=3, cutoff=self.threshold
-                    )
-                    match_score = 0
-                    if close_matches:
-                        match_score = round(
-                            SequenceMatcher(
-                                None, text_list[index], close_matches[0]
-                            ).ratio(),
-                            3,
-                        )
-                        new_text_list[index] = close_matches[0]
-                self.output[key.replace("_text", "_actual")] = new_text_list
+        """                        
+        entity_stem = re.sub("_.*", "", self.name)
+        task_inputs = list(args)
+        query_data: str | list = list()
+        for task_input in task_inputs:
+            if entity_stem in task_input.name:
+                query_data.append(task_input.data)
+        query_data = ", ".join(query_data)
 
-    def save(self, output_path: Path, **kwargs) -> tuple[Path, dict, list[Path]]:
-        output_data = kwargs.get("output_data", dict())
-        result_data = dict()
-        for key in self.output:
-            output_is_list = isinstance(self.output[key], list)
-            data_key = key.replace("_actual", "")
-            if data_key in output_data:
-                to_be_updated = copy.deepcopy(output_data[data_key])
-                if "items" in to_be_updated and isinstance(
-                    to_be_updated["items"], list
-                ):
-                    for index in range(len(to_be_updated["items"])):
-                        if output_is_list and index < len(self.output[key]):
-                            to_be_updated["items"][index].update(
-                                {
-                                    "canonical": re.sub(
-                                        r"\s+", " ", str(self.output[key][index])
-                                    ).strip()
-                                }
-                            )
-                else:
-                    to_be_updated.update(
-                        {
-                            "canonical": re.sub(
-                                r"\s+", " ", str(self.output[key])
-                            ).strip()
-                        }
-                    )
-                result_data[data_key] = to_be_updated
-        return None, result_data, []
+        entities = ""
+    
+        if isinstance(self.entities, Path):
+            entities_dict = self.retrieve_entities(query_data)                
+            entities = ", ".join(list(entities_dict.keys()))
+        elif isinstance(self.entities, list):
+            entities = ", ".join(self.entities)
+        elif isinstance(self.entities, str):
+            entities = self.entities        
+
+        prompt, pattern, _ = self.get_pattern_matches()
+        messages: list[str | dict] = list()
+
+        while re.search(pattern, prompt):
+            match = next(re.finditer(pattern, prompt))
+            start, end = match.span()
+            item = match[1].strip()
+            replaced = False
+            if prompt[:start]:
+                messages.append(self._add_text(prompt[:start]))
+            for arg in args:                
+                key = arg.name
+                if key == item:
+                    messages.append(self._add_content(arg))
+                    replaced = True
+                    break
+            if item == "entities":
+                replaced = True
+                messages.append(self._add_text(entities))
+            if not replaced:
+                messages.append(self._add_text(f"No content provided for {item}. Ignore this part."))
+            prompt = prompt[end:].strip()
+        
+        if prompt:
+            messages.append(self._add_text(prompt.strip()))
+        
+        self.messages.append(HumanMessage(content=messages))        
+
+        response = self.chain.invoke(self.messages)
+
+        name = (
+            f"{self.get_name()}_output"
+            if not hasattr(self, "output")
+            else self.output[0] if isinstance(self.output, list) else self.output
+        )
+        output = Text(name=name, data=response)
+
+        return output
+
+
