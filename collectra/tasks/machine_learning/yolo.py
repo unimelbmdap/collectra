@@ -32,11 +32,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
         Args:
             model (str | Path): The path to the model file or the model itself.
         """
-        self.model = YOLO(model)
-
-    @property
-    def input_nums(self) -> int:
-        return 1
+        self.model = YOLO(model)    
 
     @ThreadingLocked()
     def run(self, *args: Image) -> list[Image]:
@@ -90,7 +86,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 width_relative=float(w),
                 height_relative=float(h),
                 name=names[index],
-            )                     
+            )                                 
             detections.append(image_crop)            
         print(f"Found {len(detections)} objects in the image.")
         return detections

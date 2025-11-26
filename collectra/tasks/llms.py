@@ -21,13 +21,13 @@ import llmloader, re
 from dotenv import load_dotenv
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import SystemMessage, HumanMessage
+from itertools import product
 
 from collectra.tasks.base import Task
 from collectra.types.images import Image
 from collectra.types.texts import Text
 
-load_dotenv()
-
+load_dotenv()      
 
 class LLM(Task):
     """Task for Large Language Model inference operations.
@@ -45,18 +45,12 @@ class LLM(Task):
         variables (dict): Additional variables for template substitution.
     """
 
-    @property
-    def input_nums(self) -> int:
-        if hasattr(self, "input") and isinstance(self.input, (list, tuple)):
-            return len(self.input)
-        return 1
-
     def __init__(self, name: str, model: str, **kwargs):             
         super().__init__(name, **kwargs)
         self.template: str = kwargs.get("template", "")
         self.preamble: str = kwargs.get("preamble", "") 
         self.temperature = kwargs.get("temperature", 0.8)
-        self.max_tokens = kwargs.get("max_tokens", None)
+        self.max_tokens = kwargs.get("max_tokens", None)                  
         self.llm = llmloader.load(
             model, 
             temperature=self.temperature, 
@@ -70,6 +64,22 @@ class LLM(Task):
             else SystemMessage(content="You are a helpful assistant.")
         )
         self.messages: list[SystemMessage | HumanMessage] = [init_messages]
+
+    def prepare_inputs(self, parents: list) -> list[list]:        
+        input_dict = self.input_dict
+        for parent in parents:
+            if parent.name in input_dict:
+                input_dict[parent.name].extend(parent.items.values())    
+        value_lists = [inputs for inputs in input_dict.values()]
+        all_combinations = list(product(*value_lists))
+        entries = [list(combination) for combination in all_combinations]
+        return entries
+    
+    def get_pattern_matches(self) -> tuple:
+        prompt = f"{self.preamble}\n\n{self.template}".strip()        
+        pattern = r"\{(.*?)\}"
+        matches = list(re.finditer(pattern, prompt))
+        return prompt, pattern, matches
 
     def image_content(self, image: Image):
         """Create image content dictionary for multimodal LLM input.
@@ -115,30 +125,25 @@ class LLM(Task):
             Updates self.output dictionary with generated text responses. Output keys
             that contain the input key as a substring will be populated with LLM results.
             Prints a success message when inference completes.
-        """        
-        prompt = f"{self.preamble}\n\n{self.template}".strip()        
-        pattern = r"\{(.*?)\}"
+        """                
+
+
+        prompt, pattern, _ = self.get_pattern_matches()
         messages: list[str | dict] = list()
-        while re.search(pattern, prompt):
+
+        for value in args:
             match = next(re.finditer(pattern, prompt))
             start, end = match.span()
-            item = match[1].strip()
-            replaced = False
             if prompt[:start]:
                 messages.append(self._add_text(prompt[:start]))
-            for arg in args:
-                key = arg.name                
-                if item == key and arg is not None:
-                    messages.append(self._add_content(arg))
-                    replaced = True
-                    break
-            if not replaced:
-                messages.append(self._add_text(f"No content provided for {item}. Ignore this part."))
+            messages.append(self._add_content(value))
             prompt = prompt[end:].strip()
         if prompt:
-            messages.append(self._add_text(prompt.strip()))        
-        self.messages.append(HumanMessage(content=messages))        
+            messages.append(self._add_text(prompt.strip()))       
+        self.messages.append(HumanMessage(content=messages))                                                   
+
         response = self.chain.invoke(self.messages)
+        
         name = (
             f"{self.get_name()}_output"
             if not hasattr(self, "output")
