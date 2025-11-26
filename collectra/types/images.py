@@ -74,7 +74,7 @@ class Image(Data):
         Raises:
             FileNotFoundError: If the image file doesn't exist.
             PIL.UnidentifiedImageError: If the file is not a valid image.
-        """
+        """        
         super().__post_init__()
         if not self.data:
             raise ValueError("Image data path is empty.")        
@@ -190,14 +190,11 @@ class Image(Data):
             y_center,
             width_relative,
             height_relative,
-        )
-        
-        data = self.data
-        name = name if name else self.name
+        )        
 
         return ImageCrop(
-            self.name,
-            data=data,
+            name=name if name else self.name,
+            data=self.data,
             x_center=x_center,
             y_center=y_center,
             width_relative=width_relative,
@@ -285,21 +282,11 @@ class ImageCrop(Image):
         name: str = "",
     ) -> "ImageCrop":
         
-        self.check_valid_relative_crop_values(
-            x_center,
-            y_center,
-            width_relative,
-            height_relative,
-        )        
-                
-        name = name if name else self.name
-
-        return ImageCrop(
-            name,
-            data=self.data,
+        return super().make_crop(
             x_center=self.x_center + (x_center - 0.5) * self.width_relative,
             y_center=self.y_center + (y_center - 0.5) * self.height_relative,
             width_relative=width_relative * self.width_relative,
             height_relative=height_relative * self.height_relative,
+            name=name,
         )
         
