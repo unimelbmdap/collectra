@@ -19,7 +19,8 @@ class Data(BaseEntity):
     
     name: str
     id: str = field(default="")
-    parents: list[str] = field(default_factory=list)
+    parents: list[str] = field(default_factory=list)    
+    validation: bool = field(default=False)
 
     def set_parents(self, parents: list["Data"]) -> None:
         self.parents = [parent.id for parent in parents]
