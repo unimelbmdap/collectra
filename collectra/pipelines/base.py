@@ -106,7 +106,7 @@ class Collectra:
         """Runs the workflow from the specified task or from all root tasks."""
         # Initialize the workflow if not already done so
         if self.flow.number_of_nodes() == 0:
-            self.connect()        
+            self.connect()                
         starting_nodes: list = list()
         if task_name:
             task_node = self._resolve_node(task_name)
@@ -128,8 +128,8 @@ class Collectra:
         output = kwargs.pop("output", None)                        
         for key, value in kwargs.items():
             input = {key: value}
-            self._init_input_data(starting_nodes, **input)            
-            self._run_nodes(starting_nodes, single=single, key=key, value=value)            
+            self._init_input_data(starting_nodes, **input)                   
+            self._run_nodes(starting_nodes, single=single, key=key, value=value)   
 
     def _populate_active_paths(self, nodes: list[TaskNode | DataNode], **kwargs):        
         for node in nodes:
@@ -138,16 +138,18 @@ class Collectra:
                 node.process(node.name, value, **kwargs)
             children = list(self.flow.successors(str(node.name)))
             children = [self._resolve_node(child) for child in children]
-            self._populate_active_paths(children, **kwargs)            
+            self._populate_active_paths(children, **kwargs)                
 
-    def _init_input_data(self, starting_nodes: list[TaskNode | DataNode], **kwargs):
-        self._wipe_data_nodes()                   
+    def _init_input_data(self, starting_nodes: list[TaskNode | DataNode], **kwargs): 
+        self._wipe_data_nodes()
+        self.connect()                                         
         for node in starting_nodes:
             parents = self._get_parents_data(node)            
             for parent in parents:                              
                 value = kwargs.get(parent.name, None)
                 parent.process(parent.name, value, **kwargs)
-        self._populate_active_paths(starting_nodes, **kwargs)                        
+        self._populate_active_paths(starting_nodes, **kwargs)         
+               
 
     def _wipe_data_nodes(self):
         # Reset all data nodes in the workflow
@@ -263,7 +265,7 @@ class Collectra:
         child_tasks_of_data_nodes = dict()
         for node in nodes:
             if isinstance(node, TaskNode):
-                if not self._check_task_ready(node) == NodeStatus.READY:
+                if not self._check_task_ready(node) == NodeStatus.READY:                    
                     print(f"[yellow]Task {node.name} is not ready, skipping.[/yellow]")
                     continue                                
                 results: list = self._run_task(node, **kwargs)
@@ -290,9 +292,9 @@ class Collectra:
             self._run_nodes(child_tasks, *args, **kwargs)
 
     def _check_task_ready(self, task_node: TaskNode) -> NodeStatus:
-        parents = self._get_parents_data(task_node)            
+        parents = self._get_parents_data(task_node)                         
         if all(parent.status == NodeStatus.READY for parent in parents):
-            task_node.status = NodeStatus.READY
+            task_node.status = NodeStatus.READY        
         return task_node.status
 
     def _check_tasks_ready(self, task_nodes: list[TaskNode]) -> list[TaskNode]:
@@ -493,8 +495,8 @@ class Collectra:
                     ios.extend(self._check_task_io("output", obj, data))
                     for io_key, io_types in ios:
                         self._add_data_node(io_key, types=io_types)
-                else:
-                    self._add_data_node(name, obj=obj)
+                else:                    
+                    self._add_data_node(name, obj=obj)                    
 
             for task_name, io in relations.items():
                 inputs = io.get("input", [])
@@ -504,9 +506,12 @@ class Collectra:
                         self.flow.add_edge(input, task_name)
                 for output_key in self._get_io_list(outputs):
                     if self.flow.has_node(output_key):
-                        self.flow.add_edge(task_name, output_key)
+                        self.flow.add_edge(task_name, output_key)        
 
     def _add_task_node(self, name: str, obj: Task):
+        node = self.flow.nodes.get(name, None)
+        if node:
+            return
         node = TaskNode(name, obj)
         self.flow.add_node(
             name,
@@ -523,7 +528,7 @@ class Collectra:
     ):
         node = self.flow.nodes.get(name, None)
         if len(types) == 0 and obj:
-            types = set([type(obj)])
+            types = set([type(obj)])        
         if not node:
             items = {obj.id: obj} if obj else {}
             types = set(types)
@@ -537,6 +542,16 @@ class Collectra:
                 fontcolor="black",
                 style="filled",
             )
+        elif obj:            
+            data_node: DataNode = node["node"]            
+            if not isinstance(data_node, DataNode):
+                return
+            if type(obj) not in data_node.types:
+                return
+            data_node.add_item(obj)
+            data_node.types = data_node.types.union(set(types))
+                
+
 
     def render(self, dest: str | Path = ""):
         if self.flow.number_of_nodes() == 0:

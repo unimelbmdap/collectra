@@ -160,8 +160,7 @@ def convert_raw_img(
 ):
     from PIL import Image
     folder_path = Path(folder)
-    folder_path.mkdir(parents=True, exist_ok=True)
-    breakpoint()
+    folder_path.mkdir(parents=True, exist_ok=True)    
     for image in track(folder.glob(f"*.{imf}")):            
         results_yaml = {
             "collectra_results_metadata": {
@@ -364,22 +363,25 @@ def show(
         for key, values in data.items():
             if not isinstance(values, list):
                 values = [values]
-            for value in values:
-                if "type" not in value or load_class_from_string(value["type"]) != ImageCrop:
-                    continue
-                image_crop = original_image.make_crop(
-                    name=key,
-                    x_center = float(value["x_center"]),
-                    y_center = float(value["y_center"]),
-                    width_relative = float(value["width_relative"]),
-                    height_relative = float(value["height_relative"])
-                )
-                coordinates = image_crop.coordinates()
-                draw.rectangle(coordinates, outline="blue", width=8)                
-                left, upper, _, _ = coordinates
-                upper = upper - font_size*1.1 if upper - font_size*1.1 >= 0 else 0                     
-                draw.text((left, upper), key, fill="red", font=font)                                
-
+            try:
+                for value in values:
+                    if not isinstance(value, dict) or "type" not in value or load_class_from_string(value["type"]) != ImageCrop:
+                        continue
+                    image_crop = original_image.make_crop(
+                        name=key,
+                        x_center = float(value["x_center"]),
+                        y_center = float(value["y_center"]),
+                        width_relative = float(value["width_relative"]),
+                        height_relative = float(value["height_relative"])
+                    )
+                    coordinates = image_crop.coordinates()
+                    draw.rectangle(coordinates, outline="blue", width=8)                
+                    left, upper, _, _ = coordinates
+                    upper = upper - font_size*1.1 if upper - font_size*1.1 >= 0 else 0                     
+                    draw.text((left, upper), key, fill="red", font=font)    
+            except Exception as e:
+                print(f"Error processing label '{key}': {e}")
+                return
     if save:        
         Path(output).mkdir(parents=True, exist_ok=True)
         image_pil.save(Path(output) / f"{file_path.stem}.jpg")

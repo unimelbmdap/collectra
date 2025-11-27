@@ -86,7 +86,7 @@ class DataNode(Node):
         return f"{self.name}\n{types_str}"
 
     def process(self, key: str, value: str | Path | None = None, **kwargs) -> None:
-        value = value if value else kwargs.get("file", None)                    
+        value = value if value else kwargs.get("file", None)               
         if value and Path(value).exists() and Path(value).is_dir():
             value = Path(value)
             with change_dir(value):
@@ -100,11 +100,13 @@ class DataNode(Node):
                         data = results.get(key, None)
                         assert data, f"{key} could not be found in {value}"
                         data = data if isinstance(data, list) else [data]
-                        for item in data:
+                        for item in data:           
+                            primitive_type = False                                            
                             try:
                                 if not isinstance(item, dict) or not (
                                     "type" in item and ("path" in item or "data" in item)
-                                ):
+                                ):                      
+                                    primitive_type = True                            
                                     raise Warning(
                                         f"Item does not have the correct data format: {item}"
                                     )
@@ -129,10 +131,19 @@ class DataNode(Node):
                                     raise Warning(f"Failed to load {item} with {cls_}")
                                 self.add_item(instance)
                             except Exception as e:
-                                traceback_error(e, f"Failed to load data item: {e}")
+                                traceback_error(e, f"Failed to load data item: {e}")                                
+                                if primitive_type:
+                                    print("Primitive type value found, loading it as Text...")
+                                    for cls_ in self.types:
+                                        try:
+                                            instance = cls_(key, data=str(item))
+                                            self.add_item(instance)                                            
+                                        except Exception as e:
+                                            traceback_error(e, f"Failed to load data: {e}")                                    
+
                 except Exception as e:
                     traceback_error(e, f"Failed to load data: {e}")
-        elif key:
+        elif key:                     
             for cls_ in self.types:
                 try:                                        
                     instance = cls_(key, data=value)
