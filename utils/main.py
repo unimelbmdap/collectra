@@ -147,6 +147,48 @@ def convert(
         traceback.print_exc()
         print(f"Error: {e}")
 
+@app.command()
+def convert_raw_img(
+    imf: Annotated[str, tp.Option("--image_format", "-i", help="Image format to be searched for")],
+    format: Annotated[str, tp.Option("--format", "-f", help="Output file format")],
+    folder: Annotated[
+        Path, tp.Option("--folder", "-d", help="Path to folder containing images")
+    ],
+    first_label: Annotated[
+        str, tp.Option("--first-label", "-l", help="First label name")
+    ],
+):
+    from PIL import Image
+    folder_path = Path(folder)
+    folder_path.mkdir(parents=True, exist_ok=True)
+    breakpoint()
+    for image in track(folder.glob(f"*.{imf}")):            
+        results_yaml = {
+            "collectra_results_metadata": {
+                "timestamp": datetime.now(pytz.utc).isoformat(),
+                "validation": False,
+            },
+            f"{first_label}" : {
+                "type": "collectra.Image", 
+                "data": image.name
+            },            
+        }                        
+        file_path = folder_path / f"{image.stem}.{format}"  
+        file_path.mkdir(parents=True, exist_ok=True)        
+        with open(file_path / "results.yaml", "w") as file:
+            for result in results_yaml:
+                yaml.dump(
+                    {result: results_yaml[result]},
+                    file,
+                    default_flow_style=False,
+                    sort_keys=False,
+                )
+                file.write("\n")
+        img = Image.open(image)
+        data = list(img.getdata())
+        img_no_exif = Image.new(img.mode, img.size)
+        img_no_exif.putdata(data)
+        img_no_exif.save(folder_path / f"{image.stem}.{format}" / image.name)           
 
 @app.command()
 def cluster(
@@ -210,7 +252,7 @@ def convert_image_objects(results_yaml: dict) -> dict:
                     data["data"] = data.pop("path")
                 elif "image" in data:
                     data["data"] = results_yaml[data.pop("image")]["data"]
-                data["type"] = f"collectra.{data["type"]}"
+                data["type"] = f"collectra.{data['type']}"
                 if "items" in data:
                     for item in data["items"]:                        
                         item["data"] = data["data"]
@@ -289,84 +331,61 @@ def show(
     label: Annotated[
         str, tp.Option("--label", "-l", help="label of the original image")
     ],
+    font_path: Annotated[str, tp.Option("--font", "-f", help="Font to be used for text display")],
+    font_size: Annotated[int, tp.Option("--font-size", "-fs", help="Font size to be used for text display")] = 48,
+    save: Annotated[bool, tp.Option("--save", help="Save the drawn images")] = False,
+    output: Annotated[str, tp.Option("--output", help="The folder to save the detected images")] = "detected_images",
 ):
     """Display the original image with crops and labels from the results.yaml annotation file.
 
     Args:
         path (Path): Path to the collectra file containing annotations.
 
-    """
+    """    
+    from PIL import ImageDraw, ImageFont
+    from collectra import Image, ImageCrop
+    from collectra.utils import change_dir, load_class_from_string
+    file_path = Path(path)
+    font = ImageFont.truetype(font_path, size=font_size)
+    if not file_path.exists() or not file_path.is_dir():
+        raise ValueError("File does not exist or is invalid, exiting...")
+    with change_dir(file_path):
+        with open("results.yaml", "r") as f:
+            data = yaml.safe_load(f)        
+        value = data.pop(label, None)        
+        if value is None or "type" not in value or load_class_from_string(value["type"]) != Image:
+            raise ValueError("This file does not contain a base image to draw on! Exiting...")                
+        original_image = Image(name=label, parents=[], data=value["data"])
+        image_pil = original_image.pil()
+        if image_pil.mode != "RGB":
+            image_pil = image_pil.convert("RGB")
+        draw = ImageDraw.Draw(image_pil)        
 
-    def x1y1x2y2(box, img_width, img_height):
-        """Convert relative box coordinates to absolute pixel values.
-
-        Args:
-            box (list): List of normalized coordinates [x_center, y_center, width, height].
-            img_width (int): Width of the image in pixels.
-            img_height (int): Height of the image in pixels.
-
-        Returns:
-            tuple: Absolute pixel coordinates (x1, y1, x2, y2).
-        """
-        x_center, y_center, width, height = box
-        x1 = int((x_center - width / 2) * img_width)
-        y1 = int((y_center - height / 2) * img_height)
-        x2 = int((x_center + width / 2) * img_width)
-        y2 = int((y_center + height / 2) * img_height)
-        return x1, y1, x2, y2
-
-    try:
-        file = Path(path)
-        if not file.exists():
-            raise FileNotFoundError(f"File not found: {file}")
-        results = file / "results.yaml"
-        if not results.exists():
-            raise FileNotFoundError(f"Invalid collectra file")
-        import yaml
-
-        with open(results, "r") as f:
-            data = yaml.safe_load(f)
-            data.pop("collectra_results_metadata", None)
-        label_data = data.pop(label, None)
-        if label_data is None:
-            raise ValueError(f"Label '{label}' not found in results.yaml")
-        image_path = file / label_data["path"]
-        from PIL import Image, ImageDraw, ImageFont
-
-        img = Image.open(image_path)
-        img_width, img_height = img.size
-        draw = ImageDraw.Draw(img)
-        fnt = ImageFont.truetype(Path.cwd() / "samples" / "Trueno.otf", 40)
-        for key, value in data.items():
-            if isinstance(value, list):
-                for item in value:
-                    box = (
-                        item["x_center"],
-                        item["y_center"],
-                        item["width_relative"],
-                        item["height_relative"],
-                    )
-                    x1, y1, x2, y2 = x1y1x2y2(box, img_width, img_height)
-                    draw.rectangle([x1, y1, x2, y2], outline="red", width=2)
-                    bbox = draw.textbbox((x1, y1 - 40), key, font=fnt)
-                    draw.rectangle(bbox, fill="red")
-                    draw.text((x1, y1 - 40), key, font=fnt, fill="white")
-            else:
-                box = (
-                    value["x_center"],
-                    value["y_center"],
-                    value["width_relative"],
-                    value["height_relative"],
+        for key, values in data.items():
+            if not isinstance(values, list):
+                values = [values]
+            for value in values:
+                if "type" not in value or load_class_from_string(value["type"]) != ImageCrop:
+                    continue
+                image_crop = original_image.make_crop(
+                    name=key,
+                    x_center = float(value["x_center"]),
+                    y_center = float(value["y_center"]),
+                    width_relative = float(value["width_relative"]),
+                    height_relative = float(value["height_relative"])
                 )
-                x1, y1, x2, y2 = x1y1x2y2(box, img_width, img_height)
-                draw.rectangle([x1, y1, x2, y2], outline="red", width=2)
-                bbox = draw.textbbox((x1, y1 - 40), key, font=fnt)
-                draw.rectangle(bbox, fill="red")
-                draw.text((x1, y1 - 40), key, font=fnt, fill="white")
-        img.show()
+                coordinates = image_crop.coordinates()
+                draw.rectangle(coordinates, outline="blue", width=8)                
+                left, upper, _, _ = coordinates
+                upper = upper - font_size*1.1 if upper - font_size*1.1 >= 0 else 0                     
+                draw.text((left, upper), key, fill="red", font=font)                                
 
-    except Exception as e:
-        print(f"Failed to display annotations: {e}")
+    if save:        
+        Path(output).mkdir(parents=True, exist_ok=True)
+        image_pil.save(Path(output) / f"{file_path.stem}.jpg")
+    else:
+        image_pil.show()
+
 
 @app.command()
 def legacy_fix(
