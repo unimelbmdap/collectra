@@ -149,6 +149,14 @@ class ObjectDetectionYOLO(MachineLearningTask):
         for class_name, count in class_counts.items():
             print(f"{class_name}: {count}")
         
+    
+    def _write_yolo_label(
+            self, name_index: int, img: ImageCrop, text_dst: Path, f
+    ):
+        if name_index == -1:
+            f.write("")
+        else:
+            f.write(f"{name_index} {img.x_center:.6f} {img.y_center:.6f} {img.width_relative:.6f} {img.height_relative:.6f}\n")
 
     def _prepare_assets(
         self, classes: list[str], log_dir: Path, *images: ImageCrop
@@ -158,20 +166,14 @@ class ObjectDetectionYOLO(MachineLearningTask):
             dst = log_dir / src.name            
             if not dst.exists():  # Only copy if the file does not already exist
                 shutil.copy(src, dst)
-            name_index = classes.index(img.name) if img.name in classes else -1
-            if name_index == -1:
-                continue
+            name_index = classes.index(img.name) if img.name in classes else -1            
             text_dst = log_dir / f"{src.stem}.txt"
             if not text_dst.exists():
                 with open(text_dst, "w") as f:
-                    f.write(
-                        f"{name_index} {img.x_center:.6f} {img.y_center:.6f} {img.width_relative:.6f} {img.height_relative:.6f}\n"
-                    )
+                    self._write_yolo_label(name_index, img, text_dst, f)
             else:
                 with open(text_dst, "a") as f:
-                    f.write(
-                        f"{name_index} {img.x_center:.6f} {img.y_center:.6f} {img.width_relative:.6f} {img.height_relative:.6f}\n"
-                    )
+                    self._write_yolo_label(name_index, img, text_dst, f)        
 
     def _prepare_params(self, **kwargs) -> dict:
         import platform, torch        

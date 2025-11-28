@@ -2,6 +2,7 @@ from abc import abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 import yaml, uuid
+from rich import print
 
 from collectra.commons import BaseEntity, Node, NodeStatus
 from collectra.utils import (
@@ -155,7 +156,7 @@ class DataNode(Node):
     def batch_process(
         item_file: Path, data_nodes: list["DataNode"]
     ) -> list[Data]:        
-        with change_dir(item_file):
+        with change_dir(item_file):            
             try:
                 data: list[Data] = list()
                 result_file = Path("results.yaml")
@@ -170,9 +171,36 @@ class DataNode(Node):
                 names = [data_node.name for data_node in data_nodes]                
                 all_names_not_found = all(name not in file_data for name in names)
                 if all_names_not_found:
-                    raise Warning(
-                        f"No matching data found in {item_file} for names: {', '.join(names)}. Ignoring..."
+                    print(
+                        f"[yellow]No matching data found in [blue]{item_file}[/blue] for names: {', '.join(names)}. Ignoring..."
                     )
+                    found_base = False
+                    for name, values in file_data.items():
+                        values = values if isinstance(values, list) else [values]                        
+                        for item in values:                                                                             
+                            if not isinstance(item, dict) or "type" not in item and ("data" not in item or "path" not in item):
+                                continue                                     
+                            cls_str = item.pop("type", "")                            
+                            if cls_str == "collectra.Image":                                
+                                cls_ = load_class_from_string(cls_str)
+                                try:
+                                    item["name"] = name                        
+                                    item["data"] = item.pop("path") if "path" in item else item["data"]
+                                    if validation is not None:
+                                        item["validation"] = validation
+                                    instance = cls_(**item)                                    
+                                    if not instance:
+                                        raise Warning(f"Failed to load {item} with {cls_}")
+                                    found_base = True
+                                    data.append(instance)
+                                    break
+                                except Exception as e:
+                                    traceback_error(
+                                        e,
+                                        f"Failed to load data item {name} from {item.get('data', '')}: {e}",
+                                    )
+                        if found_base:
+                            break                    
                 for i, name in enumerate(names):
                     if name not in file_data:                        
                         continue

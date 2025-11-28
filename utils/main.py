@@ -193,14 +193,14 @@ def convert_raw_img(
 def cluster(
     yolo_config: Annotated[
         Path, tp.Option("--config", "-c", help="Path to YOLO configuration file")
-    ],
-    is_file_for_validation: Annotated[
-        bool, tp.Option("--validation", "-v", help="Is file for validation")
-    ],
+    ],    
     image_folder: Annotated[
         Path, tp.Option("--image-folder", "-i", help="Path to image folder")
     ],
     format: Annotated[str, tp.Option("--format", "-f", help="File format")],
+    is_file_for_validation: Annotated[
+        bool, tp.Option("--validation", "-v", help="Is file for validation")
+    ] = False,
 ):
     yolo_config = Path(yolo_config)
     if not yolo_config.exists():
@@ -233,6 +233,8 @@ def cluster(
         for key in results_yaml:
             if key not in ["collectra_results_metadata", "specimen_sheet"]:
                 label = results_yaml[key]
+                if key not in class_counts:
+                    class_counts[key] = 0
                 if isinstance(label, list):
                     class_counts[key] += len(label)
                 else:
