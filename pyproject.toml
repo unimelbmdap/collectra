@@ -29,6 +29,7 @@ markdown = "^3.9"
 pytz = "^2025.2"
 langchain-chroma = "^1.0.0"
 llmloader = "^0.1.5"
+transformers = "^4.57.3"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=6.2.5"

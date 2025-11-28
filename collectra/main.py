@@ -15,19 +15,68 @@ Example:
     $ collectra run --workflow pipeline.yaml --task detection
 """
 
-import os, shutil, logging, sys, typer, yaml, traceback
+import os, shutil, logging, sys, typer, yaml, traceback, tempfile
 
 from datetime import datetime
 from pathlib import Path
 from typing_extensions import Annotated
+from typing import List
 
 from collectra import Collectra, Editor
+
+from collectra.utils import change_dir, load_class_from_string
+
+
+from imcluster.io import ImclusterIO
+from imcluster.features import build_features
+from imcluster.pca import fit_pca
+from imcluster.cluster import cluster
+from imcluster.plotting import plot
+from imcluster.html import write_html
+
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(stream=sys.stdout)
 
 app = typer.Typer()
 
+def clusterer(
+        inputs:list[Path],
+        output_df:Path,
+        output_html:Path = None,
+        model:str = typer.Option("vgg19", help="The name of the torchvision model to use (see https://pytorch.org/vision/stable/models.html#)."),
+        max_images:int = None,
+        algorithm:str = "SPECTRAL",
+        n_clusters:int = 20,
+        batch_size:int = 1,
+        thumbnail_width:int = 256,
+        thumbnail_height:int = 256,
+        force:bool = False,
+        force_features:bool = False,
+        force_pca:bool = False,
+        force_cluster:bool = False,
+        force_thumbnails:bool = False,
+    ):    
+        imcluster_io = ImclusterIO(inputs, output_df, max_images=max_images)
+        feature_vectors = build_features(
+            imcluster_io, model_name=model, force=force or force_features
+        )
+
+        fit_pca(imcluster_io, feature_vectors, force=force or force_features or force_pca)
+
+        cluster(
+            imcluster_io,
+            feature_vectors,
+            algorithm=algorithm,
+            n_clusters=n_clusters,
+            force=force or force_features or force_cluster,
+        )
+        # save_clusters(
+        # imcluster_io=imcluster_io, output_dir=output_path, algorithm=algorithm
+        # )
+        plot(imcluster_io, output_html, thumbnail_height=thumbnail_height, thumbnail_width=thumbnail_width, force_thumbnails=force_thumbnails)
+        write_html(imcluster_io)
+        return imcluster_io.images.copy(), feature_vectors
 
 def resolve_workflow_path(workflow: Path) -> Collectra:
     with open(workflow / "pipeline.yaml", "r") as f:
@@ -175,6 +224,96 @@ def view(
     except Exception as e:
         traceback.print_exc()
 
+@app.command()
+def cluster_images(    
+    inputs: List[Path],
+    label: str = typer.Option("image_clustering", help="The label for the clustering task."),
+    format: str = typer.Option("grapto", help="The output format for the clustered data (e.g., 'parquet', 'csv')."),
+    output_df: Path = Path.cwd() / Path("clustered_images.parquet"),
+    output_html:Path = None,
+    model:str = typer.Option("vgg19", help="The name of the torchvision model to use (see https://pytorch.org/vision/stable/models.html#)."),
+    max_images:int = None,
+    algorithm:str = "SPECTRAL",
+    n_clusters:int = 20,
+    batch_size:int = 1,
+    thumbnail_width:int = 256,
+    thumbnail_height:int = 256,
+    force:bool = False,
+    force_features:bool = False,
+    force_pca:bool = False,
+    force_cluster:bool = False,
+    force_thumbnails:bool = False,
+):
+    try:
+        input_images = []
+        for path in inputs:
+            path = Path(path)
+            # If it is a text file, then read each line as an image
+            if path.is_dir() and (path / "results.yaml").exists():
+                input_images.append(path)
+            elif path.suffix.lower() == ".txt":
+                with open(path) as f:
+                    paths_in_file = [Path(line.strip()) for line in f.readlines()]
+                    input_images += [x for x in paths_in_file if Path(x).is_dir() and (Path(x) / "results.yaml").exists()]
+            elif path.is_dir() and not (path / "results.yaml").exists():                
+                for image_path in path.rglob(f"*.{format}"):
+                    if image_path.is_dir() and (image_path / "results.yaml").exists():
+                        input_images.append(image_path)
+
+        skipped_images = []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            for img_path in input_images:
+                with change_dir(img_path):
+                    with open("results.yaml", "r") as f:
+                        results = yaml.safe_load(f)
+                    if label not in results:
+                        print(f"Label {label} not found in {img_path}/results.yaml. Skipping...")
+                        skipped_images.append(img_path)
+                        continue
+                    values = results[label] if isinstance(results[label], list) else [results[label]]
+                    for item in values:
+                        if "path" not in item and "data" not in item:
+                            print(f"Invalid format in {img_path}/results.yaml for label {label}. No data or path found. Skipping...")
+                            skipped_images.append(img_path)
+                            continue
+                        item["data"] = Path(item.pop("path")) if "path" in item else Path(item["data"])
+                        cls_ = load_class_from_string(item.pop("type"))
+                        item["name"] = label
+                        img = cls_(**item)                        
+                        img.pil().save(temp_path / f"{img_path.stem}-{img.id}.{img.ext.lower()}")
+
+            file_inputs = [file for file in temp_path.iterdir() if file.is_file()]            
+        
+            images, features = clusterer(
+                file_inputs,
+                output_df,
+                output_html,
+                model,
+                max_images,
+                algorithm,
+                n_clusters,
+                batch_size,
+                thumbnail_width,
+                thumbnail_height,
+                force,
+                force_features,
+                force_pca,
+                force_cluster,
+                force_thumbnails,
+            )
+
+        print(f"Clustering completed. Processed {len(images)} images.")
+        if skipped_images:
+            print(f"Skipped {len(skipped_images)} images due to missing label '{label}':")
+            for skipped in skipped_images:
+                print(f" - {skipped}")
+        
+    except Exception as e:
+        traceback.print_exc()
+        print(f"Error during clustering: {e}")
 
 if __name__ == "__main__":
     app()

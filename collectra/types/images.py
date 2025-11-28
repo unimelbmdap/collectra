@@ -44,7 +44,8 @@ class Image(Data):
     data: str | Path | ImagePil.Image = field(default="")  # Path to the image file
     raw_width: int = field(init=False, default=0)  # Image width in pixels
     raw_height: int = field(init=False, default=0)  # Image height in pixels
-    ext: str | None = field(default="")  # Image format (e.g., PNG, JPEG)   
+    ext: str | None = field(default="")  # Image format (e.g., PNG, JPEG)
+    embeddings: str | list[str] = field(default_factory=list)  # Optional embedding data
 
     def attributes_to_ignore(self):
         attributes = super().attributes_to_ignore()
@@ -83,6 +84,8 @@ class Image(Data):
             self.data = Path.cwd() / self.data        
         if not self.data.exists() or not self.data.is_file():
             raise FileNotFoundError(f"Image file not found: {self.data}")
+        if not isinstance(self.embeddings, list):
+            self.embeddings = [self.embeddings]
         with ImagePil.open(self.data) as imf:            
             self.raw_width, self.raw_height = imf.size
             self.ext = imf.format
