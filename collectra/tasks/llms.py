@@ -131,19 +131,31 @@ class LLM(Task):
         prompt, pattern, _ = self.get_pattern_matches()
         messages: list[str | dict] = list()
 
-        for value in args:
+        while re.search(pattern, prompt):
             match = next(re.finditer(pattern, prompt))
             start, end = match.span()
+            item = match[1].strip()
+            replaced = False
             if prompt[:start]:
                 messages.append(self._add_text(prompt[:start]))
-            messages.append(self._add_content(value))
-            prompt = prompt[end:].strip()
+            for arg in args:                
+                key = arg.name
+                if key == item:
+                    messages.append(self._add_content(arg))
+                    replaced = True
+                    break
+            if not replaced:
+                messages.append(self._add_text(f"No content provided for {item}. Ignore this part."))
+            prompt = prompt[end:]
+        
         if prompt:
-            messages.append(self._add_text(prompt.strip()))       
+            messages.append(self._add_text(prompt))
+
         self.messages.append(HumanMessage(content=messages))                                                   
 
-        response = self.chain.invoke(self.messages)
         
+        response = self.chain.invoke(self.messages)
+
         name = (
             f"{self.get_name()}_output"
             if not hasattr(self, "output")
