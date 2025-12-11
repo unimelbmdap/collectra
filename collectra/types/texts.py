@@ -5,6 +5,8 @@ from io import StringIO
 
 from .base import Data
 
+from difflib import SequenceMatcher
+
 __all__ = ["Text"]
 
 
@@ -32,8 +34,8 @@ def unmark(text):
 
 @dataclass
 class Text(Data):
-
-    data: str | Path = field(default="")
+    
+    data: str | Path = field(default="")    
 
     def __post_init__(self):
         super().__post_init__()
@@ -49,8 +51,8 @@ class Text(Data):
     def __call__(self) -> str | Path:
         return self.data
 
-    # def serialize(self) -> dict:
-    #     serialized = super().serialize()
-    #     if "data" in serialized:
-    #         serialized["data"] = unmark(serialized["data"])
-    #     return serialized
+    def eval(self, gold: "Text") -> dict:
+        if not isinstance(gold, Text):
+            raise ValueError("Reference data must be an instance of Text.")        
+        ratio = SequenceMatcher(None, str(self.data), str(gold.data)).ratio()
+        return ratio    

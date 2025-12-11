@@ -1,7 +1,7 @@
-from abc import abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 import yaml, uuid
+import numpy as np
 from rich import print
 
 from collectra.commons import BaseEntity, Node, NodeStatus
@@ -35,6 +35,9 @@ class Data(BaseEntity):
                 serialized["parents"] = serialized["parents"][0]            
         return serialized
 
+    def eval(self, gold: "Data") -> dict:
+        raise NotImplementedError("Eval method not implemented for base Data class.")
+
     def _generate_id(self) -> str:
         # Generate a unique ID based on the name and other attributes
         return f"{self.name}-{uuid.uuid4()}"
@@ -46,7 +49,7 @@ class Data(BaseEntity):
     def attributes_to_ignore(self) -> set:
         attributes = super().attributes_to_ignore()
         attributes.add("name")
-        attributes.add("validation")
+        attributes.add("validation")        
         return attributes
 
     @classmethod
@@ -58,7 +61,6 @@ class Data(BaseEntity):
                 if not attribute.startswith("_") and not callable(attribute)
             ]
         )
-
 
 @dataclass
 class DataNode(Node):
@@ -86,7 +88,20 @@ class DataNode(Node):
         types_str = "\n".join([t.get_class_path() for t in self.types])
         return f"{self.name}\n{types_str}"
 
+    def eval(self, gold_items: "DataNode"):         
+        evaluation_matrix = np.array([[0.0 for _ in gold_items.items.items()] for _ in self.items.items()])
+        for item_key, item in self.items.items():
+            for gold_key, gold_item in gold_items.items.items():                
+                evaluation_matrix[self.items[item_key], gold_items.items[gold_key]] = item.eval(gold_item)
+        # Start finding the highest scores and matching them
+        matched_items = []
+        while len(matched_items) < len(gold_items.items.items()):
+            max_val = evaluation_matrix.max()
+            item_idx, gold_idx = np.unravel_index(evaluation_matrix.argmax(), evaluation_matrix.shape)
+
+
     def process(self, key: str, value: str | Path | None = None, **kwargs) -> None:
+        verbose = kwargs.get("verbose", False)
         value = value if value else kwargs.get("file", None)               
         if value and Path(value).exists() and Path(value).is_dir():
             value = Path(value)
@@ -132,7 +147,7 @@ class DataNode(Node):
                                     raise Warning(f"Failed to load {item} with {cls_}")
                                 self.add_item(instance)
                             except Exception as e:
-                                traceback_error(e, f"Failed to load data item: {e}")                                
+                                traceback_error(e, f"Failed to load data item: {e}", verbose=verbose)
                                 if primitive_type:
                                     print("Primitive type value found, loading it as Text...")
                                     for cls_ in self.types:
@@ -140,17 +155,17 @@ class DataNode(Node):
                                             instance = cls_(key, data=str(item))
                                             self.add_item(instance)                                            
                                         except Exception as e:
-                                            traceback_error(e, f"Failed to load data: {e}")                                    
+                                            traceback_error(e, f"Failed to load data: {e}", verbose=verbose)                                    
 
                 except Exception as e:
-                    traceback_error(e, f"Failed to load data: {e}")
+                    traceback_error(e, f"Failed to load data: {e}", verbose=verbose)
         elif key:                     
             for cls_ in self.types:
                 try:                                        
                     instance = cls_(key, data=value)
                     self.add_item(instance)
                 except Exception as e:
-                    traceback_error(e, f"Failed to load data: {e}")
+                    traceback_error(e, f"Failed to load data: {e}", verbose=verbose)
 
     @staticmethod
     def batch_process(
