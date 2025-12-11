@@ -9,6 +9,8 @@ Classes:
 
 __all__ = ["Task", "TaskNode"]
 
+import re
+
 from typing import Generic
 from dataclasses import dataclass
 from itertools import product
@@ -43,14 +45,30 @@ class Task(BaseEntity, Generic[T]):
             input_dict = {k: [] for k in input_list}
         return input_dict
     
-    def prepare_inputs(self, parents: list) -> list:        
-        input_dict = self.input_dict
+    def prepare_inputs(self, parents: list) -> list:                        
+        input_dict = self.input_dict      
+        input_keys = list(input_dict.keys())
         for parent in parents:
             if parent.name in input_dict:
                 input_dict[parent.name].extend(parent.items.values())    
-        value_lists = [inputs for inputs in input_dict.values()]
-        all_combinations = list(product(*value_lists))
-        entries = [list(combination) for combination in all_combinations]
+        value_lists = [inputs for inputs in input_dict.values()]        
+        entries = [list(combination) for combination in list(product(*value_lists))]
+        entries_to_remove = []
+        
+        for entry_id, entry in enumerate(entries):
+            entry_items_by_key = {f"{item.name}": item for item in entry}            
+            is_valid = True
+            for item in entry:                
+                for parent_id in item.parents:
+                    parent_key = re.sub("-.*", "", parent_id)
+                    if parent_key in input_keys:
+                        if parent_key not in entry_items_by_key or entry_items_by_key[parent_key].id != parent_id:
+                            is_valid = False
+                            break            
+            if not is_valid:
+                entries_to_remove.append(entry_id)
+
+        entries = [entry for id, entry in enumerate(entries) if id not in entries_to_remove]        
         return entries
 
     def run(self, *args) -> T:

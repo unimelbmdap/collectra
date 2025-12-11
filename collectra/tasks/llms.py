@@ -16,7 +16,7 @@ Classes:
 
 __all__ = ["LLM"]
 
-import llmloader, re
+import llmloader, re, copy
 
 from dotenv import load_dotenv
 from langchain_core.output_parsers import StrOutputParser
@@ -64,22 +64,11 @@ class LLM(Task):
             else SystemMessage(content="You are a helpful assistant.")
         )
         self.messages: list[SystemMessage | HumanMessage] = [init_messages]
-
-    def prepare_inputs(self, parents: list) -> list[list]:        
-        input_dict = self.input_dict
-        for parent in parents:
-            if parent.name in input_dict:
-                input_dict[parent.name].extend(parent.items.values())    
-        value_lists = [inputs for inputs in input_dict.values()]
-        all_combinations = list(product(*value_lists))
-        entries = [list(combination) for combination in all_combinations]
-        return entries
     
     def get_pattern_matches(self) -> tuple:
         prompt = f"{self.preamble}\n\n{self.template}".strip()        
-        pattern = r"\{(.*?)\}"
-        matches = list(re.finditer(pattern, prompt))
-        return prompt, pattern, matches
+        pattern = r"\{(.*?)\}"        
+        return prompt, pattern
 
     def image_content(self, image: Image):
         """Create image content dictionary for multimodal LLM input.
@@ -108,6 +97,49 @@ class LLM(Task):
 
     def _add_text(self, text: str) -> dict:
         return {"type": "text", "text": text}
+    
+    def pre_run(self) -> tuple:
+        self.messages = self.messages[:1]  # Reset to initial system message
+        prompt, pattern = self.get_pattern_matches()
+        return prompt, pattern
+
+    def check_inputs(self, *args: Text | Image) -> None:
+        """Validate that the messages are not longer than the expected number of inputs."""
+        residual_inputs = len(args)
+        assert len(self.messages) == 2, "Expected one system message and one human message."
+        human_message = self.messages[1]
+        for content in human_message.content:
+            if isinstance(content, dict) and (content.get("type") == "image" or content.get("type") == "text"):
+                residual_inputs -= 1
+        assert residual_inputs <= 0, "Number of inputs does not match the expected count"
+
+
+    def replace_inputs(self, pattern: str, prompt: str, *args: Text | Image, **kwargs) -> list[str | dict]:
+        messages: list[str | dict] = list()
+        while re.search(pattern, prompt):
+            match = next(re.finditer(pattern, prompt))
+            start, end = match.span()
+            item = match[1].strip()
+            replaced = False
+            if prompt[:start]:
+                messages.append(self._add_text(prompt[:start]))
+            for arg in args:                
+                key = arg.name
+                if key == item:
+                    messages.append(self._add_content(arg))
+                    replaced = True
+                    break
+            if item == "entities" and kwargs.get("entities", None):
+                replaced = True
+                messages.append(self._add_text(kwargs["entities"]))
+            if not replaced:
+                messages.append(self._add_text(f"No content provided for {item}. Ignore this part."))
+            prompt = prompt[end:].strip()
+        
+        if prompt:
+            messages.append(self._add_text(prompt))
+        
+        return messages
 
     def run(self, *args: Text | Image) -> Text:
         """Execute LLM inference on the provided inputs with template-based prompt generation.
@@ -126,35 +158,15 @@ class LLM(Task):
             that contain the input key as a substring will be populated with LLM results.
             Prints a success message when inference completes.
         """                
+        prompt, pattern = self.pre_run()                
 
+        messages = self.replace_inputs(pattern, prompt, *args)
+             
+        self.messages.append(HumanMessage(content=messages))     
 
-        prompt, pattern, _ = self.get_pattern_matches()
-        messages: list[str | dict] = list()
+        self.check_inputs(*args)
 
-        while re.search(pattern, prompt):
-            match = next(re.finditer(pattern, prompt))
-            start, end = match.span()
-            item = match[1].strip()
-            replaced = False
-            if prompt[:start]:
-                messages.append(self._add_text(prompt[:start]))
-            for arg in args:                
-                key = arg.name
-                if key == item:
-                    messages.append(self._add_content(arg))
-                    replaced = True
-                    break
-            if not replaced:
-                messages.append(self._add_text(f"No content provided for {item}. Ignore this part."))
-            prompt = prompt[end:]
-        
-        if prompt:
-            messages.append(self._add_text(prompt))
-
-        self.messages.append(HumanMessage(content=messages))                                                   
-
-        
-        response = self.chain.invoke(self.messages)
+        response = self.chain.invoke(self.messages)        
 
         name = (
             f"{self.get_name()}_output"
