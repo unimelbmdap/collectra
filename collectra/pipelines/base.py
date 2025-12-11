@@ -17,12 +17,15 @@ Classes:
 
 __all__ = ["Collectra"]
 
-import logging, yaml, graphviz, copy, datetime, shutil, os, json
+import logging, yaml, graphviz, copy, datetime, shutil, time, json
 import networkx as nx
 from pathlib import Path
 from rich.progress import track
 from rich import print
 from ultralytics.utils.metrics import DetMetrics
+
+from matplotlib import pyplot as plt
+from matplotlib.animation import FuncAnimation
 
 
 from collectra import (
@@ -34,7 +37,7 @@ from collectra import (
     DataNode,
     MachineLearningTask,
 )
-from collectra.utils import load_class_from_string, change_dir
+from collectra.utils import load_class_from_string, change_dir, remove_exif
 from utils.get_types import get_param_types, get_return_type, unpack_types
 
 logger = logging.getLogger(__name__)
@@ -124,12 +127,56 @@ class Collectra:
                 is_root = self._check_is_root(task_node.name)
                 if is_root:
                     starting_nodes.append(task_node)
-        single = kwargs.pop("single", False)                    
-        output = kwargs.pop("output", None)                        
-        for key, value in kwargs.items():
+        single = kwargs.pop("single", False)
+        files = kwargs.pop("files", [])  
+        verbose = kwargs.pop("verbose", False)      
+        for value in files:
+            key = "file" if Path(value).suffix == f".{self.ext}" else "specimen_sheet"
+            key, value = self._create_collectra_file(key, value)            
             input = {key: value}
-            self._init_input_data(starting_nodes, **input)                   
-            self._run_nodes(starting_nodes, single=single, key=key, value=value)   
+            self._init_input_data(starting_nodes, **input, verbose=verbose)   
+            self.render("workflow_run", file=str(value))          
+            self._run_nodes(starting_nodes, single=single, key=key, value=value)            
+
+    def _create_collectra_file(self, key: str, value: str | Path) -> tuple[str, str | Path]:                
+        if not key or not value:
+            raise ValueError("Both key and value must be provided for input data.")
+        savef = Path(value)        
+        if not savef.exists():
+            raise FileNotFoundError(f"Path {savef} does not exist.")
+        if savef.is_dir() and (savef / "results.yaml").exists():     
+            # remove exif data from images in the directory
+            for img_file in savef.glob("*"):                
+                if img_file.suffix.lower() in [".jpeg", ".jpg", ".png", ".bmp", ".tiff"]:
+                    remove_exif(img_file, img_file)
+            return key, value
+        if savef.is_file() and savef.suffix in [".jpeg", ".jpg", ".png", ".bmp", ".tiff"]:
+            file_path = savef
+            savef = savef.parent / Path(
+                savef.name.replace(savef.suffix, f".{self.ext}")
+            )
+            savef.mkdir(parents=True, exist_ok=True)                                            
+            remove_exif(file_path, file_path)
+            shutil.copy(file_path, savef / file_path.name)
+        if savef.is_dir():
+            with change_dir(savef):
+                results = dict()
+                results["collectra_results_metadata"] = {
+                    "workflow": self.name,
+                    "version": self.version,
+                    "timestamp": datetime.datetime.now().isoformat(),
+                }
+                results[key] = {
+                    "type": "collectra.Image",
+                    "id": f"{key}",
+                    "data": value.name if isinstance(value, Path) else str(value),
+                }                
+                resultsf = Path("results.yaml")
+                with open(resultsf, "w") as f:
+                    for file_key, data in results.items():
+                        yaml.dump({file_key: data}, f, sort_keys=False, allow_unicode=True)
+                        f.write("\n")              
+        return "file", savef
 
     def _populate_active_paths(self, nodes: list[TaskNode | DataNode], **kwargs):        
         for node in nodes:
@@ -141,7 +188,7 @@ class Collectra:
             self._populate_active_paths(children, **kwargs)                
 
     def _init_input_data(self, starting_nodes: list[TaskNode | DataNode], **kwargs): 
-        self._wipe_data_nodes()
+        self._reset_nodes()
         self.connect()                                         
         for node in starting_nodes:
             parents = self._get_parents_data(node)            
@@ -151,21 +198,20 @@ class Collectra:
         self._populate_active_paths(starting_nodes, **kwargs)         
                
 
-    def _wipe_data_nodes(self):
+    def _reset_nodes(self):
         # Reset all data nodes in the workflow
-        data_nodes = [
-            node["node"]
-            for node in self.flow.nodes.values()
-            if isinstance(node["node"], DataNode)
-        ]
-        for data_node in data_nodes:
-            data_node.items = dict()
-            data_node.status = NodeStatus.NOT_READY
+        nodes = [node["node"]for node in self.flow.nodes.values()]
+        for node in nodes:
+            if isinstance(node, DataNode):
+                node.items = dict()
+                node.status = NodeStatus.NOT_READY
+            if isinstance(node, TaskNode):
+                node.status = NodeStatus.NOT_READY
 
     def save_run(self, key: str, value: str | Path, data_node: DataNode | None = None):  
 
         if not key or not value:
-            print("[yellow]No save location specified, skipping save.[/yellow]")
+            print("[yellow]No save location specified, skipping save.[/yellow]")            
             return
 
         savef = Path(value)     
@@ -178,13 +224,7 @@ class Collectra:
 
         if data_node is not None and not data_node.status == NodeStatus.READY:
             print(f"[yellow]No new data for {data_node.name}, skipping save.[/yellow]")
-            return
-
-        if savef.is_file():
-            savef = savef.parent / Path(
-                savef.name.replace(savef.suffix, f".{self.ext}")
-            )
-            savef.mkdir(parents=True, exist_ok=True)
+            return        
 
         if savef.is_dir():
             with change_dir(savef):
@@ -201,6 +241,10 @@ class Collectra:
                         "workflow": self.name,
                         "version": self.version,
                         "timestamp": datetime.datetime.now().isoformat(),
+                    }
+                    results[key] = {
+                        "type": "collectra.Image",
+                        "data": value.name if isinstance(value, Path) else str(value),
                     }
 
                 for data_node in data_nodes:
@@ -221,8 +265,7 @@ class Collectra:
                     for file_key, data in results.items():
                         yaml.dump({file_key: data}, f, sort_keys=False, allow_unicode=True)
                         f.write("\n")                
-            if Path(value).is_file():
-                shutil.copy(Path(value), savef / Path(value).name)
+            
         if data_node:
             print(f"Results saved to [green]{savef}[/green] for [blue]{data_node.name}[/blue]")
         else:
@@ -262,33 +305,44 @@ class Collectra:
         **kwargs,
     ):
         single_run = kwargs.get("single", False)
-        child_tasks_of_data_nodes = dict()
+        child_tasks_of_data_nodes = dict()         
+        for node in nodes:
+            graph_node = self.flow.nodes[str(node.name)]
+            graph_node["color"] = "orange"
+            graph_node["fontcolor"] = "black"
+        self.render("workflow_run", file=kwargs.get("value", ""))
         for node in nodes:
             if isinstance(node, TaskNode):
-                if not self._check_task_ready(node) == NodeStatus.READY:                    
+                if not self._check_task_ready(node) == NodeStatus.READY:
                     print(f"[yellow]Task {node.name} is not ready, skipping.[/yellow]")
-                    continue                                
-                results: list = self._run_task(node, **kwargs)
+                    continue                                                
                 children = list(self.flow.successors(str(node.name)))
-                children = [self._resolve_node(child) for child in children]                
-                self._run_nodes(children, *results, **kwargs)
-            elif isinstance(node, DataNode):                                    
+                children = [self._resolve_node(child) for child in children]                                                                        
+                results: list = self._run_task(node, **kwargs)                                
+                self.flow.nodes[str(node.name)]["color"] = "green" if results else "red"
+                self.flow.nodes[str(node.name)]["fontcolor"] = "black"            
+                self.render("workflow_run", file=kwargs.get("value", ""))
+                self._run_nodes(children, *results, **kwargs)                
+            elif isinstance(node, DataNode):                                                    
                 for arg in args:
                     if not isinstance(arg, Data):
                         continue                    
                     if node.name == arg.get_name() and node.check_type(type(arg)):                        
-                        self._check_existing(node, arg)  
+                        self._check_existing(node, arg)                                          
                 self.save_run(kwargs.get("key", ""), kwargs.get("value", ""), data_node=node)                   
+                self.flow.nodes[str(node.name)]["color"] = "green" 
+                self.flow.nodes[str(node.name)]["fontcolor"] = "black"            
+                self.render("workflow_run", file=kwargs.get("value", ""))
                 children = list(self.flow.successors(str(node.name)))
                 children = [self._resolve_node(child) for child in children]                
                 for child in children:
                     if not isinstance(child, TaskNode):
                         continue
                     if child.name not in child_tasks_of_data_nodes and not single_run:
-                        child_tasks_of_data_nodes[child.name] = child
-        
-        child_tasks = self._check_tasks_ready(list(child_tasks_of_data_nodes.values()))   
-        if child_tasks:
+                        child_tasks_of_data_nodes[child.name] = child                            
+
+        child_tasks = self._check_tasks_ready(list(child_tasks_of_data_nodes.values()))        
+        if child_tasks:            
             self._run_nodes(child_tasks, *args, **kwargs)
 
     def _check_task_ready(self, task_node: TaskNode) -> NodeStatus:
@@ -344,7 +398,7 @@ class Collectra:
             node.add_item(new_item)
                     
 
-    def _run_task(self, task_node: TaskNode, **kwargs) -> list:        
+    def _run_task(self, task_node: TaskNode, **kwargs) -> list:         
         task = task_node.get_task()        
         assert isinstance(task, Task), f"Node {task_node.name} is not a Task"        
         print(f"Attempting to run task: [blue]{task.name}[/blue]")        
@@ -359,7 +413,7 @@ class Collectra:
                 if not isinstance(entry, list):
                     entry = list(entry)
                 entry_result = self._execute_entries(entry, task)
-                results.extend(entry_result)                              
+                results.extend(entry_result)                                        
         return results
     
     def _execute_entries(self, entries: list[Data], task: Task) -> list[Data]:        
@@ -482,7 +536,7 @@ class Collectra:
                     continue
                 cls_ = load_class_from_string(data.pop("type"))
                 data = self._check_data_assignment(self.data, data)
-                obj = cls_(name, **data)
+                obj = self.flow.nodes[name]["node"].get_task() if issubclass(cls_, Task) and self.flow.nodes.get(name, None) else cls_(name, **data)                    
                 if isinstance(obj, Task):
                     task_key = obj.name
                     relations[task_key] = {
@@ -511,6 +565,8 @@ class Collectra:
     def _add_task_node(self, name: str, obj: Task):
         node = self.flow.nodes.get(name, None)
         if node:
+            node["color"] = "blue"
+            node["fontcolor"] = "white"
             return
         node = TaskNode(name, obj)
         self.flow.add_node(
@@ -527,6 +583,9 @@ class Collectra:
         self, name, obj: Data | None = None, types: list[type] | set[type] = []
     ):
         node = self.flow.nodes.get(name, None)
+        if node:
+            node["color"] = "salmon"
+            node["fontcolor"] = "black"
         if len(types) == 0 and obj:
             types = set([type(obj)])        
         if not node:
@@ -541,27 +600,30 @@ class Collectra:
                 color="salmon",
                 fontcolor="black",
                 style="filled",
-            )
+            )        
         elif obj:            
-            data_node: DataNode = node["node"]            
+            data_node: DataNode = node["node"]                        
             if not isinstance(data_node, DataNode):
-                return
+                return        
             if type(obj) not in data_node.types:
                 return
             data_node.add_item(obj)
-            data_node.types = data_node.types.union(set(types))
-                
+            data_node.types = data_node.types.union(set(types))                    
 
 
-    def render(self, dest: str | Path = ""):
+    def render(self, dest: str | Path = "", file=""):
         if self.flow.number_of_nodes() == 0:
             self.connect()
         visual_graph: nx.DiGraph = self.flow.copy()
         for node_id in visual_graph.nodes:
             node_data = visual_graph.nodes[node_id]
             if "node" in node_data:
-                del node_data["node"]  # Remove the 'node' attribute for visualization
+                del node_data["node"]  # Remove the 'node' attribute for visualization            
         dot_str: str = nx.nx_pydot.to_pydot(visual_graph).to_string()
         if not dest:
             dest = self.path / f"workflow"
+        if file:
+            title = f"{self.name} Workflow - Processing: {file}"
+            dot_str = dot_str.replace("{", f'{{\nlabel="{title}";\nlabelloc="t";\nfontsize=20;\n\n', 1)
         graphviz.Source(dot_str).render(filename=dest, format="svg", cleanup=True)
+        time.sleep(0.1)
