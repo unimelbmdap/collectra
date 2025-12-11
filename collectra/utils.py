@@ -28,13 +28,14 @@ from contextlib import contextmanager
 from typing import List
 from pathlib import Path
 from tqdm import tqdm
-from PIL import Image as ImagePil
 from rich import print
 
 
-def traceback_error(e: Exception, message: str):
-    traceback.print_exc()
-    print(error_msg(f"{message}\n{e}"))    
+def traceback_error(e: Exception, message: str, verbose: bool = False):    
+    if verbose:
+        traceback.print_exc()
+        print(e)
+    print(f"{message}\n")    
 
 
 def success_msg(message: str):
@@ -174,9 +175,6 @@ def from_dir(path: Path, config: str = "pipeline.yaml") -> dict:
         return data
 
 
-
-
-
 def load_class_from_string(path: str | None):
     """Dynamically load a class from a string module path.
 
@@ -207,3 +205,21 @@ def change_dir(path: Path):
         yield
     finally:
         os.chdir(original)
+
+def remove_exif(image_path: Path, save_path: Path):
+    """Remove EXIF data from an image and save the cleaned image.
+
+    Opens an image file, removes any embedded EXIF metadata, and saves
+    the cleaned image to the specified path.
+
+    Args:
+        image_path (Path): Path to the original image file.
+        save_path (Path): Path to save the image without EXIF data.
+    """
+    from PIL import Image as PILImage
+
+    with PILImage.open(image_path) as img:
+        data = list(img.getdata())
+        image_no_exif = PILImage.new(img.mode, img.size)
+        image_no_exif.putdata(data)        
+        image_no_exif.save(save_path, format=img.format if img.format else "JPEG")
