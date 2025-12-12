@@ -1399,6 +1399,18 @@ files = [
 ]
 
 [[package]]
+name = "filetype"
+version = "1.2.0"
+description = "Infer file type and MIME type of any file/buffer. No external dependencies."
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "filetype-1.2.0-py2.py3-none-any.whl", hash = "sha256:7ce71b6880181241cf7ac8697a2f1eb6a8bd9b429f7ad6d27b8db9ba5f1c2d25"},
+    {file = "filetype-1.2.0.tar.gz", hash = "sha256:66b56cd6474bf41d8c54660347d37afcc3f7d1970648de365c102ef77548aadb"},
+]
+
+[[package]]
 name = "flatbuffers"
 version = "25.9.23"
 description = "The FlatBuffers serialization format for Python"
@@ -1712,6 +1724,7 @@ files = [
 [package.dependencies]
 cachetools = ">=2.0.0,<7.0"
 pyasn1-modules = ">=0.2.1"
+requests = {version = ">=2.20.0,<3.0.0", optional = true, markers = "extra == \"requests\""}
 rsa = ">=3.1.4,<5"
 
 [package.extras]
@@ -1723,6 +1736,34 @@ reauth = ["pyu2f (>=0.1.5)"]
 requests = ["requests (>=2.20.0,<3.0.0)"]
 testing = ["aiohttp (<3.10.0)", "aiohttp (>=3.6.2,<4.0.0)", "aioresponses", "cryptography (<39.0.0) ; python_version < \"3.8\"", "cryptography (<39.0.0) ; python_version < \"3.8\"", "cryptography (>=38.0.3)", "cryptography (>=38.0.3)", "flask", "freezegun", "grpcio", "mock", "oauth2client", "packaging", "pyjwt (>=2.0)", "pyopenssl (<24.3.0)", "pyopenssl (>=20.0.0)", "pytest", "pytest-asyncio", "pytest-cov", "pytest-localserver", "pyu2f (>=0.1.5)", "requests (>=2.20.0,<3.0.0)", "responses", "urllib3"]
 urllib3 = ["packaging", "urllib3"]
+
+[[package]]
+name = "google-genai"
+version = "1.55.0"
+description = "GenAI Python SDK"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "google_genai-1.55.0-py3-none-any.whl", hash = "sha256:98c422762b5ff6e16b8d9a1e4938e8e0ad910392a5422e47f5301498d7f373a1"},
+    {file = "google_genai-1.55.0.tar.gz", hash = "sha256:ae9f1318fedb05c7c1b671a4148724751201e8908a87568364a309804064d986"},
+]
+
+[package.dependencies]
+anyio = ">=4.8.0,<5.0.0"
+distro = ">=1.7.0,<2"
+google-auth = {version = ">=2.14.1,<3.0.0", extras = ["requests"]}
+httpx = ">=0.28.1,<1.0.0"
+pydantic = ">=2.9.0,<3.0.0"
+requests = ">=2.28.1,<3.0.0"
+sniffio = "*"
+tenacity = ">=8.2.3,<9.2.0"
+typing-extensions = ">=4.11.0,<5.0.0"
+websockets = ">=13.0.0,<15.1.0"
+
+[package.extras]
+aiohttp = ["aiohttp (<3.13.3)"]
+local-tokenizer = ["protobuf", "sentencepiece (>=0.2.0)"]
 
 [[package]]
 name = "googleapis-common-protos"
@@ -2899,6 +2940,24 @@ typing-extensions = ">=4.7.0,<5.0.0"
 uuid-utils = ">=0.12.0,<1.0"
 
 [[package]]
+name = "langchain-google-genai"
+version = "4.0.0"
+description = "An integration package connecting Google's genai package and LangChain"
+optional = false
+python-versions = "<4.0.0,>=3.10.0"
+groups = ["main"]
+files = [
+    {file = "langchain_google_genai-4.0.0-py3-none-any.whl", hash = "sha256:42c592a222a075ce87f424d466ba6d39194eb58fbb9a84006c401d08034a4feb"},
+    {file = "langchain_google_genai-4.0.0.tar.gz", hash = "sha256:22b1546abe677ddea8daebf4be1de162266d278dd0643cdc2a24f45979e5cf8e"},
+]
+
+[package.dependencies]
+filetype = ">=1.2.0,<2.0.0"
+google-genai = ">=1.53.0,<2.0.0"
+langchain-core = ">=1.1.2,<2.0.0"
+pydantic = ">=2.0.0,<3.0.0"
+
+[[package]]
 name = "langchain-mistralai"
 version = "1.1.0"
 description = "An integration package connecting Mistral and LangChain"
@@ -3067,20 +3126,21 @@ vcr = ["vcrpy (>=7.0.0)"]
 
 [[package]]
 name = "llmloader"
-version = "0.1.7"
+version = "0.1.8"
 description = "Loads a Langchain LLM by model name as a string."
 optional = false
 python-versions = "<4.0,>=3.10"
 groups = ["main"]
 files = [
-    {file = "llmloader-0.1.7-py3-none-any.whl", hash = "sha256:166a5d0ca466963769fe94aef2f52a4eeae528d6110442303d20d81d6f057608"},
-    {file = "llmloader-0.1.7.tar.gz", hash = "sha256:11f54ac612c7ad239fc45358eae53635fbfdc36cf75275df68a1740931dd407c"},
+    {file = "llmloader-0.1.8-py3-none-any.whl", hash = "sha256:4748a0fc640fcea357099bcbfbe92079e96e3a764fd7fb488e0dea5c4786f352"},
+    {file = "llmloader-0.1.8.tar.gz", hash = "sha256:49b8b5de2012df6a483a3885be0bfe11e77b0f0058bc69d4289e12d6a64e0f89"},
 ]
 
 [package.dependencies]
 langchain = ">=0.2.1"
 langchain-anthropic = ">=0.2.4"
 langchain-community = ">=0.3.12"
+langchain-google-genai = ">=4.0.0,<5.0.0"
 langchain-mistralai = ">=0.2.9"
 langchain-openai = ">=0.1.8"
 langchain-xai = ">=0.2.1"
