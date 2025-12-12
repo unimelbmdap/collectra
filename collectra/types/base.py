@@ -114,7 +114,7 @@ class DataNode(Node):
                             "collectra_results_metadata", dict()
                         ).get("validation", None)
                         data = results.get(key, None)
-                        assert data, f"{key} could not be found in {value}"
+                        assert data, f"[red]{key}[/red] could not be found in {value}"
                         data = data if isinstance(data, list) else [data]
                         for item in data:           
                             primitive_type = False                                            
@@ -147,7 +147,7 @@ class DataNode(Node):
                                     raise Warning(f"Failed to load {item} with {cls_}")
                                 self.add_item(instance)
                             except Exception as e:
-                                traceback_error(e, f"Failed to load data item: {e}", verbose=verbose)
+                                traceback_error(e, verbose=verbose)
                                 if primitive_type:
                                     print("Primitive type value found, loading it as Text...")
                                     for cls_ in self.types:
@@ -155,17 +155,17 @@ class DataNode(Node):
                                             instance = cls_(key, data=str(item))
                                             self.add_item(instance)                                            
                                         except Exception as e:
-                                            traceback_error(e, f"Failed to load data: {e}", verbose=verbose)                                    
+                                            traceback_error(e, verbose=verbose)                                    
 
                 except Exception as e:
-                    traceback_error(e, f"Failed to load data: {e}", verbose=verbose)
+                    traceback_error(e, verbose=verbose)
         elif key:                     
             for cls_ in self.types:
                 try:                                        
                     instance = cls_(key, data=value)
                     self.add_item(instance)
                 except Exception as e:
-                    traceback_error(e, f"Failed to load data: {e}", verbose=verbose)
+                    traceback_error(e, verbose=verbose)
 
     @staticmethod
     def batch_process(
@@ -212,7 +212,8 @@ class DataNode(Node):
                                 except Exception as e:
                                     traceback_error(
                                         e,
-                                        f"Failed to load data item {name} from {item.get('data', '')}: {e}",
+                                        f"Failed to load data item {name} from {item.get('data', '')}",
+                                        verbose=True,                                        
                                     )
                         if found_base:
                             break                    
@@ -251,5 +252,5 @@ class DataNode(Node):
                             )
                 return data
             except Exception as e:
-                traceback_error(e, f"Failed to batch process data: {e}")            
+                traceback_error(e, verbose=True)            
                 return list()

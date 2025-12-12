@@ -31,11 +31,12 @@ from tqdm import tqdm
 from rich import print
 
 
-def traceback_error(e: Exception, message: str, verbose: bool = False):    
+def traceback_error(e: Exception, message: str = "", verbose: bool = False):    
     if verbose:
-        traceback.print_exc()
-        print(e)
-    print(f"{message}\n")    
+        traceback.print_exc()            
+    if message:
+        print(f"{message}\n")        
+    print(str(e))
 
 
 def success_msg(message: str):
