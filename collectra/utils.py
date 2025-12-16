@@ -23,9 +23,10 @@ Functions:
     crop: Crop images using specified coordinates
 """
 
+from weakref import ref
 import zipfile, yaml, os, importlib, traceback
 from contextlib import contextmanager
-from typing import List
+from typing import Annotated, List
 from pathlib import Path
 from tqdm import tqdm
 from rich import print
@@ -224,3 +225,197 @@ def remove_exif(image_path: Path, save_path: Path):
         image_no_exif = PILImage.new(img.mode, img.size)
         image_no_exif.putdata(data)        
         image_no_exif.save(save_path, format=img.format if img.format else "JPEG")
+
+def get_distance_matrix(
+    path: str,  
+    output: str,
+    model: str = "vgg19",
+):
+    """Compute the distance matrix for the embeddings"""
+    import pandas as pd
+    import numpy as np
+    import h5py
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+    from scipy.spatial.distance import pdist, squareform
+    try:
+        input = Path(path)
+        export = Path(output)
+        export.parent.mkdir(parents=True, exist_ok=True)
+        df = pd.read_parquet(input)
+        embeddings = np.stack(df[model].values)  # type: ignore
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            transient=False,
+        ) as progress:
+            progress.add_task("Computing distance matrix...", total=None)
+            distvec = pdist(embeddings, metric="euclidean")
+
+        indices = df.filenames.to_list()
+        with h5py.File(export, "w") as f:
+            f.create_dataset("distmatrix", data=squareform(distvec))
+            f.create_dataset("index", data=np.array(indices, dtype="S"))
+    except Exception as e:
+        print(f"Error computing distance matrix: {e}")
+
+
+def farthest_first(
+    ref: Path, selected_ids: list = [], k: int = 400, within: bool = False
+) -> list:
+    """Perform farthest-first traversal to select k diverse samples."""        
+    import h5py, random, numpy as np
+    from rich.progress import track
+    with h5py.File(ref, "r") as f:
+        dist_matrix = f["distmatrix"][:]
+        indices: list[str] = [s.decode("utf-8") for s in f["index"][:]]  # type: ignore       
+    new_ids = []
+    if within and selected_ids:
+        iterator = [indices.index(sid) for sid in selected_ids]
+        selected_ids = []
+    else: 
+        iterator = [i for i, _ in enumerate(indices)]         
+    if len(selected_ids) == 0:
+        random.seed(42)
+        choice = random.choice(iterator)
+        selected_ids = [choice]
+        new_ids.append(choice)
+        k = k - 1
+    else:
+        selected_ids = [indices.index(sid) for sid in selected_ids]    
+
+    for _ in track(range(k), description="Selecting diverse samples..."):
+        ids = [id for id in iterator if id not in selected_ids]
+        candidates = [(id, np.min(dist_matrix[id, selected_ids])) for id in ids]
+        next_id = max(candidates, key=lambda x: x[1])[0]
+        selected_ids.append(next_id)
+        new_ids.append(next_id)
+        k -= 1    
+    new_ids = [indices[sid] for sid in new_ids]
+    return new_ids
+
+def search(
+    reference: str,    
+    existing: str | list = "",
+    k: int = 100,
+    output: str = "",
+    new: bool = True,
+    within: bool = False,
+) -> list[str]:        
+    ref = Path(reference)      
+    if not ref.exists() or not ref.is_file():             
+        raise ValueError(f"Reference distance matrix file not found: {ref}")
+    selected_ids = existing if isinstance(existing, list) else []        
+    if isinstance(existing, str) and Path(existing).is_file() and Path(existing).suffix == ".txt":
+        f = open(existing, "r")
+        selected_ids = list(set([line.strip() for line in f if line.strip()]))
+        f.close()                            
+    new_ids = farthest_first(
+        ref,
+        selected_ids=selected_ids,
+        k=k,
+        within=within
+    )                   
+    new_ids = list(set(new_ids))
+    duplicates = [dup for dup in new_ids if dup in selected_ids]
+    if duplicates and not within:
+        raise ValueError(f"Duplicate IDs found in selection: {duplicates}")
+    if not new:
+        new_ids = list(set(selected_ids + new_ids))
+    if output:                        
+        Path(output).write_text("\n".join(new_ids))                                                            
+    return new_ids                
+    
+def is_image(file_path: Path) -> bool:
+    """Check if a file is an image based on its extension."""
+    image_extensions = [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif", ".webp"]
+    return file_path.suffix.lower() in image_extensions
+
+def convert_files(config_path: Path | str) -> None:
+    """Convert files based on the provided configuration.
+    """
+    from datetime import datetime
+    import pytz
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+    with change_dir(Path(config_path).parent):
+        root_label = config.get("root_label", None)
+        if not root_label:
+            raise Exception("root_label is required in the conversion config.")
+        format = config.get("format", None)
+        if not format:
+            raise Exception("format is required in the conversion config.")
+        names: list[str] = config.get("names", [])
+        if len(names) == 0:
+            raise Exception("names list is required in the conversion config.")
+        images = [image for image in Path(config.get("files", [])).rglob("*") if is_image(image)]
+        if len(images) == 0:
+            raise Exception(f"No images found")                
+        output_dir = Path(config.get("output", "converted_images"))
+        from rich.progress import track
+        output_dir.mkdir(parents=True, exist_ok=True)
+        train_split = config.get("train_split", None)
+        train_ids: list[str] = [image.name for image in images]
+        val_ids: list[str] = []
+        if train_split:
+            split_size = int(len(images) * (1-train_split))            
+            val_ids: list[str] = search(
+                config.get("reference", ""),
+                existing=train_ids,
+                k=split_size,                
+                within=True,
+            )              
+            unexpected_ids = [val_id for val_id in val_ids if val_id not in train_ids]            
+            if unexpected_ids:
+                raise ValueError(f"Validation IDs not found in original set: {unexpected_ids}")
+            train_ids = [tid for tid in train_ids if tid not in val_ids]      
+            if set(val_ids).issubset(set(train_ids)):
+                raise ValueError("Overlap found between training and validation IDs.")            
+        for image in track(images, description="Converting images"):
+            converted_file_path = output_dir / f"{image.stem}.{format}"
+            converted_file_path.mkdir(parents=True, exist_ok=True)                
+            remove_exif(image, converted_file_path / image.name)
+            results_yaml = {
+                "collectra_results_metadata": {
+                    "timestamp": datetime.now(pytz.utc).isoformat(),
+                    "validation": image.name in val_ids,
+                },
+                f"{root_label}": {"type": "collectra.Image", "data": image.name},
+            }
+            label_path = image.parent / f"{image.stem}.txt"
+            if label_path.exists():
+                with open(label_path, "r") as f:
+                    bboxes = [line.strip() for line in f if line.strip()]
+                for name in names:
+                    results_yaml[name] = []    
+                for bbox in bboxes:
+                    class_id, x_center, y_center, width_relative, height_relative = bbox.split(
+                        " "
+                    )
+                    class_name = names[int(class_id)]
+                    item_dimensions = {
+                        "type": "collectra.ImageCrop",
+                        "data": image.name,
+                        "x_center": float(x_center),
+                        "y_center": float(y_center),
+                        "width_relative": float(width_relative),
+                        "height_relative": float(height_relative),
+                    }                    
+                    results_yaml[class_name].append(item_dimensions)
+                for key in results_yaml:
+                    if (
+                        key not in ["collectra_results_metadata", "specimen_sheet"]
+                        and len(results_yaml[key]) == 1
+                    ):
+                        results_yaml[key] = results_yaml[key][0]       
+            with open(converted_file_path / "results.yaml", "w") as f:
+                for key in results_yaml:
+                    if not results_yaml[key]:
+                        continue
+                    f.write(
+                        yaml.dump(
+                            {key: results_yaml[key]},
+                            default_flow_style=False,
+                            sort_keys=False,
+                        )
+                    )
+                    f.write("\n")               
