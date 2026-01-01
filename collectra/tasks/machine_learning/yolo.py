@@ -85,6 +85,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 y_center=float(y),
                 width_relative=float(w),
                 height_relative=float(h),
+                orientation=image.orientation,
                 name=names[index],
             )                                 
             detections.append(image_crop)            

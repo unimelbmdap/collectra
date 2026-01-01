@@ -24,7 +24,51 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from PIL import Image as ImagePil
 from .base import Data
+from enum import Enum
 
+class Orientation(Enum):
+    """Enumeration for image orientation states."""
+    NORTH = 0
+    WEST = 1
+    SOUTH = 2
+    EAST = 3
+
+    def to_string(self) -> str:
+        match self.value:
+            case 0:
+                return "north"
+            case 1:
+                return "west"
+            case 2:
+                return "south"
+            case 3:
+                return "east"
+            
+    def to_degree(self) -> int:
+        match self.value:
+            case 0:
+                return 0
+            case 1:
+                return -90
+            case 2:
+                return -180
+            case 3:
+                return -270
+
+    @staticmethod
+    def from_string(direction: str) -> "Orientation":
+        direction = direction.strip().lower()
+        match direction:
+            case "north":
+                return Orientation.NORTH
+            case "west":
+                return Orientation.WEST
+            case "south":
+                return Orientation.SOUTH
+            case "east":
+                return Orientation.EAST
+            case _:
+                raise ValueError(f"Invalid degree for orientation: {direction}")
 
 @dataclass
 class Image(Data):
@@ -46,11 +90,17 @@ class Image(Data):
     raw_height: int = field(init=False, default=0)  # Image height in pixels
     ext: str | None = field(default="")  # Image format (e.g., PNG, JPEG)
     embeddings: str | list[str] = field(default_factory=list)  # Optional embedding data
+    orientation: Orientation = field(default=Orientation.NORTH)  # Image orientation
 
     def attributes_to_ignore(self):
         attributes = super().attributes_to_ignore()
         [attributes.add(attr) for attr in ["raw_width", "raw_height", "ext"]]
         return attributes
+    
+    def serialize(self) -> dict:
+        serialized = super().serialize()
+        serialized['orientation'] = self.orientation.to_string() if isinstance(self.orientation, Orientation) else self.orientation
+        return serialized
 
     @property
     def width(self):
@@ -79,13 +129,15 @@ class Image(Data):
         super().__post_init__()
         if not self.data:
             raise ValueError("Image data path is empty.")        
-        assert isinstance(self.data, (str, Path)), "Image data must be a file path."
+        assert isinstance(self.data, (str, Path)), "Image data must be a file path."        
         if not isinstance(self.data, Path):
             self.data = Path.cwd() / self.data        
         if not self.data.exists() or not self.data.is_file():
             raise FileNotFoundError(f"Image file not found: {self.data}")
         if not isinstance(self.embeddings, list):
             self.embeddings = [self.embeddings]
+        if isinstance(self.orientation, str):
+            self.orientation = Orientation.from_string(self.orientation)   
         with ImagePil.open(self.data) as imf:            
             self.raw_width, self.raw_height = imf.size
             self.ext = imf.format
@@ -157,7 +209,8 @@ class Image(Data):
         return f"image/{self.ext.lower()}" if self.ext else "image"
 
     def pil(self) -> ImagePil.Image:        
-        return ImagePil.open(self.get_path())
+        image = ImagePil.open(self.get_path())
+        return image.rotate(self.orientation.to_degree(), expand=True)
     
     def check_valid_relative_crop_values(
         self,
@@ -185,6 +238,7 @@ class Image(Data):
         y_center: float,
         width_relative: float,
         height_relative: float,  
+        orientation: Orientation = Orientation.NORTH,
         name: str = "",     
     ) -> "ImageCrop":
 
@@ -202,6 +256,7 @@ class Image(Data):
             y_center=y_center,
             width_relative=width_relative,
             height_relative=height_relative,
+            orientation=orientation,
         )
 
     def make_crop_bounding_box(
@@ -253,7 +308,7 @@ class ImageCrop(Image):
         coordinates = self.coordinates()
         with ImagePil.open(self.get_path()) as imf:                
             im_crop = imf.crop(coordinates)                    
-        return im_crop        
+        return im_crop.rotate(self.orientation.to_degree(), expand=True)
 
     def coordinates(self) -> tuple[float, float, float, float]:
         """Calculate absolute pixel coordinates for the crop region.
@@ -281,15 +336,28 @@ class ImageCrop(Image):
         x_center: float,
         y_center: float,
         width_relative: float,
-        height_relative: float,        
+        height_relative: float,
+        orientation: Orientation = Orientation.NORTH,
         name: str = "",
     ) -> "ImageCrop":
+        
+        degree_transformed = orientation.to_degree()
+
+        if degree_transformed == -90:
+            x_center, y_center = y_center, 1 - x_center
+            width_relative, height_relative = height_relative, width_relative
+        elif degree_transformed == -180:
+            x_center, y_center = 1 - x_center, 1 - y_center
+        elif degree_transformed == -270:
+            x_center, y_center = 1 - y_center, x_center
+            width_relative, height_relative = height_relative, width_relative
         
         return super().make_crop(
             x_center=self.x_center + (x_center - 0.5) * self.width_relative,
             y_center=self.y_center + (y_center - 0.5) * self.height_relative,
             width_relative=width_relative * self.width_relative,
             height_relative=height_relative * self.height_relative,
+            orientation=orientation,
             name=name,
         )
     
