@@ -32,6 +32,12 @@ from tqdm import tqdm
 from rich import print
 
 
+def get_env(key: str, file: str = ".env") -> str:
+    from dotenv import dotenv_values    
+    config = dotenv_values(Path.cwd() / file)
+    variable = config.get(key, "") or ""  
+    return variable
+
 def traceback_error(e: Exception, message: str = "", verbose: bool = False):    
     if verbose:
         traceback.print_exc()            
