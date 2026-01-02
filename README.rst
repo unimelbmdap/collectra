@@ -9,16 +9,16 @@
 
 .. |docs badge| image:: https://github.com/unimelbmdap/collectra/actions/workflows/docs.yml/badge.svg
     :target: https://unimelbmdap.github.io/collectra
-    
+
 .. |black badge| image:: https://img.shields.io/badge/code%20style-black-000000.svg
     :target: https://github.com/psf/black
-    
+
 .. |coverage badge| image:: https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/unimelbmdap/f1d9191993105301fd6f813fe1e659f6/raw/coverage-badge.json
     :target: https://unimelbmdap.github.io/collectra/coverage/
 
 .. |torchapp badge| image:: https://img.shields.io/badge/torch-app-B1230A.svg
     :target: https://rbturnbull.github.io/torchapp/
-    
+
 .. end-badges
 
 .. start-quickstart
@@ -37,7 +37,7 @@ Install using pip:
 
 .. end-quickstart
 
-Design Requirements 
+Design Requirements
 ===============
 
 Collectra caters to two user groups:
@@ -50,17 +50,15 @@ User Stories
 
 As an Operator, I can:
 
-- Download a ``.collectra`` file and run it to process a set of files.
-- Fine tune the machine learning engine attached to a machine learning task.
-- Share the ``.collectra`` file with other operators and run it as a package.
-- Have a GUI that opens up when I open the workflow to perform the above tasks. All save actions are version controlled.
+- Run a workflow to process a set of files.
+- Train the machine learning engine attached to a machine learning task.
+- View and visualize workflow results in an interactive HTML viewer.
 
 As a Builder, I can:
 
-- Create/edit a task template and engine, which can be used by operators.
-- Create/edit workflow by chaining together existing task templates and engines.
-- Save the workflow as a ``.collectra`` file, which can be used by operators.
-- Have a GUI that can open any workflow. All save actions are version controlled.
+- Create and edit task configurations within workflows.
+- Chain together existing task templates and engines via YAML configuration.
+- Define data flow between tasks using input/output declarations.
 
 Architecture
 *************
@@ -71,138 +69,144 @@ Architecture
 
 `Collectra top-level architecture diagram <https://excalidraw.com/#json=KYcVyuFJIo4Jk7dngu3bV,NMmp8pk4D0VGQr7l2KgR3A>`_
 
-A file created by the Collectra application is an RO-Crate compliant (`RO-Crate 1.1 specification <https://www.researchobject.org/ro-crate/specification/1.1/>`_) file that describes a workflow. It has the following structure:
+Collectra uses a YAML-based workflow configuration stored in a ``pipeline.yaml`` file. The workflow defines tasks and their dependencies as a directed acyclic graph (DAG).
 
-.. code-block:: json
+Workflow Structure
+*******************
 
-  {
-        "@context": "https://w3id.org/ro/crate/1.1/context",
-        "@graph": [
-            {
-                "@id": "./",
-                "@type": "Dataset",
-                "datePublished": "2025-07-29T08:16:24+00:00",
-                "format": "hespi",
-                "hasPart": [                    
-                    {
-                        "@id": "648bfb1e-bcf0-41e4-8eed-3ce7c912a6b6"
-                    },
-                    {
-                        "@id": "best.pt-training-params"
-                    },
-                    {
-                        "@id": "best.pt"
-                    }
-                ]
-            },
-            {
-                "@id": "ro-crate-metadata.json",
-                "@type": "CreativeWork",
-                "about": {
-                    "@id": "./"
-                },
-                "conformsTo": {
-                    "@id": "https://w3id.org/ro/crate/1.1"
-                }
-            },            
-            {
-                "@id": "648bfb1e-bcf0-41e4-8eed-3ce7c912a6b6",
-                "@type": "Task",
-                "engine": [
-                    {
-                        "@id": "best.pt"
-                    }
-                ],
-                "task_type": "detect_object"
-            },
-            {
-                "@id": "best.pt-training-params",
-                "@type": "TrainingParameters",
-                "device": "cpu",
-                "epochs": 1,
-                "imgsz": 640,
-                "verbose": true
-            },
-            {
-                "@id": "best.pt",
-                "@type": "File",
-                "engine_type": "yolo",
-                "name": "best.pt",
-                "trainingParameters": [
-                    {
-                        "@id": "best.pt-training-params"
-                    }
-                ]
-            }
-        ]
-    }
+A workflow directory contains a ``pipeline.yaml`` file with the following structure:
 
-A ``.collectra`` file contains the following data:
+.. code-block:: yaml
 
-- Definitions of the task and associated engine. If the engine is a trained model, the location of the model is also specified. 
+    collectra_pipeline_metadata:
+      name: my_workflow
+      ext: myext
+      version: 1.0
 
-All defined task will be saved in the workflow, with the following properties: 
+    task1:
+      type: collectra.LLM
+      model: gpt-4
+      template: "Extract: {input}"
+      input: image_input
+      output: extracted_text
 
-- task_type: how to process a particular file
-- engine: what is used to process the file
+    task2:
+      type: collectra.ObjectDetectionYOLO
+      model: yolov8.pt
+      input: image_input
+      output: detections
 
-When a raw file is processed by the task, the output is saved as a ``.something`` file where .something is the file extension defined by the the workflow editor and user
+The ``collectra_pipeline_metadata`` section defines:
 
-Usage:
+- ``name``: Workflow name
+- ``ext``: File extension for output files
+- ``version``: Workflow version
+
+Each task is defined with:
+
+- ``type``: The task class to use (e.g., ``collectra.LLM``, ``collectra.ObjectDetectionYOLO``)
+- ``input``: Input data node name
+- ``output``: Output data node name
+- Additional task-specific parameters
+
+Available Task Types
+*********************
+
+Collectra provides several built-in task types:
+
+- **LLM**: Large Language Model inference with multimodal support
+- **ObjectDetectionYOLO**: YOLO-based object detection
+- **ImageOrienter**: EfficientNet-based image orientation detection
+- **SuryaOCR**: Character recognition using Surya models
+- **SuryaLineDetector**: Line detection in documents
+- **LLMCanonicaliser**: Entity canonicalization using LLMs
+
+Data Types
+***********
+
+Workflows process the following data types:
+
+- **Image**: Image files with metadata (dimensions, orientation, embeddings)
+- **ImageCrop**: Cropped regions with bounding box coordinates
+- **Text**: Text data extracted from images or generated by LLMs
+
+Usage
 =======
 
-Builder
-********
+Running a Workflow
+*******************
 
-Make a new workflow, .e.g. "grapto.collectra"
-
-.. code-block:: bash
-
-    collectra make grapto.collectra -t detect_primary_label,yolo,yolo11n.pt -f grapto
-
-- ``-t`` is the task, which is used to determine how to process the files in the workflow. It must in the format of task_type,engine_type,engine_file_path
-- ``-f`` is the file format of the workflow, which is used to determine how to process the files in the workflow
-
-Train an ML task in the workflow
+Execute a workflow on input files:
 
 .. code-block:: bash
 
-    collectra train --workflow grapto.collectra --task detect_primary_label --training train/*.grapto --validation valid/*.grapto
+    collectra run --workflow my_workflow --task task_name input_files...
 
-- Collectra goes to the task. The task goes to the engine. 
-- The engine knows how to train and saves the model in the engine entity in the grapto.collectra RO-Crate.
-- The weights can by default be saved inside the RO-Crate. 
-- Otherwise, you can specify a path to save the weights outside the RO-Crate. If an external weight file is trained, it will be saved in the RO-Crate and replace the existing weights.
+Options:
 
-.. code-block:: bash
+- ``-w, --workflow``: Path to the workflow directory
+- ``-t, --task``: Specific task to run (optional, runs from root tasks if not specified)
+- ``-o, --output``: Output directory for results
+- ``--single``: Run only the designated task without dependencies
+- ``-v, --verbose``: Enable verbose output
+- ``--usage``: Enable token usage tracking for LLM tasks
 
-    collectra run input.jpg output.grapto --workflow grapto.collectra 
+Training an ML Task
+********************
 
-.. code-block:: bash
-
-    collectra install --workflow grapto.collectra
-
-Also, because .collectra workflow can be installed as an executable, you can run the following command to process an image:
-
-.. code-block:: bash
-
-    grapto input.jpg output.grapto
-
-- A .collectra workflow can be published on PyPI so someone can install it with pip. 
-- Someone running workflow this way doesn't have to know about collectra.
+Train a machine learning task within a workflow:
 
 .. code-block:: bash
 
-    pip install grapto
-    grapto input.jpg output.grapto
+    collectra train --workflow my_workflow --task detect_objects training_files...
 
-Function of tmp directory:
-***************************
+Options:
 
-The 'tmp' directory is used to store temporary files during the workflow execution. By default, it is created in the same directory as the workflow file ``tmp``, but the user can specify a different location.
-If there are multiple runs in the same directory, a subdirectory with a timestamp is created to avoid conflicts.
+- ``-w, --workflow``: Path to the workflow directory
+- ``-t, --task``: Name of the task to train
+- ``--keep-log``: Keep training log files (default: True)
 
- Credits
+Training logs are saved with timestamps and the trained model is stored in the workflow directory.
+
+Rendering a Workflow Diagram
+*****************************
+
+Generate an SVG visualization of the workflow:
+
+.. code-block:: bash
+
+    collectra render --workflow my_workflow --dest output.svg
+
+Options:
+
+- ``-w, --workflow``: Path to the workflow directory
+- ``-d, --dest``: Output file path for the SVG diagram
+
+Viewing Results
+****************
+
+View workflow results in an interactive HTML viewer:
+
+.. code-block:: bash
+
+    collectra view --file result_directory
+
+This opens an HTML visualization showing:
+
+- Original images with bounding box overlays
+- Extracted text results
+- Workflow metadata
+
+Converting Files
+*****************
+
+Convert files based on a configuration:
+
+.. code-block:: bash
+
+    collectra convert config.yaml
+
+Credits
 ==================================
 
 .. start-credits
