@@ -12,6 +12,11 @@ jobs:
         python-version: ["3.10", "3.11", "3.12"]
     steps:
     - uses: actions/checkout@v4            
+    - name: Remove unused packages
+      run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/swift
     - name: Check disk space
       run: |
           df -h          
@@ -20,7 +25,8 @@ jobs:
     - name: Initialise Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
-        python-version: ${{ matrix.python-version }}        
+        python-version: ${{ matrix.python-version }}
+        cache: poetry
     - name: Setup Graphviz
       uses: ts-graphviz/setup-graphviz@v2
     - name: Install dependencies for Python ${{ matrix.python-version }}
