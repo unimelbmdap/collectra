@@ -132,6 +132,9 @@ def run(
     verbose: Annotated[
         bool, typer.Option("--verbose", "-v", help="Enables verbose output during workflow execution")
     ] = False,
+    usage: Annotated[
+        bool, typer.Option("--usage", help="Enables token usage tracking during LLM tasks")
+    ] = False,
 ):
     """Execute a Collectra workflow or specific task within a workflow.
 
@@ -154,6 +157,7 @@ def run(
     try:
         data: dict[str, str | bool | list[str] | Path | list[Path]] = dict()
         data["single"] = single
+        data["usage"] = usage
         if output:
             data["output"] = str(output)
         data["files"] = list()

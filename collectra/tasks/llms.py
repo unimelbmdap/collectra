@@ -16,18 +16,18 @@ Classes:
 
 __all__ = ["LLM"]
 
-import llmloader, re, copy
+import llmloader, re, os
 
-from dotenv import load_dotenv
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import SystemMessage, HumanMessage
-from itertools import product
 
 from collectra.tasks.base import Task
 from collectra.types.images import Image
 from collectra.types.texts import Text
 
-load_dotenv()      
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class LLM(Task):
     """Task for Large Language Model inference operations.
@@ -50,13 +50,15 @@ class LLM(Task):
         self.template: str = kwargs.get("template", "")
         self.preamble: str = kwargs.get("preamble", "") 
         self.temperature = kwargs.get("temperature", 0.8)
-        self.max_tokens = kwargs.get("max_tokens", None)                  
+        self.max_tokens = kwargs.get("max_tokens", None)                                          
         self.llm = llmloader.load(
             model, 
             temperature=self.temperature, 
             max_tokens=self.max_tokens
         )
-        self.chain = self.llm | StrOutputParser()
+
+        self.chain = self.llm
+        self.parser = StrOutputParser()
 
         init_messages = (
             SystemMessage(content=kwargs.get("system", ""))
@@ -71,24 +73,14 @@ class LLM(Task):
         return prompt, pattern
 
     def image_content(self, image: Image):
-        """Create image content dictionary for multimodal LLM input.
-
-        Converts an Image instance into the format required by multimodal
-        language models, including base64 encoding and MIME type information.
-
-        Args:
-            image (Image): The image to convert for LLM processing.
-
-        Returns:
-            dict: Dictionary containing image data formatted for LLM input with
-                 'type', 'source_type', 'data', and 'mime_type' fields.
-        """
-        return {
-            "type": "image",
-            "source_type": "base64",
-            "data": image.get_encoding(),
-            "mime_type": image.mime(),
-        }
+        return llmloader.LLMWrapper.format(
+            self.llm,
+            data_type="image",
+            data={
+                "data": image.get_encoding(),
+                "mime_type": image.mime(),
+            },
+        )        
 
     def _add_content(self, value: Image | Text) -> dict:
         if isinstance(value, Image):
@@ -140,6 +132,19 @@ class LLM(Task):
             messages.append(self._add_text(prompt))
         
         return messages
+    
+    def invoke(self) -> str:
+        response = self.chain.invoke(self.messages)            
+
+        usage_file = os.getenv("USAGE_FILE", "")
+        
+        if usage_file:
+            llmloader.LLMWrapper.get_token_count(usage_file, response.response_metadata, self.name)        
+
+        response = self.parser.invoke(response)
+
+        return response
+
 
     def run(self, *args: Text | Image) -> Text:
         """Execute LLM inference on the provided inputs with template-based prompt generation.
@@ -164,9 +169,9 @@ class LLM(Task):
              
         self.messages.append(HumanMessage(content=messages))     
 
-        self.check_inputs(*args)
+        self.check_inputs(*args)        
 
-        response = self.chain.invoke(self.messages)        
+        response = self.invoke()
 
         name = (
             f"{self.get_name()}_output"

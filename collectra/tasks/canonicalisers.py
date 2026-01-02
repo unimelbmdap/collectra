@@ -15,11 +15,11 @@ Classes:
 
 __all__ = ["LLMCanonicaliser"]
 
-import re, yaml, re
+import re, llmloader
 
 from dotenv import load_dotenv
 from pathlib import Path
-from langchain_openai import AzureOpenAIEmbeddings, OpenAIEmbeddings
+from langchain_openai import AzureOpenAIEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
@@ -117,7 +117,7 @@ class LLMCanonicaliser(CollectraLLM):
 
         self.check_inputs(*args)
 
-        response = self.chain.invoke(self.messages)        
+        response = self.invoke()
 
         name = (
             f"{self.get_name()}_output"

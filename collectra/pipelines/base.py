@@ -17,7 +17,7 @@ Classes:
 
 __all__ = ["Collectra"]
 
-import logging, yaml, graphviz, copy, datetime, shutil, time, json
+import logging, yaml, graphviz, copy, datetime, shutil, time, json, os
 import networkx as nx
 from pathlib import Path
 from rich.progress import track
@@ -130,13 +130,17 @@ class Collectra:
         single = kwargs.pop("single", False)
         files = kwargs.pop("files", [])  
         verbose = kwargs.pop("verbose", False)      
+        usage = kwargs.pop("usage", False)        
         for value in files:
             key = "file" if Path(value).suffix == f".{self.ext}" else "specimen_sheet"
             key, value = self._create_collectra_file(key, value)            
             input = {key: value}
             self._init_input_data(starting_nodes, **input, verbose=verbose)   
             self.render("workflow_run", file=str(value))          
-            self._run_nodes(starting_nodes, single=single, key=key, value=value)            
+            if usage:
+                os.environ["USAGE_FILE"] = str(Path.cwd() / str(Path(value) / "usage.yaml"))
+            self._run_nodes(starting_nodes, single=single, key=key, value=value)    
+            os.environ["USAGE_FILE"] = ""        
 
     def _create_collectra_file(self, key: str, value: str | Path) -> tuple[str, str | Path]:                
         if not key or not value:
@@ -417,8 +421,7 @@ class Collectra:
         return results
     
     def _execute_entries(self, entries: list[Data], task: Task) -> list[Data]:        
-        try:                     
-            print(f"[blue]Processing input batch[/blue]")                                  
+        try:                                                       
             output: Data | list[Data]= task.run(*entries)
             if not isinstance(output, list):
                 output = [output]            
