@@ -23,7 +23,11 @@ jobs:
         python-version: ["3.11"]
     steps:
       - uses: actions/checkout@v4      
-
+      
+      - name: Cleanup prerun
+        run: |
+          ls log_dir*
+      
       - name: Install poetry
         run: pipx install poetry
 
