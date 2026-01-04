@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from collectra import Task, MachineLearningTask, ObjectDetectionYOLO
+from collectra import MachineLearningTask, ObjectDetectionYOLO, Task
 from collectra.utils import load_class_from_string
 from utils.get_types import get_param_types, get_return_type
 

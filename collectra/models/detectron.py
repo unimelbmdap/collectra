@@ -14,8 +14,9 @@ Classes:
     ImageClassifier: General image classification model implementation
 """
 
-from collectra.models.base import Model
 from pathlib import Path
+
+from collectra.models.base import Model
 
 
 class DETECTRON2Engine(Model):

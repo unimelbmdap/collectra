@@ -8,14 +8,16 @@ from .base import MachineLearningTask
 
 __all__ = ["ImageOrienter"]
 
+
 class ImageOrienter(MachineLearningTask):
 
     model: str | Path | EfficientNet
 
-    def __init__(self,name, model: str | Path | EfficientNet, **kwargs):
+    def __init__(self, name, model: str | Path | EfficientNet, **kwargs):
         super().__init__(name, model, **kwargs)
         self._init_model()
         import torchvision.transforms as transforms
+
         IMAGE_SIZE = 384
         self.transforms = transforms.Compose(
             [
@@ -33,38 +35,42 @@ class ImageOrienter(MachineLearningTask):
         raise NotImplementedError("Training not implemented for ImageOrienter.")
 
     def _init_model(self):
-        """ Initialisation code here is emulated from https://github.com/duartebarbosadev/deep-image-orientation-detection """     
-        import torch 
-        device = torch.device("mps" 
-        if torch.backends.mps.is_available() 
-        else "cuda" if torch.cuda.is_available() 
-        else "cpu")
+        """Initialisation code here is emulated from https://github.com/duartebarbosadev/deep-image-orientation-detection"""
+        import torch
+
+        device = torch.device(
+            "mps"
+            if torch.backends.mps.is_available()
+            else "cuda" if torch.cuda.is_available() else "cpu"
+        )
 
         if isinstance(self.model, EfficientNet):
             self.model.to(device)
             self.device = device
             return
-                        
+
         import torchvision.models as models
-        model = models.efficientnet_v2_s(weights=None)    
+
+        model = models.efficientnet_v2_s(weights=None)
 
         num_ftrs = model.classifier[1].in_features
 
         model.classifier = torch.nn.Sequential(
             torch.nn.Dropout(p=0.2, inplace=True),
-            torch.nn.Linear(num_ftrs, 4),   
-        )    
-        
+            torch.nn.Linear(num_ftrs, 4),
+        )
+
         state_dict = torch.load(self.model, map_location=device)
         model.load_state_dict(state_dict)
         model.to(device)
         model.eval()
 
-        self.model = model 
+        self.model = model
         self.device = device
-    
+
     def _processed_image(self, img: Image):
         from PIL import Image as PILImage
+
         image = img.pil()
 
         if image.mode in ("RGB", "L"):
@@ -75,11 +81,10 @@ class ImageOrienter(MachineLearningTask):
         background.paste(converted_image, mask=converted_image)
         return background
 
+    def run(self, *args: Image) -> Image:
 
-    def run(self, *args: Image) -> Image:                
+        import torch
 
-        import torch        
-        
         if len(args) != 1:
             raise ValueError("This task only supports a single Image input.")
         img = args[0]
@@ -93,13 +98,13 @@ class ImageOrienter(MachineLearningTask):
             output = self.model(input_tensor)
             _, predicted_idx = torch.max(output, 1)
             predicted_class = predicted_idx.item()
-            orientation = Orientation(predicted_class)  
+            orientation = Orientation(predicted_class)
 
         name = (
             f"{self.get_name()}_output"
             if not hasattr(self, "output")
             else self.output[0] if isinstance(self.output, list) else self.output
-        )          
+        )
 
         if isinstance(img, ImageCrop):
             new_image = ImageCrop(
@@ -120,5 +125,3 @@ class ImageOrienter(MachineLearningTask):
         )
 
         return new_image
-        
-

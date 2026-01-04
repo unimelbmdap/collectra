@@ -1,5 +1,7 @@
-import pytest
 from typing import TypeVar
+
+import pytest
+
 from collectra.commons import T
 
 

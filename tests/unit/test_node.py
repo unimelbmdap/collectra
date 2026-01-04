@@ -1,4 +1,4 @@
-from collectra import Text, Image, NodeStatus
+from collectra import Image, NodeStatus, Text
 
 
 def test_text():

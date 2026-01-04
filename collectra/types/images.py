@@ -19,15 +19,20 @@ Classes:
 __all__ = ["Image", "ImageCrop"]
 
 
-import base64, io
+import base64
+import io
 from dataclasses import dataclass, field
-from pathlib import Path
-from PIL import Image as ImagePil
-from .base import Data
 from enum import Enum
+from pathlib import Path
+
+from PIL import Image as ImagePil
+
+from .base import Data
+
 
 class Orientation(Enum):
     """Enumeration for image orientation states."""
+
     NORTH = 0
     WEST = 1
     SOUTH = 2
@@ -43,7 +48,7 @@ class Orientation(Enum):
                 return "south"
             case 3:
                 return "east"
-            
+
     def to_degree(self) -> int:
         match self.value:
             case 0:
@@ -69,6 +74,7 @@ class Orientation(Enum):
                 return Orientation.EAST
             case _:
                 raise ValueError(f"Invalid degree for orientation: {direction}")
+
 
 @dataclass
 class Image(Data):
@@ -96,10 +102,14 @@ class Image(Data):
         attributes = super().attributes_to_ignore()
         [attributes.add(attr) for attr in ["raw_width", "raw_height", "ext"]]
         return attributes
-    
+
     def serialize(self) -> dict:
         serialized = super().serialize()
-        serialized['orientation'] = self.orientation.to_string() if isinstance(self.orientation, Orientation) else self.orientation
+        serialized["orientation"] = (
+            self.orientation.to_string()
+            if isinstance(self.orientation, Orientation)
+            else self.orientation
+        )
         return serialized
 
     @property
@@ -125,20 +135,20 @@ class Image(Data):
         Raises:
             FileNotFoundError: If the image file doesn't exist.
             PIL.UnidentifiedImageError: If the file is not a valid image.
-        """        
+        """
         super().__post_init__()
         if not self.data:
-            raise ValueError("Image data path is empty.")        
-        assert isinstance(self.data, (str, Path)), "Image data must be a file path."        
+            raise ValueError("Image data path is empty.")
+        assert isinstance(self.data, (str, Path)), "Image data must be a file path."
         if not isinstance(self.data, Path):
-            self.data = Path.cwd() / self.data        
+            self.data = Path.cwd() / self.data
         if not self.data.exists() or not self.data.is_file():
             raise FileNotFoundError(f"Image file not found: {self.data}")
         if not isinstance(self.embeddings, list):
             self.embeddings = [self.embeddings]
         if isinstance(self.orientation, str):
-            self.orientation = Orientation.from_string(self.orientation)   
-        with ImagePil.open(self.data) as imf:            
+            self.orientation = Orientation.from_string(self.orientation)
+        with ImagePil.open(self.data) as imf:
             self.raw_width, self.raw_height = imf.size
             self.ext = imf.format
 
@@ -150,10 +160,12 @@ class Image(Data):
 
         Returns:
             Path: The file path of the image.
-        """        
+        """
         if not isinstance(self.data, Path):
             if not isinstance(self.data, Image):
-                raise Exception("This appear to be not an Image object. Data path is only available for Image object.")
+                raise Exception(
+                    "This appear to be not an Image object. Data path is only available for Image object."
+                )
             raise Exception("Image data is not a valid Path object.")
         return self.data
 
@@ -169,9 +181,9 @@ class Image(Data):
         """
         image_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp"}
         return path.suffix.lower() in image_extensions
-    
+
     def _load_buffer(self, img: ImagePil.Image) -> bytes:
-        buffer = io.BytesIO()        
+        buffer = io.BytesIO()
         img.save(buffer, format=self.ext)
         buffer.seek(0)
         return buffer.read()
@@ -185,9 +197,9 @@ class Image(Data):
         Raises:
             FileNotFoundError: If the image file doesn't exist.
             PermissionError: If the file cannot be read due to permissions.
-        """        
-        img = self.pil()        
-        return self._load_buffer(img)                  
+        """
+        img = self.pil()
+        return self._load_buffer(img)
 
     def get_encoding(self) -> str:
         """Get the base64 encoded representation of the image.
@@ -197,7 +209,7 @@ class Image(Data):
 
         Returns:
             str: Base64 encoded string representation of the image.
-        """                         
+        """
         return base64.b64encode(self.load()).decode("utf-8")
 
     def mime(self) -> str:
@@ -208,16 +220,16 @@ class Image(Data):
         """
         return f"image/{self.ext.lower()}" if self.ext else "image"
 
-    def pil(self) -> ImagePil.Image:        
+    def pil(self) -> ImagePil.Image:
         image = ImagePil.open(self.get_path())
         return image.rotate(self.orientation.to_degree(), expand=True)
-    
+
     def check_valid_relative_crop_values(
         self,
         x_center: float,
         y_center: float,
         width_relative: float,
-        height_relative: float,  
+        height_relative: float,
     ):
         if not (0.0 <= x_center <= 1.0):
             raise ValueError(f"x_center is {x_center}")
@@ -231,15 +243,14 @@ class Image(Data):
         if not (0.0 <= height_relative <= 1.0):
             raise ValueError(f"height_relative is {height_relative}")
 
-
     def make_crop(
         self,
         x_center: float,
         y_center: float,
         width_relative: float,
-        height_relative: float,  
+        height_relative: float,
         orientation: Orientation = Orientation.NORTH,
-        name: str = "",     
+        name: str = "",
     ) -> "ImageCrop":
 
         self.check_valid_relative_crop_values(
@@ -247,7 +258,7 @@ class Image(Data):
             y_center,
             width_relative,
             height_relative,
-        )        
+        )
 
         return ImageCrop(
             name=name if name else self.name,
@@ -261,7 +272,7 @@ class Image(Data):
 
     def make_crop_bounding_box(
         self, left, top, right, bottom, min_height: float = 0.0
-    ) -> "ImageCrop":        
+    ) -> "ImageCrop":
         bbox_width = right - left
         bbox_height = bottom - top
         x_center = (left + 0.5 * bbox_width) / self.width
@@ -273,8 +284,9 @@ class Image(Data):
             x_center=x_center,
             y_center=y_center,
             width_relative=width_relative,
-            height_relative=height_relative,            
-        )    
+            height_relative=height_relative,
+        )
+
 
 @dataclass
 class ImageCrop(Image):
@@ -302,12 +314,12 @@ class ImageCrop(Image):
 
     @property
     def height(self):
-        return self.height_relative * self.raw_height    
-    
+        return self.height_relative * self.raw_height
+
     def pil(self) -> ImagePil.Image:
         coordinates = self.coordinates()
-        with ImagePil.open(self.get_path()) as imf:                
-            im_crop = imf.crop(coordinates)                    
+        with ImagePil.open(self.get_path()) as imf:
+            im_crop = imf.crop(coordinates)
         return im_crop.rotate(self.orientation.to_degree(), expand=True)
 
     def coordinates(self) -> tuple[float, float, float, float]:
@@ -332,7 +344,7 @@ class ImageCrop(Image):
         return (left, upper, right, bottom)
 
     def make_crop(
-        self,        
+        self,
         x_center: float,
         y_center: float,
         width_relative: float,
@@ -340,7 +352,7 @@ class ImageCrop(Image):
         orientation: Orientation = Orientation.NORTH,
         name: str = "",
     ) -> "ImageCrop":
-        
+
         degree_transformed = orientation.to_degree()
 
         if degree_transformed == -90:
@@ -351,7 +363,7 @@ class ImageCrop(Image):
         elif degree_transformed == -270:
             x_center, y_center = 1 - y_center, x_center
             width_relative, height_relative = height_relative, width_relative
-        
+
         return super().make_crop(
             x_center=self.x_center + (x_center - 0.5) * self.width_relative,
             y_center=self.y_center + (y_center - 0.5) * self.height_relative,
@@ -360,8 +372,8 @@ class ImageCrop(Image):
             orientation=orientation,
             name=name,
         )
-    
-    @staticmethod 
+
+    @staticmethod
     def compute_iou(boxA, boxB):
         # determine the (x, y)-coordinates of the intersection rectangle
         xA = max(boxA[0], boxB[0])
@@ -389,9 +401,8 @@ class ImageCrop(Image):
     def eval(self, gold: "ImageCrop") -> float:
         if not isinstance(gold, ImageCrop):
             raise ValueError("Reference data must be an instance of ImageCrop.")
-        iou = 0.0        
+        iou = 0.0
         boxA = self.coordinates()
         boxB = gold.coordinates()
         iou = self.compute_iou(boxA, boxB)
         return iou
-        

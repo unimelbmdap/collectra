@@ -17,17 +17,24 @@ Classes:
     YOLOModel: Complete YOLO model implementation with training and inference
 """
 
-from collectra.models.base import Model
-from collectra.types.images import Image, ImageCrop
-from collectra.utils import get_all_files, success_msg
-from collectra.utils import processing_msg, error_msg
+import importlib
+import os
+import platform
+import shutil
+import tempfile
+import zipfile
 from pathlib import Path
+
+import yaml
 from rich import print
 from tqdm import tqdm
 from ultralytics import YOLO
-from ultralytics.utils import ThreadingLocked
 from ultralytics.engine.results import Results
-import importlib, shutil, os, yaml, zipfile, tempfile, platform
+from ultralytics.utils import ThreadingLocked
+
+from collectra.models.base import Model
+from collectra.types.images import Image, ImageCrop
+from collectra.utils import error_msg, get_all_files, processing_msg, success_msg
 
 
 class YOLOModel(Model):

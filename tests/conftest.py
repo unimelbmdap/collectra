@@ -1,5 +1,8 @@
-import pytest, shutil, os
+import os
+import shutil
 from pathlib import Path
+
+import pytest
 
 pytest_plugins = [
     "tests.fixtures.functions",

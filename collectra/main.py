@@ -14,8 +14,16 @@ Example:
     $ collectra make --workflow my_workflow --version 1.0
     $ collectra run --workflow pipeline.yaml --task detection
 """
-import os, shutil, logging, sys, typer, yaml, traceback
+
+import logging
+import os
+import shutil
+import sys
+import traceback
 from pathlib import Path
+
+import typer
+import yaml
 from typing_extensions import Annotated
 
 logger = logging.getLogger(__name__)
@@ -23,8 +31,10 @@ logging.basicConfig(stream=sys.stdout)
 
 app = typer.Typer()
 
+
 def resolve_workflow_path(workflow: Path):
     from collectra import Collectra
+
     with open(workflow / "pipeline.yaml", "r") as f:
         metadata = yaml.safe_load(f)
     initials: dict = metadata.pop("collectra_pipeline_metadata")
@@ -95,14 +105,18 @@ def train(
             missing input files, or training process failures.
     """
     try:
-        from datetime import datetime        
-        
+        from datetime import datetime
+
         log = Path.cwd() / f"{task}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        config = {"input": input_files, "log_dir": log, "project": Path.cwd() / f"{workflow.name}-{task}"}
+        config = {
+            "input": input_files,
+            "log_dir": log,
+            "project": Path.cwd() / f"{workflow.name}-{task}",
+        }
         pipeline = resolve_workflow_path(workflow)
         pipeline.train(task, **config)
         pipeline.save()
-        
+
         if not keep_log:
             shutil.rmtree(log, ignore_errors=True)
             log_cache = Path(f"{log}.cache")
@@ -120,7 +134,7 @@ def train(
 def run(
     workflow: Annotated[
         Path, typer.Option("--workflow", "-w", help="path to workflow")
-    ],    
+    ],
     inputs: Annotated[list[Path], typer.Argument(help="Input files for the workflow")],
     task: Annotated[str, typer.Option("--task", "-t", help="task to run")] = "",
     output: Annotated[
@@ -130,10 +144,14 @@ def run(
         bool, typer.Option("--single", help="Runs only the designated task")
     ] = False,
     verbose: Annotated[
-        bool, typer.Option("--verbose", "-v", help="Enables verbose output during workflow execution")
+        bool,
+        typer.Option(
+            "--verbose", "-v", help="Enables verbose output during workflow execution"
+        ),
     ] = False,
     usage: Annotated[
-        bool, typer.Option("--usage", help="Enables token usage tracking during LLM tasks")
+        bool,
+        typer.Option("--usage", help="Enables token usage tracking during LLM tasks"),
     ] = False,
 ):
     """Execute a Collectra workflow or specific task within a workflow.
@@ -161,13 +179,20 @@ def run(
         if output:
             data["output"] = str(output)
         data["files"] = list()
-        pipeline = resolve_workflow_path(workflow)        
+        pipeline = resolve_workflow_path(workflow)
         for input_path in inputs:
-            input_path = Path(input_path)            
-            if input_path.is_file() or (input_path.is_dir() and input_path.suffix.lower() == f".{pipeline.ext}"):
+            input_path = Path(input_path)
+            if input_path.is_file() or (
+                input_path.is_dir() and input_path.suffix.lower() == f".{pipeline.ext}"
+            ):
                 data["files"].append(input_path)
             elif input_path.is_dir():
-                data["files"] += [file for file in input_path.rglob("*") if file.is_file() or (file.is_dir() and file.suffix.lower() == pipeline.ext)]               
+                data["files"] += [
+                    file
+                    for file in input_path.rglob("*")
+                    if file.is_file()
+                    or (file.is_dir() and file.suffix.lower() == pipeline.ext)
+                ]
         pipeline(task, **data, verbose=verbose)
     except Exception as e:
         traceback.print_exc()
@@ -179,10 +204,12 @@ def view(
 ):
     try:
         from collectra import Editor
+
         editor = Editor(file)
         editor.view()
     except Exception as e:
         traceback.print_exc()
+
 
 @app.command()
 def convert(
@@ -197,8 +224,9 @@ def convert(
         Exception: If the conversion process fails due to invalid configuration
             or runtime errors during execution.
     """
-    try:        
+    try:
         from collectra.utils import convert_files
+
         convert_files(config)
     except Exception as e:
         traceback.print_exc()

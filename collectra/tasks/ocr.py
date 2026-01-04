@@ -1,11 +1,12 @@
 __all__ = ["SuryaOCR", "SuryaLineDetector"]
 
+from dataclasses import dataclass, field
+
+from dotenv import load_dotenv
+
 from collectra.tasks.base import Task
 from collectra.types.images import Image, ImageCrop
 from collectra.types.texts import Text
-from dataclasses import dataclass, field
-from dotenv import load_dotenv
-
 
 load_dotenv()
 
@@ -22,9 +23,9 @@ class SuryaOCR(Task):
         Loads the specified LLM model using the llmloader library and sets up
         the initial system message for the conversation context.
         """
+        from surya.detection import DetectionPredictor
         from surya.foundation import FoundationPredictor
         from surya.recognition import RecognitionPredictor
-        from surya.detection import DetectionPredictor
 
         self.detection_predictor = DetectionPredictor()
         foundation_predictor = FoundationPredictor()

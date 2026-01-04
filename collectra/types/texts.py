@@ -1,11 +1,11 @@
-from pathlib import Path
 from dataclasses import dataclass, field
-from markdown import Markdown as MDown
+from difflib import SequenceMatcher
 from io import StringIO
+from pathlib import Path
+
+from markdown import Markdown as MDown
 
 from .base import Data
-
-from difflib import SequenceMatcher
 
 __all__ = ["Text"]
 
@@ -34,8 +34,8 @@ def unmark(text):
 
 @dataclass
 class Text(Data):
-    
-    data: str | Path = field(default="")    
+
+    data: str | Path = field(default="")
 
     def __post_init__(self):
         super().__post_init__()
@@ -53,6 +53,6 @@ class Text(Data):
 
     def eval(self, gold: "Text") -> dict:
         if not isinstance(gold, Text):
-            raise ValueError("Reference data must be an instance of Text.")        
+            raise ValueError("Reference data must be an instance of Text.")
         ratio = SequenceMatcher(None, str(self.data), str(gold.data)).ratio()
-        return ratio    
+        return ratio

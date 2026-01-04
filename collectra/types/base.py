@@ -1,14 +1,16 @@
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-import yaml, uuid
+
 import numpy as np
+import yaml
 from rich import print
 
 from collectra.commons import BaseEntity, Node, NodeStatus
 from collectra.utils import (
+    change_dir,
     error_msg,
     load_class_from_string,
-    change_dir,
     traceback_error,
 )
 
@@ -17,22 +19,22 @@ __all__ = ["Data", "DataNode"]
 
 @dataclass
 class Data(BaseEntity):
-    
+
     name: str
     id: str = field(default="")
-    parents: list[str] = field(default_factory=list)    
+    parents: list[str] = field(default_factory=list)
     validation: bool = field(default=False)
 
     def set_parents(self, parents: list["Data"]) -> None:
         self.parents = [parent.id for parent in parents]
 
     def serialize(self) -> dict:
-        serialized = super().serialize()        
+        serialized = super().serialize()
         if "parents" in serialized:
             if len(serialized["parents"]) == 0:
                 serialized.pop("parents")
-            elif len(serialized["parents"]) == 1:                            
-                serialized["parents"] = serialized["parents"][0]            
+            elif len(serialized["parents"]) == 1:
+                serialized["parents"] = serialized["parents"][0]
         return serialized
 
     def eval(self, gold: "Data") -> dict:
@@ -49,7 +51,7 @@ class Data(BaseEntity):
     def attributes_to_ignore(self) -> set:
         attributes = super().attributes_to_ignore()
         attributes.add("name")
-        attributes.add("validation")        
+        attributes.add("validation")
         return attributes
 
     @classmethod
@@ -62,6 +64,7 @@ class Data(BaseEntity):
             ]
         )
 
+
 @dataclass
 class DataNode(Node):
 
@@ -71,7 +74,7 @@ class DataNode(Node):
     def __post_init__(self) -> None:
         self.status = NodeStatus.READY if self.items else NodeStatus.NOT_READY
 
-    def add_item(self, item: Data) -> None:      
+    def add_item(self, item: Data) -> None:
         self.items[item.id] = item
         self.status = NodeStatus.READY
 
@@ -84,25 +87,30 @@ class DataNode(Node):
                 return True
         return False
 
-    def __str__(self) -> str:                
+    def __str__(self) -> str:
         types_str = "\n".join([t.get_class_path() for t in self.types])
         return f"{self.name}\n{types_str}"
 
-    def eval(self, gold_items: "DataNode"):         
-        evaluation_matrix = np.array([[0.0 for _ in gold_items.items.items()] for _ in self.items.items()])
+    def eval(self, gold_items: "DataNode"):
+        evaluation_matrix = np.array(
+            [[0.0 for _ in gold_items.items.items()] for _ in self.items.items()]
+        )
         for item_key, item in self.items.items():
-            for gold_key, gold_item in gold_items.items.items():                
-                evaluation_matrix[self.items[item_key], gold_items.items[gold_key]] = item.eval(gold_item)
+            for gold_key, gold_item in gold_items.items.items():
+                evaluation_matrix[self.items[item_key], gold_items.items[gold_key]] = (
+                    item.eval(gold_item)
+                )
         # Start finding the highest scores and matching them
         matched_items = []
         while len(matched_items) < len(gold_items.items.items()):
             max_val = evaluation_matrix.max()
-            item_idx, gold_idx = np.unravel_index(evaluation_matrix.argmax(), evaluation_matrix.shape)
-
+            item_idx, gold_idx = np.unravel_index(
+                evaluation_matrix.argmax(), evaluation_matrix.shape
+            )
 
     def process(self, key: str, value: str | Path | None = None, **kwargs) -> None:
         verbose = kwargs.get("verbose", False)
-        value = value if value else kwargs.get("file", None)               
+        value = value if value else kwargs.get("file", None)
         if value and Path(value).exists() and Path(value).is_dir():
             value = Path(value)
             with change_dir(value):
@@ -116,13 +124,14 @@ class DataNode(Node):
                         data = results.get(key, None)
                         assert data, f"[red]{key}[/red] could not be found in {value}"
                         data = data if isinstance(data, list) else [data]
-                        for item in data:           
-                            primitive_type = False                                            
+                        for item in data:
+                            primitive_type = False
                             try:
                                 if not isinstance(item, dict) or not (
-                                    "type" in item and ("path" in item or "data" in item)
-                                ):                      
-                                    primitive_type = True                            
+                                    "type" in item
+                                    and ("path" in item or "data" in item)
+                                ):
+                                    primitive_type = True
                                     raise Warning(
                                         f"Item does not have the correct data format: {item}"
                                     )
@@ -135,13 +144,15 @@ class DataNode(Node):
                                 item["data"] = (
                                     item.pop("path") if "path" in item else item["data"]
                                 )
-                                if "parents" in item and not isinstance(item["parents"], list):
+                                if "parents" in item and not isinstance(
+                                    item["parents"], list
+                                ):
                                     item["parents"] = [item["parents"]]
                                 if (
                                     validation is not None
                                     and "validation" in cls_.all_attributes()
                                 ):
-                                    item["validation"] = validation                                                                                             
+                                    item["validation"] = validation
                                 instance = cls_(**item)
                                 if not instance:
                                     raise Warning(f"Failed to load {item} with {cls_}")
@@ -149,29 +160,29 @@ class DataNode(Node):
                             except Exception as e:
                                 traceback_error(e, verbose=verbose)
                                 if primitive_type:
-                                    print("Primitive type value found, loading it as Text...")
+                                    print(
+                                        "Primitive type value found, loading it as Text..."
+                                    )
                                     for cls_ in self.types:
                                         try:
                                             instance = cls_(key, data=str(item))
-                                            self.add_item(instance)                                            
+                                            self.add_item(instance)
                                         except Exception as e:
-                                            traceback_error(e, verbose=verbose)                                    
+                                            traceback_error(e, verbose=verbose)
 
                 except Exception as e:
                     traceback_error(e, verbose=verbose)
-        elif key:                     
+        elif key:
             for cls_ in self.types:
-                try:                                        
+                try:
                     instance = cls_(key, data=value)
                     self.add_item(instance)
                 except Exception as e:
                     traceback_error(e, verbose=verbose)
 
     @staticmethod
-    def batch_process(
-        item_file: Path, data_nodes: list["DataNode"]
-    ) -> list[Data]:        
-        with change_dir(item_file):            
+    def batch_process(item_file: Path, data_nodes: list["DataNode"]) -> list[Data]:
+        with change_dir(item_file):
             try:
                 data: list[Data] = list()
                 result_file = Path("results.yaml")
@@ -180,10 +191,10 @@ class DataNode(Node):
                     return data
                 with open(result_file, "r") as f:
                     file_data: dict = yaml.safe_load(f)
-                    validation = file_data.get("collectra_results_metadata", dict()).get(
-                        "validation", None
-                    )
-                names = [data_node.name for data_node in data_nodes]                
+                    validation = file_data.get(
+                        "collectra_results_metadata", dict()
+                    ).get("validation", None)
+                names = [data_node.name for data_node in data_nodes]
                 all_names_not_found = all(name not in file_data for name in names)
                 if all_names_not_found:
                     print(
@@ -191,21 +202,31 @@ class DataNode(Node):
                     )
                     found_base = False
                     for name, values in file_data.items():
-                        values = values if isinstance(values, list) else [values]                        
-                        for item in values:                                                                             
-                            if not isinstance(item, dict) or "type" not in item and ("data" not in item or "path" not in item):
-                                continue                                     
-                            cls_str = item.pop("type", "")                            
-                            if cls_str == "collectra.Image":                                
+                        values = values if isinstance(values, list) else [values]
+                        for item in values:
+                            if (
+                                not isinstance(item, dict)
+                                or "type" not in item
+                                and ("data" not in item or "path" not in item)
+                            ):
+                                continue
+                            cls_str = item.pop("type", "")
+                            if cls_str == "collectra.Image":
                                 cls_ = load_class_from_string(cls_str)
                                 try:
-                                    item["name"] = name                        
-                                    item["data"] = item.pop("path") if "path" in item else item["data"]
+                                    item["name"] = name
+                                    item["data"] = (
+                                        item.pop("path")
+                                        if "path" in item
+                                        else item["data"]
+                                    )
                                     if validation is not None:
                                         item["validation"] = validation
-                                    instance = cls_(**item)                                    
+                                    instance = cls_(**item)
                                     if not instance:
-                                        raise Warning(f"Failed to load {item} with {cls_}")
+                                        raise Warning(
+                                            f"Failed to load {item} with {cls_}"
+                                        )
                                     found_base = True
                                     data.append(instance)
                                     break
@@ -213,23 +234,25 @@ class DataNode(Node):
                                     traceback_error(
                                         e,
                                         f"Failed to load data item {name} from {item.get('data', '')}",
-                                        verbose=True,                                        
+                                        verbose=True,
                                     )
                         if found_base:
-                            break                    
+                            break
                 for i, name in enumerate(names):
-                    if name not in file_data:                        
+                    if name not in file_data:
                         continue
                     value = file_data[name]
                     if not value:
-                        raise Warning(f"Data seems to be empty for {name} in {item_file}. Provided: {value}")
+                        raise Warning(
+                            f"Data seems to be empty for {name} in {item_file}. Provided: {value}"
+                        )
                     value = value if isinstance(value, list) else [value]
                     for item in value:
                         if not isinstance(item, dict) or not (
                             "type" in item and ("data" in item or "path" in item)
                         ):
                             continue
-                        cls_ = load_class_from_string(item.pop("type"))                        
+                        cls_ = load_class_from_string(item.pop("type"))
                         match = False
                         for type_ in data_nodes[i].types:
                             if issubclass(cls_, type_) or cls_ == type_:
@@ -237,13 +260,15 @@ class DataNode(Node):
                                 break
                         if not match:
                             continue
-                        item["name"] = name                        
-                        item["data"] = item.pop("path") if "path" in item else item["data"]
+                        item["name"] = name
+                        item["data"] = (
+                            item.pop("path") if "path" in item else item["data"]
+                        )
                         if validation is not None:
                             item["validation"] = validation
                         try:
                             instance = cls_(**item)
-                            if instance:                                
+                            if instance:
                                 data.append(instance)
                         except Exception as e:
                             traceback_error(
@@ -252,5 +277,5 @@ class DataNode(Node):
                             )
                 return data
             except Exception as e:
-                traceback_error(e, verbose=True)            
+                traceback_error(e, verbose=True)
                 return list()

@@ -12,9 +12,9 @@ Classes:
     Model: Abstract base class defining the ML model interface
 """
 
+import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-import os
 
 
 class Model(ABC):

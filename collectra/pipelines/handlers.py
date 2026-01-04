@@ -16,14 +16,20 @@ Classes:
     ZipHandler: Handler for zip-based workflow storage
 """
 
+import os
+import shutil
+import tempfile
+import zipfile
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+
+import yaml
+
 from collectra.pipelines.base import Collectra
 from collectra.tasks.base import Task
 from collectra.tasks.ml import MachineLearningTask
 from collectra.utils import error_msg, processing_msg, success_msg
-from datetime import datetime
-from dataclasses import dataclass
-from pathlib import Path
-import os, shutil, tempfile, yaml, zipfile
 
 
 @dataclass(kw_only=True)

@@ -1,9 +1,11 @@
-import pytest, traceback, shutil
-
-from rich import print
+import shutil
+import traceback
 from pathlib import Path
 
-from collectra import ObjectDetectionYOLO, ImageCrop
+import pytest
+from rich import print
+
+from collectra import ImageCrop, ObjectDetectionYOLO
 from collectra.utils import error_msg
 
 

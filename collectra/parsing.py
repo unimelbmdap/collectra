@@ -19,12 +19,14 @@ Classes:
     CollectraWorkflow: Main workflow class for parsing and execution
 """
 
-from pathlib import Path
-import yaml
-import os
-import networkx as nx
 import importlib
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
+
+import networkx as nx
+import yaml
+
 from collectra.utils import from_dir, unzip
 
 

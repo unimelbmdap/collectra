@@ -17,10 +17,11 @@ __all__ = ["TaskManager"]
 
 from typing import get_args
 
+from collectra.utils import load_class_from_string
+from utils.get_types import get_param_types, unpack_types
+
 from .base import Task
 from .machine_learning import MachineLearningTask
-from collectra.utils import load_class_from_string
-from utils.get_types import unpack_types, get_param_types
 
 
 class TaskManager:

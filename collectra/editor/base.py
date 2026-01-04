@@ -1,8 +1,10 @@
-import yaml, json, webbrowser
-
-from jinja2 import Environment, PackageLoader, select_autoescape
+import json
+import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
+
+import yaml
+from jinja2 import Environment, PackageLoader, select_autoescape
 
 from collectra.utils import change_dir
 

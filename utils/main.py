@@ -1,10 +1,19 @@
+import os
+import re
+import shutil
+import tempfile
+import traceback
+import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing_extensions import Annotated
+
+import pytz
+import tqdm
+import typer as tp
+import yaml
 from rich import print
 from rich.progress import track
-import os, pytz, re, shutil, tempfile, tqdm, yaml, zipfile,traceback
-import typer as tp
+from typing_extensions import Annotated
 
 app = tp.Typer()
 
@@ -12,7 +21,7 @@ app = tp.Typer()
 def get_files(config: dict) -> list[dict[str, str]]:
     files = []
     parent_dir = Path(config.get("parent_dir", "."))
-    train_file = parent_dir / config.get("train", "")    
+    train_file = parent_dir / config.get("train", "")
     if train_file.is_file():
         with open(train_file, "r") as file:
             files.extend(
@@ -21,7 +30,7 @@ def get_files(config: dict) -> list[dict[str, str]]:
                     for line in file
                     if line.strip()
                 ]
-        )
+            )
     val_file = parent_dir / config.get("val", "")
     if val_file.is_file():
         with open(val_file, "r") as file:
@@ -31,7 +40,7 @@ def get_files(config: dict) -> list[dict[str, str]]:
                     for line in file
                     if line.strip()
                 ]
-            )    
+            )
     return files
 
 
@@ -53,7 +62,7 @@ def get_label_paths(config: dict, files: list[dict[str, str]]) -> list[Path]:
 
 def convert_files(config: dict) -> None:
     files = get_files(config)
-    names = config.get("names", [])    
+    names = config.get("names", [])
     output_dir = Path(config.get("output_dir", "output"))
     format = re.sub(r"[^0-9a-zA-Z]+", "", config.get("format", "grapto").lower())
     label_paths = get_label_paths(config, files)
@@ -92,14 +101,14 @@ def convert_files(config: dict) -> None:
                 key not in ["collectra_results_metadata", "specimen_sheet"]
                 and len(results_yaml[key]) == 1
             ):
-                results_yaml[key] = results_yaml[key][0]                                    
+                results_yaml[key] = results_yaml[key][0]
 
         output_path = (
             output_dir
             / "images"
             / image.name.replace(".jpg", f".{format}").replace(".png", f".{format}")
-        )                
-        output_path.mkdir(parents=True, exist_ok=True)        
+        )
+        output_path.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(image, output_path / image.name)
         with open(output_path / "results.yaml", "w") as f:
             for key in results_yaml:
@@ -110,7 +119,8 @@ def convert_files(config: dict) -> None:
                         sort_keys=False,
                     )
                 )
-                f.write("\n")        
+                f.write("\n")
+
 
 @app.command()
 def convert(
@@ -147,9 +157,12 @@ def convert(
         traceback.print_exc()
         print(f"Error: {e}")
 
+
 @app.command()
 def convert_raw_img(
-    imf: Annotated[str, tp.Option("--image_format", "-i", help="Image format to be searched for")],
+    imf: Annotated[
+        str, tp.Option("--image_format", "-i", help="Image format to be searched for")
+    ],
     format: Annotated[str, tp.Option("--format", "-f", help="Output file format")],
     folder: Annotated[
         Path, tp.Option("--folder", "-d", help="Path to folder containing images")
@@ -159,21 +172,19 @@ def convert_raw_img(
     ],
 ):
     from PIL import Image
+
     folder_path = Path(folder)
-    folder_path.mkdir(parents=True, exist_ok=True)    
-    for image in track(folder.glob(f"*.{imf}")):            
+    folder_path.mkdir(parents=True, exist_ok=True)
+    for image in track(folder.glob(f"*.{imf}")):
         results_yaml = {
             "collectra_results_metadata": {
                 "timestamp": datetime.now(pytz.utc).isoformat(),
                 "validation": False,
             },
-            f"{first_label}" : {
-                "type": "collectra.Image", 
-                "data": image.name
-            },            
-        }                        
-        file_path = folder_path / f"{image.stem}.{format}"  
-        file_path.mkdir(parents=True, exist_ok=True)        
+            f"{first_label}": {"type": "collectra.Image", "data": image.name},
+        }
+        file_path = folder_path / f"{image.stem}.{format}"
+        file_path.mkdir(parents=True, exist_ok=True)
         with open(file_path / "results.yaml", "w") as file:
             for result in results_yaml:
                 yaml.dump(
@@ -187,13 +198,14 @@ def convert_raw_img(
         data = list(img.getdata())
         img_no_exif = Image.new(img.mode, img.size)
         img_no_exif.putdata(data)
-        img_no_exif.save(folder_path / f"{image.stem}.{format}" / image.name)           
+        img_no_exif.save(folder_path / f"{image.stem}.{format}" / image.name)
+
 
 @app.command()
 def cluster(
     yolo_config: Annotated[
         Path, tp.Option("--config", "-c", help="Path to YOLO configuration file")
-    ],    
+    ],
     image_folder: Annotated[
         Path, tp.Option("--image-folder", "-i", help="Path to image folder")
     ],
@@ -211,9 +223,9 @@ def cluster(
     with open(yolo_config, "r") as file:
         config = yaml.safe_load(file)
 
-    class_counts = {name: 0 for name in config.get("names", [])}    
+    class_counts = {name: 0 for name in config.get("names", [])}
     num_training_files = 0
-    num_validation_files = 0    
+    num_validation_files = 0
     for image in image_folder.glob(f"*.{format}"):
         results_yaml_path = ""
         if image.is_dir():
@@ -224,10 +236,10 @@ def cluster(
             results_yaml = yaml.safe_load(file)
 
         validation = results_yaml["collectra_results_metadata"]["validation"]
-        if validation != is_file_for_validation:        
+        if validation != is_file_for_validation:
             num_training_files += 1
-            continue        
-        
+            continue
+
         num_validation_files += 1
 
         for key in results_yaml:
@@ -244,21 +256,21 @@ def cluster(
         print(f"Total count for class '{class_name}': {count}")
 
 
-def convert_image_objects(results_yaml: dict) -> dict:        
-    for key in results_yaml:        
+def convert_image_objects(results_yaml: dict) -> dict:
+    for key in results_yaml:
         data = results_yaml[key]
         if "type" in data:
-            if data["type"] in ["ImageCrop", "Image"]:                            
+            if data["type"] in ["ImageCrop", "Image"]:
                 if "path" in data:
                     data["data"] = data.pop("path")
                 elif "image" in data:
                     data["data"] = results_yaml[data.pop("image")]["data"]
                 data["type"] = f"collectra.{data['type']}"
                 if "items" in data:
-                    for item in data["items"]:                        
+                    for item in data["items"]:
                         item["data"] = data["data"]
                         item["type"] = data["type"]
-                    results_yaml[key] = data["items"]                                                
+                    results_yaml[key] = data["items"]
         #         data["type"] = "collectra.images.base.ImageCrop"
         #     elif data["type"] == "Image" or data["type"] == "collectra.images.Image":
         #         data["type"] = "collectra.images.base.Image"
@@ -271,7 +283,7 @@ def convert_image_objects(results_yaml: dict) -> dict:
         #     data.pop("type", None)
         #     data.pop("image", None)
         #     new_data.update(data)
-        #     results_yaml[key] = new_data    
+        #     results_yaml[key] = new_data
     return results_yaml
 
 
@@ -332,59 +344,80 @@ def show(
     label: Annotated[
         str, tp.Option("--label", "-l", help="label of the original image")
     ],
-    font_path: Annotated[str, tp.Option("--font", "-f", help="Font to be used for text display")],
-    font_size: Annotated[int, tp.Option("--font-size", "-fs", help="Font size to be used for text display")] = 48,
+    font_path: Annotated[
+        str, tp.Option("--font", "-f", help="Font to be used for text display")
+    ],
+    font_size: Annotated[
+        int,
+        tp.Option("--font-size", "-fs", help="Font size to be used for text display"),
+    ] = 48,
     save: Annotated[bool, tp.Option("--save", help="Save the drawn images")] = False,
-    output: Annotated[str, tp.Option("--output", help="The folder to save the detected images")] = "detected_images",
+    output: Annotated[
+        str, tp.Option("--output", help="The folder to save the detected images")
+    ] = "detected_images",
 ):
     """Display the original image with crops and labels from the results.yaml annotation file.
 
     Args:
         path (Path): Path to the collectra file containing annotations.
 
-    """    
+    """
     from PIL import ImageDraw, ImageFont
+
     from collectra import Image, ImageCrop
     from collectra.utils import change_dir, load_class_from_string
+
     file_path = Path(path)
     font = ImageFont.truetype(font_path, size=font_size)
     if not file_path.exists() or not file_path.is_dir():
         raise ValueError("File does not exist or is invalid, exiting...")
     with change_dir(file_path):
         with open("results.yaml", "r") as f:
-            data = yaml.safe_load(f)        
-        value = data.pop(label, None)        
-        if value is None or "type" not in value or load_class_from_string(value["type"]) != Image:
-            raise ValueError("This file does not contain a base image to draw on! Exiting...")                
+            data = yaml.safe_load(f)
+        value = data.pop(label, None)
+        if (
+            value is None
+            or "type" not in value
+            or load_class_from_string(value["type"]) != Image
+        ):
+            raise ValueError(
+                "This file does not contain a base image to draw on! Exiting..."
+            )
         original_image = Image(name=label, parents=[], data=value["data"])
         image_pil = original_image.pil()
         if image_pil.mode != "RGB":
             image_pil = image_pil.convert("RGB")
-        draw = ImageDraw.Draw(image_pil)        
+        draw = ImageDraw.Draw(image_pil)
 
         for key, values in data.items():
             if not isinstance(values, list):
                 values = [values]
             try:
                 for value in values:
-                    if not isinstance(value, dict) or "type" not in value or load_class_from_string(value["type"]) != ImageCrop:
+                    if (
+                        not isinstance(value, dict)
+                        or "type" not in value
+                        or load_class_from_string(value["type"]) != ImageCrop
+                    ):
                         continue
                     image_crop = original_image.make_crop(
                         name=key,
-                        x_center = float(value["x_center"]),
-                        y_center = float(value["y_center"]),
-                        width_relative = float(value["width_relative"]),
-                        height_relative = float(value["height_relative"])
+                        x_center=float(value["x_center"]),
+                        y_center=float(value["y_center"]),
+                        width_relative=float(value["width_relative"]),
+                        height_relative=float(value["height_relative"]),
                     )
                     coordinates = image_crop.coordinates()
-                    draw.rectangle(coordinates, outline="blue", width=8)                
+                    draw.rectangle(coordinates, outline="blue", width=8)
                     left, upper, _, _ = coordinates
-                    upper = upper - font_size*1.1 if upper - font_size*1.1 >= 0 else 0                     
-                    draw.text((left, upper), key, fill="red", font=font)    
+                    upper = (
+                        upper - font_size * 1.1 if upper - font_size * 1.1 >= 0 else 0
+                    )
+                    draw.text((left, upper), key, fill="red", font=font)
             except Exception as e:
                 print(f"Error processing label '{key}': {e}")
                 return
-    if save:        
+    if save:
         Path(output).mkdir(parents=True, exist_ok=True)
         image_pil.save(Path(output) / f"{file_path.stem}.jpg")
     else:
@@ -402,12 +435,12 @@ def legacy_fix(
     format: Annotated[
         str, tp.Option("--format", "-f", help="File format of collectra files")
     ],
-):    
-    for image in track(folder.glob(f"*.{format}")):            
+):
+    for image in track(folder.glob(f"*.{format}")):
         results_yaml_path = ""
         if not image.is_dir():
             raise Warning(f"Expected directory for image: {image}")
-        results_yaml_path = image / "results.yaml"            
+        results_yaml_path = image / "results.yaml"
         with open(results_yaml_path, "r") as file:
             results_yaml = yaml.safe_load(file)
         results_yaml = convert_image_objects(results_yaml)

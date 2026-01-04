@@ -1,7 +1,7 @@
 import shutil
+from pathlib import Path
 
 from collectra import Collectra
-from pathlib import Path
 
 
 def build_pipeline(pipeline: dict) -> Collectra:
@@ -60,7 +60,12 @@ def test_train(pipeline, debug, tmpdir):
         task_name = "object_detector"
         log_dir = Path(tmpdir) / "train_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        result, validation_result  = pipeline.train(task_name, input=["tests/data/images"], log_dir=log_dir, project=Path.cwd() / f"{pipeline.name}-{task_name}")
+        result, validation_result = pipeline.train(
+            task_name,
+            input=["tests/data/images"],
+            log_dir=log_dir,
+            project=Path.cwd() / f"{pipeline.name}-{task_name}",
+        )
         assert result, "Train method should not return None"
         assert validation_result, "Validation result should not be None"
     except Exception as e:
@@ -69,8 +74,8 @@ def test_train(pipeline, debug, tmpdir):
 
 def test_run_full(pipeline, debug, tmpdir, raw_img_path):
     try:
-        pipeline = build_pipeline(pipeline)           
-        shutil.copy(raw_img_path, tmpdir / "bar1.jpg")        
+        pipeline = build_pipeline(pipeline)
+        shutil.copy(raw_img_path, tmpdir / "bar1.jpg")
         pipeline.run(bar_img1=tmpdir / "bar1.jpg")
     except Exception as e:
         debug(e)
@@ -78,12 +83,12 @@ def test_run_full(pipeline, debug, tmpdir, raw_img_path):
 
 def test_run_one_task(pipeline, debug, tmpdir, raw_img_path):
     try:
-        pipeline = build_pipeline(pipeline)        
+        pipeline = build_pipeline(pipeline)
         file_path = "tests/data/images/bar1.arb"
-        tempfile = shutil.copytree(file_path, tmpdir / "bar1.arb")        
+        tempfile = shutil.copytree(file_path, tmpdir / "bar1.arb")
         shutil.copy(raw_img_path, tmpdir / "bar1.jpg")
         pipeline.run(
-            "markdown_converter",            
+            "markdown_converter",
             bar_img1=tmpdir / "bar1.jpg",
             file=tempfile,
         )
@@ -93,7 +98,7 @@ def test_run_one_task(pipeline, debug, tmpdir, raw_img_path):
 
 def test_run_single_task(pipeline, debug, tmpdir):
     try:
-        pipeline = build_pipeline(pipeline)        
+        pipeline = build_pipeline(pipeline)
         file_path = "tests/data/images/bar1.arb"
         tempfile = shutil.copytree(file_path, tmpdir / "bar1.arb")
         pipeline.run("object_detector", single=True, file=tempfile)

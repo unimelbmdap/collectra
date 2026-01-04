@@ -16,18 +16,20 @@ Classes:
 
 __all__ = ["LLM"]
 
-import llmloader, re, os
+import os
+import re
 
+import llmloader
+from dotenv import load_dotenv
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.messages import SystemMessage, HumanMessage
 
 from collectra.tasks.base import Task
 from collectra.types.images import Image
 from collectra.types.texts import Text
 
-from dotenv import load_dotenv
-
 load_dotenv()
+
 
 class LLM(Task):
     """Task for Large Language Model inference operations.
@@ -45,16 +47,14 @@ class LLM(Task):
         variables (dict): Additional variables for template substitution.
     """
 
-    def __init__(self, name: str, model: str, **kwargs):             
+    def __init__(self, name: str, model: str, **kwargs):
         super().__init__(name, **kwargs)
         self.template: str = kwargs.get("template", "")
-        self.preamble: str = kwargs.get("preamble", "") 
+        self.preamble: str = kwargs.get("preamble", "")
         self.temperature = kwargs.get("temperature", 0.8)
-        self.max_tokens = kwargs.get("max_tokens", None)                                          
+        self.max_tokens = kwargs.get("max_tokens", None)
         self.llm = llmloader.load(
-            model, 
-            temperature=self.temperature, 
-            max_tokens=self.max_tokens
+            model, temperature=self.temperature, max_tokens=self.max_tokens
         )
 
         self.chain = self.llm
@@ -66,10 +66,10 @@ class LLM(Task):
             else SystemMessage(content="You are a helpful assistant.")
         )
         self.messages: list[SystemMessage | HumanMessage] = [init_messages]
-    
+
     def get_pattern_matches(self) -> tuple:
-        prompt = f"{self.preamble}\n\n{self.template}".strip()        
-        pattern = r"\{(.*?)\}"        
+        prompt = f"{self.preamble}\n\n{self.template}".strip()
+        pattern = r"\{(.*?)\}"
         return prompt, pattern
 
     def image_content(self, image: Image):
@@ -80,7 +80,7 @@ class LLM(Task):
                 "data": image.get_encoding(),
                 "mime_type": image.mime(),
             },
-        )        
+        )
 
     def _add_content(self, value: Image | Text) -> dict:
         if isinstance(value, Image):
@@ -89,7 +89,7 @@ class LLM(Task):
 
     def _add_text(self, text: str) -> dict:
         return {"type": "text", "text": text}
-    
+
     def pre_run(self) -> tuple:
         self.messages = self.messages[:1]  # Reset to initial system message
         prompt, pattern = self.get_pattern_matches()
@@ -98,15 +98,22 @@ class LLM(Task):
     def check_inputs(self, *args: Text | Image) -> None:
         """Validate that the messages are not longer than the expected number of inputs."""
         residual_inputs = len(args)
-        assert len(self.messages) == 2, "Expected one system message and one human message."
+        assert (
+            len(self.messages) == 2
+        ), "Expected one system message and one human message."
         human_message = self.messages[1]
         for content in human_message.content:
-            if isinstance(content, dict) and (content.get("type") == "image" or content.get("type") == "text"):
+            if isinstance(content, dict) and (
+                content.get("type") == "image" or content.get("type") == "text"
+            ):
                 residual_inputs -= 1
-        assert residual_inputs <= 0, "Number of inputs does not match the expected count"
+        assert (
+            residual_inputs <= 0
+        ), "Number of inputs does not match the expected count"
 
-
-    def replace_inputs(self, pattern: str, prompt: str, *args: Text | Image, **kwargs) -> list[str | dict]:
+    def replace_inputs(
+        self, pattern: str, prompt: str, *args: Text | Image, **kwargs
+    ) -> list[str | dict]:
         messages: list[str | dict] = list()
         while re.search(pattern, prompt):
             match = next(re.finditer(pattern, prompt))
@@ -115,7 +122,7 @@ class LLM(Task):
             replaced = False
             if prompt[:start]:
                 messages.append(self._add_text(prompt[:start]))
-            for arg in args:                
+            for arg in args:
                 key = arg.name
                 if key == item:
                     messages.append(self._add_content(arg))
@@ -125,26 +132,29 @@ class LLM(Task):
                 replaced = True
                 messages.append(self._add_text(kwargs["entities"]))
             if not replaced:
-                messages.append(self._add_text(f"No content provided for {item}. Ignore this part."))
+                messages.append(
+                    self._add_text(f"No content provided for {item}. Ignore this part.")
+                )
             prompt = prompt[end:].strip()
-        
+
         if prompt:
             messages.append(self._add_text(prompt))
-        
+
         return messages
-    
+
     def invoke(self) -> str:
-        response = self.chain.invoke(self.messages)            
+        response = self.chain.invoke(self.messages)
 
         usage_file = os.getenv("USAGE_FILE", "")
-        
+
         if usage_file:
-            llmloader.LLMWrapper.get_token_count(usage_file, response.response_metadata, self.name)        
+            llmloader.LLMWrapper.get_token_count(
+                usage_file, response.response_metadata, self.name
+            )
 
         response = self.parser.invoke(response)
 
         return response
-
 
     def run(self, *args: Text | Image) -> Text:
         """Execute LLM inference on the provided inputs with template-based prompt generation.
@@ -162,14 +172,14 @@ class LLM(Task):
             Updates self.output dictionary with generated text responses. Output keys
             that contain the input key as a substring will be populated with LLM results.
             Prints a success message when inference completes.
-        """                
-        prompt, pattern = self.pre_run()                
+        """
+        prompt, pattern = self.pre_run()
 
         messages = self.replace_inputs(pattern, prompt, *args)
-             
-        self.messages.append(HumanMessage(content=messages))     
 
-        self.check_inputs(*args)        
+        self.messages.append(HumanMessage(content=messages))
+
+        self.check_inputs(*args)
 
         response = self.invoke()
 
@@ -180,4 +190,3 @@ class LLM(Task):
         )
         output = Text(name=name, data=response)
         return output
-

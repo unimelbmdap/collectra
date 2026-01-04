@@ -1,6 +1,7 @@
-import pytest, yaml
-
 from pathlib import Path
+
+import pytest
+import yaml
 
 from collectra import Image, ImageCrop
 from collectra.utils import change_dir, load_class_from_string

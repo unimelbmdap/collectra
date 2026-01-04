@@ -1,4 +1,4 @@
-from typing import get_type_hints, get_args
+from typing import get_args, get_type_hints
 
 __all__ = ["get_param_types", "get_return_type"]
 
