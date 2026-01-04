@@ -153,6 +153,12 @@ def run(
         bool,
         typer.Option("--usage", help="Enables token usage tracking during LLM tasks"),
     ] = False,
+    render: Annotated[
+        bool,
+        typer.Option(
+            "--render", help="Enables rendering of the workflow state during execution"
+        ),
+    ] = False,
 ):
     """Execute a Collectra workflow or specific task within a workflow.
 
@@ -176,6 +182,7 @@ def run(
         data: dict[str, str | bool | list[str] | Path | list[Path]] = dict()
         data["single"] = single
         data["usage"] = usage
+        data["render"] = render
         if output:
             data["output"] = str(output)
         data["files"] = list()

@@ -22,13 +22,13 @@ def debug(request):
 
 
 @pytest.fixture
-def train_yolo():
+def train_yolo(tmp_path):
     from ultralytics.utils.metrics import DetMetrics
 
     def _train_yolo(
         task: ObjectDetectionYOLO, *images: ImageCrop, **kwargs
     ) -> tuple[DetMetrics | None, DetMetrics | None, Path]:
-        log_dir = Path.cwd() / "log_dir"
+        log_dir = tmp_path / "log_dir"
         Path(log_dir).mkdir(exist_ok=True)
         results, validation_results = task.train(
             *images,

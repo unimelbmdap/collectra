@@ -14,11 +14,6 @@ pytest_plugins = [
 
 
 @pytest.fixture(autouse=True)
-def cleanup_tmp_dir():
-    shutil.rmtree("log_dir", ignore_errors=True)
-
-
-@pytest.fixture(autouse=True)
 def cleanup_pt(root_data_path):
     file_pt = Path.cwd() / "yolo11n.pt"
     collectra_pt = root_data_path / "yolo11n.pt"

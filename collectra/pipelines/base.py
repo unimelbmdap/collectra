@@ -138,17 +138,20 @@ class Collectra:
         files = kwargs.pop("files", [])
         verbose = kwargs.pop("verbose", False)
         usage = kwargs.pop("usage", False)
+        render = kwargs.pop("render", False)
         for value in files:
             key = "file" if Path(value).suffix == f".{self.ext}" else "specimen_sheet"
             key, value = self._create_collectra_file(key, value)
             input = {key: value}
             self._init_input_data(starting_nodes, **input, verbose=verbose)
-            self.render("workflow_run", file=str(value))
+            self.render("workflow_run", file=str(value), render=render)
             if usage:
                 os.environ["USAGE_FILE"] = str(
                     Path.cwd() / str(Path(value) / "usage.yaml")
                 )
-            self._run_nodes(starting_nodes, single=single, key=key, value=value)
+            self._run_nodes(
+                starting_nodes, single=single, key=key, value=value, render=render
+            )
             os.environ["USAGE_FILE"] = ""
 
     def _create_collectra_file(
@@ -341,12 +344,13 @@ class Collectra:
         **kwargs,
     ):
         single_run = kwargs.get("single", False)
+        render = kwargs.get("render", False)
         child_tasks_of_data_nodes = dict()
         for node in nodes:
             graph_node = self.flow.nodes[str(node.name)]
             graph_node["color"] = "orange"
             graph_node["fontcolor"] = "black"
-        self.render("workflow_run", file=kwargs.get("value", ""))
+        self.render("workflow_run", file=kwargs.get("value", ""), render=render)
         for node in nodes:
             if isinstance(node, TaskNode):
                 if not self._check_task_ready(node) == NodeStatus.READY:
@@ -357,7 +361,7 @@ class Collectra:
                 results: list = self._run_task(node, **kwargs)
                 self.flow.nodes[str(node.name)]["color"] = "green" if results else "red"
                 self.flow.nodes[str(node.name)]["fontcolor"] = "black"
-                self.render("workflow_run", file=kwargs.get("value", ""))
+                self.render("workflow_run", file=kwargs.get("value", ""), render=render)
                 self._run_nodes(children, *results, **kwargs)
             elif isinstance(node, DataNode):
                 for arg in args:
@@ -370,7 +374,7 @@ class Collectra:
                 )
                 self.flow.nodes[str(node.name)]["color"] = "green"
                 self.flow.nodes[str(node.name)]["fontcolor"] = "black"
-                self.render("workflow_run", file=kwargs.get("value", ""))
+                self.render("workflow_run", file=kwargs.get("value", ""), render=render)
                 children = list(self.flow.successors(str(node.name)))
                 children = [self._resolve_node(child) for child in children]
                 for child in children:
@@ -659,7 +663,9 @@ class Collectra:
             data_node.add_item(obj)
             data_node.types = data_node.types.union(set(types))
 
-    def render(self, dest: str | Path = "", file=""):
+    def render(self, dest: str | Path = "", file="", render=False) -> None:
+        if not render:
+            return
         if self.flow.number_of_nodes() == 0:
             self.connect()
         visual_graph: nx.DiGraph = self.flow.copy()
