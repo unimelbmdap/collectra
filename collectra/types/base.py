@@ -6,8 +6,8 @@ import numpy as np
 import yaml
 from rich import print
 
-from collectra.commons import BaseEntity, Node, NodeStatus
-from collectra.utils import (
+from ..commons import BaseEntity, Node, NodeStatus
+from ..utils import (
     change_dir,
     error_msg,
     load_class_from_string,

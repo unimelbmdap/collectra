@@ -29,23 +29,23 @@ from pathlib import Path
 import graphviz
 import networkx as nx
 import yaml
-from matplotlib import pyplot as plt
-from matplotlib.animation import FuncAnimation
 from rich import print
-from rich.progress import track
 from ultralytics.utils.metrics import DetMetrics
 
-from collectra import (
-    Data,
-    DataNode,
-    MachineLearningTask,
-    Node,
-    NodeStatus,
+from collectra.utils import change_dir, load_class_from_string, remove_exif
+from utils.get_types import get_param_types, get_return_type, unpack_types
+
+from ..tasks.base import (
     Task,
     TaskNode,
 )
-from collectra.utils import change_dir, load_class_from_string, remove_exif
-from utils.get_types import get_param_types, get_return_type, unpack_types
+from ..tasks.machine_learning import MachineLearningTask
+from ..types.base import (
+    Data,
+    DataNode,
+    Node,
+    NodeStatus,
+)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
