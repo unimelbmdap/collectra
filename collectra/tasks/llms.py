@@ -149,7 +149,7 @@ class LLM(Task):
 
         if usage_file:
             llmloader.LLMWrapper.get_token_count(
-                usage_file, response.response_metadata, self.name
+                usage_file, response.response_metadata
             )
 
         response = self.parser.invoke(response)
