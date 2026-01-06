@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 from collectra import MachineLearningTask, ObjectDetectionYOLO, Task
 from collectra.utils import load_class_from_string
@@ -13,7 +14,7 @@ def test_generic_task(generic_type, debug):
         assert param_types == dict(), "Parameter types should be empty for base Task"
         return_type = get_return_type(task.run)
         assert (
-            return_type["return"] == generic_type
+            return_type["return"] == Optional[generic_type]
         ), "Return type should be Generic for base Task"
     except Exception as e:
         debug(e)
@@ -27,7 +28,7 @@ def test_generic_machine_learning_task(generic_type, debug):
         assert param_types == dict(), "Parameter types should be empty for base Task"
         return_type = get_return_type(task.run)
         assert (
-            return_type["return"] == generic_type
+            return_type["return"] == Optional[generic_type]
         ), "Return type should be Generic for base Task"
     except Exception as e:
         debug(e)

@@ -18,8 +18,10 @@ __all__ = ["LLM"]
 
 import os
 import re
+from pathlib import Path
 
 import llmloader
+import yaml
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
@@ -148,15 +150,28 @@ class LLM(Task):
         usage_file = os.getenv("USAGE_FILE", "")
 
         if usage_file:
-            llmloader.LLMWrapper.get_token_count(
-                usage_file, response.response_metadata
-            )
+            usage = llmloader.LLMWrapper.get_token_count(response)
+            usage_file = Path(usage_file)
+            data = {f"{self.name}": usage}
+            old_data = {}
+            if usage_file.exists():
+                with open(usage_file, "r") as f:
+                    old_data = yaml.safe_load(f) or dict()
+            for key, value in old_data.items():
+                if key not in data:
+                    data[key] = value
+                else:
+                    for item, item_value in value.items():
+                        data[key][item] = data.get(key, {}).get(item, 0) + item_value
+            usage_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(usage_file, "w") as f:
+                yaml.dump(data, f)
 
         response = self.parser.invoke(response)
 
         return response
 
-    def run(self, *args: Text | Image) -> Text:
+    def run(self, *args: Text | Image) -> Text | None:
         """Execute LLM inference on the provided inputs with template-based prompt generation.
 
         For list inputs, each item is processed individually and results are collected
@@ -173,20 +188,24 @@ class LLM(Task):
             that contain the input key as a substring will be populated with LLM results.
             Prints a success message when inference completes.
         """
-        prompt, pattern = self.pre_run()
+        try:
+            prompt, pattern = self.pre_run()
 
-        messages = self.replace_inputs(pattern, prompt, *args)
+            messages = self.replace_inputs(pattern, prompt, *args)
 
-        self.messages.append(HumanMessage(content=messages))
+            self.messages.append(HumanMessage(content=messages))
 
-        self.check_inputs(*args)
+            self.check_inputs(*args)
 
-        response = self.invoke()
+            response = self.invoke()
 
-        name = (
-            f"{self.get_name()}_output"
-            if not hasattr(self, "output")
-            else self.output[0] if isinstance(self.output, list) else self.output
-        )
-        output = Text(name=name, data=response)
-        return output
+            name = (
+                f"{self.get_name()}_output"
+                if not hasattr(self, "output")
+                else self.output[0] if isinstance(self.output, list) else self.output
+            )
+            output = Text(name=name, data=response)
+            return output
+        except Exception as e:
+            self.catcher.set_err(str(e))
+            return None

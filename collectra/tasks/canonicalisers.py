@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
-from langchain_openai import AzureOpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 
 from collectra.tasks.llms import LLM as CollectraLLM
 from collectra.types.texts import Text
@@ -58,7 +58,7 @@ class LLMCanonicaliser(CollectraLLM):
 
     def retrieve_entities(self, query_data: str) -> dict:
         index_path = Path(self.entities.stem + "_index.embed")
-        embeddings = AzureOpenAIEmbeddings(model=self.embedding_model)
+        embeddings = OpenAIEmbeddings(model=self.embedding_model)
         if index_path.exists() and index_path.is_dir():
             print(f"Loading existing vector store from {index_path}")
             vector_store = Chroma(

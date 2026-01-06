@@ -29,7 +29,7 @@ class Task(BaseEntity, Generic[T]):
     """
 
     def __init__(self, name: str, **kwargs) -> None:
-        self.name = name
+        super().__init__(name)
         for key, value in kwargs.items():
             setattr(self, key, value)
 
@@ -75,7 +75,7 @@ class Task(BaseEntity, Generic[T]):
         ]
         return entries
 
-    def run(self, *args) -> T:
+    def run(self, *args) -> T | None:
         """Run the task execution logic.
 
         This method contains the core task execution logic and must be
@@ -84,7 +84,7 @@ class Task(BaseEntity, Generic[T]):
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
-    def __call__(self, *args) -> T:
+    def __call__(self, *args) -> T | None:
         """Run the task with the provided arguments.
 
         Args:

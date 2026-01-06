@@ -45,6 +45,7 @@ class Data(BaseEntity):
         return f"{self.name}-{uuid.uuid4()}"
 
     def __post_init__(self) -> None:
+        super().__init__(self.name)  # Initialize BaseEntity
         if not self.id:
             self.id = self._generate_id()
 
@@ -72,6 +73,7 @@ class DataNode(Node):
     types: set[type] = field(default_factory=set)
 
     def __post_init__(self) -> None:
+        super().__post_init__()
         self.status = NodeStatus.READY if self.items else NodeStatus.NOT_READY
 
     def add_item(self, item: Data) -> None:
@@ -108,8 +110,19 @@ class DataNode(Node):
                 evaluation_matrix.argmax(), evaluation_matrix.shape
             )
 
+    def _create_instance(self, cls_: type, **item) -> None:
+        try:
+            instance = cls_(**item)
+            assert instance, f"Failed to load {item} with {cls_}"
+            self.add_item(instance)
+        except Exception as e:
+            self.catcher.set_err(str(e))
+
+    def _create_instances(self, **item) -> None:
+        for cls_ in self.types:
+            self._create_instance(cls_, **item)
+
     def process(self, key: str, value: str | Path | None = None, **kwargs) -> None:
-        verbose = kwargs.get("verbose", False)
         value = value if value else kwargs.get("file", None)
         if value and Path(value).exists() and Path(value).is_dir():
             value = Path(value)
@@ -127,23 +140,18 @@ class DataNode(Node):
                         for item in data:
                             primitive_type = False
                             try:
-                                if not isinstance(item, dict) or not (
+                                primitive_type = not isinstance(item, dict) or not (
                                     "type" in item
                                     and ("path" in item or "data" in item)
-                                ):
-                                    primitive_type = True
-                                    raise Warning(
-                                        f"Item does not have the correct data format: {item}"
-                                    )
-                                cls_ = load_class_from_string(item.pop("type"))
-                                if not self.check_type(cls_):
-                                    raise Warning(
-                                        f"{cls_} is not a subclass or not defined in {self.types}"
-                                    )
-                                item["name"] = key
-                                item["data"] = (
-                                    item.pop("path") if "path" in item else item["data"]
                                 )
+                                assert not primitive_type
+                                cls_ = load_class_from_string(item.pop("type"))
+                                assert self.check_type(
+                                    cls_
+                                ), f"{cls_} is not a subclass or not defined in {self.types}"
+                                item["name"] = key
+                                if "data" not in item:
+                                    item["data"] = item.pop("path")
                                 if "parents" in item and not isinstance(
                                     item["parents"], list
                                 ):
@@ -153,32 +161,17 @@ class DataNode(Node):
                                     and "validation" in cls_.all_attributes()
                                 ):
                                     item["validation"] = validation
-                                instance = cls_(**item)
-                                if not instance:
-                                    raise Warning(f"Failed to load {item} with {cls_}")
-                                self.add_item(instance)
+                                self._create_instance(cls_, **item)
                             except Exception as e:
-                                traceback_error(e, verbose=verbose)
-                                if primitive_type:
-                                    print(
-                                        "Primitive type value found, loading it as Text..."
-                                    )
-                                    for cls_ in self.types:
-                                        try:
-                                            instance = cls_(key, data=str(item))
-                                            self.add_item(instance)
-                                        except Exception as e:
-                                            traceback_error(e, verbose=verbose)
+                                if not primitive_type:
+                                    self.catcher.set_err(str(e))
+                                else:
+                                    self._create_instances(name=key, data=str(item))
 
                 except Exception as e:
-                    traceback_error(e, verbose=verbose)
+                    self.catcher.set_err(str(e))
         elif key:
-            for cls_ in self.types:
-                try:
-                    instance = cls_(key, data=value)
-                    self.add_item(instance)
-                except Exception as e:
-                    traceback_error(e, verbose=verbose)
+            self._create_instances(name=key, data=value)
 
     @staticmethod
     def batch_process(item_file: Path, data_nodes: list["DataNode"]) -> list[Data]:

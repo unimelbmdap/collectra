@@ -24,6 +24,7 @@ from pathlib import Path
 
 import typer
 import yaml
+from rich.console import Console
 from typing_extensions import Annotated
 
 logger = logging.getLogger(__name__)
@@ -200,9 +201,13 @@ def run(
                     if file.is_file()
                     or (file.is_dir() and file.suffix.lower() == pipeline.ext)
                 ]
-        pipeline(task, **data, verbose=verbose)
+        console = Console()
+        pipeline(task, **data)
+        if verbose:
+            console.print(pipeline.log)
     except Exception as e:
-        traceback.print_exc()
+        console.print(traceback.format_exc())
+        console.print(e)
 
 
 @app.command()
