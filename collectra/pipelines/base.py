@@ -150,6 +150,7 @@ class Collectra:
             files = kwargs.pop("files", [])
             usage = kwargs.pop("usage", False)
             render = kwargs.pop("render", False)
+            output = kwargs.pop("output", None)
             for value in files:
                 try:
                     key = (
@@ -157,7 +158,7 @@ class Collectra:
                         if Path(value).suffix == f".{self.ext}"
                         else "specimen_sheet"
                     )
-                    key, value = self._create_collectra_file(key, value)
+                    key, value = self._create_collectra_file(key, value, output)
                     input = {key: value}
                     self._init_input_data(starting_nodes, **input)
                     self.render("workflow_run", file=str(value), render=render)
@@ -180,14 +181,22 @@ class Collectra:
             self.log.add_row("workflow_run", str(e), traceback.format_exc())
 
     def _create_collectra_file(
-        self, key: str, value: str | Path
+        self, key: str, value: str | Path, output_dir: str | Path | None = None
     ) -> tuple[str, str | Path]:
         if not key or not value:
             raise ValueError("Both key and value must be provided for input data.")
         savef = Path(value)
         if not savef.exists():
             raise FileNotFoundError(f"Path {savef} does not exist.")
+
+        # Case A: Existing .grapto folder with results.yaml
         if savef.is_dir() and (savef / "results.yaml").exists():
+            if output_dir:
+                # Copy entire folder to output location
+                output_path = Path(output_dir) / savef.name
+                output_path.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(savef, output_path, dirs_exist_ok=True)
+                savef = output_path
             # remove exif data from images in the directory
             for img_file in savef.glob("*"):
                 if img_file.suffix.lower() in [
@@ -198,7 +207,8 @@ class Collectra:
                     ".tiff",
                 ]:
                     remove_exif(img_file, img_file)
-            return key, value
+            return key, savef
+        # Case B: Image file
         if savef.is_file() and savef.suffix in [
             ".jpeg",
             ".jpg",
@@ -207,12 +217,15 @@ class Collectra:
             ".tiff",
         ]:
             file_path = savef
-            savef = savef.parent / Path(
-                savef.name.replace(savef.suffix, f".{self.ext}")
-            )
+            folder_name = savef.name.replace(savef.suffix, f".{self.ext}")
+            if output_dir:
+                savef = Path(output_dir) / folder_name
+            else:
+                savef = savef.parent / folder_name
             savef.mkdir(parents=True, exist_ok=True)
             remove_exif(file_path, file_path)
             shutil.copy(file_path, savef / file_path.name)
+        # Case C: Directory without results.yaml
         if savef.is_dir():
             with change_dir(savef):
                 results = dict()
