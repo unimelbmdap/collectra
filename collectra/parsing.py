@@ -181,11 +181,13 @@ class CollectraWorkflow:
 
         for name, kwargs in data.items():
             type_ = kwargs.pop("type", None)
-            assert type_ is not None, f"Type is required for {name}"
+            if type_ is None:
+                raise ValueError(f"Type is required for {name}")
 
             cls = load_class_from_string(type_)
             item = cls(name=name, **kwargs)
-            assert isinstance(item, CollectraNode)
+            if not isinstance(item, CollectraNode):
+                raise TypeError(f"Item {name} is not a CollectraNode")
             items[name] = item
 
             if name not in self.dag:

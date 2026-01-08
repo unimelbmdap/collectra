@@ -99,7 +99,8 @@ class Collectra:
             dict | None: Task configuration dictionary or None if not found.
         """
         data = self.data.get(task_name, None)
-        assert data, f"Task {task_name} not found in workflow"
+        if not data:
+            raise ValueError(f"Task {task_name} not found in workflow")
         data["name"] = task_name
         return data
 
@@ -132,9 +133,8 @@ class Collectra:
             starting_nodes: list = list()
             if task_name:
                 task_node = self.node_manager.resolve_node(task_name)
-                assert isinstance(
-                    task_node, TaskNode
-                ), f"Task {task_name} not found in workflow"
+                if not isinstance(task_node, TaskNode):
+                    raise TypeError(f"Task {task_name} not found in workflow")
                 starting_nodes.append(task_node)
             else:
                 task_nodes = [
@@ -467,7 +467,8 @@ class Collectra:
 
     def _run_task(self, task_node: TaskNode, **kwargs) -> list:
         task = task_node.get_task()
-        assert isinstance(task, Task), f"Node {task_node.name} is not a Task"
+        if not isinstance(task, Task):
+            raise TypeError(f"Node {task_node.name} is not a Task")
         self.log.add_row(
             "workflow_run", f"Attempting to run task: [blue]{task.name}[/blue]"
         )
@@ -510,13 +511,11 @@ class Collectra:
         if self.flow.number_of_nodes() == 0:
             self.connect()
         task_node = self.node_manager.resolve_node(task_name)
-        assert isinstance(
-            task_node, TaskNode
-        ), f"Task {task_name} not found in workflow"
+        if not isinstance(task_node, TaskNode):
+            raise TypeError(f"Task {task_name} not found in workflow")
         task = task_node.get_task()
-        assert isinstance(
-            task, MachineLearningTask
-        ), f"Task {task_name} is not a MachineLearningTask"
+        if not isinstance(task, MachineLearningTask):
+            raise TypeError(f"Task {task_name} is not a MachineLearningTask")
         children = self.node_manager.get_children_data(task_node)
         processed_inputs: list = list()
         inputs = kwargs.pop("input", [])

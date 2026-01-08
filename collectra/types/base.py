@@ -113,7 +113,8 @@ class DataNode(Node):
     def _create_instance(self, cls_: type, **item) -> None:
         try:
             instance = cls_(**item)
-            assert instance, f"Failed to load {item} with {cls_}"
+            if not instance:
+                raise ValueError(f"Failed to load {item} with {cls_}")
             self.add_item(instance)
         except Exception as e:
             self.catcher.set_err(str(e))
@@ -135,7 +136,8 @@ class DataNode(Node):
                             "collectra_results_metadata", dict()
                         ).get("validation", None)
                         data = results.get(key, None)
-                        assert data, f"[red]{key}[/red] could not be found in {value}"
+                        if not data:
+                            raise ValueError(f"[red]{key}[/red] could not be found in {value}")
                         data = data if isinstance(data, list) else [data]
                         for item in data:
                             primitive_type = False
@@ -144,11 +146,11 @@ class DataNode(Node):
                                     "type" in item
                                     and ("path" in item or "data" in item)
                                 )
-                                assert not primitive_type
+                                if primitive_type:
+                                    raise ValueError(f"Item must be a complex type with 'type' and ('path' or 'data')")
                                 cls_ = load_class_from_string(item.pop("type"))
-                                assert self.check_type(
-                                    cls_
-                                ), f"{cls_} is not a subclass or not defined in {self.types}"
+                                if not self.check_type(cls_):
+                                    raise TypeError(f"{cls_} is not a subclass or not defined in {self.types}")
                                 item["name"] = key
                                 if "data" not in item:
                                     item["data"] = item.pop("path")

@@ -100,18 +100,16 @@ class LLM(Task):
     def check_inputs(self, *args: Text | Image) -> None:
         """Validate that the messages are not longer than the expected number of inputs."""
         residual_inputs = len(args)
-        assert (
-            len(self.messages) == 2
-        ), "Expected one system message and one human message."
+        if len(self.messages) != 2:
+            raise ValueError("Expected one system message and one human message.")
         human_message = self.messages[1]
         for content in human_message.content:
             if isinstance(content, dict) and (
                 content.get("type") == "image" or content.get("type") == "text"
             ):
                 residual_inputs -= 1
-        assert (
-            residual_inputs <= 0
-        ), "Number of inputs does not match the expected count"
+        if residual_inputs > 0:
+            raise ValueError("Number of inputs does not match the expected count")
 
     def replace_inputs(
         self, pattern: str, prompt: str, *args: Text | Image, **kwargs

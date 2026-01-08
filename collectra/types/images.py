@@ -139,7 +139,8 @@ class Image(Data):
         super().__post_init__()
         if not self.data:
             raise ValueError("Image data path is empty.")
-        assert isinstance(self.data, (str, Path)), "Image data must be a file path."
+        if not isinstance(self.data, (str, Path)):
+            raise TypeError("Image data must be a file path.")
         if not isinstance(self.data, Path):
             self.data = Path.cwd() / self.data
         if not self.data.exists() or not self.data.is_file():

@@ -49,7 +49,8 @@ class SuryaOCR(Task):
 
     def run(self, **kwargs):
         for key, value in kwargs.items():
-            assert isinstance(value, Image)
+            if not isinstance(value, Image):
+                    raise TypeError(f"value must be Image, got {type(value)}")
             image = value.pil()
             predictions = self.recognition_predictor(
                 [image], det_predictor=self.detection_predictor
@@ -105,7 +106,8 @@ class SuryaLineDetector(Task):
                     self.run(**{key: individual_image})
                 return
 
-            assert isinstance(image, Image), f"Image {key} is of class {type(image)}"
+            if not isinstance(image, Image):
+                    raise TypeError(f"Image {key} is of class {type(image)}")
             pil_image = image.pil()
             predictions = self.detection_predictor([pil_image])
 
@@ -116,7 +118,8 @@ class SuryaLineDetector(Task):
 
             if results is None:
                 results = []
-            assert results is not None
+            if results is None:
+                    raise ValueError("results must not be None")
 
             # Sort bounding boxes vertically
             bounding_boxes = sorted(

@@ -50,7 +50,8 @@ class TaskManager:
             ImportError: If the specified module cannot be imported.
             AttributeError: If the specified class does not exist in the module.
         """
-        assert task.get("type"), "Task type is required."
+        if not task.get("type"):
+            raise ValueError("Task type is required.")
         cls = load_class_from_string(task.pop("type"))
         name = task.pop("name")
         return cls(name=name, **task)

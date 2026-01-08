@@ -41,12 +41,14 @@ class NodeGraphManager:
             Union[TaskNode, DataNode]: The resolved node object.
             
         Raises:
-            AssertionError: If the node is not found or is empty.
+            ValueError: If the node is not found or is empty.
         """
         node: Union[dict, None] = self.flow.nodes.get(node_name, None)
-        assert node, f"{node_name} not found in workflow"
+        if not node:
+            raise ValueError(f"{node_name} not found in workflow")
         data: Union[TaskNode, DataNode, None] = node.get("node", None)
-        assert data, f"data for {node_name} not found in workflow. Possible empty node."
+        if not data:
+            raise ValueError(f"data for {node_name} not found in workflow. Possible empty node.")
         return data
     
     def get_parents_data(self, node: Node) -> List[DataNode]:
