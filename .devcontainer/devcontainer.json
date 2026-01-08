@@ -15,8 +15,8 @@
   "runArgs": [
     // "--gpus=all", // This enable gpu usage
     // These enable firewall settings
-    "--cap-add=NET_ADMIN", 
-    "--cap-add=NET_RAW"
+    // "--cap-add=NET_ADMIN", 
+    // "--cap-add=NET_RAW"
   ], 
   "customizations": {
     "vscode": {
@@ -53,14 +53,12 @@
   "remoteUser": "dev",
   "mounts": [
     "source=claude-code-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
-    "source=claude-code-config-${devcontainerId},target=/home/dev/.claude,type=volume",
-    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+    "source=dev-config-${devcontainerId},target=/home/dev,type=volume",           
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind" 
   ],
   "containerEnv": {
     "POWERLEVEL9K_DISABLE_GITSTATUS": "true"
   },
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
-  "workspaceFolder": "/workspace",
-  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
-  "waitFor": "postStartCommand"
+  "workspaceFolder": "/workspace"
 }

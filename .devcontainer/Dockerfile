@@ -16,11 +16,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   sudo \
   # Install networking tools for firewall management  
-  iptables \
-  iproute2 \
-  ipset \
-  dnsutils \
-  aggregate \
+  # iptables \
+  # iproute2 \
+  # ipset \
+  # dnsutils \
+  # aggregate \
   jq \
   # OpenCV dependencies
   libgl1 \
@@ -49,10 +49,6 @@ RUN ARCH=$(dpkg --print-architecture) && \
   curl -fsSL -O "https://github.com/dandavison/delta/releases/download/${GIT_DELTA_VERSION}/git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" && \
   dpkg -i "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" && \
   rm "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb"
-
-# Copy and set up firewall script
-COPY init-firewall.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/init-firewall.sh
 
 # Set the default shell to zsh rather than sh
 ENV SHELL=/bin/zsh
