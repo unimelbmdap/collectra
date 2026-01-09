@@ -109,6 +109,40 @@ Each task is defined with:
 - ``output``: Output data node name
 - Additional task-specific parameters
 
+Data File Structure
+************************
+A Collectra workflow produces a data folder with the following structure:
+- a result.yaml file containing metadata and task outputs
+- the artifact files (e.g., images, text files) referenced in result.yaml
+- The suffix of the data folder is defined in the workflow metadata (``ext`` field).
+
+the result.yaml file contains:
+
+.. code-block:: yaml
+
+    collectra_results_metadata:
+        workflow: name_of_workflow_that_generated_this_file
+        version: 1.0
+        timestamp: 2024-01-01T12:00:00Z
+
+    source_image:
+        type: collectra.Image
+        id: source_image
+        data: path_relative_to_yaml.jpg
+
+    first_label:
+        type: collectra.ImageCrop
+        id: first_label_id123
+        parents: source_image
+        data: path_relative_to_yaml.jpg
+        embeddings: []
+        orientation: north
+        x_center: 0.5
+        y_center: 0.3
+        width_relative: 0.2
+        height_relative: 0.1
+
+
 Available Task Types
 *********************
 
