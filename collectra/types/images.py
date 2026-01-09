@@ -288,6 +288,11 @@ class Image(Data):
             height_relative=height_relative,
         )
 
+    def evaluate(self, gold: "ImageCrop") -> float:
+        raise NotImplementedError(
+            "Base Image class does not implement evaluate(). Use ImageCrop instead."
+        )
+
 
 @dataclass
 class ImageCrop(Image):
@@ -394,12 +399,14 @@ class ImageCrop(Image):
         # compute the intersection over union by taking the intersection
         # area and dividing it by the sum of prediction + ground-truth
         # areas - the interesection area
+        if boxAArea + boxBArea - interArea == 0:
+            return 0.0
         iou = interArea / float(boxAArea + boxBArea - interArea)
 
         # return the intersection over union value
         return iou
 
-    def eval(self, gold: "ImageCrop") -> float:
+    def evaluate(self, gold: "ImageCrop") -> float:
         if not isinstance(gold, ImageCrop):
             raise ValueError("Reference data must be an instance of ImageCrop.")
         iou = 0.0

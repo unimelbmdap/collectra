@@ -179,6 +179,7 @@ def run(
         Exception: If the workflow execution fails due to invalid workflow file,
             missing task, or runtime errors during execution.
     """
+    console = Console()
     try:
         data: dict[str, str | bool | list[str] | Path | list[Path]] = dict()
         data["single"] = single
@@ -201,13 +202,54 @@ def run(
                     if file.is_file()
                     or (file.is_dir() and file.suffix.lower() == pipeline.ext)
                 ]
-        console = Console()
         pipeline(task, **data)
         if verbose:
             console.print(pipeline.log)
     except Exception as e:
         console.print(traceback.format_exc())
         console.print(e)
+
+
+@app.command()
+def evaluate(
+    workflow: Annotated[
+        Path, typer.Option("--workflow", "-w", help="path to workflow")
+    ],
+    predicted: Annotated[
+        Path, typer.Argument(help="folder of collectra files for evaluation")
+    ],
+    gold: Annotated[
+        Path, typer.Option("--gold", "-g", help="folder of gold standard files")
+    ],
+):
+    """Evaluate predicted results against gold standard files.
+
+    Compares predicted output files against ground truth files and computes
+    precision, recall, F1-score, and other metrics. The evaluation is performed
+    across all labels and aggregated into a comprehensive report.
+
+    Args:
+        workflow: Path to the workflow configuration directory.
+        predicted: Folder containing predicted .{ext} files to evaluate.
+        gold: Folder containing gold standard .{ext} files for comparison.
+    """
+    console = Console()
+    try:
+        from collectra import Evaluator
+
+        pipeline = resolve_workflow_path(workflow)
+        evaluator = Evaluator(
+            predicted,
+            gold,
+            pipeline.ext,
+        )
+        report = evaluator.evaluate()
+        evaluator.export_table(Path("data/evaluation_results"))
+        console.print(report.aggregate_table)
+        if report.per_label_table:
+            console.print(report.per_label_table)
+    except Exception as e:
+        console.print(traceback.format_exc())
 
 
 @app.command()

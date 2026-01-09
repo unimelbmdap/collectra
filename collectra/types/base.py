@@ -16,6 +16,10 @@ from ..utils import (
 
 __all__ = ["Data", "DataNode"]
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class Data(BaseEntity):
@@ -37,7 +41,7 @@ class Data(BaseEntity):
                 serialized["parents"] = serialized["parents"][0]
         return serialized
 
-    def eval(self, gold: "Data") -> dict:
+    def evaluate(self, gold) -> float:
         raise NotImplementedError("Eval method not implemented for base Data class.")
 
     def _generate_id(self) -> str:
@@ -93,22 +97,234 @@ class DataNode(Node):
         types_str = "\n".join([t.get_class_path() for t in self.types])
         return f"{self.name}\n{types_str}"
 
-    def eval(self, gold_items: "DataNode"):
-        evaluation_matrix = np.array(
-            [[0.0 for _ in gold_items.items.items()] for _ in self.items.items()]
-        )
-        for item_key, item in self.items.items():
-            for gold_key, gold_item in gold_items.items.items():
-                evaluation_matrix[self.items[item_key], gold_items.items[gold_key]] = (
-                    item.eval(gold_item)
-                )
-        # Start finding the highest scores and matching them
-        matched_items = []
-        while len(matched_items) < len(gold_items.items.items()):
-            max_val = evaluation_matrix.max()
-            item_idx, gold_idx = np.unravel_index(
-                evaluation_matrix.argmax(), evaluation_matrix.shape
+    def evaluate(
+        self, gold_items: "DataNode", threshold: float = 0.5
+    ) -> dict[str, int | float]:
+        """
+        Evaluate predicted items against gold standard items.
+
+        This implements the Hungarian algorithm (optimal bipartite matching) that:
+        1. Validates type compatibility between predicted and gold items
+        2. Computes pairwise scores between all predicted and gold items
+        3. Finds optimal assignment that maximizes total matching score
+        4. Filters matches below threshold
+        5. Computes aggregate metrics (precision, recall, F1, mean score)
+
+        Args:
+            gold_items: DataNode containing ground truth items
+            threshold: Minimum score for a valid match (default 0.5)
+                    - For ImageCrop: IoU threshold
+                    - For Text: similarity threshold
+
+        Returns:
+            dict: {
+                "precision": float,      # TP / (TP + FP)
+                "recall": float,         # TP / (TP + FN)
+                "f1": float,             # 2 * (P * R) / (P + R)
+                "mean_score": float,     # Average score of matched pairs
+                "num_predicted": int,    # Total predicted items
+                "num_gold": int,         # Total gold items
+                "num_matched": int,      # Number of successful matches (TP)
+                "num_false_positives": int,  # Predicted items not matched
+                "num_false_negatives": int,  # Gold items not matched
+                "matches": [            # List of matched pairs
+                    {
+                        "predicted_id": str,
+                        "gold_id": str,
+                        "score": float
+                    },
+                    ...
+                ],
+                "unmatched_predicted": [str],  # IDs of unmatched predictions
+                "unmatched_gold": [str]        # IDs of unmatched gold items
+            }
+
+        Raises:
+            TypeError: If predicted and gold items are of incompatible types
+        """
+
+        if threshold > 1.0 or threshold < 0.0:
+            raise ValueError(f"Invalid threshold provided: {threshold}")
+
+        metrics = {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "mean_score": 0.0,
+            "num_predicted": 0,
+            "num_gold": 0,
+            "num_matched": 0,
+            "num_false_positives": 0,
+            "num_false_negatives": 0,
+            "matches": [],
+            "unmatched_predicted": [],
+            "unmatched_gold": [],
+        }
+
+        # Edge case: Empty inputs with explicit semantic definitions
+        if len(self.items) == 0 and len(gold_items.items) == 0:
+            # Vacuous truth: nothing to predict, nothing to find
+            metrics.update({"precision": 1.0, "recall": 1.0, "f1": 1.0})
+            return metrics
+
+        if len(self.items) == 0:
+            # No predictions: precision undefined (0/0), defaults to 0.0 for consistency
+            metrics.update(
+                {
+                    "precision": 0.0,
+                    "num_gold": len(gold_items.items),
+                    "num_false_negatives": len(gold_items.items),
+                    "unmatched_gold": list(gold_items.items.keys()),
+                }
             )
+            return metrics
+
+        if len(gold_items.items) == 0:
+            # No gold items: zero precision (all FPs), perfect recall (nothing to miss)
+            metrics.update(
+                {
+                    "recall": 1.0,
+                    "num_predicted": len(self.items),
+                    "num_false_positives": len(self.items),
+                    "unmatched_predicted": list(self.items.keys()),
+                }
+            )
+            return metrics
+
+        # Step 0: Validate type compatibility upfront
+        predicted_types = set([type(value).__name__ for value in self.items.values()])
+        gold_types = set([type(value).__name__ for value in gold_items.items.values()])
+        compatible = predicted_types == gold_types
+        if not compatible:
+            raise TypeError(
+                f"Cannot evaluate {predicted_types} predictions against "
+                f"{gold_types} gold items. Types must match."
+            )
+
+        # Step 1: Build score matrix
+        # Shape: (num_predicted, num_gold)
+        predicted_ids = list(self.items.keys())
+        gold_ids = list(gold_items.items.keys())
+        n_pred = len(self.items.keys())
+        n_true = len(gold_items.items.keys())
+        score_matrix = np.zeros((n_pred, n_true))
+
+        if n_true > n_pred:
+            padding = np.full([n_true - n_pred, n_true], 1e-9)
+            score_matrix = np.vstack([score_matrix, padding])
+        elif n_true < n_pred:
+            padding = np.full([n_pred, n_pred - n_true], 1e-9)
+            score_matrix = np.hstack([score_matrix, padding])
+
+        for pred_idx, pred_id in enumerate(predicted_ids):
+            pred_item = self.items[pred_id]
+            for gold_idx, gold_id in enumerate(gold_ids):
+                try:
+                    gold_item = gold_items.items[gold_id]
+                    score = pred_item.evaluate(gold_item)
+                    score_matrix[pred_idx, gold_idx] = score
+                except NotImplementedError as e:
+                    logger.info(f"Skipping evaluation for {pred_id} vs {gold_id}: {e}")
+
+        # Step 2: Hungarian algorithm for optimal bipartite matching
+        # Convert to cost matrix (minimize cost = maximize score)
+        # scipy.optimize.linear_sum_assignment minimizes total cost
+        # If cost_matrix has a shape of 1, skip this step
+        if score_matrix.size != 1:
+            from scipy.optimize import linear_sum_assignment
+
+            cost_matrix = 1.0 - score_matrix
+
+            # Note: When multiple predicted items have identical scores against the same
+            # gold item, the assignment is deterministic but arbitrary (based on internal
+            # algorithm traversal order). All such assignments are equally optimal.
+            try:
+                pred_indices, gold_indices = linear_sum_assignment(cost_matrix)
+            except Exception as e:
+                breakpoint()
+        else:
+            pred_indices = np.array([0])
+            gold_indices = np.array([0])
+
+        # Step 3: Filter matches by threshold and record results
+        matches = []
+        matched_predicted = set()
+        matched_gold = set()
+
+        for pred_idx, gold_idx in zip(pred_indices, gold_indices):
+            if pred_idx >= n_pred or gold_idx >= n_true:
+                continue
+            score = score_matrix[pred_idx, gold_idx]
+            # Only accept matches above the threshold
+            if score >= threshold:
+                predicted_id = predicted_ids[pred_idx]
+                gold_id = gold_ids[gold_idx]
+                matches.append(
+                    {
+                        "predicted_id": predicted_id,
+                        "gold_id": gold_id,
+                        "score": float(score),
+                    }
+                )
+                matched_predicted.add(predicted_id)
+                matched_gold.add(gold_id)
+
+        # Step 4: Identify unmatched items
+        unmatched_predicted = [
+            predicted_id
+            for predicted_id in predicted_ids
+            if predicted_id not in matched_predicted
+        ]
+
+        unmatched_gold = [
+            gold_id for gold_id in gold_ids if gold_id not in matched_gold
+        ]
+
+        # Step 5: Compute metrics
+        num_true_positives = len(matches)
+        num_false_positives = len(unmatched_predicted)
+        num_false_negatives = len(unmatched_gold)
+
+        precision = (
+            num_true_positives / (num_true_positives + num_false_positives)
+            if (num_true_positives + num_false_positives) > 0
+            else 0.0
+        )
+
+        recall = (
+            num_true_positives / (num_true_positives + num_false_negatives)
+            if (num_true_positives + num_false_negatives) > 0
+            else 0.0
+        )
+
+        f1 = (
+            2 * (precision * recall) / (precision + recall)
+            if (precision + recall) > 0
+            else 0.0
+        )
+
+        mean_score = (
+            sum(match["score"] for match in matches) / len(matches) if matches else 0.0
+        )
+
+        # Step 6: Return comprehensive evaluation results
+        metrics.update(
+            {
+                "precision": precision,
+                "recall": recall,
+                "f1": f1,
+                "mean_score": mean_score,
+                "num_predicted": len(self.items),
+                "num_gold": len(gold_items.items),
+                "num_matched": num_true_positives,
+                "num_false_positives": num_false_positives,
+                "num_false_negatives": num_false_negatives,
+                "matches": matches,
+                "unmatched_predicted": unmatched_predicted,
+                "unmatched_gold": unmatched_gold,
+            }
+        )
+        return metrics
 
     def _create_instance(self, cls_: type, **item) -> None:
         try:
@@ -123,7 +339,13 @@ class DataNode(Node):
         for cls_ in self.types:
             self._create_instance(cls_, **item)
 
-    def process(self, key: str, value: str | Path | None = None, **kwargs) -> None:
+    def process(
+        self,
+        key: str,
+        value: str | Path | None = None,
+        skip_type_check: bool = False,
+        **kwargs,
+    ) -> None:
         value = value if value else kwargs.get("file", None)
         if value and Path(value).exists() and Path(value).is_dir():
             value = Path(value)
@@ -137,7 +359,9 @@ class DataNode(Node):
                         ).get("validation", None)
                         data = results.get(key, None)
                         if not data:
-                            raise ValueError(f"[red]{key}[/red] could not be found in {value}")
+                            raise ValueError(
+                                f"[red]{key}[/red] could not be found in {value}"
+                            )
                         data = data if isinstance(data, list) else [data]
                         for item in data:
                             primitive_type = False
@@ -147,10 +371,14 @@ class DataNode(Node):
                                     and ("path" in item or "data" in item)
                                 )
                                 if primitive_type:
-                                    raise ValueError(f"Item must be a complex type with 'type' and ('path' or 'data')")
+                                    raise ValueError(
+                                        f"Item must be a complex type with 'type' and ('path' or 'data')"
+                                    )
                                 cls_ = load_class_from_string(item.pop("type"))
-                                if not self.check_type(cls_):
-                                    raise TypeError(f"{cls_} is not a subclass or not defined in {self.types}")
+                                if not skip_type_check and not self.check_type(cls_):
+                                    raise TypeError(
+                                        f"{cls_} is not a subclass or not defined in {self.types}"
+                                    )
                                 item["name"] = key
                                 if "data" not in item:
                                     item["data"] = item.pop("path")

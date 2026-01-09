@@ -51,7 +51,7 @@ class Text(Data):
     def __call__(self) -> str | Path:
         return self.data
 
-    def eval(self, gold: "Text") -> dict:
+    def evaluate(self, gold: "Text") -> float:
         if not isinstance(gold, Text):
             raise ValueError("Reference data must be an instance of Text.")
         ratio = SequenceMatcher(None, str(self.data), str(gold.data)).ratio()
