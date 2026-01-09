@@ -241,7 +241,7 @@ class DataNode(Node):
             try:
                 pred_indices, gold_indices = linear_sum_assignment(cost_matrix)
             except Exception as e:
-                breakpoint()
+                raise RuntimeError(f"Error during optimal assignment: {str(e)}")
         else:
             pred_indices = np.array([0])
             gold_indices = np.array([0])
