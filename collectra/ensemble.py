@@ -651,3 +651,213 @@ def extract_labels_with_bounding_boxes(
     )
 
     return all_labels
+
+
+def calculate_iou(box1: dict[str, float], box2: dict[str, float]) -> float:
+    """
+    Calculate Intersection over Union (IoU) between two bounding boxes.
+
+    Both boxes are expected in center format with relative coordinates:
+    {x_center, y_center, width_relative, height_relative} with values in 0-1 range.
+
+    Args:
+        box1: First bounding box dict with center format.
+        box2: Second bounding box dict with center format.
+
+    Returns:
+        IoU value between 0.0 (no overlap) and 1.0 (identical boxes).
+
+    Example:
+        >>> box1 = {"x_center": 0.5, "y_center": 0.5, "width_relative": 0.2, "height_relative": 0.2}
+        >>> box2 = {"x_center": 0.5, "y_center": 0.5, "width_relative": 0.2, "height_relative": 0.2}
+        >>> calculate_iou(box1, box2)
+        1.0
+    """
+    # Handle edge cases: zero-size boxes
+    if box1["width_relative"] <= 0 or box1["height_relative"] <= 0:
+        return 0.0
+    if box2["width_relative"] <= 0 or box2["height_relative"] <= 0:
+        return 0.0
+
+    # Convert center format to corner format (x1, y1, x2, y2)
+    box1_x1 = box1["x_center"] - box1["width_relative"] / 2
+    box1_y1 = box1["y_center"] - box1["height_relative"] / 2
+    box1_x2 = box1["x_center"] + box1["width_relative"] / 2
+    box1_y2 = box1["y_center"] + box1["height_relative"] / 2
+
+    box2_x1 = box2["x_center"] - box2["width_relative"] / 2
+    box2_y1 = box2["y_center"] - box2["height_relative"] / 2
+    box2_x2 = box2["x_center"] + box2["width_relative"] / 2
+    box2_y2 = box2["y_center"] + box2["height_relative"] / 2
+
+    # Calculate intersection
+    inter_x1 = max(box1_x1, box2_x1)
+    inter_y1 = max(box1_y1, box2_y1)
+    inter_x2 = min(box1_x2, box2_x2)
+    inter_y2 = min(box1_y2, box2_y2)
+
+    # Calculate intersection area
+    inter_width = max(0, inter_x2 - inter_x1)
+    inter_height = max(0, inter_y2 - inter_y1)
+    inter_area = inter_width * inter_height
+
+    # Calculate union area
+    box1_area = box1["width_relative"] * box1["height_relative"]
+    box2_area = box2["width_relative"] * box2["height_relative"]
+    union_area = box1_area + box2_area - inter_area
+
+    # Handle edge case: both boxes have zero area
+    if union_area <= 0:
+        return 0.0
+
+    return inter_area / union_area
+
+
+def calculate_centroid_box(boxes: list[dict[str, float]]) -> dict[str, float]:
+    """
+    Calculate the centroid bounding box from a list of bounding boxes.
+
+    Computes the average of all 4 fields (x_center, y_center, width_relative,
+    height_relative) across all provided boxes.
+
+    Args:
+        boxes: List of bounding box dicts in center format.
+
+    Returns:
+        Centroid bounding box dict with averaged values.
+
+    Raises:
+        ValueError: If boxes list is empty.
+
+    Example:
+        >>> boxes = [
+        ...     {"x_center": 0.4, "y_center": 0.4, "width_relative": 0.1, "height_relative": 0.1},
+        ...     {"x_center": 0.6, "y_center": 0.6, "width_relative": 0.3, "height_relative": 0.3}
+        ... ]
+        >>> calculate_centroid_box(boxes)
+        {'x_center': 0.5, 'y_center': 0.5, 'width_relative': 0.2, 'height_relative': 0.2}
+    """
+    if not boxes:
+        raise ValueError("Cannot calculate centroid from empty list of boxes")
+
+    n = len(boxes)
+    return {
+        "x_center": sum(b["x_center"] for b in boxes) / n,
+        "y_center": sum(b["y_center"] for b in boxes) / n,
+        "width_relative": sum(b["width_relative"] for b in boxes) / n,
+        "height_relative": sum(b["height_relative"] for b in boxes) / n,
+    }
+
+
+def group_by_bounding_box(
+    labels: list[tuple[str, str, dict[str, float], str]],
+    iou_threshold: float = 0.6,
+) -> list[list[tuple[str, dict[str, float], str]]]:
+    """
+    Group extracted labels by bounding box similarity using IoU.
+
+    Groups labels based on spatial overlap of their bounding boxes. Labels with
+    IoU above the threshold are grouped together. When multiple entries from
+    the same source folder would be added to a group, a conflict resolution
+    strategy is applied: the entry with higher IoU to the group's centroid is kept.
+
+    Args:
+        labels: List of tuples (label_name, text_content, bounding_box, source_folder_path)
+            as returned by extract_labels_with_bounding_boxes().
+        iou_threshold: Minimum IoU value to consider boxes as belonging to the
+            same group (default: 0.6).
+
+    Returns:
+        List of groups, where each group is a list of tuples:
+        (text_content, bounding_box, source_folder_path).
+
+    Example:
+        >>> labels = [
+        ...     ("reg", "P.350015", {"x_center": 0.5, ...}, "/path1"),
+        ...     ("reg", "P.350015", {"x_center": 0.51, ...}, "/path2"),
+        ... ]
+        >>> groups = group_by_bounding_box(labels, iou_threshold=0.6)
+        >>> len(groups)  # Boxes with high overlap form one group
+        1
+    """
+    if not labels:
+        return []
+
+    # Each group is a list of tuples: (text_content, bounding_box, source_folder_path)
+    grouping_list: list[list[tuple[str, dict[str, float], str]]] = []
+
+    for label_name, text_content, bounding_box, source_folder_path in labels:
+        assigned_to_group = False
+
+        for group in grouping_list:
+            # Calculate max IoU between current box and ALL boxes in the group
+            max_iou = 0.0
+            for _, group_box, _ in group:
+                iou = calculate_iou(bounding_box, group_box)
+                max_iou = max(max_iou, iou)
+
+            if max_iou > iou_threshold:
+                # Check if group already has an entry from the same source_folder_path
+                existing_entry = None
+                existing_idx = None
+                for idx, (existing_text, existing_box, existing_source) in enumerate(
+                    group
+                ):
+                    if existing_source == source_folder_path:
+                        existing_entry = (existing_text, existing_box, existing_source)
+                        existing_idx = idx
+                        break
+
+                if existing_entry is not None:
+                    # Conflict: same source folder already in group
+                    # Calculate group centroid (excluding the conflicting entry)
+                    other_boxes = [
+                        box for _, box, src in group if src != source_folder_path
+                    ]
+
+                    if other_boxes:
+                        centroid = calculate_centroid_box(other_boxes)
+
+                        # Compare IoUs to centroid
+                        existing_iou_to_centroid = calculate_iou(
+                            existing_entry[1], centroid
+                        )
+                        new_iou_to_centroid = calculate_iou(bounding_box, centroid)
+
+                        if new_iou_to_centroid > existing_iou_to_centroid:
+                            # Replace existing with new
+                            logger.warning(
+                                f"Conflict in group: replacing entry from '{source_folder_path}' "
+                                f"(old IoU to centroid: {existing_iou_to_centroid:.4f}, "
+                                f"new IoU to centroid: {new_iou_to_centroid:.4f})"
+                            )
+                            group[existing_idx] = (
+                                text_content,
+                                bounding_box,
+                                source_folder_path,
+                            )
+                        else:
+                            # Keep existing, discard new
+                            logger.warning(
+                                f"Conflict in group: keeping existing entry from '{source_folder_path}' "
+                                f"(existing IoU to centroid: {existing_iou_to_centroid:.4f}, "
+                                f"new IoU to centroid: {new_iou_to_centroid:.4f})"
+                            )
+                    else:
+                        # Only one entry in group from same source, keep existing
+                        logger.warning(
+                            f"Conflict in group: only one other entry exists, "
+                            f"keeping existing entry from '{source_folder_path}'"
+                        )
+                else:
+                    # No conflict: add the entry to the group
+                    group.append((text_content, bounding_box, source_folder_path))
+
+                assigned_to_group = True
+                break
+
+        if not assigned_to_group:
+            # Create new group with this entry as the first element
+            grouping_list.append([(text_content, bounding_box, source_folder_path)])
+
+    return grouping_list

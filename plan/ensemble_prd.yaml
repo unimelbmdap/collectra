@@ -1,0 +1,116 @@
+context: |
+    Each collectra file has the following structure:
+    ```
+        - results.yaml file
+        |
+        - image file
+        |
+        - other files
+    ```
+
+    The results.yaml file has the following structure:
+
+    ```
+        collectra_results_metadata:
+        workflow: Workflow file name
+        version: 0.1.0
+        timestamp: '2026-01-09T11:57:47.638293'
+
+        origin_label:
+        type: collectra.Image
+        id: original_label
+        data: source_image.jpg
+
+        sub_label:
+        type: collectra.ImageCrop
+        id: item_1
+        parents: origin_label
+        data: source_image.jpg
+        embeddings: []
+        orientation: north
+        x_center: 0.4727736711502075
+        y_center: 0.8679114580154419
+        width_relative: 0.3212781846523285
+        height_relative: 0.253208190202713
+
+        sub_text:
+        type: collectra.Text
+        id: text_1
+        parents:
+        - origin_label
+        - sub_label
+        data: text content here
+
+        another_label:
+        type: collectra.ImageCrop
+        items:
+        - id: item_1_323
+            parents: origin_label
+            data: another_image.jpg
+            embeddings: []
+            orientation: north
+            x_center: 0.4727736711502075
+            y_center: 0.8679114580154419
+            width_relative: 0.3212781846523285
+            height_relative: 0.253208190202713
+        - id: item_2341
+            parents: origin_label
+            data: another_image.jpg
+            embeddings: []
+            orientation: north
+            x_center: 0.4727736711502075
+            y_center: 0.8679114580154419
+            width_relative: 0.3212781846523285
+            height_relative: 0.253208190202713
+    ```
+tasks:
+- category: functional
+  passes: true
+  descriptipon: File creation for ensembling feature
+  steps:
+    - Run collectra ensemble command on multiple folders containing collectra files
+    - Verify that a collectra file has corresponding files from each folder by filename.
+    - If not, log the missing files. 
+    - Each folder should have only 1 instance of the collectra file. Throw error if multiple instances found in a folder
+    - If some folder has the instance of the collectra file but others do not, log a warning, but still create as usual
+    - Create an output folder for the verified collectra files
+    - Create corresponding empty file of each verified collectra file in the output folder
+    - Create a link.yaml file to map each collectra file to its source folder      
+- category: functional
+  passes: true
+  description: Ensembling feature implementation
+  steps:
+    - Fetch the source collectra files from link.yaml for a given collectra ensemble file
+    - Identify all labels from results.yaml files across the collectra files
+    - Fetch corresponding items from each source collectra file based on the label
+    - Initialise a list to hold the text content and the bounding box that corresponds to it
+    - For each label, extract the text content and traverse upwards through the parents to retrieve the bounding box of the first parent with type collectra.ImageCrop
+    - Append the (text content, bounding boxes, source_folder_path) to the list as a tuple
+    - Return the list for further processing
+  artifacts:
+    - name: link.yaml
+      description: |
+            ```
+            collectra_file_name
+            - source_folder1/collectra_file_name
+            - source_folder2/collectra_file_name
+            ```
+- category: functional
+  description: Matching text content to bounding boxes
+  passes: true
+  steps:
+  - Initialise a grouping list to hold lists of items deemed as similar
+  - For each (text content, bounding boxes, source folder path) tuple, iterate through the grouping list
+  - For each list of the grouping list, calculate max IoU between the content bounding box with all bounding boxes in that list
+  - If max IOU is > 0.6, check if the list already contains an entry from this source folder. If yes, calculate the group centroid bounding box as the average of all bounding boxes in that list, compare IoUs and keep entry with higher IoU to group centroid, log conflict and remove the other. Add the tuple to that list and break
+  - If no grouping list satisfies the IoU condition, add a new list to the grouping list with the (text content, bounding box, source_folder_path) tuple as the first entry for the list
+  - Return the grouping list for further processing  
+- category: functional
+  passes: false  
+  description: Generate ensembled value for each group of similar items
+  steps:
+  - For each list in the grouping list, extract the text content into a separate list
+  - If the list only has one entry, use that as the ensembled value
+  - Use Python's editdistance library to identify the centroid text content that has the lowest total edit distance to all other text contents in the list
+  - Write ensembled value to the ensemble collectra file's results.yaml, under the corresponding label
+  - Log statistics of total groups, standalones, ensemble decisions

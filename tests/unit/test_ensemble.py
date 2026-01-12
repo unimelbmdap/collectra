@@ -19,12 +19,15 @@ from collectra.ensemble import (
     _find_parent_with_bounding_box,
     _get_bounding_box_from_entry,
     _get_image_file,
+    calculate_centroid_box,
+    calculate_iou,
     create_ensemble_output,
     ensemble_files,
     extract_labels_with_bounding_boxes,
     find_collectra_files,
     get_ensemble_folder,
     get_source_collectra_files,
+    group_by_bounding_box,
     load_link_yaml,
     load_results_yaml,
     verify_collectra_files,
@@ -1437,3 +1440,518 @@ class TestExtractLabelsWithBoundingBoxes:
         # Should get bounding box from last parent: registration_number_image
         assert abs(bbox["x_center"] - 0.42946359509122) < 0.0001
         assert abs(bbox["y_center"] - 0.757537248825559) < 0.0001
+
+
+# ============================================================================
+# TestCalculateIou
+# ============================================================================
+
+
+class TestCalculateIou:
+    """Tests for the calculate_iou function."""
+
+    def test_identical_boxes_returns_one(self):
+        """Identical boxes should have IoU of 1.0."""
+        box = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.2,
+            "height_relative": 0.2,
+        }
+        result = calculate_iou(box, box)
+        assert abs(result - 1.0) < 1e-10
+
+    def test_non_overlapping_boxes_returns_zero(self):
+        """Non-overlapping boxes should have IoU of 0.0."""
+        box1 = {
+            "x_center": 0.1,
+            "y_center": 0.1,
+            "width_relative": 0.1,
+            "height_relative": 0.1,
+        }
+        box2 = {
+            "x_center": 0.9,
+            "y_center": 0.9,
+            "width_relative": 0.1,
+            "height_relative": 0.1,
+        }
+        result = calculate_iou(box1, box2)
+        assert result == 0.0
+
+    def test_partial_overlap(self):
+        """Partially overlapping boxes should have IoU between 0 and 1."""
+        box1 = {
+            "x_center": 0.4,
+            "y_center": 0.5,
+            "width_relative": 0.2,
+            "height_relative": 0.2,
+        }
+        box2 = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.2,
+            "height_relative": 0.2,
+        }
+        result = calculate_iou(box1, box2)
+        assert 0.0 < result < 1.0
+        # Expected: intersection = 0.1 * 0.2 = 0.02, union = 0.04 + 0.04 - 0.02 = 0.06
+        # IoU = 0.02 / 0.06 = 0.333...
+        assert abs(result - (1 / 3)) < 0.001
+
+    def test_zero_width_box_returns_zero(self):
+        """Box with zero width should return IoU of 0.0."""
+        box1 = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.0,
+            "height_relative": 0.2,
+        }
+        box2 = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.2,
+            "height_relative": 0.2,
+        }
+        result = calculate_iou(box1, box2)
+        assert result == 0.0
+
+    def test_zero_height_box_returns_zero(self):
+        """Box with zero height should return IoU of 0.0."""
+        box1 = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.2,
+            "height_relative": 0.0,
+        }
+        box2 = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.2,
+            "height_relative": 0.2,
+        }
+        result = calculate_iou(box1, box2)
+        assert result == 0.0
+
+    def test_both_zero_size_boxes_returns_zero(self):
+        """Both boxes with zero size should return IoU of 0.0."""
+        box1 = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.0,
+            "height_relative": 0.0,
+        }
+        box2 = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.0,
+            "height_relative": 0.0,
+        }
+        result = calculate_iou(box1, box2)
+        assert result == 0.0
+
+    def test_one_box_inside_another(self):
+        """Smaller box completely inside larger box."""
+        box1 = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.4,
+            "height_relative": 0.4,
+        }
+        box2 = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.2,
+            "height_relative": 0.2,
+        }
+        result = calculate_iou(box1, box2)
+        # Intersection = smaller box area = 0.04, union = 0.16 (larger box area)
+        # IoU = 0.04 / 0.16 = 0.25
+        assert abs(result - 0.25) < 0.001
+
+    def test_negative_size_box_returns_zero(self):
+        """Box with negative dimensions should return IoU of 0.0."""
+        box1 = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": -0.2,
+            "height_relative": 0.2,
+        }
+        box2 = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.2,
+            "height_relative": 0.2,
+        }
+        result = calculate_iou(box1, box2)
+        assert result == 0.0
+
+
+# ============================================================================
+# TestCalculateCentroidBox
+# ============================================================================
+
+
+class TestCalculateCentroidBox:
+    """Tests for the calculate_centroid_box function."""
+
+    def test_single_box_returns_same_box(self):
+        """Single box should return the same box as centroid."""
+        box = {
+            "x_center": 0.5,
+            "y_center": 0.6,
+            "width_relative": 0.2,
+            "height_relative": 0.3,
+        }
+        result = calculate_centroid_box([box])
+        assert result == box
+
+    def test_multiple_boxes_returns_average(self):
+        """Multiple boxes should return their average as centroid."""
+        boxes = [
+            {
+                "x_center": 0.4,
+                "y_center": 0.4,
+                "width_relative": 0.1,
+                "height_relative": 0.1,
+            },
+            {
+                "x_center": 0.6,
+                "y_center": 0.6,
+                "width_relative": 0.3,
+                "height_relative": 0.3,
+            },
+        ]
+        result = calculate_centroid_box(boxes)
+        assert abs(result["x_center"] - 0.5) < 0.0001
+        assert abs(result["y_center"] - 0.5) < 0.0001
+        assert abs(result["width_relative"] - 0.2) < 0.0001
+        assert abs(result["height_relative"] - 0.2) < 0.0001
+
+    def test_three_boxes_returns_average(self):
+        """Three boxes should return their average."""
+        boxes = [
+            {
+                "x_center": 0.3,
+                "y_center": 0.3,
+                "width_relative": 0.1,
+                "height_relative": 0.1,
+            },
+            {
+                "x_center": 0.5,
+                "y_center": 0.5,
+                "width_relative": 0.2,
+                "height_relative": 0.2,
+            },
+            {
+                "x_center": 0.7,
+                "y_center": 0.7,
+                "width_relative": 0.3,
+                "height_relative": 0.3,
+            },
+        ]
+        result = calculate_centroid_box(boxes)
+        assert abs(result["x_center"] - 0.5) < 0.0001
+        assert abs(result["y_center"] - 0.5) < 0.0001
+        assert abs(result["width_relative"] - 0.2) < 0.0001
+        assert abs(result["height_relative"] - 0.2) < 0.0001
+
+    def test_empty_list_raises_value_error(self):
+        """Empty list should raise ValueError."""
+        with pytest.raises(ValueError, match="Cannot calculate centroid from empty"):
+            calculate_centroid_box([])
+
+
+# ============================================================================
+# TestGroupByBoundingBox
+# ============================================================================
+
+
+class TestGroupByBoundingBox:
+    """Tests for the group_by_bounding_box function."""
+
+    def test_empty_input_returns_empty_list(self):
+        """Empty input should return empty list."""
+        result = group_by_bounding_box([])
+        assert result == []
+
+    def test_single_item_returns_single_group(self):
+        """Single item should return single group with that item."""
+        labels = [
+            (
+                "label1",
+                "text1",
+                {
+                    "x_center": 0.5,
+                    "y_center": 0.5,
+                    "width_relative": 0.2,
+                    "height_relative": 0.2,
+                },
+                "/path1",
+            )
+        ]
+        result = group_by_bounding_box(labels)
+        assert len(result) == 1
+        assert len(result[0]) == 1
+        assert result[0][0] == (
+            "text1",
+            {
+                "x_center": 0.5,
+                "y_center": 0.5,
+                "width_relative": 0.2,
+                "height_relative": 0.2,
+            },
+            "/path1",
+        )
+
+    def test_same_region_items_group_together(self):
+        """Items with overlapping boxes should group together."""
+        box1 = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.2,
+            "height_relative": 0.2,
+        }
+        box2 = {
+            "x_center": 0.52,
+            "y_center": 0.52,
+            "width_relative": 0.2,
+            "height_relative": 0.2,
+        }
+        labels = [
+            ("label1", "text1", box1, "/path1"),
+            ("label2", "text2", box2, "/path2"),
+        ]
+        result = group_by_bounding_box(labels, iou_threshold=0.5)
+        assert len(result) == 1
+        assert len(result[0]) == 2
+
+    def test_different_regions_form_separate_groups(self):
+        """Items from different regions should form separate groups."""
+        box1 = {
+            "x_center": 0.1,
+            "y_center": 0.1,
+            "width_relative": 0.1,
+            "height_relative": 0.1,
+        }
+        box2 = {
+            "x_center": 0.9,
+            "y_center": 0.9,
+            "width_relative": 0.1,
+            "height_relative": 0.1,
+        }
+        labels = [
+            ("label1", "text1", box1, "/path1"),
+            ("label2", "text2", box2, "/path2"),
+        ]
+        result = group_by_bounding_box(labels, iou_threshold=0.5)
+        assert len(result) == 2
+        assert len(result[0]) == 1
+        assert len(result[1]) == 1
+
+    def test_different_source_folders_in_same_group(self):
+        """Different source folders can be in the same group."""
+        box = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.2,
+            "height_relative": 0.2,
+        }
+        labels = [
+            ("label1", "text1", box, "/path1"),
+            ("label2", "text2", box, "/path2"),
+            ("label3", "text3", box, "/path3"),
+        ]
+        result = group_by_bounding_box(labels, iou_threshold=0.5)
+        assert len(result) == 1
+        assert len(result[0]) == 3
+        sources = {item[2] for item in result[0]}
+        assert sources == {"/path1", "/path2", "/path3"}
+
+    def test_conflict_resolution_keeps_higher_iou(self):
+        """When same source has conflict, keep entry with higher IoU to centroid."""
+        # All boxes need high overlap to be grouped together
+        # Using larger boxes with small offsets for high IoU
+        box_center = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.4,
+            "height_relative": 0.4,
+        }
+        box_close_to_center = {
+            "x_center": 0.51,
+            "y_center": 0.51,
+            "width_relative": 0.4,
+            "height_relative": 0.4,
+        }
+        box_further = {
+            "x_center": 0.53,
+            "y_center": 0.53,
+            "width_relative": 0.4,
+            "height_relative": 0.4,
+        }
+
+        labels = [
+            ("label1", "text_far", box_further, "/path1"),  # First from path1
+            (
+                "label2",
+                "text_other",
+                box_center,
+                "/path2",
+            ),  # From path2 - becomes centroid basis
+            (
+                "label3",
+                "text_close",
+                box_close_to_center,
+                "/path1",
+            ),  # Second from path1 - closer to centroid
+        ]
+        result = group_by_bounding_box(labels, iou_threshold=0.5)
+
+        assert len(result) == 1
+        # Should have 2 entries: one from path1 (the closer one) and one from path2
+        assert len(result[0]) == 2
+        path1_entries = [item for item in result[0] if item[2] == "/path1"]
+        assert len(path1_entries) == 1
+        # The kept entry should be text_close (closer to centroid)
+        assert path1_entries[0][0] == "text_close"
+
+    def test_conflict_keeps_existing_when_better(self):
+        """When existing entry has better IoU to centroid, keep it."""
+        # All boxes need high overlap to be grouped together
+        box_center = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.4,
+            "height_relative": 0.4,
+        }
+        box_close_to_center = {
+            "x_center": 0.51,
+            "y_center": 0.51,
+            "width_relative": 0.4,
+            "height_relative": 0.4,
+        }
+        box_further = {
+            "x_center": 0.53,
+            "y_center": 0.53,
+            "width_relative": 0.4,
+            "height_relative": 0.4,
+        }
+
+        labels = [
+            (
+                "label1",
+                "text_close",
+                box_close_to_center,
+                "/path1",
+            ),  # First from path1 - closer
+            ("label2", "text_other", box_center, "/path2"),  # From path2
+            (
+                "label3",
+                "text_far",
+                box_further,
+                "/path1",
+            ),  # Second from path1 - further
+        ]
+        result = group_by_bounding_box(labels, iou_threshold=0.5)
+
+        assert len(result) == 1
+        assert len(result[0]) == 2
+        path1_entries = [item for item in result[0] if item[2] == "/path1"]
+        assert len(path1_entries) == 1
+        # The kept entry should be text_close (has better IoU to centroid)
+        assert path1_entries[0][0] == "text_close"
+
+    def test_multiple_groups_with_conflicts(self):
+        """Multiple groups can form, each potentially having conflicts."""
+        # Region 1: top-left
+        box1a = {
+            "x_center": 0.1,
+            "y_center": 0.1,
+            "width_relative": 0.15,
+            "height_relative": 0.15,
+        }
+        box1b = {
+            "x_center": 0.12,
+            "y_center": 0.12,
+            "width_relative": 0.15,
+            "height_relative": 0.15,
+        }
+        # Region 2: bottom-right
+        box2a = {
+            "x_center": 0.9,
+            "y_center": 0.9,
+            "width_relative": 0.15,
+            "height_relative": 0.15,
+        }
+        box2b = {
+            "x_center": 0.88,
+            "y_center": 0.88,
+            "width_relative": 0.15,
+            "height_relative": 0.15,
+        }
+
+        labels = [
+            ("l1", "text1a", box1a, "/path1"),
+            ("l2", "text1b", box1b, "/path2"),
+            ("l3", "text2a", box2a, "/path1"),
+            ("l4", "text2b", box2b, "/path2"),
+        ]
+        result = group_by_bounding_box(labels, iou_threshold=0.5)
+
+        assert len(result) == 2
+        # Each group should have 2 entries from different sources
+        for group in result:
+            sources = {item[2] for item in group}
+            assert sources == {"/path1", "/path2"}
+
+    def test_threshold_boundary(self):
+        """Test that threshold is correctly applied (> not >=)."""
+        # Create boxes with exact IoU of 0.6
+        box1 = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.2,
+            "height_relative": 0.2,
+        }
+        box2 = {
+            "x_center": 0.5,
+            "y_center": 0.5,
+            "width_relative": 0.2,
+            "height_relative": 0.2,
+        }
+
+        labels = [
+            ("l1", "text1", box1, "/path1"),
+            ("l2", "text2", box2, "/path2"),
+        ]
+
+        # With threshold exactly at IoU, should NOT group (> not >=)
+        result = group_by_bounding_box(labels, iou_threshold=1.0)
+        assert len(result) == 2
+
+        # With threshold below IoU, should group
+        result = group_by_bounding_box(labels, iou_threshold=0.5)
+        assert len(result) == 1
+
+    def test_output_format_excludes_label_name(self):
+        """Output tuples should be (text_content, bounding_box, source_folder_path)."""
+        labels = [
+            (
+                "label_name_here",
+                "actual_text",
+                {
+                    "x_center": 0.5,
+                    "y_center": 0.5,
+                    "width_relative": 0.2,
+                    "height_relative": 0.2,
+                },
+                "/source/path",
+            )
+        ]
+        result = group_by_bounding_box(labels)
+        assert len(result) == 1
+        assert len(result[0]) == 1
+        text_content, bbox, source = result[0][0]
+        assert text_content == "actual_text"
+        assert source == "/source/path"
+        assert "label_name_here" not in str(result)
