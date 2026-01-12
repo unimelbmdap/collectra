@@ -145,11 +145,10 @@ class LLM(Task):
     def invoke(self) -> str:
         response = self.chain.invoke(self.messages)
 
-        usage_file = os.getenv("USAGE_FILE", "")
-
-        if usage_file:
+        # Use context for usage tracking instead of environment variable
+        if self.context.usage_file:
             usage = llmloader.LLMWrapper.get_token_count(response)
-            usage_file = Path(usage_file)
+            usage_file = self.context.usage_file
             data = {f"{self.name}": usage}
             old_data = {}
             if usage_file.exists():

@@ -47,6 +47,7 @@ from ..types.base import (
     Node,
     NodeStatus,
 )
+from ..commons.base import TaskContext
 from .node_graph_manager import NodeGraphManager
 
 logger = logging.getLogger(__name__)
@@ -220,8 +221,6 @@ class Collectra:
                 self._process_single_file(starting_nodes, file_path, options)
             except Exception as e:
                 self.log.add_row("workflow_run", str(e), traceback.format_exc())
-            finally:
-                os.environ["USAGE_FILE"] = ""
 
     def _process_single_file(
         self, starting_nodes: list[TaskNode], file_path: str, options: dict
@@ -236,12 +235,24 @@ class Collectra:
         key = "file" if Path(file_path).suffix == f".{self.ext}" else "specimen_sheet"
         key, value = self._create_collectra_file(key, file_path, options["output"])
 
+        # Create task context for this file
+        context = TaskContext(
+            usage_file=(
+                Path.cwd() / str(Path(value) / "usage.yaml")
+                if options["usage"]
+                else None
+            ),
+            render=options["render"],
+            file_path=Path(value),
+            single_run=options["single"],
+        )
+
+        # Set context for all tasks
+        self._set_task_contexts(context)
+
         input_data = {key: value}
         self._init_input_data(starting_nodes, **input_data)
         self.render("workflow_run", file=str(value), render=options["render"])
-
-        if options["usage"]:
-            os.environ["USAGE_FILE"] = str(Path.cwd() / str(Path(value) / "usage.yaml"))
 
         self._run_nodes(
             starting_nodes,
@@ -380,6 +391,18 @@ class Collectra:
                 parent.process(parent.name, value, **kwargs)
                 parent.catcher.flush_msg(self.log)
         self._populate_active_paths(starting_nodes, **kwargs)
+
+    def _set_task_contexts(self, context: TaskContext):
+        """Set context for all tasks in the workflow.
+
+        Args:
+            context: TaskContext to apply to all tasks.
+        """
+        for node in self.flow.nodes.values():
+            if isinstance(node["node"], TaskNode):
+                task = node["node"].get_task()
+                if isinstance(task, Task):
+                    task.context = context
 
     def _reset_nodes(self):
         # Reset all data nodes in the workflow

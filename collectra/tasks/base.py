@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from itertools import product
 from typing import Generic
 
-from collectra.commons import BaseEntity, Node, NodeStatus, T
+from collectra.commons import BaseEntity, Node, NodeStatus, T, TaskContext
 
 
 class Task(BaseEntity, Generic[T]):
@@ -26,10 +26,12 @@ class Task(BaseEntity, Generic[T]):
         name (str): Unique identifier for the task within the workflow.
         input (list[str]): List of input parameter names.
         output (list[str]): List of output names.
+        context (TaskContext): Runtime context for task execution.
     """
 
     def __init__(self, name: str, **kwargs) -> None:
         super().__init__(name)
+        self.context: TaskContext = TaskContext()
         for key, value in kwargs.items():
             setattr(self, key, value)
 

@@ -311,7 +311,9 @@ def ensemble_files(
 
     # Convert to Path objects if needed
     input_folders = [Path(f) if not isinstance(f, Path) else f for f in input_folders]
-    output_folder = Path(output_folder) if not isinstance(output_folder, Path) else output_folder
+    output_folder = (
+        Path(output_folder) if not isinstance(output_folder, Path) else output_folder
+    )
 
     logger.info(f"Starting ensemble process with {len(input_folders)} input folders")
     logger.info(f"Input folders: {[str(f) for f in input_folders]}")
@@ -332,7 +334,9 @@ def ensemble_files(
             "Check warnings for details on missing files."
         )
 
-    logger.info(f"Found {len(verified_files)} files present in all {len(input_folders)} folders")
+    logger.info(
+        f"Found {len(verified_files)} files present in all {len(input_folders)} folders"
+    )
 
     # Create ensemble output
     link_yaml_path = create_ensemble_output(verified_files, output_folder, extension)

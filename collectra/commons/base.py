@@ -7,9 +7,29 @@ from typing import Generic, TypeVar
 
 from rich.table import Table
 
-__all__ = ["T", "BaseEntity", "Node", "NodeStatus"]
+__all__ = ["T", "BaseEntity", "Node", "NodeStatus", "TaskContext"]
 
 T = TypeVar("T")
+
+
+@dataclass
+class TaskContext:
+    """Runtime context for task execution.
+
+    This provides tasks with runtime information without polluting
+    their function signatures or requiring global state.
+
+    Attributes:
+        usage_file: Optional path to write LLM usage statistics.
+        render: Whether to render workflow visualizations.
+        file_path: Current file being processed.
+        single_run: Whether to stop after first task execution.
+    """
+
+    usage_file: Path | None = None
+    render: bool = False
+    file_path: Path | None = None
+    single_run: bool = False
 
 
 class ErrorType(enum.Enum):

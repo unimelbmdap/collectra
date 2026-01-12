@@ -450,7 +450,8 @@ class TestCreateEnsembleOutput:
         # Check image exists in output
         output_grapto = output_folder / "file1.grapto"
         image_files = [
-            f for f in output_grapto.iterdir()
+            f
+            for f in output_grapto.iterdir()
             if f.is_file() and f.name != "results.yaml"
         ]
 
@@ -485,9 +486,7 @@ class TestCreateEnsembleOutput:
         assert str(folders[0] / "file1.grapto") in link_data["file1.grapto"]
         assert str(folders[1] / "file1.grapto") in link_data["file1.grapto"]
 
-    def test_link_yaml_returns_correct_path(
-        self, collectra_folder_structure, tmp_path
-    ):
+    def test_link_yaml_returns_correct_path(self, collectra_folder_structure, tmp_path):
         """Test that the returned path is the link.yaml file."""
         _, folders = collectra_folder_structure
         output_folder = tmp_path / "ensemble_output"
@@ -676,8 +675,14 @@ class TestLoadLinkYaml:
         link_yaml_path = tmp_path / "link.yaml"
 
         link_data = {
-            "file1.grapto": ["/path/to/source1/file1.grapto", "/path/to/source2/file1.grapto"],
-            "file2.grapto": ["/path/to/source1/file2.grapto", "/path/to/source2/file2.grapto"],
+            "file1.grapto": [
+                "/path/to/source1/file1.grapto",
+                "/path/to/source2/file1.grapto",
+            ],
+            "file2.grapto": [
+                "/path/to/source1/file2.grapto",
+                "/path/to/source2/file2.grapto",
+            ],
         }
 
         with open(link_yaml_path, "w") as f:
