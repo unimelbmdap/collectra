@@ -7,8 +7,8 @@ from pathlib import Path
 import yaml
 from rich.table import Table
 
-from collectra import DataNode
-from collectra.utils import change_dir
+from ..types import DataNode
+from ..utils import change_dir
 
 logger = logging.getLogger(__name__)
 
