@@ -398,3 +398,256 @@ def get_ensemble_folder(link_yaml_path: Path) -> Path:
         Path('/output')
     """
     return link_yaml_path.parent
+
+
+def get_source_collectra_files(
+    ensemble_folder: Path, link_yaml_path: Path
+) -> list[Path]:
+    """
+    Get the source collectra file paths for a given ensemble folder name.
+
+    Given an ensemble collectra folder name (e.g., 'MMRIRN1505070_P350015.grapto')
+    and a link.yaml path, return the list of source collectra file paths from
+    link.yaml for that ensemble file.
+
+    Args:
+        ensemble_folder: The name or path of the ensemble collectra folder.
+            Can be either just the folder name (e.g., 'MMRIRN1505070_P350015.grapto')
+            or a full path.
+        link_yaml_path: Path to the link.yaml file.
+
+    Returns:
+        List of source collectra file paths.
+
+    Raises:
+        FileNotFoundError: If the link.yaml file does not exist.
+        KeyError: If the ensemble folder is not found in link.yaml.
+
+    Example:
+        >>> sources = get_source_collectra_files(
+        ...     Path("MMRIRN1505070_P350015.grapto"),
+        ...     Path("/data/ensemble/link.yaml")
+        ... )
+        >>> print(sources)
+        [Path('data/sonnet45-0-8/MMRIRN1505070_P350015.grapto'), ...]
+    """
+    link_data = load_link_yaml(link_yaml_path)
+
+    # Get the folder name (in case a full path was provided)
+    folder_name = (
+        ensemble_folder.name
+        if isinstance(ensemble_folder, Path)
+        else Path(ensemble_folder).name
+    )
+
+    if folder_name not in link_data:
+        raise KeyError(
+            f"Ensemble folder '{folder_name}' not found in link.yaml. "
+            f"Available folders: {list(link_data.keys())[:5]}..."
+        )
+
+    logger.debug(f"Found {len(link_data[folder_name])} source files for {folder_name}")
+    return link_data[folder_name]
+
+
+def load_results_yaml(collectra_folder: Path) -> dict[str, Any]:
+    """
+    Load and parse the results.yaml file from a collectra folder.
+
+    Args:
+        collectra_folder: Path to the collectra folder containing results.yaml.
+
+    Returns:
+        The parsed YAML data as a dictionary.
+
+    Raises:
+        FileNotFoundError: If the results.yaml file does not exist.
+        yaml.YAMLError: If the file cannot be parsed as YAML.
+
+    Example:
+        >>> results = load_results_yaml(Path("/data/sample.grapto"))
+        >>> print(results.keys())
+        dict_keys(['collectra_results_metadata', 'specimen_sheet', ...])
+    """
+    results_yaml_path = collectra_folder / "results.yaml"
+
+    if not results_yaml_path.exists():
+        raise FileNotFoundError(f"results.yaml not found in: {collectra_folder}")
+
+    with open(results_yaml_path) as f:
+        data = yaml.safe_load(f)
+
+    if data is None:
+        logger.warning(f"results.yaml is empty in: {collectra_folder}")
+        return {}
+
+    logger.debug(f"Loaded results.yaml with {len(data)} keys from {collectra_folder}")
+    return data
+
+
+def _get_bounding_box_from_entry(entry: dict[str, Any]) -> dict[str, float] | None:
+    """
+    Extract bounding box information from a results.yaml entry.
+
+    Args:
+        entry: A dictionary entry from results.yaml that should contain
+            bounding box fields.
+
+    Returns:
+        A dictionary with bounding box fields, or None if not all required
+        fields are present.
+    """
+    required_fields = ["x_center", "y_center", "width_relative", "height_relative"]
+
+    if all(field in entry for field in required_fields):
+        return {
+            "x_center": float(entry["x_center"]),
+            "y_center": float(entry["y_center"]),
+            "width_relative": float(entry["width_relative"]),
+            "height_relative": float(entry["height_relative"]),
+        }
+    return None
+
+
+def _find_parent_with_bounding_box(
+    entry: dict[str, Any], results_data: dict[str, Any]
+) -> dict[str, float] | None:
+    """
+    Traverse upwards through parents to find the last ImageCrop with a bounding box.
+
+    For entries of type collectra.Text, this function traverses up through the
+    parent chain to find the LAST parent with type collectra.ImageCrop and
+    returns its bounding box.
+
+    Args:
+        entry: The current entry from results.yaml.
+        results_data: The full results.yaml data for looking up parent entries.
+
+    Returns:
+        The bounding box dict from the last ImageCrop parent, or None if not found.
+    """
+    parents = entry.get("parents")
+
+    if parents is None:
+        return None
+
+    # Parents can be a single string or a list of strings
+    # When it's a list, use the LAST parent in the list
+    if isinstance(parents, list):
+        if not parents:
+            return None
+        parent_id = parents[-1]  # Get the last parent
+    else:
+        parent_id = parents  # Single parent as string
+
+    # Find the parent entry by matching the id field
+    parent_entry = None
+    for key, value in results_data.items():
+        if isinstance(value, dict) and value.get("id") == parent_id:
+            parent_entry = value
+            break
+
+    if parent_entry is None:
+        logger.debug(f"Parent with id '{parent_id}' not found in results.yaml")
+        return None
+
+    # Check if parent is an ImageCrop
+    if parent_entry.get("type") == "collectra.ImageCrop":
+        bounding_box = _get_bounding_box_from_entry(parent_entry)
+        if bounding_box:
+            return bounding_box
+
+    # If not an ImageCrop, continue traversing upward
+    return _find_parent_with_bounding_box(parent_entry, results_data)
+
+
+def extract_labels_with_bounding_boxes(
+    source_folders: list[Path],
+) -> list[tuple[str, str, dict[str, float], str]]:
+    """
+    Extract labels with their text content and bounding boxes from source folders.
+
+    For each source folder:
+    - Load its results.yaml
+    - Identify all labels (keys that are NOT 'collectra_results_metadata')
+    - For each label with type 'collectra.Text' or 'collectra.ImageCrop':
+        - Extract the label name (the YAML key)
+        - Extract the data/text content
+        - For Text types: traverse upwards through parents to find the LAST
+          parent with type 'collectra.ImageCrop' and get its bounding box
+        - For ImageCrop types: use its own bounding box
+        - Append tuple: (label_name, text_content, bounding_box_dict, source_folder_path_str)
+
+    Args:
+        source_folders: List of paths to collectra folders containing results.yaml files.
+
+    Returns:
+        List of tuples containing:
+        - label_name: The YAML key (e.g., "registration_number")
+        - text_content: The data field value
+        - bounding_box: Dict with x_center, y_center, width_relative, height_relative
+        - source_folder_path: String path to the source folder
+
+    Example:
+        >>> sources = [Path("/data/model1/sample.grapto"), Path("/data/model2/sample.grapto")]
+        >>> results = extract_labels_with_bounding_boxes(sources)
+        >>> print(results[0])
+        ('registration_number', 'P.350015', {'x_center': 0.43, ...}, '/data/model1/sample.grapto')
+    """
+    all_labels: list[tuple[str, str, dict[str, float], str]] = []
+
+    for source_folder in source_folders:
+        try:
+            results_data = load_results_yaml(source_folder)
+        except FileNotFoundError:
+            logger.warning(f"Skipping folder without results.yaml: {source_folder}")
+            continue
+        except yaml.YAMLError as e:
+            logger.warning(f"Skipping folder with invalid YAML: {source_folder}: {e}")
+            continue
+
+        source_folder_str = str(source_folder)
+
+        for label_name, entry in results_data.items():
+            # Skip metadata
+            if label_name == "collectra_results_metadata":
+                continue
+
+            # Skip non-dict entries
+            if not isinstance(entry, dict):
+                continue
+
+            entry_type = entry.get("type", "")
+            data_content = entry.get("data", "")
+
+            # Convert data to string if it exists
+            if data_content is not None:
+                data_content = str(data_content)
+            else:
+                data_content = ""
+
+            bounding_box: dict[str, float] | None = None
+
+            if entry_type == "collectra.ImageCrop":
+                # For ImageCrop, use its own bounding box
+                bounding_box = _get_bounding_box_from_entry(entry)
+
+            elif entry_type == "collectra.Text":
+                # For Text, traverse up to find last ImageCrop parent
+                bounding_box = _find_parent_with_bounding_box(entry, results_data)
+
+            # Only add entries that have valid bounding boxes
+            if bounding_box is not None:
+                all_labels.append(
+                    (label_name, data_content, bounding_box, source_folder_str)
+                )
+                logger.debug(
+                    f"Extracted label '{label_name}' with bounding box from {source_folder_str}"
+                )
+
+    logger.info(
+        f"Extracted {len(all_labels)} labels with bounding boxes "
+        f"from {len(source_folders)} source folders"
+    )
+
+    return all_labels

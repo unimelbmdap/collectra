@@ -6,6 +6,7 @@ This module tests the ensemble functionality including:
 - Verifying files exist across multiple folders
 - Creating ensemble output with merged results
 - Loading link.yaml files
+- Extracting labels with bounding boxes
 """
 
 import shutil
@@ -15,12 +16,17 @@ import pytest
 import yaml
 
 from collectra.ensemble import (
+    _find_parent_with_bounding_box,
+    _get_bounding_box_from_entry,
     _get_image_file,
     create_ensemble_output,
     ensemble_files,
+    extract_labels_with_bounding_boxes,
     find_collectra_files,
     get_ensemble_folder,
+    get_source_collectra_files,
     load_link_yaml,
+    load_results_yaml,
     verify_collectra_files,
 )
 
@@ -856,3 +862,578 @@ class TestEdgeCases:
         files = list((output / "no_image.grapto").iterdir())
         assert len(files) == 1
         assert files[0].name == "results.yaml"
+
+
+# ============================================================================
+# Tests for get_source_collectra_files
+# ============================================================================
+
+
+class TestGetSourceCollectraFiles:
+    """Tests for get_source_collectra_files function."""
+
+    def test_get_sources_for_existing_folder(self, tmp_path):
+        """Test getting source files for an existing ensemble folder."""
+        link_yaml_path = tmp_path / "link.yaml"
+        link_data = {
+            "file1.grapto": [
+                "data/model1/file1.grapto",
+                "data/model2/file1.grapto",
+            ],
+            "file2.grapto": [
+                "data/model1/file2.grapto",
+                "data/model2/file2.grapto",
+            ],
+        }
+        with open(link_yaml_path, "w") as f:
+            yaml.dump(link_data, f)
+
+        result = get_source_collectra_files(Path("file1.grapto"), link_yaml_path)
+
+        assert len(result) == 2
+        assert result[0] == Path("data/model1/file1.grapto")
+        assert result[1] == Path("data/model2/file1.grapto")
+
+    def test_get_sources_with_full_path(self, tmp_path):
+        """Test getting source files when full path is provided."""
+        link_yaml_path = tmp_path / "link.yaml"
+        link_data = {
+            "file1.grapto": [
+                "data/model1/file1.grapto",
+                "data/model2/file1.grapto",
+            ],
+        }
+        with open(link_yaml_path, "w") as f:
+            yaml.dump(link_data, f)
+
+        # Provide full path instead of just name
+        full_path = tmp_path / "ensemble" / "file1.grapto"
+        result = get_source_collectra_files(full_path, link_yaml_path)
+
+        assert len(result) == 2
+
+    def test_get_sources_folder_not_found(self, tmp_path):
+        """Test that KeyError is raised for non-existent folder."""
+        link_yaml_path = tmp_path / "link.yaml"
+        link_data = {"existing.grapto": ["data/model1/existing.grapto"]}
+        with open(link_yaml_path, "w") as f:
+            yaml.dump(link_data, f)
+
+        with pytest.raises(KeyError) as exc_info:
+            get_source_collectra_files(Path("nonexistent.grapto"), link_yaml_path)
+
+        assert "nonexistent.grapto" in str(exc_info.value)
+
+    def test_get_sources_link_yaml_not_found(self, tmp_path):
+        """Test that FileNotFoundError is raised for missing link.yaml."""
+        with pytest.raises(FileNotFoundError):
+            get_source_collectra_files(
+                Path("file.grapto"), tmp_path / "nonexistent.yaml"
+            )
+
+
+# ============================================================================
+# Tests for load_results_yaml
+# ============================================================================
+
+
+class TestLoadResultsYaml:
+    """Tests for load_results_yaml function."""
+
+    def test_load_valid_results_yaml(self, tmp_path):
+        """Test loading a valid results.yaml file."""
+        grapto_folder = tmp_path / "test.grapto"
+        grapto_folder.mkdir()
+
+        results_data = {
+            "collectra_results_metadata": {
+                "workflow": "Grapto",
+                "version": "0.1.0",
+            },
+            "registration_number": {
+                "type": "collectra.Text",
+                "id": "reg-123",
+                "data": "P.350015",
+            },
+        }
+        with open(grapto_folder / "results.yaml", "w") as f:
+            yaml.dump(results_data, f)
+
+        result = load_results_yaml(grapto_folder)
+
+        assert "collectra_results_metadata" in result
+        assert "registration_number" in result
+        assert result["registration_number"]["data"] == "P.350015"
+
+    def test_load_empty_results_yaml(self, tmp_path):
+        """Test loading an empty results.yaml file."""
+        grapto_folder = tmp_path / "empty.grapto"
+        grapto_folder.mkdir()
+        (grapto_folder / "results.yaml").write_text("")
+
+        result = load_results_yaml(grapto_folder)
+
+        assert result == {}
+
+    def test_load_missing_results_yaml(self, tmp_path):
+        """Test that FileNotFoundError is raised for missing results.yaml."""
+        grapto_folder = tmp_path / "no_results.grapto"
+        grapto_folder.mkdir()
+
+        with pytest.raises(FileNotFoundError) as exc_info:
+            load_results_yaml(grapto_folder)
+
+        assert "results.yaml not found" in str(exc_info.value)
+
+
+# ============================================================================
+# Tests for _get_bounding_box_from_entry
+# ============================================================================
+
+
+class TestGetBoundingBoxFromEntry:
+    """Tests for _get_bounding_box_from_entry helper function."""
+
+    def test_extract_complete_bounding_box(self):
+        """Test extracting bounding box with all fields present."""
+        entry = {
+            "type": "collectra.ImageCrop",
+            "x_center": 0.5,
+            "y_center": 0.6,
+            "width_relative": 0.1,
+            "height_relative": 0.2,
+        }
+
+        result = _get_bounding_box_from_entry(entry)
+
+        assert result is not None
+        assert result["x_center"] == 0.5
+        assert result["y_center"] == 0.6
+        assert result["width_relative"] == 0.1
+        assert result["height_relative"] == 0.2
+
+    def test_missing_bounding_box_fields(self):
+        """Test returns None when bounding box fields are missing."""
+        entry = {
+            "type": "collectra.ImageCrop",
+            "x_center": 0.5,
+            # Missing other fields
+        }
+
+        result = _get_bounding_box_from_entry(entry)
+
+        assert result is None
+
+    def test_converts_to_float(self):
+        """Test that values are converted to float."""
+        entry = {
+            "x_center": "0.5",
+            "y_center": "0.6",
+            "width_relative": "0.1",
+            "height_relative": "0.2",
+        }
+
+        result = _get_bounding_box_from_entry(entry)
+
+        assert result is not None
+        assert isinstance(result["x_center"], float)
+
+
+# ============================================================================
+# Tests for _find_parent_with_bounding_box
+# ============================================================================
+
+
+class TestFindParentWithBoundingBox:
+    """Tests for _find_parent_with_bounding_box helper function."""
+
+    def test_single_parent_string(self):
+        """Test finding bounding box with single parent (string)."""
+        results_data = {
+            "image_crop": {
+                "type": "collectra.ImageCrop",
+                "id": "image-123",
+                "x_center": 0.5,
+                "y_center": 0.6,
+                "width_relative": 0.1,
+                "height_relative": 0.2,
+            },
+            "text_field": {
+                "type": "collectra.Text",
+                "id": "text-456",
+                "parents": "image-123",
+                "data": "Some text",
+            },
+        }
+
+        entry = results_data["text_field"]
+        result = _find_parent_with_bounding_box(entry, results_data)
+
+        assert result is not None
+        assert result["x_center"] == 0.5
+        assert result["y_center"] == 0.6
+
+    def test_multiple_parents_list_uses_last(self):
+        """Test that last parent in list is used for bounding box."""
+        results_data = {
+            "first_parent": {
+                "type": "collectra.ImageCrop",
+                "id": "parent-1",
+                "x_center": 0.1,
+                "y_center": 0.1,
+                "width_relative": 0.1,
+                "height_relative": 0.1,
+            },
+            "last_parent": {
+                "type": "collectra.ImageCrop",
+                "id": "parent-2",
+                "x_center": 0.9,
+                "y_center": 0.9,
+                "width_relative": 0.9,
+                "height_relative": 0.9,
+            },
+            "text_field": {
+                "type": "collectra.Text",
+                "id": "text-456",
+                "parents": ["parent-1", "parent-2"],
+                "data": "Some text",
+            },
+        }
+
+        entry = results_data["text_field"]
+        result = _find_parent_with_bounding_box(entry, results_data)
+
+        assert result is not None
+        # Should use last parent's bounding box
+        assert result["x_center"] == 0.9
+        assert result["y_center"] == 0.9
+
+    def test_recursive_parent_traversal(self):
+        """Test traversing multiple levels to find ImageCrop parent."""
+        results_data = {
+            "image_crop": {
+                "type": "collectra.ImageCrop",
+                "id": "image-123",
+                "x_center": 0.5,
+                "y_center": 0.6,
+                "width_relative": 0.1,
+                "height_relative": 0.2,
+            },
+            "intermediate_text": {
+                "type": "collectra.Text",
+                "id": "text-intermediate",
+                "parents": "image-123",
+                "data": "Intermediate",
+            },
+            "final_text": {
+                "type": "collectra.Text",
+                "id": "text-final",
+                "parents": "text-intermediate",
+                "data": "Final text",
+            },
+        }
+
+        entry = results_data["final_text"]
+        result = _find_parent_with_bounding_box(entry, results_data)
+
+        assert result is not None
+        assert result["x_center"] == 0.5
+
+    def test_no_parents_returns_none(self):
+        """Test that entry without parents returns None."""
+        results_data = {
+            "orphan_text": {
+                "type": "collectra.Text",
+                "id": "orphan-123",
+                "data": "Orphan text",
+            },
+        }
+
+        entry = results_data["orphan_text"]
+        result = _find_parent_with_bounding_box(entry, results_data)
+
+        assert result is None
+
+    def test_parent_not_found_returns_none(self):
+        """Test that missing parent returns None."""
+        results_data = {
+            "text_field": {
+                "type": "collectra.Text",
+                "id": "text-456",
+                "parents": "nonexistent-parent",
+                "data": "Some text",
+            },
+        }
+
+        entry = results_data["text_field"]
+        result = _find_parent_with_bounding_box(entry, results_data)
+
+        assert result is None
+
+    def test_empty_parents_list_returns_none(self):
+        """Test that empty parents list returns None."""
+        results_data = {
+            "text_field": {
+                "type": "collectra.Text",
+                "id": "text-456",
+                "parents": [],
+                "data": "Some text",
+            },
+        }
+
+        entry = results_data["text_field"]
+        result = _find_parent_with_bounding_box(entry, results_data)
+
+        assert result is None
+
+
+# ============================================================================
+# Tests for extract_labels_with_bounding_boxes
+# ============================================================================
+
+
+class TestExtractLabelsWithBoundingBoxes:
+    """Tests for extract_labels_with_bounding_boxes function."""
+
+    @pytest.fixture
+    def grapto_with_labels(self, tmp_path):
+        """Create a grapto folder with Text and ImageCrop labels."""
+        grapto_folder = tmp_path / "test.grapto"
+        grapto_folder.mkdir()
+
+        results_data = {
+            "collectra_results_metadata": {
+                "workflow": "Grapto",
+                "version": "0.1.0",
+            },
+            "primary_label": {
+                "type": "collectra.ImageCrop",
+                "id": "primary-label-123",
+                "parents": "specimen_sheet",
+                "x_center": 0.5,
+                "y_center": 0.8,
+                "width_relative": 0.3,
+                "height_relative": 0.25,
+            },
+            "registration_image": {
+                "type": "collectra.ImageCrop",
+                "id": "reg-image-456",
+                "parents": "primary-label-123",
+                "x_center": 0.4,
+                "y_center": 0.75,
+                "width_relative": 0.1,
+                "height_relative": 0.05,
+            },
+            "registration_number": {
+                "type": "collectra.Text",
+                "id": "reg-num-789",
+                "parents": ["primary-label-123", "reg-image-456"],
+                "data": "P.350015",
+            },
+        }
+        with open(grapto_folder / "results.yaml", "w") as f:
+            yaml.dump(results_data, f)
+
+        return grapto_folder
+
+    def test_extract_text_with_parent_bounding_box(self, grapto_with_labels):
+        """Test extracting Text labels with parent ImageCrop bounding boxes."""
+        result = extract_labels_with_bounding_boxes([grapto_with_labels])
+
+        # Should have entries for ImageCrop and Text labels
+        text_entries = [r for r in result if r[0] == "registration_number"]
+
+        assert len(text_entries) == 1
+        label_name, data, bbox, source = text_entries[0]
+
+        assert label_name == "registration_number"
+        assert data == "P.350015"
+        # Bounding box should come from last parent (registration_image)
+        assert bbox["x_center"] == 0.4
+        assert bbox["y_center"] == 0.75
+        assert source == str(grapto_with_labels)
+
+    def test_extract_imagecrop_with_own_bounding_box(self, grapto_with_labels):
+        """Test extracting ImageCrop labels with their own bounding boxes."""
+        result = extract_labels_with_bounding_boxes([grapto_with_labels])
+
+        # Find primary_label entry
+        primary_entries = [r for r in result if r[0] == "primary_label"]
+
+        assert len(primary_entries) == 1
+        label_name, data, bbox, source = primary_entries[0]
+
+        assert label_name == "primary_label"
+        assert bbox["x_center"] == 0.5
+        assert bbox["y_center"] == 0.8
+
+    def test_multiple_source_folders(self, tmp_path):
+        """Test extracting labels from multiple source folders."""
+        folder1 = tmp_path / "model1" / "test.grapto"
+        folder2 = tmp_path / "model2" / "test.grapto"
+        folder1.mkdir(parents=True)
+        folder2.mkdir(parents=True)
+
+        results_data = {
+            "field": {
+                "type": "collectra.ImageCrop",
+                "id": "field-123",
+                "x_center": 0.5,
+                "y_center": 0.5,
+                "width_relative": 0.2,
+                "height_relative": 0.2,
+            },
+        }
+
+        for folder in [folder1, folder2]:
+            with open(folder / "results.yaml", "w") as f:
+                yaml.dump(results_data, f)
+
+        result = extract_labels_with_bounding_boxes([folder1, folder2])
+
+        assert len(result) == 2
+        sources = [r[3] for r in result]
+        assert str(folder1) in sources
+        assert str(folder2) in sources
+
+    def test_skips_metadata(self, grapto_with_labels):
+        """Test that collectra_results_metadata is skipped."""
+        result = extract_labels_with_bounding_boxes([grapto_with_labels])
+
+        label_names = [r[0] for r in result]
+        assert "collectra_results_metadata" not in label_names
+
+    def test_skips_folder_without_results_yaml(self, tmp_path):
+        """Test that folders without results.yaml are skipped gracefully."""
+        folder_with = tmp_path / "with.grapto"
+        folder_without = tmp_path / "without.grapto"
+        folder_with.mkdir()
+        folder_without.mkdir()
+
+        results_data = {
+            "field": {
+                "type": "collectra.ImageCrop",
+                "id": "field-123",
+                "x_center": 0.5,
+                "y_center": 0.5,
+                "width_relative": 0.2,
+                "height_relative": 0.2,
+            },
+        }
+        with open(folder_with / "results.yaml", "w") as f:
+            yaml.dump(results_data, f)
+
+        result = extract_labels_with_bounding_boxes([folder_with, folder_without])
+
+        assert len(result) == 1
+        assert result[0][3] == str(folder_with)
+
+    def test_empty_source_folders_list(self):
+        """Test with empty source folders list."""
+        result = extract_labels_with_bounding_boxes([])
+
+        assert result == []
+
+    def test_text_without_imagecrop_parent_excluded(self, tmp_path):
+        """Test that Text without ImageCrop parent is excluded."""
+        grapto_folder = tmp_path / "test.grapto"
+        grapto_folder.mkdir()
+
+        results_data = {
+            "text_only": {
+                "type": "collectra.Text",
+                "id": "text-123",
+                "parents": "nonexistent-parent",
+                "data": "Some text",
+            },
+        }
+        with open(grapto_folder / "results.yaml", "w") as f:
+            yaml.dump(results_data, f)
+
+        result = extract_labels_with_bounding_boxes([grapto_folder])
+
+        assert len(result) == 0
+
+    def test_returns_correct_tuple_format(self, grapto_with_labels):
+        """Test that returned tuples have correct format."""
+        result = extract_labels_with_bounding_boxes([grapto_with_labels])
+
+        assert len(result) > 0
+
+        for item in result:
+            assert len(item) == 4
+            label_name, data, bbox, source = item
+
+            assert isinstance(label_name, str)
+            assert isinstance(data, str)
+            assert isinstance(bbox, dict)
+            assert isinstance(source, str)
+
+            # Check bounding box has all required fields
+            assert "x_center" in bbox
+            assert "y_center" in bbox
+            assert "width_relative" in bbox
+            assert "height_relative" in bbox
+
+    def test_with_real_data_structure(self, tmp_path):
+        """Test with structure matching real results.yaml format."""
+        grapto_folder = tmp_path / "MMRIRN1505070_P350015.grapto"
+        grapto_folder.mkdir()
+
+        # Mimic real results.yaml structure
+        results_data = {
+            "collectra_results_metadata": {
+                "workflow": "Grapto",
+                "version": "0.1.0",
+                "timestamp": "2026-01-08T15:16:23.232652",
+            },
+            "specimen_sheet": {
+                "type": "collectra.Image",
+                "id": "specimen_sheet",
+                "data": "MMRIRN1505070_P350015.jpg",
+            },
+            "primary_label": {
+                "type": "collectra.ImageCrop",
+                "id": "primary_label-29b36611-91a9-409d-a753-89340491d047",
+                "parents": "specimen_sheet",
+                "data": "MMRIRN1505070_P350015.jpg",
+                "x_center": 0.4727736711502075,
+                "y_center": 0.8679114580154419,
+                "width_relative": 0.3212781846523285,
+                "height_relative": 0.253208190202713,
+            },
+            "registration_number_image": {
+                "type": "collectra.ImageCrop",
+                "id": "registration_number_image-ac99efba-165b-4376-a8b3-205d16e54dca",
+                "parents": "primary_label-29b36611-91a9-409d-a753-89340491d047",
+                "data": "MMRIRN1505070_P350015.jpg",
+                "x_center": 0.42946359509122,
+                "y_center": 0.757537248825559,
+                "width_relative": 0.06577334993529771,
+                "height_relative": 0.032459771822947125,
+            },
+            "registration_number": {
+                "type": "collectra.Text",
+                "id": "registration_number-4991f8fc-0290-4f14-89e5-51ba9b83cbf5",
+                "parents": [
+                    "primary_label-29b36611-91a9-409d-a753-89340491d047",
+                    "registration_number_image-ac99efba-165b-4376-a8b3-205d16e54dca",
+                ],
+                "data": "P.350015",
+            },
+        }
+        with open(grapto_folder / "results.yaml", "w") as f:
+            yaml.dump(results_data, f)
+
+        result = extract_labels_with_bounding_boxes([grapto_folder])
+
+        # Find registration_number entry
+        reg_entries = [r for r in result if r[0] == "registration_number"]
+        assert len(reg_entries) == 1
+
+        label_name, data, bbox, source = reg_entries[0]
+        assert label_name == "registration_number"
+        assert data == "P.350015"
+        # Should get bounding box from last parent: registration_number_image
+        assert abs(bbox["x_center"] - 0.42946359509122) < 0.0001
+        assert abs(bbox["y_center"] - 0.757537248825559) < 0.0001
