@@ -1,16 +1,14 @@
 __all__ = ["Evaluator"]
 
-import yaml
-
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from collectra import DataNode
-from collectra.utils import change_dir
-
+import yaml
 from rich.table import Table
 
-import logging
+from collectra import DataNode
+from collectra.utils import change_dir
 
 logger = logging.getLogger(__name__)
 

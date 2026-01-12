@@ -15,15 +15,14 @@ import pytest
 import yaml
 
 from collectra.ensemble import (
+    _get_image_file,
     create_ensemble_output,
     ensemble_files,
     find_collectra_files,
     get_ensemble_folder,
     load_link_yaml,
     verify_collectra_files,
-    _get_image_file,
 )
-
 
 # ============================================================================
 # Fixtures

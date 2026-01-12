@@ -36,6 +36,7 @@ from ultralytics.utils.metrics import DetMetrics
 from collectra.utils import change_dir, load_class_from_string, remove_exif
 from utils.get_types import get_param_types, get_return_type, unpack_types
 
+from ..commons.base import TaskContext
 from ..tasks.base import (
     Task,
     TaskNode,
@@ -47,7 +48,6 @@ from ..types.base import (
     Node,
     NodeStatus,
 )
-from ..commons.base import TaskContext
 from .node_graph_manager import NodeGraphManager
 
 logger = logging.getLogger(__name__)
