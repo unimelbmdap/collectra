@@ -33,6 +33,7 @@ pandas = "^2.3.3"
 h5py = "^3.15.1"
 llmloader = {git = "https://github.com/jamestq/llmloader.git"}
 editdistance = ">=0.6.0"
+ensemble-boxes = ">=1.0.9"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=6.2.5"

@@ -30,40 +30,37 @@ class EvaluationReport:
     threshold: float
 
     def __post_init__(self):
-        """Turn the aggregate dict into a rich Table for display."""
-        self.aggregate_table = Table(title="Aggregate Evaluation Metrics")
-        self.aggregate_table.add_column("Metric", style="cyan", no_wrap=True)
-        self.aggregate_table.add_column("Value", justify="right", style="green")
+        self.aggregate_tables = []
+        self.tables = []
+        for data_type, metrics in self.aggregate.items():
+            """Turn the aggregate dict into a rich Table for display."""
+            table = Table(title=f"Aggregate Evaluation Metrics for {data_type}")
+            table.add_column("Metric", style="cyan", no_wrap=True)
+            table.add_column("Value", justify="right", style="green")
 
-        # Add overall metrics
-        overall = self.aggregate.get("overall", {})
-        self.aggregate_table.add_row(
-            "Precision (Overall)", f"{overall.get('precision', 0):.3f}"
-        )
-        self.aggregate_table.add_row(
-            "Recall (Overall)", f"{overall.get('recall', 0):.3f}"
-        )
-        self.aggregate_table.add_row("F1 Micro", f"{overall.get('f1_micro', 0):.3f}")
-        self.aggregate_table.add_row(
-            "F1 File-Averaged", f"{overall.get('f1_file_averaged', 0):.3f}"
-        )
-        self.aggregate_table.add_row("Total Files", str(overall.get("total_files", 0)))
-
-        # Create per-label table
-        per_label = self.aggregate.get("per_label", {})
-        if per_label:
-            self.per_label_table = Table(title="Per-Label Metrics")
-            self.per_label_table.add_column("Label", style="magenta")
-            self.per_label_table.add_column("Precision", justify="right", style="green")
-            self.per_label_table.add_column("Recall", justify="right", style="green")
-            self.per_label_table.add_column("F1", justify="right", style="green")
-            self.per_label_table.add_column(
-                "Mean Score", justify="right", style="green"
+            # Add overall metrics
+            overall = metrics.get("overall", {})
+            table.add_row("Precision (Overall)", f"{overall.get('precision', 0):.3f}")
+            table.add_row("Recall (Overall)", f"{overall.get('recall', 0):.3f}")
+            table.add_row("F1 Micro", f"{overall.get('f1_micro', 0):.3f}")
+            table.add_row(
+                "F1 File-Averaged", f"{overall.get('f1_file_averaged', 0):.3f}"
             )
-            self.per_label_table.add_column("Support", justify="right", style="blue")
-
+            table.add_row("Total Files", str(overall.get("total_files", 0)))
+            self.aggregate_tables.append(table)
+            # Create per-label table
+            per_label = metrics.get("per_label", {})
+            if not per_label:
+                continue
+            table = Table(title=f"Per-Label Metrics for Data Type: {data_type}")
+            table.add_column("Label", style="magenta")
+            table.add_column("Precision", justify="right", style="green")
+            table.add_column("Recall", justify="right", style="green")
+            table.add_column("F1", justify="right", style="green")
+            table.add_column("Mean Score", justify="right", style="green")
+            table.add_column("Support", justify="right", style="blue")
             for label_name, metrics in per_label.items():
-                self.per_label_table.add_row(
+                table.add_row(
                     label_name,
                     f"{metrics.get('precision', 0):.3f}",
                     f"{metrics.get('recall', 0):.3f}",
@@ -71,8 +68,7 @@ class EvaluationReport:
                     f"{metrics.get('mean_score', 0):.3f}",
                     str(metrics.get("support", 0)),
                 )
-        else:
-            self.per_label_table = None
+            self.tables.append(table)
 
 
 class EvaluationError(Exception):
@@ -289,106 +285,125 @@ class Evaluator:
         """
         from collections import defaultdict
 
-        # Initialize accumulators
-        label_pools = defaultdict(
-            lambda: {
-                "total_tp": 0,
-                "total_fp": 0,
-                "total_fn": 0,
-                "total_score": 0.0,
-                "total_matches": 0,
+        metrics = ["precision", "recall", "f1", "mean_score"]
+        data_types_set = set()
+        for result in self.results:
+            for label_name, label_metrics in result.label_metrics.items():
+                data_types = label_metrics.get("types", [])
+                for data_type in data_types:
+                    data_types_set.add(data_type)
+
+        data_types = list(data_types_set)
+
+        aggregated_results = dict()
+
+        for data_type in data_types:
+            # Initialize accumulators
+            label_pools = defaultdict(
+                lambda: {
+                    "total_tp": 0,
+                    "total_fp": 0,
+                    "total_fn": 0,
+                    "total_score": 0.0,
+                    "total_matches": 0,
+                }
+            )
+
+            file_f1_scores = []
+
+            for file_result in self.results:
+                file_tp = file_fp = file_fn = 0
+                for label_name, metrics in file_result.label_metrics.items():
+                    if data_type not in metrics.get("types", []):
+                        continue
+                    pool = label_pools[label_name]
+                    pool["total_tp"] += metrics["num_matched"]
+                    pool["total_fp"] += metrics["num_false_positives"]
+                    pool["total_fn"] += metrics["num_false_negatives"]
+                    pool["total_score"] += (
+                        metrics["mean_score"] * metrics["num_matched"]
+                    )
+                    pool["total_matches"] += metrics["num_matched"]
+                    pool["types"] = metrics.get("types", [])
+
+                    file_tp += metrics["num_matched"]
+                    file_fp += metrics["num_false_positives"]
+                    file_fn += metrics["num_false_negatives"]
+
+                # Per-file F1
+                file_precision = (
+                    file_tp / (file_tp + file_fp) if (file_tp + file_fp) > 0 else 0
+                )
+                file_recall = (
+                    file_tp / (file_tp + file_fn) if (file_tp + file_fn) > 0 else 0
+                )
+                file_f1 = (
+                    2 * file_precision * file_recall / (file_precision + file_recall)
+                    if (file_precision + file_recall) > 0
+                    else 0
+                )
+                file_f1_scores.append(file_f1)
+
+            # Compute per-label micro metrics
+            per_label_metrics = {}
+            for label_name, pool in label_pools.items():
+                tp, fp, fn = pool["total_tp"], pool["total_fp"], pool["total_fn"]
+                precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+                recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+                f1 = (
+                    2 * precision * recall / (precision + recall)
+                    if (precision + recall) > 0
+                    else 0
+                )
+                mean_score = (
+                    pool["total_score"] / pool["total_matches"]
+                    if pool["total_matches"] > 0
+                    else 0
+                )
+
+                per_label_metrics[label_name] = {
+                    "precision": precision,
+                    "recall": recall,
+                    "f1": f1,
+                    "mean_score": mean_score,
+                    "support": pool["total_tp"]
+                    + pool["total_fn"],  # Number of gold items
+                }
+
+            # Overall metrics
+            total_tp = sum(p["total_tp"] for p in label_pools.values())
+            total_fp = sum(p["total_fp"] for p in label_pools.values())
+            total_fn = sum(p["total_fn"] for p in label_pools.values())
+
+            overall_precision = (
+                total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0
+            )
+            overall_recall = (
+                total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0
+            )
+            overall_f1_micro = (
+                2
+                * overall_precision
+                * overall_recall
+                / (overall_precision + overall_recall)
+                if (overall_precision + overall_recall) > 0
+                else 0
+            )
+            overall_f1_file_averaged = (
+                sum(file_f1_scores) / len(file_f1_scores) if file_f1_scores else 0
+            )
+            aggregated_results[data_type] = {
+                "overall": {
+                    "precision": overall_precision,
+                    "recall": overall_recall,
+                    "f1_micro": overall_f1_micro,
+                    "f1_file_averaged": overall_f1_file_averaged,
+                    "total_files": len(self.results),
+                },
+                "per_label": per_label_metrics,
             }
-        )
 
-        file_f1_scores = []
-
-        for file_result in self.results:
-            file_tp = file_fp = file_fn = 0
-
-            for label_name, metrics in file_result.label_metrics.items():
-                pool = label_pools[label_name]
-                pool["total_tp"] += metrics["num_matched"]
-                pool["total_fp"] += metrics["num_false_positives"]
-                pool["total_fn"] += metrics["num_false_negatives"]
-                pool["total_score"] += metrics["mean_score"] * metrics["num_matched"]
-                pool["total_matches"] += metrics["num_matched"]
-
-                file_tp += metrics["num_matched"]
-                file_fp += metrics["num_false_positives"]
-                file_fn += metrics["num_false_negatives"]
-
-            # Per-file F1
-            file_precision = (
-                file_tp / (file_tp + file_fp) if (file_tp + file_fp) > 0 else 0
-            )
-            file_recall = (
-                file_tp / (file_tp + file_fn) if (file_tp + file_fn) > 0 else 0
-            )
-            file_f1 = (
-                2 * file_precision * file_recall / (file_precision + file_recall)
-                if (file_precision + file_recall) > 0
-                else 0
-            )
-            file_f1_scores.append(file_f1)
-
-        # Compute per-label micro metrics
-        per_label_metrics = {}
-        for label_name, pool in label_pools.items():
-            tp, fp, fn = pool["total_tp"], pool["total_fp"], pool["total_fn"]
-            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-            f1 = (
-                2 * precision * recall / (precision + recall)
-                if (precision + recall) > 0
-                else 0
-            )
-            mean_score = (
-                pool["total_score"] / pool["total_matches"]
-                if pool["total_matches"] > 0
-                else 0
-            )
-
-            per_label_metrics[label_name] = {
-                "precision": precision,
-                "recall": recall,
-                "f1": f1,
-                "mean_score": mean_score,
-                "support": pool["total_tp"] + pool["total_fn"],  # Number of gold items
-            }
-
-        # Overall metrics
-        total_tp = sum(p["total_tp"] for p in label_pools.values())
-        total_fp = sum(p["total_fp"] for p in label_pools.values())
-        total_fn = sum(p["total_fn"] for p in label_pools.values())
-
-        overall_precision = (
-            total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0
-        )
-        overall_recall = (
-            total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0
-        )
-        overall_f1_micro = (
-            2
-            * overall_precision
-            * overall_recall
-            / (overall_precision + overall_recall)
-            if (overall_precision + overall_recall) > 0
-            else 0
-        )
-        overall_f1_file_averaged = (
-            sum(file_f1_scores) / len(file_f1_scores) if file_f1_scores else 0
-        )
-
-        return {
-            "overall": {
-                "precision": overall_precision,
-                "recall": overall_recall,
-                "f1_micro": overall_f1_micro,
-                "f1_file_averaged": overall_f1_file_averaged,
-                "total_files": len(self.results),
-            },
-            "per_label": per_label_metrics,
-        }
+        return aggregated_results
 
     def evaluate(self, threshold: float = 0.5) -> EvaluationReport:
         """
@@ -420,59 +435,3 @@ class Evaluator:
             aggregate=self.aggregate_metrics,
             threshold=threshold,
         )
-
-    def export_table(self, output_path: Path | None = None) -> Table:
-        """
-        Export results as a formatted table (CSV or console).
-
-        Columns: filename, label_class, precision, recall, f1, mean_score
-        """
-        rows = []
-
-        for file_result in self.results:
-            for label_name, metrics in file_result.label_metrics.items():
-                rows.append(
-                    {
-                        "filename": file_result.filename,
-                        "label_class": label_name,
-                        "precision": f"{metrics['precision']:.3f}",
-                        "recall": f"{metrics['recall']:.3f}",
-                        "f1": f"{metrics['f1']:.3f}",
-                        "mean_score": f"{metrics['mean_score']:.3f}",
-                    }
-                )
-
-        if output_path:
-            output_path.mkdir(parents=True, exist_ok=True) if output_path else None
-            import pandas as pd
-
-            df = pd.DataFrame(rows)
-            csv_path = output_path / "evaluation_results.csv"
-            df.to_csv(csv_path, index=False)
-            logger.info(f"Exported evaluation results to {csv_path}")
-
-        return self.format_as_rich_table(rows)
-
-    def format_as_rich_table(self, rows: list[dict]) -> Table:
-        """
-        Format results as a rich table string for console display.
-        """
-        table = Table(title="Evaluation Results")
-        table.add_column("Filename", style="cyan", no_wrap=True)
-        table.add_column("Label Class", style="magenta")
-        table.add_column("Precision", justify="right", style="green")
-        table.add_column("Recall", justify="right", style="green")
-        table.add_column("F1 Score", justify="right", style="green")
-        table.add_column("Mean Score", justify="right", style="green")
-
-        for row in rows:
-            table.add_row(
-                row["filename"],
-                row["label_class"],
-                row["precision"],
-                row["recall"],
-                row["f1"],
-                row["mean_score"],
-            )
-
-        return table

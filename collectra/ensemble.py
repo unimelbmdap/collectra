@@ -17,7 +17,9 @@ from pathlib import Path
 from typing import Any
 
 import editdistance
+import numpy as np
 import yaml
+from ensemble_boxes import weighted_boxes_fusion
 
 logger = logging.getLogger(__name__)
 
@@ -789,6 +791,153 @@ def calculate_centroid_box(boxes: list[dict[str, float]]) -> dict[str, float]:
     }
 
 
+def center_to_corner_format(box: dict[str, float]) -> list[float]:
+    """
+    Convert bounding box from center format to corner format.
+
+    Converts from {x_center, y_center, width_relative, height_relative} to
+    [x1, y1, x2, y2] format required by ensemble-boxes library.
+
+    Args:
+        box: Bounding box dict in center format with values in 0-1 range.
+
+    Returns:
+        List [x1, y1, x2, y2] with values clipped to 0-1 range.
+
+    Example:
+        >>> box = {"x_center": 0.5, "y_center": 0.5, "width_relative": 0.2, "height_relative": 0.2}
+        >>> center_to_corner_format(box)
+        [0.4, 0.4, 0.6, 0.6]
+    """
+    x1 = box["x_center"] - box["width_relative"] / 2
+    y1 = box["y_center"] - box["height_relative"] / 2
+    x2 = box["x_center"] + box["width_relative"] / 2
+    y2 = box["y_center"] + box["height_relative"] / 2
+
+    # Clip to 0-1 range as required by ensemble-boxes
+    return [
+        max(0.0, min(1.0, x1)),
+        max(0.0, min(1.0, y1)),
+        max(0.0, min(1.0, x2)),
+        max(0.0, min(1.0, y2)),
+    ]
+
+
+def corner_to_center_format(box: list[float]) -> dict[str, float]:
+    """
+    Convert bounding box from corner format to center format.
+
+    Converts from [x1, y1, x2, y2] format to
+    {x_center, y_center, width_relative, height_relative}.
+
+    Args:
+        box: List [x1, y1, x2, y2] with values in 0-1 range.
+
+    Returns:
+        Bounding box dict in center format.
+
+    Example:
+        >>> box = [0.4, 0.4, 0.6, 0.6]
+        >>> corner_to_center_format(box)
+        {'x_center': 0.5, 'y_center': 0.5, 'width_relative': 0.2, 'height_relative': 0.2}
+    """
+    x1, y1, x2, y2 = box
+    return {
+        "x_center": (x1 + x2) / 2,
+        "y_center": (y1 + y2) / 2,
+        "width_relative": x2 - x1,
+        "height_relative": y2 - y1,
+    }
+
+
+def calculate_wbf_box(
+    boxes: list[dict[str, float]],
+    iou_threshold: float = 0.5,
+    skip_box_threshold: float = 0.0,
+) -> dict[str, float]:
+    """
+    Calculate fused bounding box using Weighted Box Fusion (WBF).
+
+    Uses the ensemble-boxes library to fuse multiple overlapping bounding boxes
+    into a single refined box. Each box is treated as coming from a separate
+    model with equal confidence (1.0).
+
+    WBF differs from simple averaging by:
+    - Using IoU-based clustering to identify overlapping boxes
+    - Weighting the fusion by confidence scores
+    - Producing more accurate box coordinates for detection ensembles
+
+    Args:
+        boxes: List of bounding box dicts in center format.
+        iou_threshold: IoU threshold for clustering boxes together (default: 0.5).
+        skip_box_threshold: Minimum score to keep a box (default: 0.0).
+
+    Returns:
+        Fused bounding box dict in center format.
+
+    Raises:
+        ValueError: If boxes list is empty.
+
+    Example:
+        >>> boxes = [
+        ...     {"x_center": 0.5, "y_center": 0.5, "width_relative": 0.2, "height_relative": 0.2},
+        ...     {"x_center": 0.51, "y_center": 0.49, "width_relative": 0.21, "height_relative": 0.19}
+        ... ]
+        >>> result = calculate_wbf_box(boxes)
+        >>> # Returns fused box coordinates
+    """
+    if not boxes:
+        raise ValueError("Cannot calculate WBF from empty list of boxes")
+
+    # For a single box, return it as-is
+    if len(boxes) == 1:
+        return boxes[0].copy()
+
+    # Convert boxes to corner format for ensemble-boxes library
+    # WBF expects: boxes_list = [[boxes from model 1], [boxes from model 2], ...]
+    # Since we're grouping by label, each box is from a different source (model)
+    # So we treat each box as coming from a separate "model" with one box each
+    boxes_list = []
+    scores_list = []
+    labels_list = []
+
+    for box in boxes:
+        corner_box = center_to_corner_format(box)
+        boxes_list.append([corner_box])
+        scores_list.append([1.0])  # Equal confidence for all boxes
+        labels_list.append([0])  # Same label for all (they're already grouped)
+
+    # Apply Weighted Box Fusion
+    fused_boxes, fused_scores, fused_labels = weighted_boxes_fusion(
+        boxes_list,
+        scores_list,
+        labels_list,
+        weights=None,  # Equal weights for all models
+        iou_thr=iou_threshold,
+        skip_box_thr=skip_box_threshold,
+    )
+
+    # If WBF returns no boxes (shouldn't happen with our input), fall back to centroid
+    if len(fused_boxes) == 0:
+        logger.warning("WBF returned no boxes, falling back to centroid averaging")
+        return calculate_centroid_box(boxes)
+
+    # Take the first (and typically only) fused box
+    # WBF may return multiple boxes if IoU threshold causes separation
+    # In that case, take the one with highest score
+    if len(fused_boxes) > 1:
+        best_idx = np.argmax(fused_scores)
+        fused_box = fused_boxes[best_idx]
+        logger.debug(
+            f"WBF returned {len(fused_boxes)} boxes, selected box with score {fused_scores[best_idx]:.4f}"
+        )
+    else:
+        fused_box = fused_boxes[0]
+
+    # Convert back to center format
+    return corner_to_center_format(fused_box.tolist())
+
+
 def group_by_label(
     labels: list[tuple[str, str, dict[str, float], str, str, str]],
     iou_threshold: float = 0.6,
@@ -1073,9 +1222,9 @@ def generate_ensembled_values(
         # Extract text contents from the group
         texts = [text_content for _, text_content, _, _, _, _ in group]
 
-        # Extract bounding boxes and calculate centroid
+        # Extract bounding boxes and calculate fused box using WBF
         bounding_boxes = [bbox for _, _, bbox, _, _, _ in group]
-        centroid_box = calculate_centroid_box(bounding_boxes)
+        fused_box = calculate_wbf_box(bounding_boxes)
 
         # Extract sources (folder path and item id) for ensemble field
         sources = [
@@ -1094,7 +1243,7 @@ def generate_ensembled_values(
             {
                 "label_name": most_common_label,
                 "text": ensembled_text,
-                "bounding_box": centroid_box,
+                "bounding_box": fused_box,
                 "group_size": len(group),
                 "source_texts": texts,
                 "sources": sources,

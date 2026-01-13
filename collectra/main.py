@@ -233,6 +233,8 @@ def evaluate(
         predicted: Folder containing predicted .{ext} files to evaluate.
         gold: Folder containing gold standard .{ext} files for comparison.
     """
+    from rich.columns import Columns
+
     console = Console()
     try:
         from collectra import Evaluator
@@ -244,10 +246,10 @@ def evaluate(
             pipeline.ext,
         )
         report = evaluator.evaluate()
-        evaluator.export_table(Path("data/evaluation_results"))
-        console.print(report.aggregate_table)
-        if report.per_label_table:
-            console.print(report.per_label_table)
+        if report.aggregate_tables:
+            console.print(Columns(report.aggregate_tables))
+        for table in report.tables:
+            console.print(table)
     except Exception as e:
         console.print(traceback.format_exc())
 

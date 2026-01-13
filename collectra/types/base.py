@@ -147,6 +147,7 @@ class DataNode(Node):
             raise ValueError(f"Invalid threshold provided: {threshold}")
 
         metrics = {
+            "types": list(set([type(item).__name__ for item in self.items.values()])),
             "precision": 0.0,
             "recall": 0.0,
             "f1": 0.0,
