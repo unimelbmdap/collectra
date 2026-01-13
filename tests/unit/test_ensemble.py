@@ -31,6 +31,7 @@ from collectra.ensemble import (
     get_ensemble_folder,
     get_source_collectra_files,
     group_by_bounding_box,
+    group_by_label,
     load_link_yaml,
     load_results_yaml,
     verify_collectra_files,
@@ -1254,7 +1255,7 @@ class TestExtractLabelsWithBoundingBoxes:
         text_entries = [r for r in result if r[0] == "registration_number"]
 
         assert len(text_entries) == 1
-        label_name, data, bbox, source, item_id = text_entries[0]
+        label_name, data, bbox, source, item_id, entry_type = text_entries[0]
 
         assert label_name == "registration_number"
         assert data == "P.350015"
@@ -1263,6 +1264,7 @@ class TestExtractLabelsWithBoundingBoxes:
         assert bbox["y_center"] == 0.75
         assert source == str(grapto_with_labels)
         assert item_id == "reg-num-789"
+        assert entry_type == "collectra.Text"
 
     def test_extract_imagecrop_with_own_bounding_box(self, grapto_with_labels):
         """Test extracting ImageCrop labels with their own bounding boxes."""
@@ -1272,12 +1274,15 @@ class TestExtractLabelsWithBoundingBoxes:
         primary_entries = [r for r in result if r[0] == "primary_label"]
 
         assert len(primary_entries) == 1
-        label_name, data, bbox, source, item_id = primary_entries[0]
+        label_name, data, bbox, source, item_id, entry_type = primary_entries[0]
 
         assert label_name == "primary_label"
+        # ImageCrop entries should have empty text content
+        assert data == ""
         assert bbox["x_center"] == 0.5
         assert bbox["y_center"] == 0.8
         assert item_id == "primary-label-123"
+        assert entry_type == "collectra.ImageCrop"
 
     def test_multiple_source_folders(self, tmp_path):
         """Test extracting labels from multiple source folders."""
@@ -1373,14 +1378,16 @@ class TestExtractLabelsWithBoundingBoxes:
         assert len(result) > 0
 
         for item in result:
-            assert len(item) == 5
-            label_name, data, bbox, source, item_id = item
+            assert len(item) == 6
+            label_name, data, bbox, source, item_id, entry_type = item
 
             assert isinstance(label_name, str)
             assert isinstance(data, str)
             assert isinstance(bbox, dict)
             assert isinstance(source, str)
             assert isinstance(item_id, str)
+            assert isinstance(entry_type, str)
+            assert entry_type in ["collectra.Text", "collectra.ImageCrop"]
 
             # Check bounding box has all required fields
             assert "x_center" in bbox
@@ -1444,13 +1451,14 @@ class TestExtractLabelsWithBoundingBoxes:
         reg_entries = [r for r in result if r[0] == "registration_number"]
         assert len(reg_entries) == 1
 
-        label_name, data, bbox, source, item_id = reg_entries[0]
+        label_name, data, bbox, source, item_id, entry_type = reg_entries[0]
         assert label_name == "registration_number"
         assert data == "P.350015"
         # Should get bounding box from last parent: registration_number_image
         assert abs(bbox["x_center"] - 0.42946359509122) < 0.0001
         assert abs(bbox["y_center"] - 0.757537248825559) < 0.0001
         assert item_id == "registration_number-4991f8fc-0290-4f14-89e5-51ba9b83cbf5"
+        assert entry_type == "collectra.Text"
 
 
 # ============================================================================
@@ -1699,6 +1707,7 @@ class TestGroupByBoundingBox:
                 },
                 "/path1",
                 "id-1",
+                "collectra.Text",
             )
         ]
         result = group_by_bounding_box(labels)
@@ -1715,10 +1724,11 @@ class TestGroupByBoundingBox:
             },
             "/path1",
             "id-1",
+            "collectra.Text",
         )
 
-    def test_same_region_items_group_together(self):
-        """Items with overlapping boxes should group together."""
+    def test_same_label_items_group_together(self):
+        """Items with the same label_name should group together."""
         box1 = {
             "x_center": 0.5,
             "y_center": 0.5,
@@ -1732,8 +1742,8 @@ class TestGroupByBoundingBox:
             "height_relative": 0.2,
         }
         labels = [
-            ("label1", "text1", box1, "/path1", "id-1"),
-            ("label2", "text2", box2, "/path2", "id-2"),
+            ("same_label", "text1", box1, "/path1", "id-1", "collectra.Text"),
+            ("same_label", "text2", box2, "/path2", "id-2", "collectra.Text"),
         ]
         result = group_by_bounding_box(labels, iou_threshold=0.5)
         assert len(result) == 1
@@ -1754,8 +1764,8 @@ class TestGroupByBoundingBox:
             "height_relative": 0.1,
         }
         labels = [
-            ("label1", "text1", box1, "/path1", "id-1"),
-            ("label2", "text2", box2, "/path2", "id-2"),
+            ("label1", "text1", box1, "/path1", "id-1", "collectra.Text"),
+            ("label2", "text2", box2, "/path2", "id-2", "collectra.Text"),
         ]
         result = group_by_bounding_box(labels, iou_threshold=0.5)
         assert len(result) == 2
@@ -1763,7 +1773,7 @@ class TestGroupByBoundingBox:
         assert len(result[1]) == 1
 
     def test_different_source_folders_in_same_group(self):
-        """Different source folders can be in the same group."""
+        """Different source folders with same label_name are in the same group."""
         box = {
             "x_center": 0.5,
             "y_center": 0.5,
@@ -1771,9 +1781,9 @@ class TestGroupByBoundingBox:
             "height_relative": 0.2,
         }
         labels = [
-            ("label1", "text1", box, "/path1", "id-1"),
-            ("label2", "text2", box, "/path2", "id-2"),
-            ("label3", "text3", box, "/path3", "id-3"),
+            ("same_label", "text1", box, "/path1", "id-1", "collectra.Text"),
+            ("same_label", "text2", box, "/path2", "id-2", "collectra.Text"),
+            ("same_label", "text3", box, "/path3", "id-3", "collectra.Text"),
         ]
         result = group_by_bounding_box(labels, iou_threshold=0.5)
         assert len(result) == 1
@@ -1782,9 +1792,9 @@ class TestGroupByBoundingBox:
         assert sources == {"/path1", "/path2", "/path3"}
 
     def test_conflict_resolution_keeps_higher_iou(self):
-        """When same source has conflict, keep entry with higher IoU to centroid."""
-        # All boxes need high overlap to be grouped together
-        # Using larger boxes with small offsets for high IoU
+        """When same source has conflict (same label_name), keep entry with higher IoU to centroid."""
+        # All items have the same label_name to be grouped together
+        # Using larger boxes with small offsets for conflict resolution
         box_center = {
             "x_center": 0.5,
             "y_center": 0.5,
@@ -1805,20 +1815,29 @@ class TestGroupByBoundingBox:
         }
 
         labels = [
-            ("label1", "text_far", box_further, "/path1", "id-far"),  # First from path1
             (
-                "label2",
+                "same_label",
+                "text_far",
+                box_further,
+                "/path1",
+                "id-far",
+                "collectra.Text",
+            ),  # First from path1
+            (
+                "same_label",
                 "text_other",
                 box_center,
                 "/path2",
                 "id-other",
+                "collectra.Text",
             ),  # From path2 - becomes centroid basis
             (
-                "label3",
+                "same_label",
                 "text_close",
                 box_close_to_center,
                 "/path1",
                 "id-close",
+                "collectra.Text",
             ),  # Second from path1 - closer to centroid
         ]
         result = group_by_bounding_box(labels, iou_threshold=0.5)
@@ -1833,7 +1852,7 @@ class TestGroupByBoundingBox:
 
     def test_conflict_keeps_existing_when_better(self):
         """When existing entry has better IoU to centroid, keep it."""
-        # All boxes need high overlap to be grouped together
+        # All items have the same label_name to be grouped together
         box_center = {
             "x_center": 0.5,
             "y_center": 0.5,
@@ -1855,19 +1874,28 @@ class TestGroupByBoundingBox:
 
         labels = [
             (
-                "label1",
+                "same_label",
                 "text_close",
                 box_close_to_center,
                 "/path1",
                 "id-close",
+                "collectra.Text",
             ),  # First from path1 - closer
-            ("label2", "text_other", box_center, "/path2", "id-other"),  # From path2
             (
-                "label3",
+                "same_label",
+                "text_other",
+                box_center,
+                "/path2",
+                "id-other",
+                "collectra.Text",
+            ),  # From path2
+            (
+                "same_label",
                 "text_far",
                 box_further,
                 "/path1",
                 "id-far",
+                "collectra.Text",
             ),  # Second from path1 - further
         ]
         result = group_by_bounding_box(labels, iou_threshold=0.5)
@@ -1879,8 +1907,8 @@ class TestGroupByBoundingBox:
         # The kept entry should be text_close (has better IoU to centroid)
         assert path1_entries[0][1] == "text_close"
 
-    def test_multiple_groups_with_conflicts(self):
-        """Multiple groups can form, each potentially having conflicts."""
+    def test_multiple_groups_with_different_labels(self):
+        """Multiple groups form based on different label_names."""
         # Region 1: top-left
         box1a = {
             "x_center": 0.1,
@@ -1909,29 +1937,26 @@ class TestGroupByBoundingBox:
         }
 
         labels = [
-            ("l1", "text1a", box1a, "/path1", "id-1a"),
-            ("l2", "text1b", box1b, "/path2", "id-1b"),
-            ("l3", "text2a", box2a, "/path1", "id-2a"),
-            ("l4", "text2b", box2b, "/path2", "id-2b"),
+            ("label_a", "text1a", box1a, "/path1", "id-1a", "collectra.Text"),
+            ("label_a", "text1b", box1b, "/path2", "id-1b", "collectra.Text"),
+            ("label_b", "text2a", box2a, "/path1", "id-2a", "collectra.Text"),
+            ("label_b", "text2b", box2b, "/path2", "id-2b", "collectra.Text"),
         ]
         result = group_by_bounding_box(labels, iou_threshold=0.5)
 
         assert len(result) == 2
-        # Each group should have 2 entries from different sources
+        # Each group should have 2 entries from different sources with same label
         for group in result:
             sources = {item[3] for item in group}
             assert sources == {"/path1", "/path2"}
+            # All items in a group should have the same label_name
+            labels_in_group = {item[0] for item in group}
+            assert len(labels_in_group) == 1
 
-    def test_threshold_boundary(self):
-        """Test that threshold is correctly applied (> not >=)."""
-        # Create boxes with exact IoU of 0.6
-        box1 = {
-            "x_center": 0.5,
-            "y_center": 0.5,
-            "width_relative": 0.2,
-            "height_relative": 0.2,
-        }
-        box2 = {
+    def test_different_labels_form_separate_groups(self):
+        """Items with different label_names form separate groups regardless of bounding box."""
+        # Same bounding box but different labels
+        box = {
             "x_center": 0.5,
             "y_center": 0.5,
             "width_relative": 0.2,
@@ -1939,20 +1964,24 @@ class TestGroupByBoundingBox:
         }
 
         labels = [
-            ("l1", "text1", box1, "/path1", "id-1"),
-            ("l2", "text2", box2, "/path2", "id-2"),
+            ("label_a", "text1", box, "/path1", "id-1", "collectra.Text"),
+            ("label_b", "text2", box, "/path2", "id-2", "collectra.Text"),
         ]
 
-        # With threshold exactly at IoU, should NOT group (> not >=)
-        result = group_by_bounding_box(labels, iou_threshold=1.0)
+        # Different labels should form separate groups
+        result = group_by_bounding_box(labels, iou_threshold=0.5)
         assert len(result) == 2
 
-        # With threshold below IoU, should group
-        result = group_by_bounding_box(labels, iou_threshold=0.5)
+        # Same labels should group together
+        labels_same = [
+            ("same_label", "text1", box, "/path1", "id-1", "collectra.Text"),
+            ("same_label", "text2", box, "/path2", "id-2", "collectra.Text"),
+        ]
+        result = group_by_bounding_box(labels_same, iou_threshold=0.5)
         assert len(result) == 1
 
     def test_output_format_includes_label_name(self):
-        """Output tuples should be (label_name, text_content, bounding_box, source_folder_path, item_id)."""
+        """Output tuples should be (label_name, text_content, bounding_box, source_folder_path, item_id, entry_type)."""
         labels = [
             (
                 "label_name_here",
@@ -1965,13 +1994,14 @@ class TestGroupByBoundingBox:
                 },
                 "/source/path",
                 "item-id-123",
+                "collectra.Text",
             )
         ]
         result = group_by_bounding_box(labels)
         assert len(result) == 1
         assert len(result[0]) == 1
-        # Verify the output tuple structure includes label_name (5-tuple)
-        label_name, text_content, bbox, source, item_id = result[0][0]
+        # Verify the output tuple structure includes label_name (6-tuple)
+        label_name, text_content, bbox, source, item_id, entry_type = result[0][0]
         assert label_name == "label_name_here"
         assert text_content == "actual_text"
         assert source == "/source/path"
@@ -2089,6 +2119,7 @@ class TestGenerateEnsembledValues:
                     },
                     "/path1",
                     "id-1",
+                    "collectra.Text",
                 )
             ]
         ]
@@ -2118,6 +2149,7 @@ class TestGenerateEnsembledValues:
                     },
                     "/path1",
                     "id-1",
+                    "collectra.Text",
                 ),
                 (
                     "registration_number",
@@ -2130,6 +2162,7 @@ class TestGenerateEnsembledValues:
                     },
                     "/path2",
                     "id-2",
+                    "collectra.Text",
                 ),
             ]
         ]
@@ -2162,6 +2195,7 @@ class TestGenerateEnsembledValues:
                     },
                     "/path1",
                     "id-1",
+                    "collectra.Text",
                 ),
                 (
                     "registration_number",
@@ -2174,6 +2208,7 @@ class TestGenerateEnsembledValues:
                     },
                     "/path2",
                     "id-2",
+                    "collectra.Text",
                 ),
             ],
             [
@@ -2188,6 +2223,7 @@ class TestGenerateEnsembledValues:
                     },
                     "/path1",
                     "id-3",
+                    "collectra.Text",
                 )
             ],
         ]
@@ -2213,6 +2249,7 @@ class TestGenerateEnsembledValues:
                     },
                     "/path1",
                     "id-1",
+                    "collectra.Text",
                 ),
                 (
                     "field",
@@ -2225,6 +2262,7 @@ class TestGenerateEnsembledValues:
                     },
                     "/path2",
                     "id-2",
+                    "collectra.Text",
                 ),
             ]
         ]
@@ -2251,6 +2289,7 @@ class TestGenerateEnsembledValues:
                     },
                     "/path1",
                     "id-1",
+                    "collectra.Text",
                 ),
                 (
                     "field",
@@ -2263,6 +2302,7 @@ class TestGenerateEnsembledValues:
                     },
                     "/path2",
                     "id-2",
+                    "collectra.Text",
                 ),
             ]
         ]
@@ -2286,6 +2326,7 @@ class TestGenerateEnsembledValues:
                     },
                     "/path1",
                     "id-1",
+                    "collectra.Text",
                 )
             ],
         ]
@@ -2311,6 +2352,7 @@ class TestGenerateEnsembledValues:
                     },
                     "/path1",
                     "id-1",
+                    "collectra.Text",
                 ),
                 (
                     "field",
@@ -2323,6 +2365,7 @@ class TestGenerateEnsembledValues:
                     },
                     "/path2",
                     "id-2",
+                    "collectra.Text",
                 ),
                 (
                     "field",
@@ -2335,6 +2378,7 @@ class TestGenerateEnsembledValues:
                     },
                     "/path3",
                     "id-3",
+                    "collectra.Text",
                 ),
             ]
         ]
@@ -2526,8 +2570,6 @@ class TestWriteEnsembledResults:
 
         # Check ensemble field
         assert "ensemble" in field
-        assert field["group_size"] == 2
-        assert field["source_texts"] == ["P.350015", "P.350016"]
 
         # Check bounding box is at top level (not nested)
         assert field["x_center"] == 0.5
@@ -2739,39 +2781,57 @@ class TestEnsembleGroupsForFile:
         source2.mkdir(parents=True)
         source3.mkdir(parents=True)
 
-        # Each source has only ImageCrop with data (to avoid empty string issues)
+        # Each source has ImageCrop (parent with bounding box) and Text (child with text content)
         # Using slightly offset bounding boxes that still have IoU > 0.6
         results_data_1 = {
-            "field": {
+            "field_image": {
                 "type": "collectra.ImageCrop",
-                "id": "field-1",
-                "data": "hello world",
+                "id": "field-image-1",
+                "data": "image.jpg",
                 "x_center": 0.5,
                 "y_center": 0.5,
                 "width_relative": 0.3,
                 "height_relative": 0.3,
             },
+            "field": {
+                "type": "collectra.Text",
+                "id": "field-1",
+                "parents": "field-image-1",
+                "data": "hello world",
+            },
         }
         results_data_2 = {
-            "field": {
+            "field_image": {
                 "type": "collectra.ImageCrop",
-                "id": "field-2",
-                "data": "helo world",  # Typo
+                "id": "field-image-2",
+                "data": "image.jpg",
                 "x_center": 0.52,
                 "y_center": 0.52,
                 "width_relative": 0.3,
                 "height_relative": 0.3,
             },
+            "field": {
+                "type": "collectra.Text",
+                "id": "field-2",
+                "parents": "field-image-2",
+                "data": "helo world",  # Typo
+            },
         }
         results_data_3 = {
-            "field": {
+            "field_image": {
                 "type": "collectra.ImageCrop",
-                "id": "field-3",
-                "data": "hello world",  # Same as source1
+                "id": "field-image-3",
+                "data": "image.jpg",
                 "x_center": 0.51,
                 "y_center": 0.51,
                 "width_relative": 0.3,
                 "height_relative": 0.3,
+            },
+            "field": {
+                "type": "collectra.Text",
+                "id": "field-3",
+                "parents": "field-image-3",
+                "data": "hello world",  # Same as source1
             },
         }
 
