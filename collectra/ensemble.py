@@ -583,7 +583,7 @@ def _find_parent_with_bounding_box(
 
 def extract_labels_with_bounding_boxes(
     source_folders: list[Path],
-) -> list[tuple[str, str, dict[str, float], str]]:
+) -> list[tuple[str, str, dict[str, float], str, str]]:
     """
     Extract labels with their text content and bounding boxes from source folders.
 
@@ -593,10 +593,11 @@ def extract_labels_with_bounding_boxes(
     - For each label with type 'collectra.Text' or 'collectra.ImageCrop':
         - Extract the label name (the YAML key)
         - Extract the data/text content
+        - Extract the id field from the entry
         - For Text types: traverse upwards through parents to find the LAST
           parent with type 'collectra.ImageCrop' and get its bounding box
         - For ImageCrop types: use its own bounding box
-        - Append tuple: (label_name, text_content, bounding_box_dict, source_folder_path_str)
+        - Append tuple: (label_name, text_content, bounding_box_dict, source_folder_path_str, item_id)
 
     Args:
         source_folders: List of paths to collectra folders containing results.yaml files.
@@ -607,14 +608,15 @@ def extract_labels_with_bounding_boxes(
         - text_content: The data field value
         - bounding_box: Dict with x_center, y_center, width_relative, height_relative
         - source_folder_path: String path to the source folder
+        - item_id: The id field from the source entry
 
     Example:
         >>> sources = [Path("/data/model1/sample.grapto"), Path("/data/model2/sample.grapto")]
         >>> results = extract_labels_with_bounding_boxes(sources)
         >>> print(results[0])
-        ('registration_number', 'P.350015', {'x_center': 0.43, ...}, '/data/model1/sample.grapto')
+        ('registration_number', 'P.350015', {'x_center': 0.43, ...}, '/data/model1/sample.grapto', 'reg-num-789')
     """
-    all_labels: list[tuple[str, str, dict[str, float], str]] = []
+    all_labels: list[tuple[str, str, dict[str, float], str, str]] = []
 
     for source_folder in source_folders:
         try:
@@ -639,12 +641,19 @@ def extract_labels_with_bounding_boxes(
 
             entry_type = entry.get("type", "")
             data_content = entry.get("data", "")
+            item_id = entry.get("id", "")
 
             # Convert data to string if it exists
             if data_content is not None:
                 data_content = str(data_content)
             else:
                 data_content = ""
+
+            # Convert item_id to string if it exists
+            if item_id is not None:
+                item_id = str(item_id)
+            else:
+                item_id = ""
 
             bounding_box: dict[str, float] | None = None
 
@@ -659,10 +668,10 @@ def extract_labels_with_bounding_boxes(
             # Only add entries that have valid bounding boxes
             if bounding_box is not None:
                 all_labels.append(
-                    (label_name, data_content, bounding_box, source_folder_str)
+                    (label_name, data_content, bounding_box, source_folder_str, item_id)
                 )
                 logger.debug(
-                    f"Extracted label '{label_name}' with bounding box from {source_folder_str}"
+                    f"Extracted label '{label_name}' with id '{item_id}' and bounding box from {source_folder_str}"
                 )
 
     logger.info(
@@ -770,9 +779,9 @@ def calculate_centroid_box(boxes: list[dict[str, float]]) -> dict[str, float]:
 
 
 def group_by_bounding_box(
-    labels: list[tuple[str, str, dict[str, float], str]],
+    labels: list[tuple[str, str, dict[str, float], str, str]],
     iou_threshold: float = 0.6,
-) -> list[list[tuple[str, dict[str, float], str]]]:
+) -> list[list[tuple[str, str, dict[str, float], str, str]]]:
     """
     Group extracted labels by bounding box similarity using IoU.
 
@@ -782,19 +791,19 @@ def group_by_bounding_box(
     strategy is applied: the entry with higher IoU to the group's centroid is kept.
 
     Args:
-        labels: List of tuples (label_name, text_content, bounding_box, source_folder_path)
+        labels: List of tuples (label_name, text_content, bounding_box, source_folder_path, item_id)
             as returned by extract_labels_with_bounding_boxes().
         iou_threshold: Minimum IoU value to consider boxes as belonging to the
             same group (default: 0.6).
 
     Returns:
         List of groups, where each group is a list of tuples:
-        (text_content, bounding_box, source_folder_path).
+        (label_name, text_content, bounding_box, source_folder_path, item_id).
 
     Example:
         >>> labels = [
-        ...     ("reg", "P.350015", {"x_center": 0.5, ...}, "/path1"),
-        ...     ("reg", "P.350015", {"x_center": 0.51, ...}, "/path2"),
+        ...     ("reg", "P.350015", {"x_center": 0.5, ...}, "/path1", "id-1"),
+        ...     ("reg", "P.350015", {"x_center": 0.51, ...}, "/path2", "id-2"),
         ... ]
         >>> groups = group_by_bounding_box(labels, iou_threshold=0.6)
         >>> len(groups)  # Boxes with high overlap form one group
@@ -803,16 +812,16 @@ def group_by_bounding_box(
     if not labels:
         return []
 
-    # Each group is a list of tuples: (text_content, bounding_box, source_folder_path)
-    grouping_list: list[list[tuple[str, dict[str, float], str]]] = []
+    # Each group is a list of tuples: (label_name, text_content, bounding_box, source_folder_path, item_id)
+    grouping_list: list[list[tuple[str, str, dict[str, float], str, str]]] = []
 
-    for label_name, text_content, bounding_box, source_folder_path in labels:
+    for label_name, text_content, bounding_box, source_folder_path, item_id in labels:
         assigned_to_group = False
 
         for group in grouping_list:
             # Calculate max IoU between current box and ALL boxes in the group
             max_iou = 0.0
-            for _, group_box, _ in group:
+            for _, _, group_box, _, _ in group:
                 iou = calculate_iou(bounding_box, group_box)
                 max_iou = max(max_iou, iou)
 
@@ -820,11 +829,21 @@ def group_by_bounding_box(
                 # Check if group already has an entry from the same source_folder_path
                 existing_entry = None
                 existing_idx = None
-                for idx, (existing_text, existing_box, existing_source) in enumerate(
-                    group
-                ):
+                for idx, (
+                    existing_label,
+                    existing_text,
+                    existing_box,
+                    existing_source,
+                    existing_id,
+                ) in enumerate(group):
                     if existing_source == source_folder_path:
-                        existing_entry = (existing_text, existing_box, existing_source)
+                        existing_entry = (
+                            existing_label,
+                            existing_text,
+                            existing_box,
+                            existing_source,
+                            existing_id,
+                        )
                         existing_idx = idx
                         break
 
@@ -832,7 +851,7 @@ def group_by_bounding_box(
                     # Conflict: same source folder already in group
                     # Calculate group centroid (excluding the conflicting entry)
                     other_boxes = [
-                        box for _, box, src in group if src != source_folder_path
+                        box for _, _, box, src, _ in group if src != source_folder_path
                     ]
 
                     if other_boxes:
@@ -840,7 +859,7 @@ def group_by_bounding_box(
 
                         # Compare IoUs to centroid
                         existing_iou_to_centroid = calculate_iou(
-                            existing_entry[1], centroid
+                            existing_entry[2], centroid
                         )
                         new_iou_to_centroid = calculate_iou(bounding_box, centroid)
 
@@ -852,9 +871,11 @@ def group_by_bounding_box(
                                 f"new IoU to centroid: {new_iou_to_centroid:.4f})"
                             )
                             group[existing_idx] = (
+                                label_name,
                                 text_content,
                                 bounding_box,
                                 source_folder_path,
+                                item_id,
                             )
                         else:
                             # Keep existing, discard new
@@ -871,14 +892,24 @@ def group_by_bounding_box(
                         )
                 else:
                     # No conflict: add the entry to the group
-                    group.append((text_content, bounding_box, source_folder_path))
+                    group.append(
+                        (
+                            label_name,
+                            text_content,
+                            bounding_box,
+                            source_folder_path,
+                            item_id,
+                        )
+                    )
 
                 assigned_to_group = True
                 break
 
         if not assigned_to_group:
             # Create new group with this entry as the first element
-            grouping_list.append([(text_content, bounding_box, source_folder_path)])
+            grouping_list.append(
+                [(label_name, text_content, bounding_box, source_folder_path, item_id)]
+            )
 
     return grouping_list
 
@@ -928,27 +959,30 @@ def find_centroid_text(texts: list[str]) -> str:
 
 
 def generate_ensembled_values(
-    groups: list[list[tuple[str, dict[str, float], str]]],
+    groups: list[list[tuple[str, str, dict[str, float], str, str]]],
 ) -> dict[str, Any]:
     """
     Generate ensembled values for each group of similar items.
 
     For each group, extracts the text content and finds the centroid text
     using edit distance. Single-entry groups (standalones) use their text
-    directly without distance calculation.
+    directly without distance calculation. Also determines the label name
+    for the group using the most common label name among entries.
 
     Args:
         groups: List of groups, where each group is a list of tuples
-            (text_content, bounding_box, source_folder_path) as returned by
+            (label_name, text_content, bounding_box, source_folder_path, item_id) as returned by
             group_by_bounding_box().
 
     Returns:
         A dictionary containing:
         - "ensembled_values": list of dicts, each with:
+            - "label_name": the original label name (most common in the group)
             - "text": the ensembled text value
             - "bounding_box": the centroid bounding box for the group
             - "group_size": number of entries in the group
             - "source_texts": list of all source texts in the group
+            - "sources": list of tuples (source_folder_path, item_id) for ensemble field
         - "statistics": dict with:
             - "total_groups": total number of groups processed
             - "standalones": number of groups with only one entry
@@ -956,8 +990,8 @@ def generate_ensembled_values(
 
     Example:
         >>> groups = [
-        ...     [("P.350015", {...}, "/path1"), ("P.350015", {...}, "/path2")],
-        ...     [("Species name", {...}, "/path1")],
+        ...     [("reg", "P.350015", {...}, "/path1", "id-1"), ("reg", "P.350015", {...}, "/path2", "id-2")],
+        ...     [("species", "Species name", {...}, "/path1", "id-3")],
         ... ]
         >>> result = generate_ensembled_values(groups)
         >>> print(result["statistics"])
@@ -971,12 +1005,25 @@ def generate_ensembled_values(
         if not group:
             continue
 
+        # Extract label names from the group and find the most common one
+        label_names = [label_name for label_name, _, _, _, _ in group]
+        # Use the most common label name, or the first one if all are equal
+        from collections import Counter
+
+        label_name_counts = Counter(label_names)
+        most_common_label = label_name_counts.most_common(1)[0][0]
+
         # Extract text contents from the group
-        texts = [text_content for text_content, _, _ in group]
+        texts = [text_content for _, text_content, _, _, _ in group]
 
         # Extract bounding boxes and calculate centroid
-        bounding_boxes = [bbox for _, bbox, _ in group]
+        bounding_boxes = [bbox for _, _, bbox, _, _ in group]
         centroid_box = calculate_centroid_box(bounding_boxes)
+
+        # Extract sources (folder path and item id) for ensemble field
+        sources = [
+            (source_folder, item_id) for _, _, _, source_folder, item_id in group
+        ]
 
         # Find the ensembled text value
         if len(texts) == 1:
@@ -988,10 +1035,12 @@ def generate_ensembled_values(
 
         ensembled_values.append(
             {
+                "label_name": most_common_label,
                 "text": ensembled_text,
                 "bounding_box": centroid_box,
                 "group_size": len(group),
                 "source_texts": texts,
+                "sources": sources,
             }
         )
 
@@ -1016,14 +1065,15 @@ def generate_ensembled_values(
 def write_ensembled_results(
     ensemble_folder: Path,
     ensembled_data: dict[str, Any],
-    groups: list[list[tuple[str, dict[str, float], str]]],
+    groups: list[list[tuple[str, str, dict[str, float], str, str]]],
 ) -> Path:
     """
     Write the ensembled values to the ensemble collectra file's results.yaml.
 
     Creates a results.yaml file in the ensemble folder with the ensembled values
-    organized by their positions (using index-based labels since we don't have
-    the original label names in the groups).
+    organized by their original label names. Each entry includes an 'ensemble'
+    field listing the source folder and item id for each ensembled item.
+    If duplicate label names exist, an index suffix is appended.
 
     Args:
         ensemble_folder: Path to the ensemble collectra folder (e.g., .grapto folder).
@@ -1047,6 +1097,9 @@ def write_ensembled_results(
     """
     results_yaml_path = ensemble_folder / "results.yaml"
 
+    # Get the collectra file name from the ensemble folder
+    collectra_file_name = ensemble_folder.name
+
     # Build the results.yaml structure
     results_data: dict[str, Any] = {
         "collectra_results_metadata": {
@@ -1056,18 +1109,47 @@ def write_ensembled_results(
         }
     }
 
+    # Track used label names to handle duplicates
+    used_label_names: dict[str, int] = {}
+
     # Add each ensembled value as a field
     for idx, value_data in enumerate(ensembled_data["ensembled_values"]):
-        field_key = f"ensembled_field_{idx}"
+        # Use the original label name from the ensembled data
+        base_label_name = value_data.get("label_name", f"ensembled_field_{idx}")
+
+        # Handle duplicate label names by appending an index
+        if base_label_name in used_label_names:
+            used_label_names[base_label_name] += 1
+            field_key = f"{base_label_name}_{used_label_names[base_label_name]}"
+        else:
+            used_label_names[base_label_name] = 0
+            field_key = base_label_name
+
+        # Build ensemble list with format: source_folder/collectra_file_name:item_id
+        ensemble_list = []
+        for source_folder, item_id in value_data.get("sources", []):
+            # Extract folder name from path (e.g., /path/to/model1/file.grapto -> model1/file.grapto)
+            source_path = Path(source_folder)
+            # Get the parent folder name and the collectra folder name
+            parent_name = source_path.parent.name
+            folder_name = source_path.name
+            ensemble_entry = f"{parent_name}/{folder_name}:{item_id}"
+            ensemble_list.append(ensemble_entry)
+
+        # Get bounding box values
+        bounding_box = value_data["bounding_box"]
+
         results_data[field_key] = {
             "type": "collectra.Text",
             "id": f"ensemble-{idx}",
             "data": value_data["text"],
-            "ensemble_info": {
-                "group_size": value_data["group_size"],
-                "source_texts": value_data["source_texts"],
-                "bounding_box": value_data["bounding_box"],
-            },
+            "ensemble": ensemble_list,
+            "x_center": bounding_box["x_center"],
+            "y_center": bounding_box["y_center"],
+            "width_relative": bounding_box["width_relative"],
+            "height_relative": bounding_box["height_relative"],
+            "group_size": value_data["group_size"],
+            "source_texts": value_data["source_texts"],
         }
 
     try:

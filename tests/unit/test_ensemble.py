@@ -1254,7 +1254,7 @@ class TestExtractLabelsWithBoundingBoxes:
         text_entries = [r for r in result if r[0] == "registration_number"]
 
         assert len(text_entries) == 1
-        label_name, data, bbox, source = text_entries[0]
+        label_name, data, bbox, source, item_id = text_entries[0]
 
         assert label_name == "registration_number"
         assert data == "P.350015"
@@ -1262,6 +1262,7 @@ class TestExtractLabelsWithBoundingBoxes:
         assert bbox["x_center"] == 0.4
         assert bbox["y_center"] == 0.75
         assert source == str(grapto_with_labels)
+        assert item_id == "reg-num-789"
 
     def test_extract_imagecrop_with_own_bounding_box(self, grapto_with_labels):
         """Test extracting ImageCrop labels with their own bounding boxes."""
@@ -1271,11 +1272,12 @@ class TestExtractLabelsWithBoundingBoxes:
         primary_entries = [r for r in result if r[0] == "primary_label"]
 
         assert len(primary_entries) == 1
-        label_name, data, bbox, source = primary_entries[0]
+        label_name, data, bbox, source, item_id = primary_entries[0]
 
         assert label_name == "primary_label"
         assert bbox["x_center"] == 0.5
         assert bbox["y_center"] == 0.8
+        assert item_id == "primary-label-123"
 
     def test_multiple_source_folders(self, tmp_path):
         """Test extracting labels from multiple source folders."""
@@ -1371,13 +1373,14 @@ class TestExtractLabelsWithBoundingBoxes:
         assert len(result) > 0
 
         for item in result:
-            assert len(item) == 4
-            label_name, data, bbox, source = item
+            assert len(item) == 5
+            label_name, data, bbox, source, item_id = item
 
             assert isinstance(label_name, str)
             assert isinstance(data, str)
             assert isinstance(bbox, dict)
             assert isinstance(source, str)
+            assert isinstance(item_id, str)
 
             # Check bounding box has all required fields
             assert "x_center" in bbox
@@ -1441,12 +1444,13 @@ class TestExtractLabelsWithBoundingBoxes:
         reg_entries = [r for r in result if r[0] == "registration_number"]
         assert len(reg_entries) == 1
 
-        label_name, data, bbox, source = reg_entries[0]
+        label_name, data, bbox, source, item_id = reg_entries[0]
         assert label_name == "registration_number"
         assert data == "P.350015"
         # Should get bounding box from last parent: registration_number_image
         assert abs(bbox["x_center"] - 0.42946359509122) < 0.0001
         assert abs(bbox["y_center"] - 0.757537248825559) < 0.0001
+        assert item_id == "registration_number-4991f8fc-0290-4f14-89e5-51ba9b83cbf5"
 
 
 # ============================================================================
@@ -1694,12 +1698,14 @@ class TestGroupByBoundingBox:
                     "height_relative": 0.2,
                 },
                 "/path1",
+                "id-1",
             )
         ]
         result = group_by_bounding_box(labels)
         assert len(result) == 1
         assert len(result[0]) == 1
         assert result[0][0] == (
+            "label1",
             "text1",
             {
                 "x_center": 0.5,
@@ -1708,6 +1714,7 @@ class TestGroupByBoundingBox:
                 "height_relative": 0.2,
             },
             "/path1",
+            "id-1",
         )
 
     def test_same_region_items_group_together(self):
@@ -1725,8 +1732,8 @@ class TestGroupByBoundingBox:
             "height_relative": 0.2,
         }
         labels = [
-            ("label1", "text1", box1, "/path1"),
-            ("label2", "text2", box2, "/path2"),
+            ("label1", "text1", box1, "/path1", "id-1"),
+            ("label2", "text2", box2, "/path2", "id-2"),
         ]
         result = group_by_bounding_box(labels, iou_threshold=0.5)
         assert len(result) == 1
@@ -1747,8 +1754,8 @@ class TestGroupByBoundingBox:
             "height_relative": 0.1,
         }
         labels = [
-            ("label1", "text1", box1, "/path1"),
-            ("label2", "text2", box2, "/path2"),
+            ("label1", "text1", box1, "/path1", "id-1"),
+            ("label2", "text2", box2, "/path2", "id-2"),
         ]
         result = group_by_bounding_box(labels, iou_threshold=0.5)
         assert len(result) == 2
@@ -1764,14 +1771,14 @@ class TestGroupByBoundingBox:
             "height_relative": 0.2,
         }
         labels = [
-            ("label1", "text1", box, "/path1"),
-            ("label2", "text2", box, "/path2"),
-            ("label3", "text3", box, "/path3"),
+            ("label1", "text1", box, "/path1", "id-1"),
+            ("label2", "text2", box, "/path2", "id-2"),
+            ("label3", "text3", box, "/path3", "id-3"),
         ]
         result = group_by_bounding_box(labels, iou_threshold=0.5)
         assert len(result) == 1
         assert len(result[0]) == 3
-        sources = {item[2] for item in result[0]}
+        sources = {item[3] for item in result[0]}
         assert sources == {"/path1", "/path2", "/path3"}
 
     def test_conflict_resolution_keeps_higher_iou(self):
@@ -1798,18 +1805,20 @@ class TestGroupByBoundingBox:
         }
 
         labels = [
-            ("label1", "text_far", box_further, "/path1"),  # First from path1
+            ("label1", "text_far", box_further, "/path1", "id-far"),  # First from path1
             (
                 "label2",
                 "text_other",
                 box_center,
                 "/path2",
+                "id-other",
             ),  # From path2 - becomes centroid basis
             (
                 "label3",
                 "text_close",
                 box_close_to_center,
                 "/path1",
+                "id-close",
             ),  # Second from path1 - closer to centroid
         ]
         result = group_by_bounding_box(labels, iou_threshold=0.5)
@@ -1817,10 +1826,10 @@ class TestGroupByBoundingBox:
         assert len(result) == 1
         # Should have 2 entries: one from path1 (the closer one) and one from path2
         assert len(result[0]) == 2
-        path1_entries = [item for item in result[0] if item[2] == "/path1"]
+        path1_entries = [item for item in result[0] if item[3] == "/path1"]
         assert len(path1_entries) == 1
         # The kept entry should be text_close (closer to centroid)
-        assert path1_entries[0][0] == "text_close"
+        assert path1_entries[0][1] == "text_close"
 
     def test_conflict_keeps_existing_when_better(self):
         """When existing entry has better IoU to centroid, keep it."""
@@ -1850,23 +1859,25 @@ class TestGroupByBoundingBox:
                 "text_close",
                 box_close_to_center,
                 "/path1",
+                "id-close",
             ),  # First from path1 - closer
-            ("label2", "text_other", box_center, "/path2"),  # From path2
+            ("label2", "text_other", box_center, "/path2", "id-other"),  # From path2
             (
                 "label3",
                 "text_far",
                 box_further,
                 "/path1",
+                "id-far",
             ),  # Second from path1 - further
         ]
         result = group_by_bounding_box(labels, iou_threshold=0.5)
 
         assert len(result) == 1
         assert len(result[0]) == 2
-        path1_entries = [item for item in result[0] if item[2] == "/path1"]
+        path1_entries = [item for item in result[0] if item[3] == "/path1"]
         assert len(path1_entries) == 1
         # The kept entry should be text_close (has better IoU to centroid)
-        assert path1_entries[0][0] == "text_close"
+        assert path1_entries[0][1] == "text_close"
 
     def test_multiple_groups_with_conflicts(self):
         """Multiple groups can form, each potentially having conflicts."""
@@ -1898,17 +1909,17 @@ class TestGroupByBoundingBox:
         }
 
         labels = [
-            ("l1", "text1a", box1a, "/path1"),
-            ("l2", "text1b", box1b, "/path2"),
-            ("l3", "text2a", box2a, "/path1"),
-            ("l4", "text2b", box2b, "/path2"),
+            ("l1", "text1a", box1a, "/path1", "id-1a"),
+            ("l2", "text1b", box1b, "/path2", "id-1b"),
+            ("l3", "text2a", box2a, "/path1", "id-2a"),
+            ("l4", "text2b", box2b, "/path2", "id-2b"),
         ]
         result = group_by_bounding_box(labels, iou_threshold=0.5)
 
         assert len(result) == 2
         # Each group should have 2 entries from different sources
         for group in result:
-            sources = {item[2] for item in group}
+            sources = {item[3] for item in group}
             assert sources == {"/path1", "/path2"}
 
     def test_threshold_boundary(self):
@@ -1928,8 +1939,8 @@ class TestGroupByBoundingBox:
         }
 
         labels = [
-            ("l1", "text1", box1, "/path1"),
-            ("l2", "text2", box2, "/path2"),
+            ("l1", "text1", box1, "/path1", "id-1"),
+            ("l2", "text2", box2, "/path2", "id-2"),
         ]
 
         # With threshold exactly at IoU, should NOT group (> not >=)
@@ -1940,8 +1951,8 @@ class TestGroupByBoundingBox:
         result = group_by_bounding_box(labels, iou_threshold=0.5)
         assert len(result) == 1
 
-    def test_output_format_excludes_label_name(self):
-        """Output tuples should be (text_content, bounding_box, source_folder_path)."""
+    def test_output_format_includes_label_name(self):
+        """Output tuples should be (label_name, text_content, bounding_box, source_folder_path, item_id)."""
         labels = [
             (
                 "label_name_here",
@@ -1953,15 +1964,20 @@ class TestGroupByBoundingBox:
                     "height_relative": 0.2,
                 },
                 "/source/path",
+                "item-id-123",
             )
         ]
         result = group_by_bounding_box(labels)
         assert len(result) == 1
         assert len(result[0]) == 1
-        text_content, bbox, source = result[0][0]
+        # Verify the output tuple structure includes label_name (5-tuple)
+        label_name, text_content, bbox, source, item_id = result[0][0]
+        assert label_name == "label_name_here"
         assert text_content == "actual_text"
         assert source == "/source/path"
-        assert "label_name_here" not in str(result)
+        assert item_id == "item-id-123"
+        # Verify label_name IS now included in the output
+        assert "label_name_here" in str(result)
 
 
 # ============================================================================
@@ -2063,6 +2079,7 @@ class TestGenerateEnsembledValues:
         groups = [
             [
                 (
+                    "registration_number",
                     "P.350015",
                     {
                         "x_center": 0.5,
@@ -2071,6 +2088,7 @@ class TestGenerateEnsembledValues:
                         "height_relative": 0.2,
                     },
                     "/path1",
+                    "id-1",
                 )
             ]
         ]
@@ -2078,15 +2096,19 @@ class TestGenerateEnsembledValues:
 
         assert len(result["ensembled_values"]) == 1
         assert result["ensembled_values"][0]["text"] == "P.350015"
+        assert result["ensembled_values"][0]["label_name"] == "registration_number"
         assert result["ensembled_values"][0]["group_size"] == 1
         assert result["statistics"]["standalones"] == 1
         assert result["statistics"]["ensembled"] == 0
+        # Check sources are tracked
+        assert result["ensembled_values"][0]["sources"] == [("/path1", "id-1")]
 
     def test_multiple_entry_group_is_ensembled(self):
         """Multiple entry groups should be counted as ensembled."""
         groups = [
             [
                 (
+                    "registration_number",
                     "P.350015",
                     {
                         "x_center": 0.5,
@@ -2095,8 +2117,10 @@ class TestGenerateEnsembledValues:
                         "height_relative": 0.2,
                     },
                     "/path1",
+                    "id-1",
                 ),
                 (
+                    "registration_number",
                     "P.350015",
                     {
                         "x_center": 0.51,
@@ -2105,6 +2129,7 @@ class TestGenerateEnsembledValues:
                         "height_relative": 0.2,
                     },
                     "/path2",
+                    "id-2",
                 ),
             ]
         ]
@@ -2112,15 +2137,22 @@ class TestGenerateEnsembledValues:
 
         assert len(result["ensembled_values"]) == 1
         assert result["ensembled_values"][0]["text"] == "P.350015"
+        assert result["ensembled_values"][0]["label_name"] == "registration_number"
         assert result["ensembled_values"][0]["group_size"] == 2
         assert result["statistics"]["standalones"] == 0
         assert result["statistics"]["ensembled"] == 1
+        # Check sources are tracked
+        assert result["ensembled_values"][0]["sources"] == [
+            ("/path1", "id-1"),
+            ("/path2", "id-2"),
+        ]
 
     def test_mixed_groups(self):
         """Mixed groups should have correct statistics."""
         groups = [
             [
                 (
+                    "registration_number",
                     "P.350015",
                     {
                         "x_center": 0.5,
@@ -2129,8 +2161,10 @@ class TestGenerateEnsembledValues:
                         "height_relative": 0.2,
                     },
                     "/path1",
+                    "id-1",
                 ),
                 (
+                    "registration_number",
                     "P.350016",
                     {
                         "x_center": 0.51,
@@ -2139,10 +2173,12 @@ class TestGenerateEnsembledValues:
                         "height_relative": 0.2,
                     },
                     "/path2",
+                    "id-2",
                 ),
             ],
             [
                 (
+                    "species_name",
                     "Species name",
                     {
                         "x_center": 0.3,
@@ -2151,6 +2187,7 @@ class TestGenerateEnsembledValues:
                         "height_relative": 0.1,
                     },
                     "/path1",
+                    "id-3",
                 )
             ],
         ]
@@ -2166,6 +2203,7 @@ class TestGenerateEnsembledValues:
         groups = [
             [
                 (
+                    "field",
                     "text1",
                     {
                         "x_center": 0.4,
@@ -2174,8 +2212,10 @@ class TestGenerateEnsembledValues:
                         "height_relative": 0.1,
                     },
                     "/path1",
+                    "id-1",
                 ),
                 (
+                    "field",
                     "text2",
                     {
                         "x_center": 0.6,
@@ -2184,6 +2224,7 @@ class TestGenerateEnsembledValues:
                         "height_relative": 0.3,
                     },
                     "/path2",
+                    "id-2",
                 ),
             ]
         ]
@@ -2200,6 +2241,7 @@ class TestGenerateEnsembledValues:
         groups = [
             [
                 (
+                    "field",
                     "hello",
                     {
                         "x_center": 0.5,
@@ -2208,8 +2250,10 @@ class TestGenerateEnsembledValues:
                         "height_relative": 0.2,
                     },
                     "/path1",
+                    "id-1",
                 ),
                 (
+                    "field",
                     "helo",
                     {
                         "x_center": 0.5,
@@ -2218,6 +2262,7 @@ class TestGenerateEnsembledValues:
                         "height_relative": 0.2,
                     },
                     "/path2",
+                    "id-2",
                 ),
             ]
         ]
@@ -2231,6 +2276,7 @@ class TestGenerateEnsembledValues:
             [],
             [
                 (
+                    "field",
                     "text",
                     {
                         "x_center": 0.5,
@@ -2239,6 +2285,7 @@ class TestGenerateEnsembledValues:
                         "height_relative": 0.2,
                     },
                     "/path1",
+                    "id-1",
                 )
             ],
         ]
@@ -2254,6 +2301,7 @@ class TestGenerateEnsembledValues:
         groups = [
             [
                 (
+                    "field",
                     "hello",
                     {
                         "x_center": 0.5,
@@ -2262,8 +2310,10 @@ class TestGenerateEnsembledValues:
                         "height_relative": 0.2,
                     },
                     "/path1",
+                    "id-1",
                 ),
                 (
+                    "field",
                     "helo",
                     {
                         "x_center": 0.5,
@@ -2272,8 +2322,10 @@ class TestGenerateEnsembledValues:
                         "height_relative": 0.2,
                     },
                     "/path2",
+                    "id-2",
                 ),
                 (
+                    "field",
                     "hello",
                     {
                         "x_center": 0.5,
@@ -2282,6 +2334,7 @@ class TestGenerateEnsembledValues:
                         "height_relative": 0.2,
                     },
                     "/path3",
+                    "id-3",
                 ),
             ]
         ]
@@ -2302,12 +2355,13 @@ class TestWriteEnsembledResults:
 
     def test_creates_results_yaml(self, tmp_path):
         """Should create a results.yaml file."""
-        ensemble_folder = tmp_path / "test.grapto"
-        ensemble_folder.mkdir()
+        ensemble_folder = tmp_path / "model1" / "test.grapto"
+        ensemble_folder.mkdir(parents=True)
 
         ensembled_data = {
             "ensembled_values": [
                 {
+                    "label_name": "registration_number",
                     "text": "P.350015",
                     "bounding_box": {
                         "x_center": 0.5,
@@ -2317,6 +2371,10 @@ class TestWriteEnsembledResults:
                     },
                     "group_size": 2,
                     "source_texts": ["P.350015", "P.350015"],
+                    "sources": [
+                        ("/data/model1/test.grapto", "id-1"),
+                        ("/data/model2/test.grapto", "id-2"),
+                    ],
                 }
             ],
             "statistics": {"total_groups": 1, "standalones": 0, "ensembled": 1},
@@ -2329,13 +2387,14 @@ class TestWriteEnsembledResults:
         assert result_path.name == "results.yaml"
 
     def test_correct_yaml_structure(self, tmp_path):
-        """Should create correct YAML structure."""
-        ensemble_folder = tmp_path / "test.grapto"
-        ensemble_folder.mkdir()
+        """Should create correct YAML structure with ensemble field and top-level bounding box."""
+        ensemble_folder = tmp_path / "model1" / "test.grapto"
+        ensemble_folder.mkdir(parents=True)
 
         ensembled_data = {
             "ensembled_values": [
                 {
+                    "label_name": "registration_number",
                     "text": "P.350015",
                     "bounding_box": {
                         "x_center": 0.5,
@@ -2345,6 +2404,10 @@ class TestWriteEnsembledResults:
                     },
                     "group_size": 2,
                     "source_texts": ["P.350015", "P.350015"],
+                    "sources": [
+                        ("/data/model1/test.grapto", "id-1"),
+                        ("/data/model2/test.grapto", "id-2"),
+                    ],
                 }
             ],
             "statistics": {"total_groups": 1, "standalones": 0, "ensembled": 1},
@@ -2359,18 +2422,31 @@ class TestWriteEnsembledResults:
         assert "collectra_results_metadata" in data
         assert data["collectra_results_metadata"]["workflow"] == "Ensemble"
         assert "ensemble_statistics" in data["collectra_results_metadata"]
-        assert "ensembled_field_0" in data
-        assert data["ensembled_field_0"]["data"] == "P.350015"
-        assert data["ensembled_field_0"]["type"] == "collectra.Text"
+        assert "registration_number" in data
+        assert data["registration_number"]["data"] == "P.350015"
+        assert data["registration_number"]["type"] == "collectra.Text"
+
+        # Check for ensemble field with proper format
+        assert "ensemble" in data["registration_number"]
+        assert len(data["registration_number"]["ensemble"]) == 2
+        assert "model1/test.grapto:id-1" in data["registration_number"]["ensemble"]
+        assert "model2/test.grapto:id-2" in data["registration_number"]["ensemble"]
+
+        # Check bounding box is at top level
+        assert data["registration_number"]["x_center"] == 0.5
+        assert data["registration_number"]["y_center"] == 0.5
+        assert data["registration_number"]["width_relative"] == 0.2
+        assert data["registration_number"]["height_relative"] == 0.2
 
     def test_multiple_ensembled_values(self, tmp_path):
         """Should handle multiple ensembled values."""
-        ensemble_folder = tmp_path / "test.grapto"
-        ensemble_folder.mkdir()
+        ensemble_folder = tmp_path / "model1" / "test.grapto"
+        ensemble_folder.mkdir(parents=True)
 
         ensembled_data = {
             "ensembled_values": [
                 {
+                    "label_name": "registration_number",
                     "text": "P.350015",
                     "bounding_box": {
                         "x_center": 0.5,
@@ -2380,8 +2456,13 @@ class TestWriteEnsembledResults:
                     },
                     "group_size": 2,
                     "source_texts": ["P.350015", "P.350015"],
+                    "sources": [
+                        ("/data/model1/test.grapto", "id-1"),
+                        ("/data/model2/test.grapto", "id-2"),
+                    ],
                 },
                 {
+                    "label_name": "species_name",
                     "text": "Species name",
                     "bounding_box": {
                         "x_center": 0.3,
@@ -2391,6 +2472,7 @@ class TestWriteEnsembledResults:
                     },
                     "group_size": 1,
                     "source_texts": ["Species name"],
+                    "sources": [("/data/model1/test.grapto", "id-3")],
                 },
             ],
             "statistics": {"total_groups": 2, "standalones": 1, "ensembled": 1},
@@ -2402,19 +2484,20 @@ class TestWriteEnsembledResults:
         with open(result_path) as f:
             data = yaml.safe_load(f)
 
-        assert "ensembled_field_0" in data
-        assert "ensembled_field_1" in data
-        assert data["ensembled_field_0"]["data"] == "P.350015"
-        assert data["ensembled_field_1"]["data"] == "Species name"
+        assert "registration_number" in data
+        assert "species_name" in data
+        assert data["registration_number"]["data"] == "P.350015"
+        assert data["species_name"]["data"] == "Species name"
 
-    def test_includes_ensemble_info(self, tmp_path):
-        """Should include ensemble_info in each field."""
-        ensemble_folder = tmp_path / "test.grapto"
-        ensemble_folder.mkdir()
+    def test_includes_ensemble_field_and_bounding_box(self, tmp_path):
+        """Should include ensemble field and top-level bounding box in each field."""
+        ensemble_folder = tmp_path / "model1" / "test.grapto"
+        ensemble_folder.mkdir(parents=True)
 
         ensembled_data = {
             "ensembled_values": [
                 {
+                    "label_name": "registration_number",
                     "text": "P.350015",
                     "bounding_box": {
                         "x_center": 0.5,
@@ -2424,6 +2507,10 @@ class TestWriteEnsembledResults:
                     },
                     "group_size": 2,
                     "source_texts": ["P.350015", "P.350016"],
+                    "sources": [
+                        ("/data/model1/test.grapto", "id-1"),
+                        ("/data/model2/test.grapto", "id-2"),
+                    ],
                 }
             ],
             "statistics": {"total_groups": 1, "standalones": 0, "ensembled": 1},
@@ -2435,15 +2522,26 @@ class TestWriteEnsembledResults:
         with open(result_path) as f:
             data = yaml.safe_load(f)
 
-        ensemble_info = data["ensembled_field_0"]["ensemble_info"]
-        assert ensemble_info["group_size"] == 2
-        assert ensemble_info["source_texts"] == ["P.350015", "P.350016"]
-        assert "bounding_box" in ensemble_info
+        field = data["registration_number"]
+
+        # Check ensemble field
+        assert "ensemble" in field
+        assert field["group_size"] == 2
+        assert field["source_texts"] == ["P.350015", "P.350016"]
+
+        # Check bounding box is at top level (not nested)
+        assert field["x_center"] == 0.5
+        assert field["y_center"] == 0.5
+        assert field["width_relative"] == 0.2
+        assert field["height_relative"] == 0.2
+
+        # Ensure no nested ensemble_info
+        assert "ensemble_info" not in field
 
     def test_empty_ensembled_values(self, tmp_path):
         """Should handle empty ensembled values."""
-        ensemble_folder = tmp_path / "test.grapto"
-        ensemble_folder.mkdir()
+        ensemble_folder = tmp_path / "model1" / "test.grapto"
+        ensemble_folder.mkdir(parents=True)
 
         ensembled_data = {
             "ensembled_values": [],
@@ -2463,8 +2561,8 @@ class TestWriteEnsembledResults:
 
     def test_overwrites_existing_results_yaml(self, tmp_path):
         """Should overwrite existing results.yaml."""
-        ensemble_folder = tmp_path / "test.grapto"
-        ensemble_folder.mkdir()
+        ensemble_folder = tmp_path / "model1" / "test.grapto"
+        ensemble_folder.mkdir(parents=True)
 
         # Create existing results.yaml
         (ensemble_folder / "results.yaml").write_text("old: content")
@@ -2472,6 +2570,7 @@ class TestWriteEnsembledResults:
         ensembled_data = {
             "ensembled_values": [
                 {
+                    "label_name": "new_field",
                     "text": "new value",
                     "bounding_box": {
                         "x_center": 0.5,
@@ -2481,6 +2580,7 @@ class TestWriteEnsembledResults:
                     },
                     "group_size": 1,
                     "source_texts": ["new value"],
+                    "sources": [("/data/model1/test.grapto", "id-1")],
                 }
             ],
             "statistics": {"total_groups": 1, "standalones": 1, "ensembled": 0},
@@ -2493,7 +2593,7 @@ class TestWriteEnsembledResults:
             data = yaml.safe_load(f)
 
         assert "old" not in data
-        assert "ensembled_field_0" in data
+        assert "new_field" in data
 
 
 # ============================================================================
