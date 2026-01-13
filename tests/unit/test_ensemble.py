@@ -575,9 +575,12 @@ class TestEnsembleFiles:
         assert (output_folder / "file1.grapto").exists()
         assert (output_folder / "file2.grapto").exists()
 
-        # Check results.yaml files exist and are empty
-        assert (output_folder / "file1.grapto" / "results.yaml").read_text() == ""
-        assert (output_folder / "file2.grapto" / "results.yaml").read_text() == ""
+        # Check results.yaml files exist and have ensembled content
+        assert (output_folder / "file1.grapto" / "results.yaml").exists()
+        assert (output_folder / "file2.grapto" / "results.yaml").exists()
+        # Results should contain metadata from ensemble process
+        content1 = (output_folder / "file1.grapto" / "results.yaml").read_text()
+        assert "collectra_results_metadata" in content1
 
     def test_with_partial_overlap(self, tmp_path):
         """Test with folders that have partial file overlap."""

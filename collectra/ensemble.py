@@ -342,6 +342,25 @@ def ensemble_files(
     # Create ensemble output
     link_yaml_path = create_ensemble_output(verified_files, output_folder, extension)
 
+    # Run ensembling for each file
+    total_stats = {"total_groups": 0, "standalones": 0, "ensembled": 0}
+    for filename in verified_files.keys():
+        ensemble_collectra_folder = output_folder / filename
+        try:
+            result = ensemble_groups_for_file(ensemble_collectra_folder, link_yaml_path)
+            # Accumulate statistics
+            stats = result["statistics"]
+            total_stats["total_groups"] += stats["total_groups"]
+            total_stats["standalones"] += stats["standalones"]
+            total_stats["ensembled"] += stats["ensembled"]
+        except Exception as e:
+            logger.error(f"Failed to ensemble {filename}: {e}")
+
+    logger.info(
+        f"Ensemble statistics: {total_stats['total_groups']} total groups, "
+        f"{total_stats['standalones']} standalones, "
+        f"{total_stats['ensembled']} ensemble decisions"
+    )
     logger.info("Ensemble process completed successfully")
 
     return link_yaml_path
