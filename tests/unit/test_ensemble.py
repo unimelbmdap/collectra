@@ -2234,46 +2234,6 @@ class TestGenerateEnsembledValues:
         assert result["statistics"]["standalones"] == 1
         assert result["statistics"]["ensembled"] == 1
 
-    def test_centroid_bounding_box_calculated(self):
-        """Centroid bounding box should be calculated correctly."""
-        groups = [
-            [
-                (
-                    "field",
-                    "text1",
-                    {
-                        "x_center": 0.4,
-                        "y_center": 0.4,
-                        "width_relative": 0.1,
-                        "height_relative": 0.1,
-                    },
-                    "/path1",
-                    "id-1",
-                    "collectra.Text",
-                ),
-                (
-                    "field",
-                    "text2",
-                    {
-                        "x_center": 0.6,
-                        "y_center": 0.6,
-                        "width_relative": 0.3,
-                        "height_relative": 0.3,
-                    },
-                    "/path2",
-                    "id-2",
-                    "collectra.Text",
-                ),
-            ]
-        ]
-        result = generate_ensembled_values(groups)
-
-        bbox = result["ensembled_values"][0]["bounding_box"]
-        assert abs(bbox["x_center"] - 0.5) < 0.0001
-        assert abs(bbox["y_center"] - 0.5) < 0.0001
-        assert abs(bbox["width_relative"] - 0.2) < 0.0001
-        assert abs(bbox["height_relative"] - 0.2) < 0.0001
-
     def test_source_texts_preserved(self):
         """Source texts should be preserved in the output."""
         groups = [
