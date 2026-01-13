@@ -23,14 +23,18 @@ from collectra.ensemble import (
     calculate_iou,
     create_ensemble_output,
     ensemble_files,
+    ensemble_groups_for_file,
     extract_labels_with_bounding_boxes,
+    find_centroid_text,
     find_collectra_files,
+    generate_ensembled_values,
     get_ensemble_folder,
     get_source_collectra_files,
     group_by_bounding_box,
     load_link_yaml,
     load_results_yaml,
     verify_collectra_files,
+    write_ensembled_results,
 )
 
 # ============================================================================
@@ -1955,3 +1959,740 @@ class TestGroupByBoundingBox:
         assert text_content == "actual_text"
         assert source == "/source/path"
         assert "label_name_here" not in str(result)
+
+
+# ============================================================================
+# Tests for find_centroid_text
+# ============================================================================
+
+
+class TestFindCentroidText:
+    """Tests for the find_centroid_text function."""
+
+    def test_single_text_returns_itself(self):
+        """Single text should return itself."""
+        result = find_centroid_text(["hello"])
+        assert result == "hello"
+
+    def test_empty_list_returns_empty_string(self):
+        """Empty list should return empty string."""
+        result = find_centroid_text([])
+        assert result == ""
+
+    def test_multiple_identical_texts_return_that_text(self):
+        """Multiple identical texts should return that text."""
+        result = find_centroid_text(["hello", "hello", "hello"])
+        assert result == "hello"
+
+    def test_multiple_different_texts_returns_centroid(self):
+        """Multiple different texts should return the one with minimum total edit distance."""
+        # "hello" has distance 1 to "helo" and 1 to "helllo" = 2 total
+        # "helo" has distance 1 to "hello" and 2 to "helllo" = 3 total
+        # "helllo" has distance 1 to "hello" and 2 to "helo" = 3 total
+        result = find_centroid_text(["hello", "helo", "helllo"])
+        assert result == "hello"
+
+    def test_all_different_texts(self):
+        """Test with completely different texts."""
+        # "abc" is equally different from "xyz" and "123"
+        # The first one with minimum distance wins
+        result = find_centroid_text(["cat", "bat", "rat"])
+        # Each has distance 1 to the others = 2 total each
+        # First one encountered with minimum wins
+        assert result in ["cat", "bat", "rat"]
+
+    def test_two_texts_returns_first_if_equal_distance(self):
+        """Two equally distant texts should return the first."""
+        result = find_centroid_text(["abc", "xyz"])
+        # Both have the same distance to each other
+        # First one (abc) should be returned
+        assert result == "abc"
+
+    def test_text_with_spaces(self):
+        """Test handling of texts with spaces."""
+        result = find_centroid_text(["hello world", "hello world", "helo world"])
+        assert result == "hello world"
+
+    def test_empty_strings_in_list(self):
+        """Test handling of empty strings in the list."""
+        result = find_centroid_text(["", "", ""])
+        assert result == ""
+
+    def test_mixed_empty_and_non_empty(self):
+        """Test handling of mixed empty and non-empty strings."""
+        result = find_centroid_text(["hello", "", "hello"])
+        # "hello" has distance 5 to "" + 0 to "hello" = 5 total (appears twice)
+        # "" has distance 5 to "hello" + 5 to "hello" = 10 total
+        assert result == "hello"
+
+    def test_numeric_strings(self):
+        """Test handling of numeric strings."""
+        result = find_centroid_text(["350015", "350015", "350016"])
+        # "350015" appears twice, should win
+        assert result == "350015"
+
+    def test_very_similar_strings(self):
+        """Test with very similar strings."""
+        # Common OCR/LLM variations
+        result = find_centroid_text(["P.350015", "P.350015", "P350015"])
+        # "P.350015" has lower total distance
+        assert result == "P.350015"
+
+
+# ============================================================================
+# Tests for generate_ensembled_values
+# ============================================================================
+
+
+class TestGenerateEnsembledValues:
+    """Tests for the generate_ensembled_values function."""
+
+    def test_empty_groups_returns_empty(self):
+        """Empty groups should return empty ensembled values."""
+        result = generate_ensembled_values([])
+        assert result["ensembled_values"] == []
+        assert result["statistics"]["total_groups"] == 0
+        assert result["statistics"]["standalones"] == 0
+        assert result["statistics"]["ensembled"] == 0
+
+    def test_single_entry_group_is_standalone(self):
+        """Single entry groups should be counted as standalones."""
+        groups = [
+            [
+                (
+                    "P.350015",
+                    {
+                        "x_center": 0.5,
+                        "y_center": 0.5,
+                        "width_relative": 0.2,
+                        "height_relative": 0.2,
+                    },
+                    "/path1",
+                )
+            ]
+        ]
+        result = generate_ensembled_values(groups)
+
+        assert len(result["ensembled_values"]) == 1
+        assert result["ensembled_values"][0]["text"] == "P.350015"
+        assert result["ensembled_values"][0]["group_size"] == 1
+        assert result["statistics"]["standalones"] == 1
+        assert result["statistics"]["ensembled"] == 0
+
+    def test_multiple_entry_group_is_ensembled(self):
+        """Multiple entry groups should be counted as ensembled."""
+        groups = [
+            [
+                (
+                    "P.350015",
+                    {
+                        "x_center": 0.5,
+                        "y_center": 0.5,
+                        "width_relative": 0.2,
+                        "height_relative": 0.2,
+                    },
+                    "/path1",
+                ),
+                (
+                    "P.350015",
+                    {
+                        "x_center": 0.51,
+                        "y_center": 0.51,
+                        "width_relative": 0.2,
+                        "height_relative": 0.2,
+                    },
+                    "/path2",
+                ),
+            ]
+        ]
+        result = generate_ensembled_values(groups)
+
+        assert len(result["ensembled_values"]) == 1
+        assert result["ensembled_values"][0]["text"] == "P.350015"
+        assert result["ensembled_values"][0]["group_size"] == 2
+        assert result["statistics"]["standalones"] == 0
+        assert result["statistics"]["ensembled"] == 1
+
+    def test_mixed_groups(self):
+        """Mixed groups should have correct statistics."""
+        groups = [
+            [
+                (
+                    "P.350015",
+                    {
+                        "x_center": 0.5,
+                        "y_center": 0.5,
+                        "width_relative": 0.2,
+                        "height_relative": 0.2,
+                    },
+                    "/path1",
+                ),
+                (
+                    "P.350016",
+                    {
+                        "x_center": 0.51,
+                        "y_center": 0.51,
+                        "width_relative": 0.2,
+                        "height_relative": 0.2,
+                    },
+                    "/path2",
+                ),
+            ],
+            [
+                (
+                    "Species name",
+                    {
+                        "x_center": 0.3,
+                        "y_center": 0.3,
+                        "width_relative": 0.1,
+                        "height_relative": 0.1,
+                    },
+                    "/path1",
+                )
+            ],
+        ]
+        result = generate_ensembled_values(groups)
+
+        assert len(result["ensembled_values"]) == 2
+        assert result["statistics"]["total_groups"] == 2
+        assert result["statistics"]["standalones"] == 1
+        assert result["statistics"]["ensembled"] == 1
+
+    def test_centroid_bounding_box_calculated(self):
+        """Centroid bounding box should be calculated correctly."""
+        groups = [
+            [
+                (
+                    "text1",
+                    {
+                        "x_center": 0.4,
+                        "y_center": 0.4,
+                        "width_relative": 0.1,
+                        "height_relative": 0.1,
+                    },
+                    "/path1",
+                ),
+                (
+                    "text2",
+                    {
+                        "x_center": 0.6,
+                        "y_center": 0.6,
+                        "width_relative": 0.3,
+                        "height_relative": 0.3,
+                    },
+                    "/path2",
+                ),
+            ]
+        ]
+        result = generate_ensembled_values(groups)
+
+        bbox = result["ensembled_values"][0]["bounding_box"]
+        assert abs(bbox["x_center"] - 0.5) < 0.0001
+        assert abs(bbox["y_center"] - 0.5) < 0.0001
+        assert abs(bbox["width_relative"] - 0.2) < 0.0001
+        assert abs(bbox["height_relative"] - 0.2) < 0.0001
+
+    def test_source_texts_preserved(self):
+        """Source texts should be preserved in the output."""
+        groups = [
+            [
+                (
+                    "hello",
+                    {
+                        "x_center": 0.5,
+                        "y_center": 0.5,
+                        "width_relative": 0.2,
+                        "height_relative": 0.2,
+                    },
+                    "/path1",
+                ),
+                (
+                    "helo",
+                    {
+                        "x_center": 0.5,
+                        "y_center": 0.5,
+                        "width_relative": 0.2,
+                        "height_relative": 0.2,
+                    },
+                    "/path2",
+                ),
+            ]
+        ]
+        result = generate_ensembled_values(groups)
+
+        assert result["ensembled_values"][0]["source_texts"] == ["hello", "helo"]
+
+    def test_empty_group_in_list_skipped(self):
+        """Empty groups in the list should be skipped."""
+        groups = [
+            [],
+            [
+                (
+                    "text",
+                    {
+                        "x_center": 0.5,
+                        "y_center": 0.5,
+                        "width_relative": 0.2,
+                        "height_relative": 0.2,
+                    },
+                    "/path1",
+                )
+            ],
+        ]
+        result = generate_ensembled_values(groups)
+
+        assert len(result["ensembled_values"]) == 1
+        # Total groups counts all groups including empty
+        assert result["statistics"]["total_groups"] == 2
+        assert result["statistics"]["standalones"] == 1
+
+    def test_three_entry_group(self):
+        """Three entry groups should ensemble correctly."""
+        groups = [
+            [
+                (
+                    "hello",
+                    {
+                        "x_center": 0.5,
+                        "y_center": 0.5,
+                        "width_relative": 0.2,
+                        "height_relative": 0.2,
+                    },
+                    "/path1",
+                ),
+                (
+                    "helo",
+                    {
+                        "x_center": 0.5,
+                        "y_center": 0.5,
+                        "width_relative": 0.2,
+                        "height_relative": 0.2,
+                    },
+                    "/path2",
+                ),
+                (
+                    "hello",
+                    {
+                        "x_center": 0.5,
+                        "y_center": 0.5,
+                        "width_relative": 0.2,
+                        "height_relative": 0.2,
+                    },
+                    "/path3",
+                ),
+            ]
+        ]
+        result = generate_ensembled_values(groups)
+
+        # "hello" appears twice with lower total edit distance
+        assert result["ensembled_values"][0]["text"] == "hello"
+        assert result["ensembled_values"][0]["group_size"] == 3
+
+
+# ============================================================================
+# Tests for write_ensembled_results
+# ============================================================================
+
+
+class TestWriteEnsembledResults:
+    """Tests for the write_ensembled_results function."""
+
+    def test_creates_results_yaml(self, tmp_path):
+        """Should create a results.yaml file."""
+        ensemble_folder = tmp_path / "test.grapto"
+        ensemble_folder.mkdir()
+
+        ensembled_data = {
+            "ensembled_values": [
+                {
+                    "text": "P.350015",
+                    "bounding_box": {
+                        "x_center": 0.5,
+                        "y_center": 0.5,
+                        "width_relative": 0.2,
+                        "height_relative": 0.2,
+                    },
+                    "group_size": 2,
+                    "source_texts": ["P.350015", "P.350015"],
+                }
+            ],
+            "statistics": {"total_groups": 1, "standalones": 0, "ensembled": 1},
+        }
+        groups = []
+
+        result_path = write_ensembled_results(ensemble_folder, ensembled_data, groups)
+
+        assert result_path.exists()
+        assert result_path.name == "results.yaml"
+
+    def test_correct_yaml_structure(self, tmp_path):
+        """Should create correct YAML structure."""
+        ensemble_folder = tmp_path / "test.grapto"
+        ensemble_folder.mkdir()
+
+        ensembled_data = {
+            "ensembled_values": [
+                {
+                    "text": "P.350015",
+                    "bounding_box": {
+                        "x_center": 0.5,
+                        "y_center": 0.5,
+                        "width_relative": 0.2,
+                        "height_relative": 0.2,
+                    },
+                    "group_size": 2,
+                    "source_texts": ["P.350015", "P.350015"],
+                }
+            ],
+            "statistics": {"total_groups": 1, "standalones": 0, "ensembled": 1},
+        }
+        groups = []
+
+        result_path = write_ensembled_results(ensemble_folder, ensembled_data, groups)
+
+        with open(result_path) as f:
+            data = yaml.safe_load(f)
+
+        assert "collectra_results_metadata" in data
+        assert data["collectra_results_metadata"]["workflow"] == "Ensemble"
+        assert "ensemble_statistics" in data["collectra_results_metadata"]
+        assert "ensembled_field_0" in data
+        assert data["ensembled_field_0"]["data"] == "P.350015"
+        assert data["ensembled_field_0"]["type"] == "collectra.Text"
+
+    def test_multiple_ensembled_values(self, tmp_path):
+        """Should handle multiple ensembled values."""
+        ensemble_folder = tmp_path / "test.grapto"
+        ensemble_folder.mkdir()
+
+        ensembled_data = {
+            "ensembled_values": [
+                {
+                    "text": "P.350015",
+                    "bounding_box": {
+                        "x_center": 0.5,
+                        "y_center": 0.5,
+                        "width_relative": 0.2,
+                        "height_relative": 0.2,
+                    },
+                    "group_size": 2,
+                    "source_texts": ["P.350015", "P.350015"],
+                },
+                {
+                    "text": "Species name",
+                    "bounding_box": {
+                        "x_center": 0.3,
+                        "y_center": 0.3,
+                        "width_relative": 0.1,
+                        "height_relative": 0.1,
+                    },
+                    "group_size": 1,
+                    "source_texts": ["Species name"],
+                },
+            ],
+            "statistics": {"total_groups": 2, "standalones": 1, "ensembled": 1},
+        }
+        groups = []
+
+        result_path = write_ensembled_results(ensemble_folder, ensembled_data, groups)
+
+        with open(result_path) as f:
+            data = yaml.safe_load(f)
+
+        assert "ensembled_field_0" in data
+        assert "ensembled_field_1" in data
+        assert data["ensembled_field_0"]["data"] == "P.350015"
+        assert data["ensembled_field_1"]["data"] == "Species name"
+
+    def test_includes_ensemble_info(self, tmp_path):
+        """Should include ensemble_info in each field."""
+        ensemble_folder = tmp_path / "test.grapto"
+        ensemble_folder.mkdir()
+
+        ensembled_data = {
+            "ensembled_values": [
+                {
+                    "text": "P.350015",
+                    "bounding_box": {
+                        "x_center": 0.5,
+                        "y_center": 0.5,
+                        "width_relative": 0.2,
+                        "height_relative": 0.2,
+                    },
+                    "group_size": 2,
+                    "source_texts": ["P.350015", "P.350016"],
+                }
+            ],
+            "statistics": {"total_groups": 1, "standalones": 0, "ensembled": 1},
+        }
+        groups = []
+
+        result_path = write_ensembled_results(ensemble_folder, ensembled_data, groups)
+
+        with open(result_path) as f:
+            data = yaml.safe_load(f)
+
+        ensemble_info = data["ensembled_field_0"]["ensemble_info"]
+        assert ensemble_info["group_size"] == 2
+        assert ensemble_info["source_texts"] == ["P.350015", "P.350016"]
+        assert "bounding_box" in ensemble_info
+
+    def test_empty_ensembled_values(self, tmp_path):
+        """Should handle empty ensembled values."""
+        ensemble_folder = tmp_path / "test.grapto"
+        ensemble_folder.mkdir()
+
+        ensembled_data = {
+            "ensembled_values": [],
+            "statistics": {"total_groups": 0, "standalones": 0, "ensembled": 0},
+        }
+        groups = []
+
+        result_path = write_ensembled_results(ensemble_folder, ensembled_data, groups)
+
+        with open(result_path) as f:
+            data = yaml.safe_load(f)
+
+        assert "collectra_results_metadata" in data
+        # Should only have metadata, no ensembled_field_* keys
+        field_keys = [k for k in data.keys() if k.startswith("ensembled_field_")]
+        assert len(field_keys) == 0
+
+    def test_overwrites_existing_results_yaml(self, tmp_path):
+        """Should overwrite existing results.yaml."""
+        ensemble_folder = tmp_path / "test.grapto"
+        ensemble_folder.mkdir()
+
+        # Create existing results.yaml
+        (ensemble_folder / "results.yaml").write_text("old: content")
+
+        ensembled_data = {
+            "ensembled_values": [
+                {
+                    "text": "new value",
+                    "bounding_box": {
+                        "x_center": 0.5,
+                        "y_center": 0.5,
+                        "width_relative": 0.2,
+                        "height_relative": 0.2,
+                    },
+                    "group_size": 1,
+                    "source_texts": ["new value"],
+                }
+            ],
+            "statistics": {"total_groups": 1, "standalones": 1, "ensembled": 0},
+        }
+        groups = []
+
+        result_path = write_ensembled_results(ensemble_folder, ensembled_data, groups)
+
+        with open(result_path) as f:
+            data = yaml.safe_load(f)
+
+        assert "old" not in data
+        assert "ensembled_field_0" in data
+
+
+# ============================================================================
+# Tests for ensemble_groups_for_file (Integration)
+# ============================================================================
+
+
+class TestEnsembleGroupsForFile:
+    """Integration tests for ensemble_groups_for_file function."""
+
+    @pytest.fixture
+    def ensemble_setup(self, tmp_path):
+        """Create a complete ensemble setup with source folders and link.yaml."""
+        # Create source folders
+        source1 = tmp_path / "model1" / "test.grapto"
+        source2 = tmp_path / "model2" / "test.grapto"
+        source1.mkdir(parents=True)
+        source2.mkdir(parents=True)
+
+        # Create results.yaml in each source
+        results_data_1 = {
+            "collectra_results_metadata": {"workflow": "Grapto", "version": "0.1.0"},
+            "registration_image": {
+                "type": "collectra.ImageCrop",
+                "id": "reg-img-1",
+                "x_center": 0.5,
+                "y_center": 0.5,
+                "width_relative": 0.2,
+                "height_relative": 0.1,
+            },
+            "registration_number": {
+                "type": "collectra.Text",
+                "id": "reg-text-1",
+                "parents": "reg-img-1",
+                "data": "P.350015",
+            },
+        }
+        results_data_2 = {
+            "collectra_results_metadata": {"workflow": "Grapto", "version": "0.1.0"},
+            "registration_image": {
+                "type": "collectra.ImageCrop",
+                "id": "reg-img-2",
+                "x_center": 0.51,
+                "y_center": 0.51,
+                "width_relative": 0.2,
+                "height_relative": 0.1,
+            },
+            "registration_number": {
+                "type": "collectra.Text",
+                "id": "reg-text-2",
+                "parents": "reg-img-2",
+                "data": "P.350015",
+            },
+        }
+
+        with open(source1 / "results.yaml", "w") as f:
+            yaml.dump(results_data_1, f)
+        with open(source2 / "results.yaml", "w") as f:
+            yaml.dump(results_data_2, f)
+
+        # Create ensemble folder
+        ensemble_folder = tmp_path / "ensemble" / "test.grapto"
+        ensemble_folder.mkdir(parents=True)
+
+        # Create link.yaml
+        link_data = {"test.grapto": [str(source1), str(source2)]}
+        link_yaml_path = tmp_path / "ensemble" / "link.yaml"
+        with open(link_yaml_path, "w") as f:
+            yaml.dump(link_data, f)
+
+        return {
+            "ensemble_folder": ensemble_folder,
+            "link_yaml_path": link_yaml_path,
+            "source1": source1,
+            "source2": source2,
+        }
+
+    def test_full_integration(self, ensemble_setup):
+        """Test full integration of ensemble workflow."""
+        result = ensemble_groups_for_file(
+            ensemble_setup["ensemble_folder"],
+            ensemble_setup["link_yaml_path"],
+        )
+
+        assert "ensembled_values" in result
+        assert "statistics" in result
+        assert "results_yaml_path" in result
+        assert result["results_yaml_path"].exists()
+
+    def test_creates_results_yaml(self, ensemble_setup):
+        """Should create results.yaml in ensemble folder."""
+        result = ensemble_groups_for_file(
+            ensemble_setup["ensemble_folder"],
+            ensemble_setup["link_yaml_path"],
+        )
+
+        results_yaml = ensemble_setup["ensemble_folder"] / "results.yaml"
+        assert results_yaml.exists()
+
+        with open(results_yaml) as f:
+            data = yaml.safe_load(f)
+
+        assert "collectra_results_metadata" in data
+
+    def test_statistics_are_correct(self, ensemble_setup):
+        """Should have correct statistics."""
+        result = ensemble_groups_for_file(
+            ensemble_setup["ensemble_folder"],
+            ensemble_setup["link_yaml_path"],
+        )
+
+        stats = result["statistics"]
+        assert stats["total_groups"] > 0
+        assert stats["standalones"] >= 0
+        assert stats["ensembled"] >= 0
+        assert stats["standalones"] + stats["ensembled"] <= stats["total_groups"]
+
+    def test_ensembled_values_present(self, ensemble_setup):
+        """Should have ensembled values in result."""
+        result = ensemble_groups_for_file(
+            ensemble_setup["ensemble_folder"],
+            ensemble_setup["link_yaml_path"],
+        )
+
+        assert len(result["ensembled_values"]) > 0
+        for value in result["ensembled_values"]:
+            assert "text" in value
+            assert "bounding_box" in value
+            assert "group_size" in value
+
+    def test_with_differing_texts(self, tmp_path):
+        """Test ensemble with differing texts from sources.
+
+        This test creates sources where each has only a Text entry (no ImageCrop)
+        with slightly different bounding boxes so they group together but don't
+        conflict on source path.
+        """
+        # Create source folders with different text values
+        source1 = tmp_path / "model1" / "test.grapto"
+        source2 = tmp_path / "model2" / "test.grapto"
+        source3 = tmp_path / "model3" / "test.grapto"
+        source1.mkdir(parents=True)
+        source2.mkdir(parents=True)
+        source3.mkdir(parents=True)
+
+        # Each source has only ImageCrop with data (to avoid empty string issues)
+        # Using slightly offset bounding boxes that still have IoU > 0.6
+        results_data_1 = {
+            "field": {
+                "type": "collectra.ImageCrop",
+                "id": "field-1",
+                "data": "hello world",
+                "x_center": 0.5,
+                "y_center": 0.5,
+                "width_relative": 0.3,
+                "height_relative": 0.3,
+            },
+        }
+        results_data_2 = {
+            "field": {
+                "type": "collectra.ImageCrop",
+                "id": "field-2",
+                "data": "helo world",  # Typo
+                "x_center": 0.52,
+                "y_center": 0.52,
+                "width_relative": 0.3,
+                "height_relative": 0.3,
+            },
+        }
+        results_data_3 = {
+            "field": {
+                "type": "collectra.ImageCrop",
+                "id": "field-3",
+                "data": "hello world",  # Same as source1
+                "x_center": 0.51,
+                "y_center": 0.51,
+                "width_relative": 0.3,
+                "height_relative": 0.3,
+            },
+        }
+
+        with open(source1 / "results.yaml", "w") as f:
+            yaml.dump(results_data_1, f)
+        with open(source2 / "results.yaml", "w") as f:
+            yaml.dump(results_data_2, f)
+        with open(source3 / "results.yaml", "w") as f:
+            yaml.dump(results_data_3, f)
+
+        ensemble_folder = tmp_path / "ensemble" / "test.grapto"
+        ensemble_folder.mkdir(parents=True)
+
+        link_data = {"test.grapto": [str(source1), str(source2), str(source3)]}
+        link_yaml_path = tmp_path / "ensemble" / "link.yaml"
+        with open(link_yaml_path, "w") as f:
+            yaml.dump(link_data, f)
+
+        result = ensemble_groups_for_file(ensemble_folder, link_yaml_path)
+
+        # Should have at least one ensembled value
+        text_values = [v["text"] for v in result["ensembled_values"]]
+        assert len(text_values) > 0
+
+        # The ensembled text should be "hello world" since it appears twice
+        # and has lower total edit distance
+        assert "hello world" in text_values

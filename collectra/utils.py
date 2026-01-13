@@ -235,7 +235,7 @@ def remove_exif(image_path: Path, save_path: Path):
     from PIL import Image as PILImage
 
     with PILImage.open(image_path) as img:
-        data = list(img.getdata())
+        data = list(img.get_flattened_data())
         image_no_exif = PILImage.new(img.mode, img.size)
         image_no_exif.putdata(data)
         image_no_exif.save(save_path, format=img.format if img.format else "JPEG")

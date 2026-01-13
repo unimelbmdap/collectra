@@ -16,6 +16,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+import editdistance
 import yaml
 
 logger = logging.getLogger(__name__)
@@ -861,3 +862,266 @@ def group_by_bounding_box(
             grouping_list.append([(text_content, bounding_box, source_folder_path)])
 
     return grouping_list
+
+
+def find_centroid_text(texts: list[str]) -> str:
+    """
+    Find the centroid text from a list of texts using edit distance.
+
+    The centroid text is the one with the minimum total edit distance to all
+    other texts in the list. This is useful for finding the "most representative"
+    text when ensembling multiple OCR or LLM outputs.
+
+    Args:
+        texts: List of text strings to find the centroid from.
+
+    Returns:
+        The text with minimum total edit distance to all others.
+        Returns empty string if the list is empty.
+        Returns the single text if the list has only one entry.
+
+    Example:
+        >>> texts = ["hello", "helo", "helllo"]
+        >>> find_centroid_text(texts)
+        'hello'  # Has lowest total distance to others
+    """
+    if not texts:
+        return ""
+
+    if len(texts) == 1:
+        return texts[0]
+
+    # Calculate total edit distance for each text to all others
+    min_total_distance = float("inf")
+    centroid_text = texts[0]
+
+    for i, text_i in enumerate(texts):
+        total_distance = 0
+        for j, text_j in enumerate(texts):
+            if i != j:
+                total_distance += editdistance.eval(text_i, text_j)
+
+        if total_distance < min_total_distance:
+            min_total_distance = total_distance
+            centroid_text = text_i
+
+    return centroid_text
+
+
+def generate_ensembled_values(
+    groups: list[list[tuple[str, dict[str, float], str]]],
+) -> dict[str, Any]:
+    """
+    Generate ensembled values for each group of similar items.
+
+    For each group, extracts the text content and finds the centroid text
+    using edit distance. Single-entry groups (standalones) use their text
+    directly without distance calculation.
+
+    Args:
+        groups: List of groups, where each group is a list of tuples
+            (text_content, bounding_box, source_folder_path) as returned by
+            group_by_bounding_box().
+
+    Returns:
+        A dictionary containing:
+        - "ensembled_values": list of dicts, each with:
+            - "text": the ensembled text value
+            - "bounding_box": the centroid bounding box for the group
+            - "group_size": number of entries in the group
+            - "source_texts": list of all source texts in the group
+        - "statistics": dict with:
+            - "total_groups": total number of groups processed
+            - "standalones": number of groups with only one entry
+            - "ensembled": number of groups with multiple entries
+
+    Example:
+        >>> groups = [
+        ...     [("P.350015", {...}, "/path1"), ("P.350015", {...}, "/path2")],
+        ...     [("Species name", {...}, "/path1")],
+        ... ]
+        >>> result = generate_ensembled_values(groups)
+        >>> print(result["statistics"])
+        {'total_groups': 2, 'standalones': 1, 'ensembled': 1}
+    """
+    ensembled_values: list[dict[str, Any]] = []
+    standalones = 0
+    ensembled = 0
+
+    for group in groups:
+        if not group:
+            continue
+
+        # Extract text contents from the group
+        texts = [text_content for text_content, _, _ in group]
+
+        # Extract bounding boxes and calculate centroid
+        bounding_boxes = [bbox for _, bbox, _ in group]
+        centroid_box = calculate_centroid_box(bounding_boxes)
+
+        # Find the ensembled text value
+        if len(texts) == 1:
+            ensembled_text = texts[0]
+            standalones += 1
+        else:
+            ensembled_text = find_centroid_text(texts)
+            ensembled += 1
+
+        ensembled_values.append(
+            {
+                "text": ensembled_text,
+                "bounding_box": centroid_box,
+                "group_size": len(group),
+                "source_texts": texts,
+            }
+        )
+
+    statistics = {
+        "total_groups": len(groups),
+        "standalones": standalones,
+        "ensembled": ensembled,
+    }
+
+    logger.info(
+        f"Ensemble statistics: {statistics['total_groups']} total groups, "
+        f"{statistics['standalones']} standalones, "
+        f"{statistics['ensembled']} ensemble decisions"
+    )
+
+    return {
+        "ensembled_values": ensembled_values,
+        "statistics": statistics,
+    }
+
+
+def write_ensembled_results(
+    ensemble_folder: Path,
+    ensembled_data: dict[str, Any],
+    groups: list[list[tuple[str, dict[str, float], str]]],
+) -> Path:
+    """
+    Write the ensembled values to the ensemble collectra file's results.yaml.
+
+    Creates a results.yaml file in the ensemble folder with the ensembled values
+    organized by their positions (using index-based labels since we don't have
+    the original label names in the groups).
+
+    Args:
+        ensemble_folder: Path to the ensemble collectra folder (e.g., .grapto folder).
+        ensembled_data: Dictionary containing "ensembled_values" and "statistics"
+            as returned by generate_ensembled_values().
+        groups: The original groups list for reference.
+
+    Returns:
+        Path to the created/updated results.yaml file.
+
+    Raises:
+        PermissionError: If the results.yaml cannot be written.
+
+    Example:
+        >>> ensembled_data = generate_ensembled_values(groups)
+        >>> results_path = write_ensembled_results(
+        ...     Path("/data/ensemble/sample.grapto"),
+        ...     ensembled_data,
+        ...     groups
+        ... )
+    """
+    results_yaml_path = ensemble_folder / "results.yaml"
+
+    # Build the results.yaml structure
+    results_data: dict[str, Any] = {
+        "collectra_results_metadata": {
+            "workflow": "Ensemble",
+            "version": "0.1.0",
+            "ensemble_statistics": ensembled_data["statistics"],
+        }
+    }
+
+    # Add each ensembled value as a field
+    for idx, value_data in enumerate(ensembled_data["ensembled_values"]):
+        field_key = f"ensembled_field_{idx}"
+        results_data[field_key] = {
+            "type": "collectra.Text",
+            "id": f"ensemble-{idx}",
+            "data": value_data["text"],
+            "ensemble_info": {
+                "group_size": value_data["group_size"],
+                "source_texts": value_data["source_texts"],
+                "bounding_box": value_data["bounding_box"],
+            },
+        }
+
+    try:
+        with open(results_yaml_path, "w") as f:
+            yaml.dump(results_data, f, default_flow_style=False, sort_keys=False)
+    except PermissionError as e:
+        raise PermissionError(f"Cannot write results.yaml: {results_yaml_path}") from e
+
+    logger.info(f"Wrote ensembled results to: {results_yaml_path}")
+
+    return results_yaml_path
+
+
+def ensemble_groups_for_file(
+    ensemble_collectra_folder: Path,
+    link_yaml_path: Path,
+    iou_threshold: float = 0.6,
+) -> dict[str, Any]:
+    """
+    Run the full ensemble workflow for a single collectra file.
+
+    This function integrates the complete ensemble pipeline:
+    1. Get source collectra files from link.yaml
+    2. Extract labels with bounding boxes from all sources
+    3. Group labels by bounding box similarity
+    4. Generate ensembled values for each group
+    5. Write results to the ensemble file's results.yaml
+
+    Args:
+        ensemble_collectra_folder: Path to the ensemble collectra folder.
+        link_yaml_path: Path to the link.yaml file.
+        iou_threshold: Minimum IoU for grouping (default: 0.6).
+
+    Returns:
+        Dictionary with ensemble results including:
+        - "ensembled_values": list of ensembled text values
+        - "statistics": ensemble statistics
+        - "results_yaml_path": path to the written results.yaml
+
+    Example:
+        >>> result = ensemble_groups_for_file(
+        ...     Path("/data/ensemble/sample.grapto"),
+        ...     Path("/data/ensemble/link.yaml")
+        ... )
+        >>> print(result["statistics"])
+        {'total_groups': 10, 'standalones': 3, 'ensembled': 7}
+    """
+    # Step 1: Get source files
+    source_folders = get_source_collectra_files(
+        ensemble_collectra_folder, link_yaml_path
+    )
+
+    logger.info(
+        f"Processing ensemble for {ensemble_collectra_folder.name} "
+        f"with {len(source_folders)} sources"
+    )
+
+    # Step 2: Extract labels with bounding boxes
+    labels = extract_labels_with_bounding_boxes(source_folders)
+
+    # Step 3: Group by bounding box
+    groups = group_by_bounding_box(labels, iou_threshold=iou_threshold)
+
+    # Step 4: Generate ensembled values
+    ensembled_data = generate_ensembled_values(groups)
+
+    # Step 5: Write results
+    results_yaml_path = write_ensembled_results(
+        ensemble_collectra_folder, ensembled_data, groups
+    )
+
+    return {
+        "ensembled_values": ensembled_data["ensembled_values"],
+        "statistics": ensembled_data["statistics"],
+        "results_yaml_path": results_yaml_path,
+    }
