@@ -300,104 +300,15 @@ def ensemble(
         str, typer.Option("--extension", "-e", help="File extension to look for")
     ] = ".grapto",
 ):
-    """Ensemble collectra files from multiple source folders.
+    from collectra import Ensembler
 
-    Combines collectra files from multiple input folders (e.g., results from
-    different LLM models) into a unified output structure. Only files that
-    exist in ALL input folders are included in the ensemble output.
-
-    The command creates:
-    - A folder for each verified file in the output directory
-    - Empty results.yaml in each folder
-    - Copy of the image from the first source folder
-    - link.yaml mapping each output to its source paths
-
-    Args:
-        folders: List of input folders containing collectra files to ensemble.
-        output: Output folder where ensemble results will be created.
-        extension: File extension to look for (default: ".grapto").
-
-    Example:
-        $ collectra ensemble /data/model1 /data/model2 --output /data/ensemble
-    """
     console = Console()
-
     try:
-        from collectra.ensemble import (
-            ensemble_files,
-            find_collectra_files,
-            verify_collectra_files,
-        )
-
-        # Validate input folders
-        if len(folders) < 2:
-            console.print(
-                "[red]Error:[/red] At least two input folders are required for ensemble.",
-                style="bold",
-            )
-            raise typer.Exit(code=1)
-
-        # Display file counts for each input folder
-        console.print("\n[bold]Scanning input folders...[/bold]")
-        for folder in folders:
-            try:
-                files = find_collectra_files(folder, extension)
-                console.print(f"  • [cyan]{folder}[/cyan]: {len(files)} files found")
-            except FileNotFoundError:
-                console.print(
-                    f"  • [red]{folder}[/red]: Folder not found", style="bold"
-                )
-                raise typer.Exit(code=1)
-            except PermissionError:
-                console.print(
-                    f"  • [red]{folder}[/red]: Permission denied", style="bold"
-                )
-                raise typer.Exit(code=1)
-
-        # Verify files across all folders
-        verified_files, warnings = verify_collectra_files(folders, extension)
-
-        console.print(
-            f"\n[bold]Verified files:[/bold] {len(verified_files)} (present in all folders)"
-        )
-
-        # Display warnings for missing files
-        if warnings:
-            console.print(f"\n[yellow]Warnings ({len(warnings)}):[/yellow]")
-            for warning in warnings:
-                console.print(f"  ⚠ {warning}")
-
-        if not verified_files:
-            console.print(
-                "\n[red]Error:[/red] No files found in all input folders. Cannot create ensemble.",
-                style="bold",
-            )
-            raise typer.Exit(code=1)
-
-        # Create ensemble output
-        console.print(f"\n[bold]Creating ensemble output at:[/bold] {output}")
-        link_yaml_path = ensemble_files(folders, output, extension)
-
-        console.print(
-            f"\n[green]✓ Success![/green] Ensemble created with {len(verified_files)} files."
-        )
-        console.print(f"  Link file: [cyan]{link_yaml_path}[/cyan]")
-
-    except typer.Exit:
-        raise
-    except FileNotFoundError as e:
-        console.print(f"\n[red]Error:[/red] {e}")
-        raise typer.Exit(code=1)
-    except PermissionError as e:
-        console.print(f"\n[red]Permission Error:[/red] {e}")
-        raise typer.Exit(code=1)
-    except ValueError as e:
-        console.print(f"\n[red]Validation Error:[/red] {e}")
-        raise typer.Exit(code=1)
+        ensembler = Ensembler(folders, output, extension)
+        ensembler.ensemble()
+        console.print(f"Ensembled results saved to {output}")
     except Exception as e:
         console.print(traceback.format_exc())
-        console.print(f"\n[red]Unexpected Error:[/red] {e}")
-        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

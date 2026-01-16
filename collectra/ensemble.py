@@ -1,1443 +1,870 @@
-"""
-Ensemble module for collectra project.
-
-This module provides functionality to ensemble multiple collectra processing results
-from different sources (e.g., different LLM models) into a unified output structure.
-
-The module handles:
-- Finding collectra files (folders with specific extensions like .grapto)
-- Verifying files exist across all input folders
-- Creating ensemble output with merged results
-- Generating link.yaml to track source mappings
-"""
+__all__ = ["Ensembler"]
 
 import logging
 import shutil
+from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List
 
 import editdistance
-import numpy as np
 import yaml
 from ensemble_boxes import weighted_boxes_fusion
+from rich import print
+from rich.progress import track
+
+from .types.images import Image, ImageCrop
+from .types.texts import Text
+from .utils import load_class_from_string
 
 logger = logging.getLogger(__name__)
 
 
-def find_collectra_files(folder: Path, extension: str = ".grapto") -> dict[str, Path]:
-    """
-    Find all collectra files (folders ending with the specified extension) in a folder.
-
-    Args:
-        folder: The folder to search for collectra files.
-        extension: The file extension to look for (default: ".grapto").
-
-    Returns:
-        A dictionary mapping filename (str) to its full path (Path).
-
-    Raises:
-        FileNotFoundError: If the folder does not exist.
-        PermissionError: If the folder cannot be accessed.
-        ValueError: If multiple files with the same name are found in the folder.
-
-    Example:
-        >>> files = find_collectra_files(Path("/data/results"), ".grapto")
-        >>> print(files)
-        {'MMRIRN1505070_P350015.grapto': Path('/data/results/MMRIRN1505070_P350015.grapto')}
-    """
-    if not folder.exists():
-        raise FileNotFoundError(f"Folder does not exist: {folder}")
-
-    if not folder.is_dir():
-        raise NotADirectoryError(f"Path is not a directory: {folder}")
-
-    collectra_files: dict[str, Path] = {}
-    duplicates: list[str] = []
-
-    try:
-        for item in folder.iterdir():
-            if item.is_dir() and item.name.endswith(extension):
-                filename = item.name
-                if filename in collectra_files:
-                    duplicates.append(filename)
-                else:
-                    collectra_files[filename] = item
-    except PermissionError as e:
-        raise PermissionError(f"Cannot access folder: {folder}") from e
-
-    if duplicates:
-        raise ValueError(
-            f"Multiple instances of same filename found in folder '{folder}': {duplicates}"
-        )
-
-    return collectra_files
-
-
-def verify_collectra_files(
-    folders: list[Path], extension: str = ".grapto"
-) -> tuple[dict[str, list[Path]], list[str]]:
-    """
-    Verify that collectra files exist in all input folders.
-
-    This function finds all collectra files across all input folders and identifies
-    which files exist in ALL folders (verified) vs those that are missing from some
-    folders (warnings).
-
-    Args:
-        folders: List of folders to search for collectra files.
-        extension: The file extension to look for (default: ".grapto").
-
-    Returns:
-        A tuple containing:
-        - dict[str, list[Path]]: Mapping of verified filenames to their paths in all folders
-          (in the same order as the input folders list).
-        - list[str]: List of warning messages for files not found in all folders.
-
-    Raises:
-        ValueError: If no folders are provided or if duplicate files are found in any folder.
-        FileNotFoundError: If any folder does not exist.
-
-    Example:
-        >>> folders = [Path("/data/model1"), Path("/data/model2")]
-        >>> verified, warnings = verify_collectra_files(folders, ".grapto")
-        >>> print(verified)
-        {'file1.grapto': [Path('/data/model1/file1.grapto'), Path('/data/model2/file1.grapto')]}
-    """
-    if not folders:
-        raise ValueError("At least one input folder must be provided")
-
-    # Find all collectra files in each folder
-    folder_files: list[dict[str, Path]] = []
-    for folder in folders:
-        files = find_collectra_files(folder, extension)
-        folder_files.append(files)
-
-    # Get all unique filenames across all folders
-    all_filenames: set[str] = set()
-    for files in folder_files:
-        all_filenames.update(files.keys())
-
-    verified_files: dict[str, list[Path]] = {}
-    warnings: list[str] = []
-
-    for filename in sorted(all_filenames):
-        paths: list[Path] = []
-        missing_folders: list[Path] = []
-
-        for folder, files in zip(folders, folder_files):
-            if filename in files:
-                paths.append(files[filename])
-            else:
-                missing_folders.append(folder)
-
-        if missing_folders:
-            # File not found in all folders - add warning
-            missing_str = ", ".join(str(f) for f in missing_folders)
-            warning_msg = f"File '{filename}' not found in folders: {missing_str}"
-            warnings.append(warning_msg)
-            logger.warning(warning_msg)
-        else:
-            # File found in all folders - verified
-            verified_files[filename] = paths
-
-    return verified_files, warnings
-
-
-def _get_image_file(collectra_folder: Path) -> Path | None:
-    """
-    Get the image file from a collectra folder.
-
-    The image file is any file that is NOT results.yaml or usage.yaml.
-
-    Args:
-        collectra_folder: Path to the collectra folder.
-
-    Returns:
-        Path to the image file, or None if no image file is found.
-    """
-    excluded_files = {"results.yaml", "usage.yaml"}
-
-    try:
-        for item in collectra_folder.iterdir():
-            if item.is_file() and item.name not in excluded_files:
-                return item
-    except PermissionError:
-        logger.warning(f"Cannot access folder to find image: {collectra_folder}")
-        return None
-
-    return None
-
-
-def create_ensemble_output(
-    verified_files: dict[str, list[Path]],
-    output_folder: Path,
-    extension: str = ".grapto",
-) -> Path:
-    """
-    Create the ensemble output folder structure.
-
-    For each verified file, this function:
-    - Creates a folder with the same name in the output directory
-    - Copies the image file from the first source folder
-    - Creates an empty results.yaml file
-    - Generates a link.yaml file mapping each output to its source folders
-
-    Args:
-        verified_files: Dictionary mapping filenames to their paths in source folders.
-        output_folder: The output folder where ensemble results will be created.
-        extension: The file extension being used (default: ".grapto").
-
-    Returns:
-        Path to the created link.yaml file.
-
-    Raises:
-        FileExistsError: If the output folder already exists and is not empty.
-        PermissionError: If the output folder cannot be created or written to.
-        ValueError: If verified_files is empty.
-
-    Example:
-        >>> verified = {'file1.grapto': [Path('/src1/file1.grapto'), Path('/src2/file1.grapto')]}
-        >>> link_yaml = create_ensemble_output(verified, Path('/output'), ".grapto")
-        >>> print(link_yaml)
-        Path('/output/link.yaml')
-    """
-    if not verified_files:
-        raise ValueError("No verified files to process")
-
-    # Create output folder
-    try:
-        output_folder.mkdir(parents=True, exist_ok=True)
-    except PermissionError as e:
-        raise PermissionError(f"Cannot create output folder: {output_folder}") from e
-
-    # Prepare link.yaml content
-    link_data: dict[str, list[str]] = {}
-
-    for filename, source_paths in verified_files.items():
-        # Create the output collectra folder
-        output_collectra_folder = output_folder / filename
-
-        try:
-            output_collectra_folder.mkdir(parents=True, exist_ok=True)
-        except PermissionError as e:
-            raise PermissionError(
-                f"Cannot create folder: {output_collectra_folder}"
-            ) from e
-
-        # Create empty results.yaml
-        results_yaml_path = output_collectra_folder / "results.yaml"
-        try:
-            results_yaml_path.touch()
-        except PermissionError as e:
-            raise PermissionError(
-                f"Cannot create results.yaml: {results_yaml_path}"
-            ) from e
-
-        # Copy image from first source folder
-        first_source = source_paths[0]
-        image_file = _get_image_file(first_source)
-
-        if image_file:
-            dest_image = output_collectra_folder / image_file.name
-            try:
-                shutil.copy2(image_file, dest_image)
-            except PermissionError as e:
-                raise PermissionError(
-                    f"Cannot copy image from {image_file} to {dest_image}"
-                ) from e
-            except FileNotFoundError:
-                logger.warning(f"Image file not found: {image_file}")
-        else:
-            logger.warning(f"No image file found in source folder: {first_source}")
-
-        # Add to link data
-        link_data[filename] = [str(p) for p in source_paths]
-
-    # Write link.yaml
-    link_yaml_path = output_folder / "link.yaml"
-    try:
-        with open(link_yaml_path, "w") as f:
-            yaml.dump(link_data, f, default_flow_style=False, sort_keys=True)
-    except PermissionError as e:
-        raise PermissionError(f"Cannot write link.yaml: {link_yaml_path}") from e
-
-    logger.info(f"Created ensemble output at: {output_folder}")
-    logger.info(f"Processed {len(verified_files)} files")
-    logger.info(f"Link file created at: {link_yaml_path}")
-
-    return link_yaml_path
-
-
-def ensemble_files(
-    input_folders: list[Path],
-    output_folder: Path,
-    extension: str = ".grapto",
-) -> Path:
-    """
-    Main entry point for ensembling collectra files from multiple source folders.
-
-    This function combines the functionality of finding, verifying, and creating
-    ensemble output for collectra files across multiple input folders.
-
-    The process:
-    1. Finds all collectra files in each input folder
-    2. Verifies which files exist in ALL input folders
-    3. Logs warnings for files missing from some folders
-    4. Creates output structure with:
-       - A folder for each verified file
-       - Empty results.yaml in each folder
-       - Copy of the image from the first source
-       - link.yaml mapping each output to its sources
-
-    Args:
-        input_folders: List of folders containing collectra files to ensemble.
-        output_folder: The output folder where ensemble results will be created.
-        extension: The file extension to look for (default: ".grapto").
-
-    Returns:
-        Path to the created link.yaml file.
-
-    Raises:
-        ValueError: If no input folders provided, no files found, or no verified files.
-        FileNotFoundError: If any input folder does not exist.
-        PermissionError: If folders cannot be accessed or written to.
-
-    Example:
-        >>> input_folders = [Path("/data/model1"), Path("/data/model2")]
-        >>> output = Path("/data/ensemble")
-        >>> link_yaml = ensemble_files(input_folders, output)
-        >>> print(link_yaml)
-        Path('/data/ensemble/link.yaml')
-    """
-    if not input_folders:
-        raise ValueError("At least one input folder must be provided")
-
-    # Convert to Path objects if needed
-    input_folders = [Path(f) if not isinstance(f, Path) else f for f in input_folders]
-    output_folder = (
-        Path(output_folder) if not isinstance(output_folder, Path) else output_folder
-    )
-
-    logger.info(f"Starting ensemble process with {len(input_folders)} input folders")
-    logger.info(f"Input folders: {[str(f) for f in input_folders]}")
-    logger.info(f"Output folder: {output_folder}")
-    logger.info(f"Extension: {extension}")
-
-    # Verify collectra files across all folders
-    verified_files, warnings = verify_collectra_files(input_folders, extension)
-
-    if warnings:
-        logger.warning(f"Found {len(warnings)} files not present in all folders:")
-        for warning in warnings:
-            logger.warning(f"  - {warning}")
-
-    if not verified_files:
-        raise ValueError(
-            "No files found that exist in all input folders. "
-            "Check warnings for details on missing files."
-        )
-
-    logger.info(
-        f"Found {len(verified_files)} files present in all {len(input_folders)} folders"
-    )
-
-    # Create ensemble output
-    link_yaml_path = create_ensemble_output(verified_files, output_folder, extension)
-
-    # Run ensembling for each file
-    total_stats = {"total_groups": 0, "standalones": 0, "ensembled": 0}
-    for filename in verified_files.keys():
-        ensemble_collectra_folder = output_folder / filename
-        try:
-            result = ensemble_groups_for_file(ensemble_collectra_folder, link_yaml_path)
-            # Accumulate statistics
-            stats = result["statistics"]
-            total_stats["total_groups"] += stats["total_groups"]
-            total_stats["standalones"] += stats["standalones"]
-            total_stats["ensembled"] += stats["ensembled"]
-        except Exception as e:
-            logger.error(f"Failed to ensemble {filename}: {e}")
-
-    logger.info(
-        f"Ensemble statistics: {total_stats['total_groups']} total groups, "
-        f"{total_stats['standalones']} standalones, "
-        f"{total_stats['ensembled']} ensemble decisions"
-    )
-    logger.info("Ensemble process completed successfully")
-
-    return link_yaml_path
-
-
-def load_link_yaml(link_yaml_path: Path) -> dict[str, list[Path]]:
-    """
-    Load and parse a link.yaml file.
-
-    Args:
-        link_yaml_path: Path to the link.yaml file.
-
-    Returns:
-        Dictionary mapping filenames to their source paths.
-
-    Raises:
-        FileNotFoundError: If the link.yaml file does not exist.
-        yaml.YAMLError: If the file cannot be parsed as YAML.
-
-    Example:
-        >>> links = load_link_yaml(Path("/output/link.yaml"))
-        >>> print(links)
-        {'file1.grapto': [Path('/src1/file1.grapto'), Path('/src2/file1.grapto')]}
-    """
-    if not link_yaml_path.exists():
-        raise FileNotFoundError(f"Link file not found: {link_yaml_path}")
-
-    with open(link_yaml_path) as f:
-        data = yaml.safe_load(f)
-
-    if data is None:
-        return {}
-
-    # Convert string paths to Path objects
-    result: dict[str, list[Path]] = {}
-    for filename, paths in data.items():
-        result[filename] = [Path(p) for p in paths]
-
-    return result
-
-
-def get_ensemble_folder(link_yaml_path: Path) -> Path:
-    """
-    Get the ensemble output folder from a link.yaml path.
-
-    Args:
-        link_yaml_path: Path to the link.yaml file.
-
-    Returns:
-        Path to the ensemble output folder (parent of link.yaml).
-
-    Example:
-        >>> folder = get_ensemble_folder(Path("/output/link.yaml"))
-        >>> print(folder)
-        Path('/output')
-    """
-    return link_yaml_path.parent
-
-
-def get_source_collectra_files(
-    ensemble_folder: Path, link_yaml_path: Path
-) -> list[Path]:
-    """
-    Get the source collectra file paths for a given ensemble folder name.
-
-    Given an ensemble collectra folder name (e.g., 'MMRIRN1505070_P350015.grapto')
-    and a link.yaml path, return the list of source collectra file paths from
-    link.yaml for that ensemble file.
-
-    Args:
-        ensemble_folder: The name or path of the ensemble collectra folder.
-            Can be either just the folder name (e.g., 'MMRIRN1505070_P350015.grapto')
-            or a full path.
-        link_yaml_path: Path to the link.yaml file.
-
-    Returns:
-        List of source collectra file paths.
-
-    Raises:
-        FileNotFoundError: If the link.yaml file does not exist.
-        KeyError: If the ensemble folder is not found in link.yaml.
-
-    Example:
-        >>> sources = get_source_collectra_files(
-        ...     Path("MMRIRN1505070_P350015.grapto"),
-        ...     Path("/data/ensemble/link.yaml")
-        ... )
-        >>> print(sources)
-        [Path('data/sonnet45-0-8/MMRIRN1505070_P350015.grapto'), ...]
-    """
-    link_data = load_link_yaml(link_yaml_path)
-
-    # Get the folder name (in case a full path was provided)
-    folder_name = (
-        ensemble_folder.name
-        if isinstance(ensemble_folder, Path)
-        else Path(ensemble_folder).name
-    )
-
-    if folder_name not in link_data:
-        raise KeyError(
-            f"Ensemble folder '{folder_name}' not found in link.yaml. "
-            f"Available folders: {list(link_data.keys())[:5]}..."
-        )
-
-    logger.debug(f"Found {len(link_data[folder_name])} source files for {folder_name}")
-    return link_data[folder_name]
-
-
-def load_results_yaml(collectra_folder: Path) -> dict[str, Any]:
-    """
-    Load and parse the results.yaml file from a collectra folder.
-
-    Args:
-        collectra_folder: Path to the collectra folder containing results.yaml.
-
-    Returns:
-        The parsed YAML data as a dictionary.
-
-    Raises:
-        FileNotFoundError: If the results.yaml file does not exist.
-        yaml.YAMLError: If the file cannot be parsed as YAML.
-
-    Example:
-        >>> results = load_results_yaml(Path("/data/sample.grapto"))
-        >>> print(results.keys())
-        dict_keys(['collectra_results_metadata', 'specimen_sheet', ...])
-    """
-    results_yaml_path = collectra_folder / "results.yaml"
-
-    if not results_yaml_path.exists():
-        raise FileNotFoundError(f"results.yaml not found in: {collectra_folder}")
-
-    with open(results_yaml_path) as f:
-        data = yaml.safe_load(f)
-
-    if data is None:
-        logger.warning(f"results.yaml is empty in: {collectra_folder}")
-        return {}
-
-    logger.debug(f"Loaded results.yaml with {len(data)} keys from {collectra_folder}")
-    return data
-
-
-def _get_bounding_box_from_entry(entry: dict[str, Any]) -> dict[str, float] | None:
-    """
-    Extract bounding box information from a results.yaml entry.
-
-    Args:
-        entry: A dictionary entry from results.yaml that should contain
-            bounding box fields.
-
-    Returns:
-        A dictionary with bounding box fields, or None if not all required
-        fields are present.
-    """
-    required_fields = ["x_center", "y_center", "width_relative", "height_relative"]
-
-    if all(field in entry for field in required_fields):
-        return {
-            "x_center": float(entry["x_center"]),
-            "y_center": float(entry["y_center"]),
-            "width_relative": float(entry["width_relative"]),
-            "height_relative": float(entry["height_relative"]),
-        }
-    return None
-
-
-def _find_parent_with_bounding_box(
-    entry: dict[str, Any], results_data: dict[str, Any]
-) -> dict[str, float] | None:
-    """
-    Traverse upwards through parents to find the last ImageCrop with a bounding box.
-
-    For entries of type collectra.Text, this function traverses up through the
-    parent chain to find the LAST parent with type collectra.ImageCrop and
-    returns its bounding box.
-
-    Args:
-        entry: The current entry from results.yaml.
-        results_data: The full results.yaml data for looking up parent entries.
-
-    Returns:
-        The bounding box dict from the last ImageCrop parent, or None if not found.
-    """
-    parents = entry.get("parents")
-
-    if parents is None:
-        return None
-
-    # Parents can be a single string or a list of strings
-    # When it's a list, use the LAST parent in the list
-    if isinstance(parents, list):
-        if not parents:
-            return None
-        parent_id = parents[-1]  # Get the last parent
-    else:
-        parent_id = parents  # Single parent as string
-
-    # Find the parent entry by matching the id field
-    parent_entry = None
-    for key, value in results_data.items():
-        if isinstance(value, dict) and value.get("id") == parent_id:
-            parent_entry = value
-            break
-
-    if parent_entry is None:
-        logger.debug(f"Parent with id '{parent_id}' not found in results.yaml")
-        return None
-
-    # Check if parent is an ImageCrop
-    if parent_entry.get("type") == "collectra.ImageCrop":
-        bounding_box = _get_bounding_box_from_entry(parent_entry)
-        if bounding_box:
-            return bounding_box
-
-    # If not an ImageCrop, continue traversing upward
-    return _find_parent_with_bounding_box(parent_entry, results_data)
-
-
-def extract_labels_with_bounding_boxes(
-    source_folders: list[Path],
-) -> list[tuple[str, str, dict[str, float], str, str, str]]:
-    """
-    Extract labels with their text content and bounding boxes from source folders.
-
-    For each source folder:
-    - Load its results.yaml
-    - Identify all labels (keys that are NOT 'collectra_results_metadata')
-    - For each label with type 'collectra.Text' or 'collectra.ImageCrop':
-        - Extract the label name (the YAML key)
-        - Extract the data/text content
-        - Extract the id field from the entry
-        - Extract the entry type (collectra.Text or collectra.ImageCrop)
-        - For Text types: traverse upwards through parents to find the LAST
-          parent with type 'collectra.ImageCrop' and get its bounding box
-        - For ImageCrop types: use its own bounding box
-        - Append tuple: (label_name, text_content, bounding_box_dict, source_folder_path_str, item_id, entry_type)
-
-    Args:
-        source_folders: List of paths to collectra folders containing results.yaml files.
-
-    Returns:
-        List of tuples containing:
-        - label_name: The YAML key (e.g., "registration_number")
-        - text_content: The data field value (actual text for Text, empty for ImageCrop)
-        - bounding_box: Dict with x_center, y_center, width_relative, height_relative
-        - source_folder_path: String path to the source folder
-        - item_id: The id field from the source entry
-        - entry_type: The type field (e.g., "collectra.Text" or "collectra.ImageCrop")
-
-    Example:
-        >>> sources = [Path("/data/model1/sample.grapto"), Path("/data/model2/sample.grapto")]
-        >>> results = extract_labels_with_bounding_boxes(sources)
-        >>> print(results[0])
-        ('registration_number', 'P.350015', {'x_center': 0.43, ...}, '/data/model1/sample.grapto', 'reg-num-789', 'collectra.Text')
-    """
-    all_labels: list[tuple[str, str, dict[str, float], str, str, str]] = []
-
-    for source_folder in source_folders:
-        try:
-            results_data = load_results_yaml(source_folder)
-        except FileNotFoundError:
-            logger.warning(f"Skipping folder without results.yaml: {source_folder}")
-            continue
-        except yaml.YAMLError as e:
-            logger.warning(f"Skipping folder with invalid YAML: {source_folder}: {e}")
-            continue
-
-        source_folder_str = str(source_folder)
-
-        for label_name, entry in results_data.items():
-            # Skip metadata
-            if label_name == "collectra_results_metadata":
-                continue
-
-            # Skip non-dict entries
-            if not isinstance(entry, dict):
-                continue
-
-            entry_type = entry.get("type", "")
-            item_id = entry.get("id", "")
-
-            # Convert item_id to string if it exists
-            if item_id is not None:
-                item_id = str(item_id)
-            else:
-                item_id = ""
-
-            bounding_box: dict[str, float] | None = None
-            text_content: str = ""
-
-            if entry_type == "collectra.ImageCrop":
-                # For ImageCrop, use its own bounding box
-                # text_content is empty for ImageCrop (data field is image filename)
-                bounding_box = _get_bounding_box_from_entry(entry)
-                text_content = ""
-
-            elif entry_type == "collectra.Text":
-                # For Text, get actual text from data field
-                data_content = entry.get("data", "")
-                if data_content is not None:
-                    text_content = str(data_content)
-                else:
-                    text_content = ""
-                # Traverse up to find last ImageCrop parent for bounding box
-                bounding_box = _find_parent_with_bounding_box(entry, results_data)
-
-            # Only add entries that have valid bounding boxes
-            if bounding_box is not None:
-                all_labels.append(
-                    (
-                        label_name,
-                        text_content,
-                        bounding_box,
-                        source_folder_str,
-                        item_id,
-                        entry_type,
-                    )
-                )
-                logger.debug(
-                    f"Extracted label '{label_name}' with id '{item_id}', type '{entry_type}' and bounding box from {source_folder_str}"
-                )
-
-    logger.info(
-        f"Extracted {len(all_labels)} labels with bounding boxes "
-        f"from {len(source_folders)} source folders"
-    )
-
-    return all_labels
-
-
-def calculate_iou(box1: dict[str, float], box2: dict[str, float]) -> float:
-    """
-    Calculate Intersection over Union (IoU) between two bounding boxes.
-
-    Both boxes are expected in center format with relative coordinates:
-    {x_center, y_center, width_relative, height_relative} with values in 0-1 range.
-
-    Args:
-        box1: First bounding box dict with center format.
-        box2: Second bounding box dict with center format.
-
-    Returns:
-        IoU value between 0.0 (no overlap) and 1.0 (identical boxes).
-
-    Example:
-        >>> box1 = {"x_center": 0.5, "y_center": 0.5, "width_relative": 0.2, "height_relative": 0.2}
-        >>> box2 = {"x_center": 0.5, "y_center": 0.5, "width_relative": 0.2, "height_relative": 0.2}
-        >>> calculate_iou(box1, box2)
-        1.0
-    """
-    # Handle edge cases: zero-size boxes
-    if box1["width_relative"] <= 0 or box1["height_relative"] <= 0:
-        return 0.0
-    if box2["width_relative"] <= 0 or box2["height_relative"] <= 0:
-        return 0.0
-
-    # Convert center format to corner format (x1, y1, x2, y2)
-    box1_x1 = box1["x_center"] - box1["width_relative"] / 2
-    box1_y1 = box1["y_center"] - box1["height_relative"] / 2
-    box1_x2 = box1["x_center"] + box1["width_relative"] / 2
-    box1_y2 = box1["y_center"] + box1["height_relative"] / 2
-
-    box2_x1 = box2["x_center"] - box2["width_relative"] / 2
-    box2_y1 = box2["y_center"] - box2["height_relative"] / 2
-    box2_x2 = box2["x_center"] + box2["width_relative"] / 2
-    box2_y2 = box2["y_center"] + box2["height_relative"] / 2
-
-    # Calculate intersection
-    inter_x1 = max(box1_x1, box2_x1)
-    inter_y1 = max(box1_y1, box2_y1)
-    inter_x2 = min(box1_x2, box2_x2)
-    inter_y2 = min(box1_y2, box2_y2)
-
-    # Calculate intersection area
-    inter_width = max(0, inter_x2 - inter_x1)
-    inter_height = max(0, inter_y2 - inter_y1)
-    inter_area = inter_width * inter_height
-
-    # Calculate union area
-    box1_area = box1["width_relative"] * box1["height_relative"]
-    box2_area = box2["width_relative"] * box2["height_relative"]
-    union_area = box1_area + box2_area - inter_area
-
-    # Handle edge case: both boxes have zero area
-    if union_area <= 0:
-        return 0.0
-
-    return inter_area / union_area
-
-
-def calculate_centroid_box(boxes: list[dict[str, float]]) -> dict[str, float]:
-    """
-    Calculate the centroid bounding box from a list of bounding boxes.
-
-    Computes the average of all 4 fields (x_center, y_center, width_relative,
-    height_relative) across all provided boxes.
-
-    Args:
-        boxes: List of bounding box dicts in center format.
-
-    Returns:
-        Centroid bounding box dict with averaged values.
-
-    Raises:
-        ValueError: If boxes list is empty.
-
-    Example:
-        >>> boxes = [
-        ...     {"x_center": 0.4, "y_center": 0.4, "width_relative": 0.1, "height_relative": 0.1},
-        ...     {"x_center": 0.6, "y_center": 0.6, "width_relative": 0.3, "height_relative": 0.3}
-        ... ]
-        >>> calculate_centroid_box(boxes)
-        {'x_center': 0.5, 'y_center': 0.5, 'width_relative': 0.2, 'height_relative': 0.2}
-    """
-    if not boxes:
-        raise ValueError("Cannot calculate centroid from empty list of boxes")
-
-    n = len(boxes)
-    return {
-        "x_center": sum(b["x_center"] for b in boxes) / n,
-        "y_center": sum(b["y_center"] for b in boxes) / n,
-        "width_relative": sum(b["width_relative"] for b in boxes) / n,
-        "height_relative": sum(b["height_relative"] for b in boxes) / n,
-    }
-
-
-def center_to_corner_format(box: dict[str, float]) -> list[float]:
-    """
-    Convert bounding box from center format to corner format.
-
-    Converts from {x_center, y_center, width_relative, height_relative} to
-    [x1, y1, x2, y2] format required by ensemble-boxes library.
-
-    Args:
-        box: Bounding box dict in center format with values in 0-1 range.
-
-    Returns:
-        List [x1, y1, x2, y2] with values clipped to 0-1 range.
-
-    Example:
-        >>> box = {"x_center": 0.5, "y_center": 0.5, "width_relative": 0.2, "height_relative": 0.2}
-        >>> center_to_corner_format(box)
-        [0.4, 0.4, 0.6, 0.6]
-    """
-    x1 = box["x_center"] - box["width_relative"] / 2
-    y1 = box["y_center"] - box["height_relative"] / 2
-    x2 = box["x_center"] + box["width_relative"] / 2
-    y2 = box["y_center"] + box["height_relative"] / 2
-
-    # Clip to 0-1 range as required by ensemble-boxes
-    return [
-        max(0.0, min(1.0, x1)),
-        max(0.0, min(1.0, y1)),
-        max(0.0, min(1.0, x2)),
-        max(0.0, min(1.0, y2)),
-    ]
-
-
-def corner_to_center_format(box: list[float]) -> dict[str, float]:
-    """
-    Convert bounding box from corner format to center format.
-
-    Converts from [x1, y1, x2, y2] format to
-    {x_center, y_center, width_relative, height_relative}.
-
-    Args:
-        box: List [x1, y1, x2, y2] with values in 0-1 range.
-
-    Returns:
-        Bounding box dict in center format.
-
-    Example:
-        >>> box = [0.4, 0.4, 0.6, 0.6]
-        >>> corner_to_center_format(box)
-        {'x_center': 0.5, 'y_center': 0.5, 'width_relative': 0.2, 'height_relative': 0.2}
-    """
-    x1, y1, x2, y2 = box
-    return {
-        "x_center": (x1 + x2) / 2,
-        "y_center": (y1 + y2) / 2,
-        "width_relative": x2 - x1,
-        "height_relative": y2 - y1,
-    }
-
-
-def calculate_wbf_box(
-    boxes: list[dict[str, float]],
-    iou_threshold: float = 0.5,
-    skip_box_threshold: float = 0.0,
-) -> dict[str, float]:
-    """
-    Calculate fused bounding box using Weighted Box Fusion (WBF).
-
-    Uses the ensemble-boxes library to fuse multiple overlapping bounding boxes
-    into a single refined box. Each box is treated as coming from a separate
-    model with equal confidence (1.0).
-
-    WBF differs from simple averaging by:
-    - Using IoU-based clustering to identify overlapping boxes
-    - Weighting the fusion by confidence scores
-    - Producing more accurate box coordinates for detection ensembles
-
-    Args:
-        boxes: List of bounding box dicts in center format.
-        iou_threshold: IoU threshold for clustering boxes together (default: 0.5).
-        skip_box_threshold: Minimum score to keep a box (default: 0.0).
-
-    Returns:
-        Fused bounding box dict in center format.
-
-    Raises:
-        ValueError: If boxes list is empty.
-
-    Example:
-        >>> boxes = [
-        ...     {"x_center": 0.5, "y_center": 0.5, "width_relative": 0.2, "height_relative": 0.2},
-        ...     {"x_center": 0.51, "y_center": 0.49, "width_relative": 0.21, "height_relative": 0.19}
-        ... ]
-        >>> result = calculate_wbf_box(boxes)
-        >>> # Returns fused box coordinates
-    """
-    if not boxes:
-        raise ValueError("Cannot calculate WBF from empty list of boxes")
-
-    # For a single box, return it as-is
-    if len(boxes) == 1:
-        return boxes[0].copy()
-
-    # Convert boxes to corner format for ensemble-boxes library
-    # WBF expects: boxes_list = [[boxes from model 1], [boxes from model 2], ...]
-    # Since we're grouping by label, each box is from a different source (model)
-    # So we treat each box as coming from a separate "model" with one box each
-    boxes_list = []
-    scores_list = []
-    labels_list = []
-
-    for box in boxes:
-        corner_box = center_to_corner_format(box)
-        boxes_list.append([corner_box])
-        scores_list.append([1.0])  # Equal confidence for all boxes
-        labels_list.append([0])  # Same label for all (they're already grouped)
-
-    # Apply Weighted Box Fusion
-    fused_boxes, fused_scores, fused_labels = weighted_boxes_fusion(
-        boxes_list,
-        scores_list,
-        labels_list,
-        weights=None,  # Equal weights for all models
-        iou_thr=iou_threshold,
-        skip_box_thr=skip_box_threshold,
-    )
-
-    # If WBF returns no boxes (shouldn't happen with our input), fall back to centroid
-    if len(fused_boxes) == 0:
-        logger.warning("WBF returned no boxes, falling back to centroid averaging")
-        return calculate_centroid_box(boxes)
-
-    # Take the first (and typically only) fused box
-    # WBF may return multiple boxes if IoU threshold causes separation
-    # In that case, take the one with highest score
-    if len(fused_boxes) > 1:
-        best_idx = np.argmax(fused_scores)
-        fused_box = fused_boxes[best_idx]
-        logger.debug(
-            f"WBF returned {len(fused_boxes)} boxes, selected box with score {fused_scores[best_idx]:.4f}"
-        )
-    else:
-        fused_box = fused_boxes[0]
-
-    # Convert back to center format
-    return corner_to_center_format(fused_box.tolist())
-
-
-def group_by_label(
-    labels: list[tuple[str, str, dict[str, float], str, str, str]],
-    iou_threshold: float = 0.6,
-) -> list[list[tuple[str, str, dict[str, float], str, str, str]]]:
-    """
-    Group extracted labels by label_name.
-
-    Groups labels based on their label_name (the YAML key). Items with the same
-    label_name from different source folders go into the same group. The bounding
-    box IoU is still used for conflict resolution within a group when multiple
-    entries from the same source folder have the same label_name.
-
-    This approach ensures that Text entries (e.g., 'registration_number') are
-    grouped separately from their parent ImageCrop entries (e.g.,
-    'registration_number_image'), even though they may share similar bounding boxes.
-
-    Args:
-        labels: List of tuples (label_name, text_content, bounding_box, source_folder_path, item_id, entry_type)
-            as returned by extract_labels_with_bounding_boxes().
-        iou_threshold: Minimum IoU value for conflict resolution when multiple
-            entries from the same source folder have the same label_name (default: 0.6).
-            The entry with higher IoU to the group's centroid is kept.
-
-    Returns:
-        List of groups, where each group is a list of tuples:
-        (label_name, text_content, bounding_box, source_folder_path, item_id, entry_type).
-        All items in a group share the same label_name.
-
-    Example:
-        >>> labels = [
-        ...     ("reg", "P.350015", {"x_center": 0.5, ...}, "/path1", "id-1", "collectra.Text"),
-        ...     ("reg", "P.350016", {"x_center": 0.51, ...}, "/path2", "id-2", "collectra.Text"),
-        ... ]
-        >>> groups = group_by_label(labels, iou_threshold=0.6)
-        >>> len(groups)  # Same label_name forms one group
-        1
-    """
-    if not labels:
-        return []
-
-    # Group by label_name using a dictionary
-    label_groups: dict[str, list[tuple[str, str, dict[str, float], str, str, str]]] = {}
-
-    for (
-        label_name,
-        text_content,
-        bounding_box,
-        source_folder_path,
-        item_id,
-        entry_type,
-    ) in labels:
-        if label_name not in label_groups:
-            label_groups[label_name] = []
-
-        group = label_groups[label_name]
-
-        # Check if group already has an entry from the same source_folder_path
-        existing_entry = None
-        existing_idx = None
-        for idx, (
-            existing_label,
-            existing_text,
-            existing_box,
-            existing_source,
-            existing_id,
-            existing_type,
-        ) in enumerate(group):
-            if existing_source == source_folder_path:
-                existing_entry = (
-                    existing_label,
-                    existing_text,
-                    existing_box,
-                    existing_source,
-                    existing_id,
-                    existing_type,
-                )
-                existing_idx = idx
-                break
-
-        if existing_entry is not None:
-            # Conflict: same source folder already in group for this label_name
-            # Calculate group centroid (excluding the conflicting entry)
-            other_boxes = [
-                box for _, _, box, src, _, _ in group if src != source_folder_path
-            ]
-
-            if other_boxes:
-                centroid = calculate_centroid_box(other_boxes)
-
-                # Compare IoUs to centroid
-                existing_iou_to_centroid = calculate_iou(existing_entry[2], centroid)
-                new_iou_to_centroid = calculate_iou(bounding_box, centroid)
-
-                if new_iou_to_centroid > existing_iou_to_centroid:
-                    # Replace existing with new
-                    logger.warning(
-                        f"Conflict in group '{label_name}': replacing entry from '{source_folder_path}' "
-                        f"(old IoU to centroid: {existing_iou_to_centroid:.4f}, "
-                        f"new IoU to centroid: {new_iou_to_centroid:.4f})"
-                    )
-                    group[existing_idx] = (
-                        label_name,
-                        text_content,
-                        bounding_box,
-                        source_folder_path,
-                        item_id,
-                        entry_type,
-                    )
-                else:
-                    # Keep existing, discard new
-                    logger.warning(
-                        f"Conflict in group '{label_name}': keeping existing entry from '{source_folder_path}' "
-                        f"(existing IoU to centroid: {existing_iou_to_centroid:.4f}, "
-                        f"new IoU to centroid: {new_iou_to_centroid:.4f})"
-                    )
-            else:
-                # Only one entry in group from same source, keep existing
-                logger.warning(
-                    f"Conflict in group '{label_name}': only one other entry exists, "
-                    f"keeping existing entry from '{source_folder_path}'"
-                )
-        else:
-            # No conflict: add the entry to the group
-            group.append(
-                (
-                    label_name,
-                    text_content,
-                    bounding_box,
-                    source_folder_path,
-                    item_id,
-                    entry_type,
-                )
+@dataclass
+class Ensembler:
+    folders: list[Path]
+    output: Path
+    extension: str
+    tmp_ensembled: dict = field(default_factory=dict)
+
+    def ensemble(self) -> int:
+        """
+        Main ensemble workflow orchestration.
+
+        Steps:
+        1. Create file linkage across folders
+        2. Identify unique labels
+        3. Create ensemble output folder structure
+        4. Process each file and ensemble its labels
+        5. Write results.yaml with metadata
+        """
+        # Create file linkage, identify labels, create folder structure
+        file_linkage = self._create_file_linkage()
+
+        if not file_linkage:
+            logger.warning("No files found for ensembling.")
+            return 0
+
+        # Identify unique labels
+        unique_labels = self._identify_unique_labels(file_linkage)
+
+        # Create ensemble folder structure
+        self._create_ensemble_folder_structure(file_linkage)
+
+        # Save linkage to link.yaml
+        self._save_link_yaml(file_linkage, unique_labels)
+
+        # Process labels for each file
+        for filename, source_paths in track(
+            file_linkage.items(), description="Ensembling files..."
+        ):
+            self.tmp_ensembled = self._retrieve_label_data_for_file(
+                filename, source_paths, unique_labels
             )
+            workflow_name = "Ensemble"
+            # Process each data type
+            ensembled_labels = dict()
+            crop_id_mapping = dict()
+            for data_type in [Image, ImageCrop, Text]:
+                # Process each label in file
+                for label_name, label_items in self.tmp_ensembled.items():
+                    self._loop_label_processing(
+                        ensembled_labels,
+                        label_name,
+                        label_items,
+                        data_type,
+                        crop_id_mapping,
+                    )
+            self._write_results_yaml(
+                self.output / filename,
+                ensembled_labels,
+                self._generate_metadata(
+                    source_paths,
+                    original_workflow=workflow_name,
+                ),
+            )
+            self._copy_artifact_files(Path(source_paths[0]), self.output / filename)
 
-    # Convert dictionary values to list of lists
-    return list(label_groups.values())
+        return len(file_linkage)
 
+    def _loop_label_processing(
+        self,
+        ensembled_labels: dict,
+        label_name: str,
+        label_items: dict,
+        check_type: type,
+        crop_id_mapping: dict[str, list[str]] | None = None,
+    ) -> None:
+        label_type: str = label_items.get("type", "")
+        if load_class_from_string(label_type) is not check_type:
+            return None
+        ensembled_label = self._process_file_label(
+            label_name,
+            label_items,
+            label_type,
+            crop_id_mapping=crop_id_mapping,
+        )
+        if crop_id_mapping is not None and ensembled_label is not None:
+            self._update_crop_id_mapping(
+                ensembled_label,
+                crop_id_mapping,
+            )
+        if ensembled_label:
+            ensembled_labels[label_name] = ensembled_label
 
-def group_by_bounding_box(
-    labels: list[tuple[str, str, dict[str, float], str, str, str]],
-    iou_threshold: float = 0.6,
-) -> list[list[tuple[str, str, dict[str, float], str, str, str]]]:
-    """
-    Group extracted labels by label_name (backward-compatible wrapper).
+    def _update_crop_id_mapping(
+        self,
+        ensembled_label: dict | list[dict],
+        crop_id_mapping: dict[str, list[str]],
+    ) -> None:
+        if isinstance(ensembled_label, list):
+            for item in ensembled_label:
+                ensemble_ref = item["id"]
+                for child in item.get("ensemble", []):
+                    crop_id_mapping.setdefault(child, []).append(ensemble_ref)
+        elif isinstance(ensembled_label, dict):
+            ensemble_ref = ensembled_label["id"]
+            for child in ensembled_label.get("ensemble", []):
+                crop_id_mapping.setdefault(child, []).append(ensemble_ref)
 
-    .. deprecated::
-        This function now delegates to :func:`group_by_label` which groups by
-        label_name instead of bounding box IoU. The previous behavior caused
-        Text entries to be incorrectly grouped with their parent ImageCrop
-        entries when they shared similar bounding boxes.
+    def _create_file_linkage(self) -> dict[str, list[str]]:
+        """
+        Identify unique filenames across folders and create linkage.
 
-    Groups labels based on their label_name. Items with the same label_name
-    from different source folders go into the same group. The iou_threshold
-    parameter is still used for conflict resolution within a group.
+        Returns:
+            Dictionary mapping filename to list of source paths
+            Example: {"file1": ["folder1/file1.collectra", "folder2/file1.collectra"]}
+        """
+        file_linkage: Dict[str, List[str]] = {}
 
-    Args:
-        labels: List of tuples (label_name, text_content, bounding_box, source_folder_path, item_id, entry_type)
-            as returned by extract_labels_with_bounding_boxes().
-        iou_threshold: Minimum IoU value for conflict resolution (default: 0.6).
+        # Scan all folders for files with the target extension
+        for folder in self.folders:
+            if not folder.exists():
+                continue
 
-    Returns:
-        List of groups, where each group is a list of tuples:
-        (label_name, text_content, bounding_box, source_folder_path, item_id, entry_type).
+            for item in folder.iterdir():
+                if item.is_dir() and item.name.endswith(self.extension):
+                    # Extract the filename without extension
+                    filename = item.name
 
-    Example:
-        >>> labels = [
-        ...     ("reg", "P.350015", {"x_center": 0.5, ...}, "/path1", "id-1", "collectra.Text"),
-        ...     ("reg", "P.350015", {"x_center": 0.51, ...}, "/path2", "id-2", "collectra.Text"),
-        ... ]
-        >>> groups = group_by_bounding_box(labels, iou_threshold=0.6)
-        >>> len(groups)  # Same label_name forms one group
-        1
-    """
-    return group_by_label(labels, iou_threshold)
+                    if filename not in file_linkage:
+                        file_linkage[filename] = []
 
+                    file_linkage[filename].append(str(item))
 
-def find_centroid_text(texts: list[str]) -> str:
-    """
-    Find the centroid text from a list of texts using edit distance.
+        return file_linkage
 
-    The centroid text is the one with the minimum total edit distance to all
-    other texts in the list. This is useful for finding the "most representative"
-    text when ensembling multiple OCR or LLM outputs.
+    def _identify_unique_labels(self, file_linkage: Dict[str, List[str]]) -> List[str]:
+        """
+        Identify all unique labels across all source files.
 
-    Args:
-        texts: List of text strings to find the centroid from.
+        TODO: Hard code for now, implement proper logic later.
 
-    Returns:
-        The text with minimum total edit distance to all others.
-        Returns empty string if the list is empty.
-        Returns the single text if the list has only one entry.
+        Args:
+            file_linkage: Dictionary of file linkage
 
-    Example:
-        >>> texts = ["hello", "helo", "helllo"]
-        >>> find_centroid_text(texts)
-        'hello'  # Has lowest total distance to others
-    """
-    if not texts:
-        return ""
-
-    if len(texts) == 1:
-        return texts[0]
-
-    # Calculate total edit distance for each text to all others
-    min_total_distance = float("inf")
-    centroid_text = texts[0]
-
-    for i, text_i in enumerate(texts):
-        total_distance = 0
-        for j, text_j in enumerate(texts):
-            if i != j:
-                total_distance += editdistance.eval(text_i, text_j)
-
-        if total_distance < min_total_distance:
-            min_total_distance = total_distance
-            centroid_text = text_i
-
-    return centroid_text
-
-
-def generate_ensembled_values(
-    groups: list[list[tuple[str, str, dict[str, float], str, str, str]]],
-) -> dict[str, Any]:
-    """
-    Generate ensembled values for each group of similar items.
-
-    For each group, extracts the text content and finds the centroid text
-    using edit distance. Single-entry groups (standalones) use their text
-    directly without distance calculation. Also determines the label name
-    and entry type for the group using the most common values among entries.
-
-    Args:
-        groups: List of groups, where each group is a list of tuples
-            (label_name, text_content, bounding_box, source_folder_path, item_id, entry_type)
-            as returned by group_by_bounding_box().
-
-    Returns:
-        A dictionary containing:
-        - "ensembled_values": list of dicts, each with:
-            - "label_name": the original label name (most common in the group)
-            - "text": the ensembled text value
-            - "bounding_box": the centroid bounding box for the group
-            - "group_size": number of entries in the group
-            - "source_texts": list of all source texts in the group
-            - "sources": list of tuples (source_folder_path, item_id) for ensemble field
-            - "entry_type": the entry type (most common in the group, e.g., "collectra.Text")
-        - "statistics": dict with:
-            - "total_groups": total number of groups processed
-            - "standalones": number of groups with only one entry
-            - "ensembled": number of groups with multiple entries
-
-    Example:
-        >>> groups = [
-        ...     [("reg", "P.350015", {...}, "/path1", "id-1", "collectra.Text"), ("reg", "P.350015", {...}, "/path2", "id-2", "collectra.Text")],
-        ...     [("species", "Species name", {...}, "/path1", "id-3", "collectra.Text")],
-        ... ]
-        >>> result = generate_ensembled_values(groups)
-        >>> print(result["statistics"])
-        {'total_groups': 2, 'standalones': 1, 'ensembled': 1}
-    """
-    ensembled_values: list[dict[str, Any]] = []
-    standalones = 0
-    ensembled = 0
-
-    for group in groups:
-        if not group:
-            continue
-
-        # Extract label names from the group and find the most common one
-        label_names = [label_name for label_name, _, _, _, _, _ in group]
-        # Use the most common label name, or the first one if all are equal
-        from collections import Counter
-
-        label_name_counts = Counter(label_names)
-        most_common_label = label_name_counts.most_common(1)[0][0]
-
-        # Extract entry types from the group and find the most common one
-        entry_types = [entry_type for _, _, _, _, _, entry_type in group]
-        entry_type_counts = Counter(entry_types)
-        most_common_entry_type = entry_type_counts.most_common(1)[0][0]
-
-        # Extract text contents from the group
-        texts = [text_content for _, text_content, _, _, _, _ in group]
-
-        # Extract bounding boxes and calculate fused box using WBF
-        bounding_boxes = [bbox for _, _, bbox, _, _, _ in group]
-        fused_box = calculate_wbf_box(bounding_boxes)
-
-        # Extract sources (folder path and item id) for ensemble field
-        sources = [
-            (source_folder, item_id) for _, _, _, source_folder, item_id, _ in group
+        Returns:
+            List of all unique label names
+        """
+        return [
+            "specimen_sheet",
+            "primary_label_unoriented",
+            "primary_label",
+            "registration_number_image",
+            "genus_image",
+            "specific_epithet_image",
+            "formation_image",
+            "age_image",
+            "locality_image",
+            "collection_origin_image",
+            "collector_image",
+            "previous_number_image",
+            "registration_number_draft",
+            "genus_draft",
+            "specific_epithet_draft",
+            "formation_draft",
+            "age_draft",
+            "locality_draft",
+            "collection_origin_draft",
+            "collector_draft",
+            "previous_number_draft",
+            "registration_number",
+            "genus",
+            "specific_epithet",
+            "formation",
+            "age",
+            "locality",
+            "collection_origin",
+            "collector",
+            "previous_number",
         ]
 
-        # Find the ensembled text value
-        if len(texts) == 1:
-            ensembled_text = texts[0]
-            standalones += 1
-        else:
-            ensembled_text = find_centroid_text(texts)
-            ensembled += 1
+    def _load_source_file_content(self, file_path: Path) -> Dict[str, Any]:
+        """
+        Load results.yaml from a source collectra file.
 
-        ensembled_values.append(
+        Args:
+            file_path: Path to source collectra folder
+
+        Returns:
+            Dictionary of results.yaml content
+        """
+        results_yaml = file_path / "results.yaml"
+
+        if not results_yaml.exists():
+            return {}
+
+        with open(results_yaml, "r") as f:
+            content = yaml.safe_load(f)
+            return content if content else {}
+
+    def _retrieve_label_data_for_file(
+        self, filename: str, source_paths: List[str], unique_labels: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Retrieve label data from all sources for a specific file (Step 8, substeps 1-2).
+
+        Substep 1: Create a file-level storage dictionary
+        Substep 2: Iterate through each label and retrieve data from all sources
+
+        Args:
+            filename: Name of the ensemble file
+            source_paths: List of source file paths for this filename
+            unique_labels: List of all unique labels across all sources
+
+        Returns:
+            Dictionary with format:
             {
-                "label_name": most_common_label,
-                "text": ensembled_text,
-                "bounding_box": fused_box,
-                "group_size": len(group),
-                "source_texts": texts,
-                "sources": sources,
-                "entry_type": most_common_entry_type,
+                "label_name": {
+                    "type": "collectra.Image",
+                    "items": {
+                        "folder/file": [item1, item2, ...],
+                        ...
+                    }
+                },
+                ...
             }
+        """
+        # Substep 1: Create file-level storage dictionary
+        storage_dict: Dict[str, Any] = {}
+
+        # Substep 2: Iterate through each label
+        for label_name in unique_labels:
+            label_storage = {"items": {}}
+            label_type = None
+
+            # Retrieve label data from all source files
+            for source_path in source_paths:
+                source_content = self._load_source_file_content(Path(source_path))
+
+                # Check if label exists in this source
+                if label_name in source_content:
+                    label_data = source_content[label_name]
+
+                    # Normalize to list format (single item -> list)
+                    if isinstance(label_data, list):
+                        items = label_data
+                    else:
+                        items = [label_data]
+
+                    # Store items for this source
+                    label_storage["items"][source_path] = items
+
+                    # Extract type from first item if not already set
+                    if label_type is None and items and isinstance(items[0], dict):
+                        label_type = items[0].get("type")
+
+            # Only add to storage_dict if label has items in at least one source
+            if label_storage["items"]:
+                if label_type:
+                    label_storage["type"] = label_type
+                storage_dict[label_name] = label_storage
+
+        return storage_dict
+
+    def _validate_image_labels(self, label_data: Dict[str, Any]) -> str:
+        """
+        Validate that Image type labels have consistent data sources.
+
+        Args:
+            label_data: Dictionary with type and items from all sources
+
+        Returns:
+            The validated data source string
+
+        Raises:
+            ValueError: If Images reference different source files
+        """
+        data_sources: set = set()
+
+        for source_path, items in label_data.get("items", {}).items():
+            for item in items:
+                if "data" in item:
+                    data_sources.add(item["data"])
+
+        if len(data_sources) > 1:
+            raise ValueError(
+                f"Image labels reference different sources: {data_sources}"
+            )
+
+        return data_sources.pop() if data_sources else ""
+
+    def _calculate_iou(self, box1: List[float], box2: List[float]) -> float:
+        """
+        Calculate IoU between two boxes [x1, y1, x2, y2].
+
+        Args:
+            box1: Box 1 in format [x1, y1, x2, y2]
+            box2: Box 2 in format [x1, y1, x2, y2]
+
+        Returns:
+            IoU value between 0 and 1
+        """
+        x1 = max(box1[0], box2[0])
+        y1 = max(box1[1], box2[1])
+        x2 = min(box1[2], box2[2])
+        y2 = min(box1[3], box2[3])
+
+        inter = max(0, x2 - x1) * max(0, y2 - y1)
+        area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+        area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+        union = area1 + area2 - inter
+
+        return inter / union if union > 0 else 0
+
+    def _find_contributing_boxes(
+        self,
+        fused_box: List[float],
+        source_boxes: List[List[float]],
+        provenance: List[str],
+        iou_threshold: float = 0.5,
+    ) -> List[str]:
+        """
+        Find source boxes that contributed to a fused box via IoU.
+
+        Args:
+            fused_box: The fused box in format [x1, y1, x2, y2]
+            source_boxes: List of source boxes
+            provenance: List of source references for each box
+            iou_threshold: Minimum IoU to consider as contributor
+
+        Returns:
+            List of source references that contributed to the fused box
+        """
+        contributors = []
+        for box, prov in zip(source_boxes, provenance):
+            if self._calculate_iou(fused_box, box) >= iou_threshold:
+                contributors.append(prov)
+        return contributors if contributors else ([provenance[0]] if provenance else [])
+
+    def _ensemble_image_crops(
+        self,
+        label_data: Dict[str, dict],
+        label_name: str,
+        crop_id_mapping: Dict[str, list[str]] | None = None,
+    ) -> dict | list[dict]:
+        """
+        Ensemble ImageCrop labels using Weighted Box Fusion.
+
+        Uses WBF parameters:
+        - iou_threshold: 0.5
+        - skip_box_threshold: 0.0
+        - weights: Equal weights across sources
+
+        Args:
+            label_data: Dictionary of ImageCrop items from each source
+            label_name: Name of the label being ensembled
+            crop_id_mapping: Mapping of source crop refs to ensembled crop IDs
+
+        Returns:
+            Ensembled ImageCrop(s) with format including:
+            - type: "collectra.ImageCrop"
+            - ensemble: List of source references (folder::id)
+            - parents: List of resolved parent IDs from source crops
+            - Fused coordinates (x_center, y_center, width_relative, height_relative)
+        """
+
+        items = label_data.get("items", {})
+
+        if not items:
+            return {}
+
+        crop_id_mapping = crop_id_mapping or {}
+
+        # Build lookup table: ensemble_ref -> (source_path, crop_object)
+        ensemble_ref_lookup: Dict[str, tuple[str, dict]] = {}
+        for source_path, crops in items.items():
+            for crop in crops:
+                ensemble_ref = f"{Path(source_path).parent}::{crop.get('id', '')}"
+                ensemble_ref_lookup[ensemble_ref] = (source_path, crop)
+
+        # Collect boxes per source for WBF
+        boxes_per_source: List[List[List[float]]] = []
+        scores_per_source: List[List[float]] = []
+        labels_per_source: List[List[int]] = []
+        prov_per_source: List[List[str]] = []
+        data_source: str = ""
+
+        for source_path, crops in items.items():
+            folder_name = Path(source_path).parent
+            src_boxes, src_scores, src_labels, src_prov = [], [], [], []
+
+            for crop in crops:
+                # Convert center-format to corner-format (normalized 0-1)
+                x_c = crop["x_center"]
+                y_c = crop["y_center"]
+                w = crop["width_relative"]
+                h = crop["height_relative"]
+
+                x1 = max(0, x_c - w / 2)
+                y1 = max(0, y_c - h / 2)
+                x2 = min(1, x_c + w / 2)
+                y2 = min(1, y_c + h / 2)
+
+                src_boxes.append([x1, y1, x2, y2])
+                src_scores.append(1.0)
+                src_labels.append(0)
+                src_prov.append(f"{folder_name}::{crop.get('id', '')}")
+                if not data_source:
+                    data_source = crop.get("data", "")
+
+            boxes_per_source.append(src_boxes)
+            scores_per_source.append(src_scores)
+            labels_per_source.append(src_labels)
+            prov_per_source.append(src_prov)
+
+        # WBF call
+        weights = [1] * len(boxes_per_source)
+        fused_boxes, fused_scores, fused_labels = weighted_boxes_fusion(
+            boxes_per_source,
+            scores_per_source,
+            labels_per_source,
+            weights=weights,
+            iou_thr=0.5,
+            skip_box_thr=0.0,
         )
 
-    statistics = {
-        "total_groups": len(groups),
-        "standalones": standalones,
-        "ensembled": ensembled,
-    }
+        # Build result
+        result = []
+        flat_prov = [p for sp in prov_per_source for p in sp]
+        flat_boxes = [b for sb in boxes_per_source for b in sb]
 
-    logger.info(
-        f"Ensemble statistics: {statistics['total_groups']} total groups, "
-        f"{statistics['standalones']} standalones, "
-        f"{statistics['ensembled']} ensemble decisions"
-    )
+        for i, fused_box in enumerate(fused_boxes):
+            # Convert back to center format
+            x1, y1, x2, y2 = fused_box
+            x_center = (x1 + x2) / 2
+            y_center = (y1 + y2) / 2
+            width_rel = x2 - x1
+            height_rel = y2 - y1
 
-    return {
-        "ensembled_values": ensembled_values,
-        "statistics": statistics,
-    }
+            # Find contributing boxes via IoU
+            ensemble_refs = self._find_contributing_boxes(
+                fused_box, flat_boxes, flat_prov, iou_threshold=0.5
+            )
 
+            # Resolve parents from contributing crops
+            resolved_parents = self._resolve_ensemble_parents(
+                ensemble_refs, ensemble_ref_lookup, crop_id_mapping
+            )
 
-def write_ensembled_results(
-    ensemble_folder: Path,
-    ensembled_data: dict[str, Any],
-    groups: list[list[tuple[str, str, dict[str, float], str, str, str]]],
-) -> Path:
-    """
-    Write the ensembled values to the ensemble collectra file's results.yaml.
+            result.append(
+                {
+                    "type": "collectra.ImageCrop",
+                    "id": f"{label_name}_ensembled_{i+1}",
+                    "data": data_source,
+                    "ensemble": ensemble_refs,
+                    "parents": resolved_parents,
+                    "x_center": float(x_center),
+                    "y_center": float(y_center),
+                    "width_relative": float(width_rel),
+                    "height_relative": float(height_rel),
+                }
+            )
 
-    Creates a results.yaml file in the ensemble folder with the ensembled values
-    organized by their original label names. Each entry includes an 'ensemble'
-    field listing the source folder and item id for each ensembled item.
-    If duplicate label names exist, an index suffix is appended.
+        return result[0] if len(result) == 1 else result
 
-    Args:
-        ensemble_folder: Path to the ensemble collectra folder (e.g., .grapto folder).
-        ensembled_data: Dictionary containing "ensembled_values" and "statistics"
-            as returned by generate_ensembled_values().
-        groups: The original groups list for reference.
+    def _resolve_ensemble_parents(
+        self,
+        ensemble_refs: List[str],
+        ensemble_ref_lookup: Dict[str, tuple[str, dict]],
+        crop_id_mapping: Dict[str, list[str]],
+    ) -> List[str]:
+        """
+        Resolve parent IDs from contributing source crops to ensembled parent IDs.
 
-    Returns:
-        Path to the created/updated results.yaml file.
+        For each contributing crop, extracts its parent(s) and resolves them to
+        ensembled IDs using crop_id_mapping. Returns deduplicated list of parent IDs.
 
-    Raises:
-        PermissionError: If the results.yaml cannot be written.
+        Args:
+            ensemble_refs: List of source crop references (folder::id) that contributed
+            ensemble_ref_lookup: Lookup table mapping ensemble_ref to (source_path, crop_object)
+            crop_id_mapping: Mapping of source crop refs to ensembled crop IDs
 
-    Example:
-        >>> ensembled_data = generate_ensembled_values(groups)
-        >>> results_path = write_ensembled_results(
-        ...     Path("/data/ensemble/sample.grapto"),
-        ...     ensembled_data,
-        ...     groups
-        ... )
-    """
-    results_yaml_path = ensemble_folder / "results.yaml"
+        Returns:
+            List of unique resolved parent IDs
+        """
+        parents: List[str] = []
 
-    # Get the collectra file name from the ensemble folder
-    collectra_file_name = ensemble_folder.name
+        for ensemble_ref in ensemble_refs:
+            # Skip if crop not found in lookup
+            if ensemble_ref not in ensemble_ref_lookup:
+                continue
 
-    # Build the results.yaml structure
-    results_data: dict[str, Any] = {
-        "collectra_results_metadata": {
-            "workflow": "Ensemble",
-            "version": "0.1.0",
-            "ensemble_statistics": ensembled_data["statistics"],
-        }
-    }
+            source_path, source_crop = ensemble_ref_lookup[ensemble_ref]
 
-    # Track used label names to handle duplicates
-    used_label_names: dict[str, int] = {}
+            # Get parents from source crop
+            crop_parents = source_crop.get("parents", [])
+            if not isinstance(crop_parents, list):
+                crop_parents = [crop_parents] if crop_parents else []
 
-    # Add each ensembled value as a field
-    for idx, value_data in enumerate(ensembled_data["ensembled_values"]):
-        # Use the original label name from the ensembled data
-        base_label_name = value_data.get("label_name", f"ensembled_field_{idx}")
+            # Resolve each parent to ensembled ID
+            for parent_id in crop_parents:
+                # Build compound ID for lookup
+                compound_id = f"{Path(source_path).parent}::{parent_id}"
+                ensembled_ids = crop_id_mapping.get(compound_id, [])
 
-        # Handle duplicate label names by appending an index
-        if base_label_name in used_label_names:
-            used_label_names[base_label_name] += 1
-            field_key = f"{base_label_name}_{used_label_names[base_label_name]}"
+                # Get ensembled ID or fallback to original (e.g., for Images)
+                if isinstance(ensembled_ids, list) and ensembled_ids:
+                    ensembled_id = ensembled_ids[-1]
+                else:
+                    ensembled_id = parent_id
+
+                # Add to list if not already present (deduplicate)
+                if ensembled_id not in parents:
+                    parents.append(ensembled_id)
+
+        return parents
+
+    def _find_consensus_text(self, texts: List[str]) -> str:
+        """
+        Find text that minimizes total edit distance. Tiebreaker: shortest.
+
+        Args:
+            texts: List of text strings to find consensus from
+
+        Returns:
+            The consensus text string
+        """
+        if not texts:
+            return ""
+        if len(texts) == 1:
+            return texts[0]
+
+        # Compute total edit distance for each candidate
+        scores = []
+        for candidate in texts:
+            total_dist = sum(editdistance.eval(candidate, other) for other in texts)
+            scores.append((total_dist, len(candidate), candidate))
+
+        # Sort by (total_distance, length) - min wins
+        scores.sort(key=lambda x: (x[0], x[1]))
+        return scores[0][2]
+
+    def _ensemble_text(
+        self,
+        label_data: Dict[str, list],
+        label_name: str,
+        crop_id_mapping: Dict[str, list[str]] | None = None,
+    ) -> Any:
+        """
+        Ensemble Text labels using Levenshtein distance.
+
+        Algorithm:
+        - Group text items by their ImageCrop parent(s)
+        - For each group, select consensus text using edit distance
+        - Consensus: minimizes total edit distance to all others
+        - Tiebreaker: select shortest string
+
+        Args:
+            label_data: Dictionary of Text items from each source
+            label_name: Name of the label being ensembled
+            crop_id_mapping: Mapping of source crop refs to ensembled crop IDs
+
+        Returns:
+            Ensembled Text item(s) with format including:
+            - type: "collectra.Text"
+            - ensemble: List of source references (folder::id)
+            - data: Consensus text string
+            - parents: References to ensembled ImageCrop IDs
+        """
+        items = label_data.get("items", {})
+        if not items:
+            return []
+
+        crop_id_mapping = crop_id_mapping or {}
+
+        groups: dict[str, list[tuple[dict, list[str], list[str]]]] = dict()
+
+        for source_path, texts in items.items():
+            for text in texts:
+                # Get the parent folder of this source file
+                folder_path = Path(source_path).parent
+                # Get the parents of this text item
+                text_parents = text.get("parents", [])
+                provenances = []
+                parents = []
+                for parent in text_parents:
+                    # Build the provenance ID
+                    compound_id = f"{folder_path}::{parent}"
+                    provenances.append(compound_id)
+                    # Given a provenance ID, find the ensembled ids and add to parents
+                    grand_parents = crop_id_mapping.get(compound_id, [])
+                    for grand_parent in grand_parents:
+                        if grand_parent not in parents:
+                            # Avoid duplicates
+                            parents.append(grand_parent)
+                crop_parent = self._find_nearest_crop_parent(text, source_path)
+                ensemble_id = crop_id_mapping.get(f"{folder_path}::{crop_parent}", [])
+                ensemble_id = (
+                    ensemble_id[-1]
+                    if isinstance(ensemble_id, list) and len(ensemble_id) > 0
+                    else ensemble_id if ensemble_id else ""
+                )
+                if isinstance(ensemble_id, list) or not ensemble_id:
+                    raise ValueError(
+                        f"Could not find unique ensemble ID for text parent {crop_parent}"
+                    )
+                parents.append(ensemble_id)
+                groups.setdefault(ensemble_id, []).append((text, provenances, parents))
+
+        # Process each group
+        result = []
+        idx = 1
+
+        for text_tuples in groups.values():
+            texts, provenances, parents = list(), list(), list()
+            for t in text_tuples:
+                texts.append(t[0].get("data"))
+                for provenance in t[1]:
+                    if provenance not in provenances:
+                        provenances.append(provenance)
+                for parent in t[2]:
+                    if parent not in parents:
+                        parents.append(parent)
+
+            # Find consensus text
+            consensus = self._find_consensus_text(texts)
+
+            result.append(
+                {
+                    "type": "collectra.Text",
+                    "id": f"{label_name}_ensembled_{idx}",
+                    "data": consensus,
+                    "ensemble": provenances,
+                    "parents": parents,
+                }
+            )
+            idx += 1
+
+        return result[0] if len(result) == 1 else result
+
+    def _find_nearest_crop_parent(self, text_item: dict, source_path: str) -> str:
+        parent_id = text_item.get("parents", "")
+        nearest_parent_id = (
+            parent_id[-1]
+            if isinstance(parent_id, list) and len(parent_id) > 0
+            else parent_id
+        )
+        found_parent = None
+        while not found_parent:
+            label = nearest_parent_id.split("-")[0]
+            parents = (
+                self.tmp_ensembled.get(label, {}).get("items", {}).get(source_path, [])
+            )
+            if not parents:
+                # No more parents to check and didn't find one
+                return ""
+            next_parent = False
+            for parent in parents:
+                if not parent.get("id", "") == nearest_parent_id:
+                    continue
+                if parent.get("type", "") == "collectra.ImageCrop":
+                    found_parent = parent
+                    break
+                next_parent = True
+                next_parents = parent.get("parents", [])
+                nearest_parent_id = (
+                    next_parents[-1]
+                    if isinstance(next_parents, list) and len(next_parents) > 0
+                    else next_parents
+                )
+            if not next_parent:
+                break
+        return found_parent["id"] if found_parent else ""
+
+    def _process_file_label(
+        self,
+        label_name: str,
+        label_items: Dict[str, dict],
+        label_type: str,
+        crop_id_mapping: dict[str, list[str]] | None = None,
+    ) -> list[dict] | dict | None:
+        """
+        Process a single label for ensembling based on its type.
+
+        Handles:
+        - Image: Pass-through with validation
+        - ImageCrop: Weighted Box Fusion ensembling
+        - Text: Edit distance consensus ensembling
+        - Other types: Pass-through behavior
+
+        Args:
+            label_name: Name of the label
+            label_items: Items from all sources for this label
+            label_type: Type of label (collectra.Image, collectra.ImageCrop, collectra.Text)
+            crop_id_mapping: Mapping of source crop refs to ensembled crop IDs for text
+
+        Returns:
+            Ensembled label data or pass-through item
+        """
+
+        items = label_items.get("items", {})
+        if not items:
+            return None
+
+        if load_class_from_string(label_type) == Image:
+            # Validate and pass-through
+            data_source = self._validate_image_labels(label_items)
+            # Return first item with validated data
+            first_item = next(iter(items.values()))[0]
+            return {
+                "type": "collectra.Image",
+                "id": first_item.get("id", label_name),
+                "data": data_source,
+                "ensemble": [
+                    f"{Path(source_path).parent}::{first_item.get('id', '')}"
+                    for source_path in items.keys()
+                ],
+            }
+
+        elif load_class_from_string(label_type) == ImageCrop:
+            return self._ensemble_image_crops(label_items, label_name, crop_id_mapping)
+
+        elif load_class_from_string(label_type) == Text:
+            return self._ensemble_text(label_items, label_name, crop_id_mapping)
+
         else:
-            used_label_names[base_label_name] = 0
-            field_key = base_label_name
+            # Unknown type: pass-through first item
+            first_source = next(iter(items.values()))
+            return first_source[0] if first_source else None
 
-        # Build ensemble list with format: source_folder/collectra_file_name:item_id
-        ensemble_list = []
-        for source_folder, item_id in value_data.get("sources", []):
-            # Extract folder name from path (e.g., /path/to/model1/file.grapto -> model1/file.grapto)
-            source_path = Path(source_folder)
-            # Get the parent folder name and the collectra folder name
-            parent_name = source_path.parent.name
-            folder_name = source_path.name
-            ensemble_entry = f"{parent_name}/{folder_name}:{item_id}"
-            ensemble_list.append(ensemble_entry)
+    def _create_ensemble_folder_structure(
+        self, file_linkage: Dict[str, List[str]]
+    ) -> None:
+        """
+        Create output folder structure for ensemble results.
 
-        # Get bounding box values
-        bounding_box = value_data["bounding_box"]
+        Creates:
+        - output/ (main ensemble folder)
+        - output/link.yaml (file and label linkage)
+        - output/[file1].collectra/
+        - output/[file2].collectra/
+        - etc.
+        """
+        # Create main ensemble output folder
+        self.output.mkdir(parents=True, exist_ok=True)
 
-        # Get entry type from ensembled data (defaults to collectra.Text for backwards compatibility)
-        entry_type = value_data.get("entry_type", "collectra.Text")
+        # Create subdirectories for each ensemble file
+        for filename in file_linkage.keys():
+            ensemble_file_path = self.output / filename
+            ensemble_file_path.mkdir(parents=True, exist_ok=True)
 
-        # Build the field data based on entry type
-        field_data: dict[str, Any] = {
-            "type": entry_type,
-            "id": f"ensemble-{idx}",
-            "ensemble": ensemble_list,
-            "x_center": bounding_box["x_center"],
-            "y_center": bounding_box["y_center"],
-            "width_relative": bounding_box["width_relative"],
-            "height_relative": bounding_box["height_relative"],
+    def _generate_metadata(
+        self, source_files: List[str], original_workflow: str
+    ) -> Dict[str, Any]:
+        """
+        Generate metadata for results.yaml.
+
+        Args:
+            source_files: List of source file paths
+            original_workflow: Original workflow name from source metadata
+
+        Returns:
+            Metadata dictionary with:
+            - workflow: Original workflow name
+            - version: 0.1.0
+            - timestamp: Current ISO timestamp
+        """
+        return {
+            "collectra_results_metadata": {
+                "workflow": original_workflow,
+                "version": "0.1.0",
+                "timestamp": datetime.now().isoformat(),
+                "ensemble_sources": source_files,
+            }
         }
 
-        # For Text entries, include the actual text data
-        # For ImageCrop entries, data field is typically the image filename (not included in ensemble)
-        if entry_type == "collectra.Text":
-            field_data["data"] = value_data["text"]
+    def _write_results_yaml(
+        self, file_path: Path, content: Dict[str, Any], metadata: Dict[str, Any]
+    ) -> None:
+        """
+        Write results.yaml for an ensembled collectra file.
 
-        results_data[field_key] = field_data
+        Args:
+            file_path: Path to output collectra folder
+            content: Ensembled label content
+            metadata: results.yaml metadata
+        """
+        # Combine metadata and content
+        full_content = {
+            "collectra_results_metadata": metadata["collectra_results_metadata"],
+            **content,
+        }
 
-    try:
+        results_yaml_path = file_path / "results.yaml"
+
         with open(results_yaml_path, "w") as f:
-            yaml.dump(results_data, f, default_flow_style=False, sort_keys=False)
-    except PermissionError as e:
-        raise PermissionError(f"Cannot write results.yaml: {results_yaml_path}") from e
+            yaml.dump(full_content, f, default_flow_style=False, sort_keys=False)
 
-    logger.info(f"Wrote ensembled results to: {results_yaml_path}")
+    def _copy_artifact_files(self, source_path: Path, dest_path: Path) -> None:
+        """
+        Copy artifact files (.jpg, .txt, etc.) from first source to ensemble folder.
 
-    return results_yaml_path
+        Args:
+            source_path: Path to first source collectra folder
+            dest_path: Path to ensemble collectra folder
+        """
+        if not source_path.exists():
+            return
 
+        for item in source_path.iterdir():
+            # Skip results.yaml
+            if item.name == "results.yaml":
+                continue
 
-def ensemble_groups_for_file(
-    ensemble_collectra_folder: Path,
-    link_yaml_path: Path,
-    iou_threshold: float = 0.6,
-) -> dict[str, Any]:
-    """
-    Run the full ensemble workflow for a single collectra file.
+            # Copy artifact files
+            if item.is_file():
+                dest_file = dest_path / item.name
+                shutil.copy2(item, dest_file)
 
-    This function integrates the complete ensemble pipeline:
-    1. Get source collectra files from link.yaml
-    2. Extract labels with bounding boxes from all sources
-    3. Group labels by bounding box similarity
-    4. Generate ensembled values for each group
-    5. Write results to the ensemble file's results.yaml
+    def _save_link_yaml(
+        self, file_linkage: Dict[str, List[str]], labels: List[str]
+    ) -> None:
+        """
+        Save file and label linkage to link.yaml.
 
-    Args:
-        ensemble_collectra_folder: Path to the ensemble collectra folder.
-        link_yaml_path: Path to the link.yaml file.
-        iou_threshold: Minimum IoU for grouping (default: 0.6).
+        Format:
+        ```yaml
+        file_link:
+          file1:
+            - folder1/file1
+            - folder2/file1
+        labels:
+          - label1
+          - label2
+        ```
 
-    Returns:
-        Dictionary with ensemble results including:
-        - "ensembled_values": list of ensembled text values
-        - "statistics": ensemble statistics
-        - "results_yaml_path": path to the written results.yaml
+        Args:
+            file_linkage: Dictionary of file linkage
+            labels: List of unique labels
+        """
+        link_content = {
+            "file_link": file_linkage,
+            "labels": labels,
+        }
 
-    Example:
-        >>> result = ensemble_groups_for_file(
-        ...     Path("/data/ensemble/sample.grapto"),
-        ...     Path("/data/ensemble/link.yaml")
-        ... )
-        >>> print(result["statistics"])
-        {'total_groups': 10, 'standalones': 3, 'ensembled': 7}
-    """
-    # Step 1: Get source files
-    source_folders = get_source_collectra_files(
-        ensemble_collectra_folder, link_yaml_path
-    )
+        link_yaml_path = self.output / "link.yaml"
 
-    logger.info(
-        f"Processing ensemble for {ensemble_collectra_folder.name} "
-        f"with {len(source_folders)} sources"
-    )
-
-    # Step 2: Extract labels with bounding boxes
-    labels = extract_labels_with_bounding_boxes(source_folders)
-
-    # Step 3: Group by bounding box
-    groups = group_by_bounding_box(labels, iou_threshold=iou_threshold)
-
-    # Step 4: Generate ensembled values
-    ensembled_data = generate_ensembled_values(groups)
-
-    # Step 5: Write results
-    results_yaml_path = write_ensembled_results(
-        ensemble_collectra_folder, ensembled_data, groups
-    )
-
-    return {
-        "ensembled_values": ensembled_data["ensembled_values"],
-        "statistics": ensembled_data["statistics"],
-        "results_yaml_path": results_yaml_path,
-    }
+        with open(link_yaml_path, "w") as f:
+            yaml.dump(link_content, f, default_flow_style=False)
