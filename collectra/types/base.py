@@ -74,15 +74,21 @@ class Data(BaseEntity):
 class DataNode(Node):
 
     items: dict[str, Data] = field(default_factory=dict)
+    ensemble_items: dict[str, Data] = field(default_factory=dict)
     types: set[type] = field(default_factory=set)
+    skip_type_check: bool = False
+    ensemble: bool = False
 
     def __post_init__(self) -> None:
         super().__post_init__()
         self.status = NodeStatus.READY if self.items else NodeStatus.NOT_READY
 
     def add_item(self, item: Data) -> None:
-        self.items[item.id] = item
-        self.status = NodeStatus.READY
+        try:
+            self.items[item.id] = item
+            self.status = NodeStatus.READY
+        except Exception as e:
+            raise RuntimeError(f"Error adding item to DataNode: {str(e)}")
 
     def add_type(self, type_: type) -> None:
         self.types.add(type_)
@@ -336,6 +342,22 @@ class DataNode(Node):
         except Exception as e:
             self.catcher.set_err(str(e))
 
+    def _create_ensemble_instances(self, base_path: Path, cls_: type, **item) -> None:
+        try:
+            item["id"] = f"{base_path.parent}::{item['id']}"
+            if "parents" in item:
+                for parent_idx, _ in enumerate(item["parents"]):
+                    item["parents"][
+                        parent_idx
+                    ] = f"{base_path.parent}::{item['parents'][parent_idx]}"
+            instance = cls_(**item)
+            if not instance:
+                raise ValueError(f"Failed to load {item} with {cls_}")
+            self.ensemble_items[instance.id] = instance
+            self.status = NodeStatus.READY
+        except Exception as e:
+            raise RuntimeError(f"Error creating ensemble instances: {str(e)}")
+
     def _create_instances(self, **item) -> None:
         for cls_ in self.types:
             self._create_instance(cls_, **item)
@@ -344,7 +366,6 @@ class DataNode(Node):
         self,
         key: str,
         value: str | Path | None = None,
-        skip_type_check: bool = False,
         **kwargs,
     ) -> None:
         value = value if value else kwargs.get("file", None)
@@ -376,7 +397,9 @@ class DataNode(Node):
                                         f"Item must be a complex type with 'type' and ('path' or 'data')"
                                     )
                                 cls_ = load_class_from_string(item.pop("type"))
-                                if not skip_type_check and not self.check_type(cls_):
+                                if not (
+                                    self.skip_type_check or self.ensemble
+                                ) and not self.check_type(cls_):
                                     raise TypeError(
                                         f"{cls_} is not a subclass or not defined in {self.types}"
                                     )
@@ -392,7 +415,10 @@ class DataNode(Node):
                                     and "validation" in cls_.all_attributes()
                                 ):
                                     item["validation"] = validation
-                                self._create_instance(cls_, **item)
+                                if self.ensemble:
+                                    self._create_ensemble_instances(value, cls_, **item)
+                                else:
+                                    self._create_instance(cls_, **item)
                             except Exception as e:
                                 if not primitive_type:
                                     self.catcher.set_err(str(e))

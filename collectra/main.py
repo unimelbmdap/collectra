@@ -71,7 +71,7 @@ def render(
     try:
         pipeline = resolve_workflow_path(workflow)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        pipeline.render(dest)
+        pipeline.render(dest, str(dest), True)
     except Exception as e:
         traceback.print_exc()
 
@@ -290,23 +290,34 @@ def convert(
 
 @app.command()
 def ensemble(
+    workflow: Annotated[
+        Path, typer.Option("--workflow", "-w", help="path to workflow")
+    ],
     folders: Annotated[
         list[Path], typer.Argument(help="Input folders containing collectra files")
-    ],
+    ] = [],
+    ensemble_folder: Annotated[
+        Path,
+        typer.Option(
+            "--ensemble-folder",
+            "-e",
+            help="Folder containing folders of collectra files to ensemble",
+        ),
+    ] = Path("."),
     output: Annotated[
         Path, typer.Option("--output", "-o", help="Output folder for ensemble results")
-    ],
-    extension: Annotated[
-        str, typer.Option("--extension", "-e", help="File extension to look for")
-    ] = ".grapto",
+    ] = Path("ensemble_results"),
 ):
     from collectra import Ensembler
 
     console = Console()
     try:
-        ensembler = Ensembler(folders, output, extension)
-        ensembler.ensemble()
-        console.print(f"Ensembled results saved to {output}")
+        if not folders and ensemble_folder.exists():
+            for item in ensemble_folder.iterdir():
+                if item.is_dir():
+                    folders.append(item)
+        pipeline = resolve_workflow_path(workflow)
+        pipeline.ensemble(folders, output)
     except Exception as e:
         console.print(traceback.format_exc())
 
