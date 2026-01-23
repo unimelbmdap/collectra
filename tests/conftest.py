@@ -10,6 +10,7 @@ pytest_plugins = [
     "tests.fixtures.models",
     "tests.fixtures.data",
     "tests.fixtures.types",
+    "tests.fixtures.ensemble",
 ]
 
 
