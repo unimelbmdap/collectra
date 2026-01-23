@@ -13,6 +13,9 @@ tmp/
 *.pt
 .python-version
 .vscode
+.github/
+!.github/workflows/
+!.github/ISSUE_TEMPLATE/
 
 # From https://github.com/github/gitignore/blob/main/Python.gitignore
 # Byte-compiled / optimized / DLL files
