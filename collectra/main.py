@@ -308,8 +308,6 @@ def ensemble(
         Path, typer.Option("--output", "-o", help="Output folder for ensemble results")
     ] = Path("ensemble_results"),
 ):
-    from collectra import Ensembler
-
     console = Console()
     try:
         if not folders and ensemble_folder.exists():
@@ -320,6 +318,44 @@ def ensemble(
         pipeline.ensemble(folders, output)
     except Exception as e:
         console.print(traceback.format_exc())
+
+
+@app.command()
+def analyse(
+    folder: Annotated[
+        Path, typer.Argument(help="Input folder containing collectra files")
+    ],
+    extension: Annotated[
+        str, typer.Option("--ext", "-e", help="File extension of collectra files")
+    ],
+):
+    console = Console()
+    try:
+        feature_count = dict()
+        for item in folder.rglob(f"*.{extension}"):
+            data_yaml = item / "results.yaml"
+            if not data_yaml.exists():
+                continue
+            with open(data_yaml, "r") as f:
+                data = yaml.safe_load(f)
+            data.pop("collectra_results_metadata", None)
+            for key, value in data.items():
+                if not isinstance(value, list):
+                    value = [value]
+                feature_count.setdefault(key, 0)
+                feature_count[key] += len(value)
+
+        from rich.table import Table
+
+        table = Table(title="Dataset Feature Counts")
+        table.add_column("Feature", style="cyan", no_wrap=True)
+        table.add_column("Count", style="magenta")
+        for feature, count in feature_count.items():
+            table.add_row(feature, str(count))
+        console.print(table)
+    except Exception as e:
+        traceback.print_exc()
+        console.print(e)
 
 
 if __name__ == "__main__":
