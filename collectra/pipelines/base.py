@@ -207,6 +207,15 @@ class Collectra:
             "output": kwargs.pop("output", None),
         }
 
+    def _get_root_input(self) -> str:
+        """Get the name of the root input data node for the workflow."""
+        for node in self.flow.nodes.values():
+            if isinstance(node["node"], DataNode):
+                data_node = node["node"]
+                if self._check_is_root(data_node.name):
+                    return data_node.name
+        raise ValueError("No root input data node found in the workflow")
+
     def _process_files(self, starting_nodes: list[TaskNode], options: dict):
         """Process each file in the workflow.
 
@@ -230,7 +239,11 @@ class Collectra:
             file_path: Path to file to process.
             options: Execution options.
         """
-        key = "file" if Path(file_path).suffix == f".{self.ext}" else "specimen_sheet"
+        key = (
+            "file"
+            if Path(file_path).suffix == f".{self.ext}"
+            else self._get_root_input()
+        )
         key, value = self._create_collectra_file(key, file_path, options["output"])
 
         # Create task context for this file
