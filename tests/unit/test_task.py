@@ -43,7 +43,7 @@ def test_object_detection_task(task_data, images, train_yolo, classes, debug):
         assert isinstance(
             task, ObjectDetectionYOLO
         ), f"Task {name} should be an instance of ObjectDetectionYOLO"
-        results, _, log_dir = train_yolo(
+        results = train_yolo(
             task,
             *images,
             classes=classes,

@@ -3,7 +3,7 @@ from pathlib import Path
 from collectra import ImageCrop, ObjectDetectionYOLO
 
 
-def test_train_yolo_temp_dir(classes, images, model, train_yolo, debug):
+def test_train_yolo_temp_dir(classes, images, model, train_yolo, debug, tmpdir):
     """Test training YOLO model with temporary directory for logs and weights.
 
     This test verifies that the YOLO training process completes successfully,
@@ -26,7 +26,7 @@ def test_train_yolo_temp_dir(classes, images, model, train_yolo, debug):
         assert isinstance(yolo_task.model, str) or isinstance(
             yolo_task.model, Path
         ), "Model should be a string or path initially"
-        results, _, log_dir = train_yolo(
+        results = train_yolo(
             yolo_task,
             *images,
             classes=classes,

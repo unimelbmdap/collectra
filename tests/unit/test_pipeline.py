@@ -60,14 +60,14 @@ def test_train(pipeline, debug, tmpdir):
         task_name = "object_detector"
         log_dir = Path(tmpdir) / "train_logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        result, validation_result = pipeline.train(
+        result = pipeline.train(
             task_name,
             input=["tests/data/images"],
-            log_dir=log_dir,
+            log=log_dir,
             project=Path.cwd() / f"{pipeline.name}-{task_name}",
+            base_folder=Path(tmpdir),
         )
         assert result, "Train method should not return None"
-        assert validation_result, "Validation result should not be None"
     except Exception as e:
         debug(e)
 
