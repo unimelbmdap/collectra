@@ -16,6 +16,8 @@ tmp/
 .github/
 !.github/workflows/
 !.github/ISSUE_TEMPLATE/
+logs/
+data/
 
 # From https://github.com/github/gitignore/blob/main/Python.gitignore
 # Byte-compiled / optimized / DLL files
@@ -180,7 +182,7 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+# AI and Dev Tools
 .github/prompts/
-logs/
-data/
 .devcontainer/
+.claude/
