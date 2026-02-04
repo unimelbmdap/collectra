@@ -62,7 +62,6 @@ class Collectra:
     """
 
     # Constants
-    IMAGE_EXTENSIONS = (".jpeg", ".jpg", ".png", ".bmp", ".tiff")
     RESULTS_FILE = "results.yaml"
     METADATA_KEY = "collectra_results_metadata"
     PIPELINE_METADATA_KEY = "collectra_pipeline_metadata"
@@ -319,7 +318,7 @@ class Collectra:
 
     def _is_image_file(self, path: Path) -> bool:
         """Check if path is an image file."""
-        return path.is_file() and path.suffix.lower() in self.IMAGE_EXTENSIONS
+        return path.is_file() and path.suffix.lower() in Image.image_types()
 
     def _handle_existing_folder(
         self, savef: Path, output_dir: str | Path | None
@@ -337,7 +336,7 @@ class Collectra:
     def _remove_exif_from_images(self, directory: Path):
         """Remove EXIF data from all images in directory."""
         for img_file in directory.glob("*"):
-            if img_file.suffix.lower() in self.IMAGE_EXTENSIONS:
+            if img_file.suffix.lower() in Image.image_types():
                 remove_exif(img_file, img_file)
 
     def _handle_image_file(

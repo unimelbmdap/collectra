@@ -112,6 +112,10 @@ class Image(Data):
         )
         return serialized
 
+    @staticmethod
+    def image_types() -> list[str]:
+        return [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp"]
+
     @property
     def width(self) -> int | float:
         return self.raw_width
