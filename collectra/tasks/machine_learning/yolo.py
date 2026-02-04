@@ -142,7 +142,6 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 params = self._prepare_params(**kwargs)
                 if kwargs.get("preview", False):
                     self._preview_assets(log, classes)
-                breakpoint()
                 with change_dir(kwargs["base_folder"]):
                     results: DetMetrics | None = self.model.train(**params)
                     if results is None:
