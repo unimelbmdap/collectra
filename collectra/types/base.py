@@ -90,6 +90,9 @@ class DataNode(Node):
         except Exception as e:
             raise RuntimeError(f"Error adding item to DataNode: {str(e)}")
 
+    def get_item(self, item_id: str) -> Data | None:
+        return self.items.get(item_id, None)
+
     def add_type(self, type_: type) -> None:
         self.types.add(type_)
 

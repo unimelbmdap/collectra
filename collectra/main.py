@@ -82,7 +82,7 @@ def train(
         Path, typer.Option("--workflow", "-w", help="path to workflow")
     ],
     task: Annotated[str, typer.Option("--task", "-t", help="task to train")],
-    input_files: Annotated[list[str], typer.Argument(help="Input directory of files")],
+    input: Annotated[list[str], typer.Argument(help="Input directory of files")],
     keep_log: Annotated[
         bool, typer.Option("--keep-log", help="Keep previous log files")
     ] = True,
@@ -108,13 +108,19 @@ def train(
     try:
         from datetime import datetime
 
-        log = Path.cwd() / f"{task}_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        config = {
-            "input": input_files,
-            "log_dir": log,
-            "project": Path.cwd() / f"{workflow.name}-{task}",
-        }
         pipeline = resolve_workflow_path(workflow)
+
+        project = f"{workflow.name}-{task}"
+
+        log = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        config = {
+            "input": input,
+            "project": project,
+            "log": log,
+            "base_folder": Path.cwd(),
+        }
+
         pipeline.train(task, **config)
         pipeline.save()
 

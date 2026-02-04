@@ -41,11 +41,13 @@ from ..tasks.base import (
     TaskNode,
 )
 from ..tasks.machine_learning import MachineLearningTask
+from ..tasks.machine_learning.yolo import ObjectDetectionYOLO
 from ..types.base import (
     Data,
     DataNode,
     NodeStatus,
 )
+from ..types.images import Image, ImageCrop
 from .node_graph_manager import NodeGraphManager
 
 logger = logging.getLogger(__name__)
@@ -106,8 +108,6 @@ class Collectra:
         """Allow instance to be called directly to run workflow."""
         self.run(task_name, **kwargs)
 
-    # ==================== Configuration Methods ====================
-
     def task(self, task_name: str) -> dict:
         """Get a task from the workflow by name.
 
@@ -123,8 +123,6 @@ class Collectra:
         data["name"] = task_name
         return data
 
-    # ==================== Node Status and Validation Methods ====================
-
     def _check_is_root(self, node_name: str) -> bool:
         """Check if a node is a root node (no parents or only data parents)."""
         parents = list(self.flow.predecessors(node_name))
@@ -137,19 +135,31 @@ class Collectra:
                 return False
         return True
 
-    # ==================== Logging Methods ====================
-
     def create_log_table(self):
+        """Create a Rich table for logging workflow execution messages.
+
+        Initializes a table with columns for source, message, traceback,
+        and affected inputs to track workflow execution status.
+        """
         self.log = Table()
         self.log.add_column("Source", justify="left", style="green")
         self.log.add_column("Message", justify="left", style="magenta")
         self.log.add_column("Traceback", justify="left", style="red")
         self.log.add_column("Affected inputs", justify="left", style="blue")
 
-    # ==================== Workflow Execution Methods ====================
-
     def run(self, task_name: str = "", **kwargs):
-        """Runs the workflow from the specified task or from all root tasks."""
+        """Run the workflow from the specified task or from all root tasks.
+
+        Args:
+            task_name: Name of the task to start from. If empty, starts from
+                all root tasks in the workflow.
+            **kwargs: Run options including:
+                - single: Run only the starting task without propagating.
+                - files: List of file paths to process.
+                - usage: Whether to track usage metrics.
+                - render: Whether to render workflow visualization.
+                - output: Output directory for results.
+        """
         self.create_log_table()
         try:
             self._ensure_workflow_connected()
@@ -160,7 +170,11 @@ class Collectra:
             self.log.add_row("workflow_run", str(e), traceback.format_exc())
 
     def _ensure_workflow_connected(self):
-        """Ensure the workflow graph is connected before execution."""
+        """Ensure the workflow graph is connected before execution.
+
+        If the workflow graph has no nodes, calls connect() to build
+        the graph from the workflow configuration.
+        """
         if self.flow.number_of_nodes() == 0:
             self.connect()
 
@@ -273,8 +287,6 @@ class Collectra:
             render=options["render"],
         )
 
-    # ==================== File Operations ====================
-
     def _create_collectra_file(
         self, key: str, value: str | Path, output_dir: str | Path | None = None
     ) -> tuple[str, str | Path]:
@@ -371,13 +383,20 @@ class Collectra:
             }
             self._write_results_file(results)
 
-    # ==================== Data Initialization and Node Reset ====================
-
     def _populate_active_paths(
         self,
         nodes: list[TaskNode | DataNode] | list[TaskNode] | list[DataNode],
         **kwargs,
     ):
+        """Recursively populate active paths in the workflow with input data.
+
+        Traverses the workflow graph from the given nodes, processing data nodes
+        and propagating values to their children.
+
+        Args:
+            nodes: List of nodes to start populating from.
+            **kwargs: Key-value pairs of input data to populate into matching nodes.
+        """
         for node in nodes:
             if isinstance(node, DataNode):
                 value = kwargs.get(node.name, None)
@@ -393,6 +412,15 @@ class Collectra:
         starting_nodes: list[TaskNode | DataNode] | list[TaskNode] | list[DataNode],
         **kwargs,
     ):
+        """Initialize input data for workflow execution.
+
+        Resets all nodes, reconnects the workflow, and populates parent data
+        nodes with the provided input values.
+
+        Args:
+            starting_nodes: List of nodes that will begin workflow execution.
+            **kwargs: Key-value pairs of input data to initialize.
+        """
         self._reset_nodes()
         self.connect()
         for node in starting_nodes:
@@ -416,7 +444,11 @@ class Collectra:
                     task.context = context
 
     def _reset_nodes(self):
-        # Reset all data nodes in the workflow
+        """Reset all nodes in the workflow to their initial state.
+
+        Clears items and ensemble items from data nodes and sets all node
+        statuses to NOT_READY.
+        """
         nodes = [node["node"] for node in self.flow.nodes.values()]
         for node in nodes:
             if isinstance(node, DataNode):
@@ -425,8 +457,6 @@ class Collectra:
                 node.status = NodeStatus.NOT_READY
             if isinstance(node, TaskNode):
                 node.status = NodeStatus.NOT_READY
-
-    # ==================== Save Operations ====================
 
     def save_run(self, key: str, value: str | Path, data_node: DataNode | None = None):
         """Save workflow execution results to file.
@@ -547,8 +577,6 @@ class Collectra:
                 "workflow_run", f"All results saved to [green]{savef}[/green]"
             )
 
-    # ==================== Node Execution Methods ====================
-
     def _run_nodes(
         self,
         nodes: list[TaskNode | DataNode] | list[TaskNode] | list[DataNode],
@@ -661,15 +689,31 @@ class Collectra:
         self.flow.nodes[str(node.name)]["color"] = color
         self.flow.nodes[str(node.name)]["fontcolor"] = self.COLOR_FONT
 
-    # ==================== Task Execution Methods ====================
-
     def _check_task_ready(self, task_node: TaskNode) -> NodeStatus:
+        """Check if a task node is ready to execute.
+
+        A task is ready when all its parent data nodes have READY status.
+
+        Args:
+            task_node: The task node to check.
+
+        Returns:
+            The updated status of the task node.
+        """
         parents = self.node_manager.get_parents_data(task_node)
         if all(parent.status == NodeStatus.READY for parent in parents):
             task_node.status = NodeStatus.READY
         return task_node.status
 
     def _check_tasks_ready(self, task_nodes: list[TaskNode]) -> list[TaskNode]:
+        """Filter task nodes to return only those that are ready to execute.
+
+        Args:
+            task_nodes: List of task nodes to check.
+
+        Returns:
+            List of task nodes that have READY status.
+        """
         ready_tasks: list[TaskNode] = list()
         ready_tasks = [
             task_node
@@ -730,6 +774,21 @@ class Collectra:
         return serialized
 
     def _run_task(self, task_node: TaskNode, **kwargs) -> list:
+        """Execute a task node and return its output results.
+
+        Prepares inputs from parent data nodes, runs the task, and collects
+        all output data items.
+
+        Args:
+            task_node: The task node to execute.
+            **kwargs: Additional execution parameters.
+
+        Returns:
+            List of Data objects produced by the task execution.
+
+        Raises:
+            TypeError: If the node does not contain a valid Task.
+        """
         task = task_node.get_task()
         if not isinstance(task, Task):
             raise TypeError(f"Node {task_node.name} is not a Task")
@@ -753,6 +812,18 @@ class Collectra:
         return results
 
     def _execute_entries(self, entries: list[Data], task: Task) -> list[Data]:
+        """Execute a task with the given input entries.
+
+        Runs the task with the provided data entries, sets parent relationships
+        on output items, and handles any execution errors.
+
+        Args:
+            entries: List of input Data objects for the task.
+            task: The task to execute.
+
+        Returns:
+            List of Data objects produced by the task, with parent relationships set.
+        """
         output: Data | list[Data] | None = task.run(*entries)
         try:
             if output is None:
@@ -771,7 +842,7 @@ class Collectra:
             )
             return list()
 
-    def train(self, task_name: str, **kwargs) -> tuple:
+    def train(self, task_name: str, **kwargs) -> DetMetrics | None:
         """Train a machine learning task.
 
         Args:
@@ -779,18 +850,65 @@ class Collectra:
             **kwargs: Training parameters including 'input' paths.
 
         Returns:
-            Tuple of (processed_inputs, validation_results).
+            processed_inputs
         """
         self._ensure_workflow_connected()
         task = self._get_ml_task(task_name)
         children = self.node_manager.get_children_data(
             self.node_manager.resolve_node(task_name)
         )
-
+        parents = self.node_manager.get_parents_data(
+            self.node_manager.resolve_node(task_name)
+        )
+        kwargs["classes"] = kwargs.get("classes", [child.name for child in children])
         processed_inputs = self._prepare_training_data(kwargs, children)
+        processed_parents = self._prepare_training_data(kwargs, parents)
+        if isinstance(task, ObjectDetectionYOLO):
+            self._validate_relative_image(processed_inputs, processed_parents)
         kwargs = self._merge_task_params(task_name, kwargs)
-
         return self._execute_training(task, processed_inputs, kwargs)
+
+    def _validate_relative_image(
+        self, inputs: list[Image | ImageCrop], parents: list[Data]
+    ) -> list[ImageCrop]:
+        """Validate that image dimensions are relative to their parent data node if image is of type collectra.ImageCrop
+
+        Args:
+            inputs: List of Data objects to validate.
+
+        Returns:
+            List of Data objects with validated image dimensions.
+
+        """
+        for input in inputs:
+            if type(input) == Image:
+                # Skip because it is already an image
+                continue
+            if not type(input) == ImageCrop:
+                # Expected all inputs to be of type ImageCrop
+                raise TypeError(f"Input {input.id} is not of type ImageCrop")
+            parent_id = ""
+            if isinstance(input.parents, str):
+                parent_id = input.parents
+            elif isinstance(input.parents, list) and len(input.parents) == 1:
+                parent_id = input.parents[0]
+            else:
+                continue
+            found_parent = None
+            for parent in parents:
+                if not (parent_id == parent.id and input.data == parent.data):
+                    continue
+                if not isinstance(parent, Image):
+                    raise TypeError(
+                        f"Parent {parent.id} of input {input.id} is not of type Image"
+                    )
+                found_parent = parent
+                break
+            if found_parent is None:
+                raise ValueError(
+                    f"Parent {parent_id} of input {input.id} not found in provided parents"
+                )
+            input.add_source_parent(found_parent)
 
     def _get_ml_task(self, task_name: str) -> MachineLearningTask:
         """Get and validate machine learning task."""
@@ -804,12 +922,12 @@ class Collectra:
 
         return task
 
-    def _prepare_training_data(self, kwargs: dict, children: list[DataNode]) -> list:
+    def _prepare_training_data(
+        self, kwargs: dict, children: list[DataNode] = []
+    ) -> list:
         """Prepare training data from input paths."""
         processed_inputs = []
-        inputs = kwargs.pop("input", [])
-
-        kwargs["classes"] = kwargs.get("classes", [child.name for child in children])
+        inputs = kwargs.get("input", [])
 
         for input_path in inputs:
             item_files = self._get_training_files(Path(input_path))
@@ -833,12 +951,12 @@ class Collectra:
 
     def _execute_training(
         self, task: MachineLearningTask, processed_inputs: list, kwargs: dict
-    ) -> tuple:
+    ) -> DetMetrics | None:
         """Execute the training process and save results."""
         with change_dir(self.path):
-            results, validation_results = task.train(*processed_inputs, **kwargs)
+            results = task.train(*processed_inputs, **kwargs)
             self.save_train(task, results)
-        return results, validation_results
+        return results
 
     def save_train(self, task: MachineLearningTask, results: DetMetrics):
         """Save trained model and update configuration.
@@ -894,7 +1012,12 @@ class Collectra:
 
     @property
     def metadata(self) -> dict:
-        """Get pipeline metadata dictionary."""
+        """Get pipeline metadata dictionary.
+
+        Returns:
+            Dictionary containing pipeline name, extension, and version
+            under the PIPELINE_METADATA_KEY.
+        """
         return {
             self.PIPELINE_METADATA_KEY: {
                 "name": self.name,
@@ -916,9 +1039,15 @@ class Collectra:
                 yaml.dump({key: value}, f, sort_keys=False)
                 f.write("\n")
 
-    # ==================== Utility and Helper Methods ====================
-
     def _get_io_list(self, io: list | str) -> list:
+        """Convert an IO specification to a list format.
+
+        Args:
+            io: Either a single string or a list of IO identifiers.
+
+        Returns:
+            List containing the IO identifier(s).
+        """
         return [io] if isinstance(io, str) else io
 
     def _check_task_io(self, io_type: str, task: Task, task_config: dict) -> list:
@@ -966,8 +1095,6 @@ class Collectra:
             if isinstance(value, str) and value in collectra_data:
                 data[key] = collectra_data[value]
         return data
-
-    # ==================== Workflow Graph Construction ====================
 
     def connect(self):
         """Initialise the DAG representing the workflow. Preparing it for execution."""
@@ -1034,8 +1161,6 @@ class Collectra:
             for output_node in self._get_io_list(outputs):
                 if self.flow.has_node(output_node):
                     self.flow.add_edge(task_name, output_node)
-
-    # ==================== Visualization Methods ====================
 
     def render(self, dest: str | Path = "", file="", render=False) -> None:
         """Render the workflow graph as an SVG visualization.

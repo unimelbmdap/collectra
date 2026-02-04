@@ -113,11 +113,11 @@ class Image(Data):
         return serialized
 
     @property
-    def width(self):
+    def width(self) -> int | float:
         return self.raw_width
 
     @property
-    def height(self):
+    def height(self) -> int | float:
         return self.raw_height
 
     def __post_init__(self):
@@ -293,6 +293,9 @@ class Image(Data):
             "Base Image class does not implement evaluate(). Use ImageCrop instead."
         )
 
+    def set_rel_to_src_parent(self) -> None:
+        pass
+
 
 @dataclass
 class ImageCrop(Image):
@@ -313,6 +316,7 @@ class ImageCrop(Image):
     y_center: float = field(default=0.5)
     width_relative: float = field(default=1.0)
     height_relative: float = field(default=1.0)
+    source_parent: "Image | ImageCrop | None" = field(init=False, default=None)
 
     @property
     def width(self):
@@ -321,6 +325,39 @@ class ImageCrop(Image):
     @property
     def height(self):
         return self.height_relative * self.raw_height
+
+    def add_source_parent(self, parent: "Image | ImageCrop") -> None:
+        self.source_parent = parent
+
+    def set_rel_to_src_parent(self) -> None:
+
+        if not self.source_parent:
+            return
+
+        if type(self.source_parent) == ImageCrop:
+            self.source_parent.set_rel_to_src_parent()
+            dx = self.x_center - self.source_parent.x_center
+            dy = self.y_center - self.source_parent.y_center
+            self.x_center = 0.5 + dx / self.source_parent.width_relative
+            self.y_center = 0.5 + dy / self.source_parent.height_relative
+            self.width_relative /= self.source_parent.width_relative
+            self.height_relative /= self.source_parent.height_relative
+
+        match self.source_parent.orientation.to_degree():
+            case -90:
+                self.x_center, self.y_center = 1 - self.y_center, self.x_center
+                self.width_relative, self.height_relative = (
+                    self.height_relative,
+                    self.width_relative,
+                )
+            case -180:
+                self.x_center, self.y_center = 1 - self.x_center, 1 - self.y_center
+            case -270:
+                self.x_center, self.y_center = self.y_center, 1 - self.x_center
+                self.width_relative, self.height_relative = (
+                    self.height_relative,
+                    self.width_relative,
+                )
 
     def pil(self) -> ImagePil.Image:
         coordinates = self.coordinates()
