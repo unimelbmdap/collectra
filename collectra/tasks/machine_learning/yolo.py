@@ -19,25 +19,31 @@ __all__ = ["ObjectDetectionYOLO"]
 
 class DetectionResult:
     metrics: dict
-    best_result: DetMetrics | None
+    best_result: DetMetrics
 
-    def __init__(self, result: DetMetrics | None) -> None:
+    def __init__(self, result: DetMetrics) -> None:
         self.best_result = result
         self.metrics = result.results_dict if result else {}
 
     @staticmethod
     def get_best_result(
-        results: list["DetectionResult | None"], metric: str = "metrics/mAP50-95(B)"
-    ) -> DetMetrics | None:
+        results: list["DetectionResult"], metric: str = "metrics/mAP50-95(B)"
+    ) -> DetMetrics:
         best_result: DetMetrics | None = None
         best_metric_result = 0.0
         for result in results:
             if result is None:
                 continue
             metric_result = result.metrics.get(metric, 0.0)
+            if best_result is None:
+                best_metric_result = metric_result
+                best_result = result.best_result
+                continue
             if metric_result > best_metric_result:
                 best_metric_result = metric_result
                 best_result = result.best_result
+        if best_result is None:
+            raise ValueError("No valid results found to determine the best result.")
         return best_result
 
 
@@ -142,28 +148,30 @@ class ObjectDetectionYOLO(MachineLearningTask):
         log.mkdir(parents=True, exist_ok=True)
         print(f"Training files will be saved to: {log}")
         classes = kwargs.pop("classes", [])
-        label_matrix, train, val = self._prepare_assets(classes, log, *images)
 
         if not isinstance(self.model, YOLO):
             raise ValueError("Model must be a YOLO instance for training.")
 
         print(f"Training with model: {self.model.model_name}")
 
-        cv_folds: int = kwargs.pop("cv_folds", 1)
-        default_folds: int = 5
+        cv_folds: int = kwargs.pop("cv_folds", 0)
+
+        label_matrix, train, val = self._prepare_assets(
+            classes, log, bool(cv_folds), *images
+        )
 
         from iterstrat.ml_stratifiers import MultilabelStratifiedKFold
 
-        if cv_folds > 1:
+        if cv_folds:
             mskf = MultilabelStratifiedKFold(
                 n_splits=cv_folds, shuffle=True, random_state=kwargs.get("seed", 42)
             )
-            results: list[DetectionResult | None] = []
+            results: list[DetectionResult] = []
             fold_count = 1
             for train_index, val_index in mskf.split(train, label_matrix):
                 new_train = [train[i] for i in train_index]
                 val = [train[i] for i in val_index]
-                result = self._train_per_fold(
+                result: DetMetrics = self._train_per_fold(
                     new_train, val, classes, log, kwargs, fold_count=fold_count
                 )
                 results.append(DetectionResult(result))
@@ -173,7 +181,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
             if len(val) == 0:
                 # If no validation set is provided, split the training set using a default split of 80-20
                 mskf = MultilabelStratifiedKFold(
-                    n_splits=default_folds,
+                    n_splits=5,
                     shuffle=True,
                     random_state=kwargs.get("seed", 42),
                 )
@@ -190,7 +198,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
         log: Path,
         kwargs: dict,
         fold_count: int | None = None,
-    ) -> DetMetrics | None:
+    ) -> DetMetrics:
         if not isinstance(self.model, YOLO):
             raise ValueError("Expected model to be a YOLO instance for training.")
         kwargs["config_file"] = self._prepare_yolo_config(
@@ -323,8 +331,22 @@ class ObjectDetectionYOLO(MachineLearningTask):
             )
 
     def _prepare_assets(
-        self, classes: list[str], log: Path, *images: ImageCrop
+        self, classes: list[str], log: Path, is_cv: bool, *images: ImageCrop
     ) -> tuple[list[list[int]], list[str], list[str]]:
+        """Prepare assets for YOLO training.
+
+        Args:
+            classes (list[str]): List of class names.
+            log (Path): Path to store the assets for training.
+            is_cv (bool): Flag indicating if cross-validation is used.
+            images (ImageCrop): Variable number of ImageCrop instances to be prepared.
+
+        Returns:
+            tuple[list[list[int]], list[str], list[str]]: A tuple containing the label matrix for iterative stratification,
+            training image filenames, and validation image filenames.
+
+        """
+
         train: list[str] = list()
         val: list[str] = list()
         label_matrix: list[list[int]] = list()
@@ -340,17 +362,18 @@ class ObjectDetectionYOLO(MachineLearningTask):
                     else img.pil()
                 )
                 im.save(dst)
-                if img.validation:
+                if img.validation and not is_cv:
                     val.append(dst.name)
                 else:
                     train.append(dst.name)
-                label_matrix.append(len(classes) * [0])
+                    label_matrix.append(len(classes) * [0])
             if isinstance(img, ImageCrop) and isinstance(img.source_parent, ImageCrop):
                 img.set_rel_to_src_parent()
             name_index = classes.index(img.name) if img.name in classes else -1
             text_dst = log / f"{dst.stem}.txt"
-            label_matrix[train.index(dst.name)][name_index] = 1
             write_mode = "a" if text_dst.exists() else "w"
+            if not img.validation:
+                label_matrix[train.index(dst.name)][name_index] = 1
             with open(text_dst, write_mode) as f:
                 self._write_yolo_label(name_index, img, f)
         return label_matrix, train, val
