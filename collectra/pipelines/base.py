@@ -32,7 +32,7 @@ import yaml
 from rich.table import Table
 from ultralytics.utils.metrics import DetMetrics
 
-from collectra.utils import change_dir, load_class_from_string, remove_exif
+from collectra.utils import change_dir, load_class_from_string, remove_exif, write_yaml
 from utils.get_types import get_param_types, get_return_type, unpack_types
 
 from ..commons.base import TaskContext
@@ -52,16 +52,6 @@ from .node_graph_manager import NodeGraphManager
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-
-def str_presenter(dumper, data):
-    """Represent multi-line strings using block style |"""
-    if "\n" in data:  # only use | when the string has newlines
-        return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
-    return dumper.represent_scalar("tag:yaml.org,2002:str", data)
-
-
-yaml.add_representer(str, str_presenter)
 
 
 class Collectra:
@@ -560,10 +550,7 @@ class Collectra:
 
     def _write_results_file(self, results: dict):
         """Write results dictionary to YAML file."""
-        with open(self.RESULTS_FILE, "w") as f:
-            for file_key, data in results.items():
-                yaml.dump({file_key: data}, f, sort_keys=False, allow_unicode=True)
-                f.write("\n")
+        write_yaml(results, self.RESULTS_FILE)
 
     def _log_save_success(self, savef: Path, data_node: DataNode | None):
         """Log successful save operation."""
@@ -972,6 +959,8 @@ class Collectra:
                 f"[red]Best model file not found at {best_model_path}[/red]"
             )
 
+        logger.info(f"Training metrics: {results.results_dict}")
+
         logger.info(f"Best model found at: [green]{best_model_path}[/green]")
 
         # Check if we need to update the model path
@@ -1034,10 +1023,7 @@ class Collectra:
 
     def _write_pipeline_config(self, config: dict):
         """Write pipeline configuration to YAML file."""
-        with open("pipeline.yaml", "w") as f:
-            for key, value in config.items():
-                yaml.dump({key: value}, f, sort_keys=False)
-                f.write("\n")
+        write_yaml(config, "pipeline.yaml")
 
     def _get_io_list(self, io: list | str) -> list:
         """Convert an IO specification to a list format.
