@@ -3,11 +3,11 @@ collectra_pipeline_metadata:
   ext: arb
   version: 0.1.0
 
-bar_img1:
+bar_img:
   type: collectra.Image
   data: bar1.jpg
 
-md_example1:
+md_example:
   type: collectra.Text
   data: page00076-markdown.md
 
@@ -15,13 +15,17 @@ object_detector:
   type: collectra.ObjectDetectionYOLO
   model: yolo11n.pt
   input:
-  - bar_img1
-  epochs: 1
+  - bar_img
   output:
   - human
   - chair
   - table
   - car
+  params:
+    epochs: 1
+    imgsz: 640    
+    cv_folds: 3
+    seed: 37
 
 text-detector:
   type: collectra.ObjectDetectionYOLO
@@ -31,13 +35,18 @@ text-detector:
   - chair
   output:
   - text
+  params:
+    epochs: 1
+    imgsz: 640    
+    cv_folds: 
+    seed: 37
 
 markdown_converter:
   type: collectra.LLM
   model: dummy
   input:
-  - md_example1
-  - bar_img1  
+  - md_example
+  - bar_img
   temperature: 0.8
   output: markdown
   output_filename: apparatus.md
@@ -48,7 +57,7 @@ markdown_converter:
 
     Then you will generate a markdown document that includes the identified objects as images and references to them.
 
-    Example: {md_example1}
+    Example: {md_example}
 
     Here is the image to describe: {bar_img1}     
 

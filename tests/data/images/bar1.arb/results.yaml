@@ -3,11 +3,13 @@ collectra_results_metadata:
   validation: false
 
 image_sheet:
+  id: image_sheet
   type: collectra.Image
   path: bar1.jpg
 
 human:
 - type: collectra.types.images.ImageCrop
+  id: human_0
   data: bar1.jpg
   ext: JPEG
   validation: false
@@ -16,6 +18,7 @@ human:
   width_relative: 0.073699
   height_relative: 0.343065
 - type: collectra.types.images.ImageCrop
+  id: human_1
   data: bar1.jpg
   ext: JPEG
   validation: false
@@ -26,6 +29,7 @@ human:
 
 chair:
 - type: collectra.types.images.ImageCrop
+  id: chair_0
   data: bar1.jpg
   ext: JPEG
   validation: false
@@ -34,6 +38,7 @@ chair:
   width_relative: 0.24065561592578888
   height_relative: 0.3526153266429901
 - type: collectra.types.images.ImageCrop
+  id: chair_1
   data: bar1.jpg
   ext: JPEG
   validation: false
@@ -42,6 +47,7 @@ chair:
   width_relative: 0.3371221423149109
   height_relative: 0.3820488750934601
 - type: collectra.types.images.ImageCrop
+  id: chair_2
   data: bar1.jpg
   ext: JPEG
   validation: false
@@ -50,6 +56,7 @@ chair:
   width_relative: 0.1440940797328949
   height_relative: 0.18848729133605957
 - type: collectra.types.images.ImageCrop
+  id: chair_3
   data: bar1.jpg
   ext: JPEG
   validation: false
@@ -58,6 +65,7 @@ chair:
   width_relative: 0.1595422774553299
   height_relative: 0.23905903100967407
 - type: collectra.types.images.ImageCrop
+  id: chair_4
   data: bar1.jpg
   ext: JPEG
   validation: false
@@ -66,6 +74,7 @@ chair:
   width_relative: 0.1698555052280426
   height_relative: 0.39607638120651245
 - type: collectra.types.images.ImageCrop
+  id: chair_5
   data: bar1.jpg
   ext: JPEG
   validation: false
@@ -73,78 +82,16 @@ chair:
   y_center: 0.4121764600276947
   width_relative: 0.0785011425614357
   height_relative: 0.10216991603374481
-- type: collectra.types.images.ImageCrop
-  data: bar1.jpg
-  ext: JPEG
-  validation: false
-  x_center: 0.3387477993965149
-  y_center: 0.5101499557495117
-  width_relative: 0.07820796966552734
-  height_relative: 0.25306376814842224
-- type: collectra.types.images.ImageCrop
-  data: bar1.jpg
-  ext: JPEG
-  validation: false
-  x_center: 0.44427189230918884
-  y_center: 0.6847270727157593
-  width_relative: 0.24065561592578888
-  height_relative: 0.3526153266429901
-- type: collectra.types.images.ImageCrop
-  data: bar1.jpg
-  ext: JPEG
-  validation: false
-  x_center: 0.8313323855400085
-  y_center: 0.7965918183326721
-  width_relative: 0.3371221423149109
-  height_relative: 0.3820488750934601
-- type: collectra.types.images.ImageCrop
-  data: bar1.jpg
-  ext: JPEG
-  validation: false
-  x_center: 0.8746703863143921
-  y_center: 0.5159797072410583
-  width_relative: 0.1440940797328949
-  height_relative: 0.18848729133605957
-- type: collectra.types.images.ImageCrop
-  data: bar1.jpg
-  ext: JPEG
-  validation: false
-  x_center: 0.22229358553886414
-  y_center: 0.57211834192276
-  width_relative: 0.1595422774553299
-  height_relative: 0.23905903100967407
-- type: collectra.types.images.ImageCrop
-  data: bar1.jpg
-  ext: JPEG
-  validation: false
-  x_center: 0.724765419960022
-  y_center: 0.6062978506088257
-  width_relative: 0.1698555052280426
-  height_relative: 0.39607638120651245
-- type: collectra.types.images.ImageCrop
-  data: bar1.jpg
-  ext: JPEG
-  validation: false
-  x_center: 0.2229783982038498
-  y_center: 0.4121764600276947
-  width_relative: 0.0785011425614357
-  height_relative: 0.10216991603374481
-- type: collectra.types.images.ImageCrop
-  data: bar1.jpg
-  ext: JPEG
-  validation: false
-  x_center: 0.3387477993965149
-  y_center: 0.5101499557495117
-  width_relative: 0.07820796966552734
-  height_relative: 0.25306376814842224
 
-bar_img1:
+bar_img:
+  id: bar_img1
   type: collectra.types.images.Image
   data: bar1.jpg
   ext: JPEG
   validation: false
 
-md_example1:
+md_example:
+  id: md_example1
   type: collectra.types.texts.Text
   data: |-
     {
@@ -152,13 +99,16 @@ md_example1:
         description: "it looks like a sedan",
     }
 
-markdown:
-- type: collectra.types.texts.Text
+markdown1:
+- id: markdown1_entry1
+  type: collectra.types.texts.Text
   data: "System: You are a helpful assistant that spots objects for me\nHuman: "
-- type: collectra.types.texts.Text
+- id: markdown1_entry2
+  type: collectra.types.texts.Text
   data: "System: You are a helpful assistant that spots objects for me\nHuman: \n\
     Human: "
-- type: collectra.types.texts.Text
+- id: markdown1_entry3
+  type: collectra.types.texts.Text
   data: "System: You are a helpful assistant that spots objects for me\nHuman: \n\
     Human: \nHuman: "
 

@@ -3,17 +3,20 @@ collectra_results_metadata:
   validation: true
 
 image_sheet:
+  id: image_sheet
   type: collectra.Image
   path: restaurant1.jpg
 
 human:
   - type: collectra.ImageCrop
+    id: human1
     path: restaurant1.jpg
     x_center: 0.193703
     y_center: 0.634770
     width_relative: 0.050502
     height_relative: 0.115831
   - type: collectra.ImageCrop
+    id: human2
     path: restaurant1.jpg
     x_center: 0.907291
     y_center: 0.664313
@@ -22,6 +25,7 @@ human:
 
 chair:
   - type: collectra.ImageCrop
+    id: chair1
     path: restaurant1.jpg
     x_center: 0.662632
     y_center: 0.671351
@@ -29,6 +33,7 @@ chair:
     height_relative: 0.120690
   - type: collectra.ImageCrop
     path: restaurant1.jpg
+    id: chair2
     x_center: 0.925907
     y_center: 0.818573
     width_relative: 0.148038

@@ -3,17 +3,20 @@ collectra_results_metadata:
   validation: false
 
 image_sheet:
+  id: image_sheet
   type: collectra.Image
   path: car1.jpg
 
 car:
   - type: collectra.ImageCrop
+    id: car1
     path: car1.jpg
     x_center: 0.420908
     y_center: 0.716293
     width_relative: 0.138966
     height_relative: 0.094565
   - type: collectra.ImageCrop
+    id: car2
     path: car1.jpg
     x_center: 0.664863
     y_center: 0.715704

@@ -3,10 +3,12 @@ collectra_results_metadata:
   validation: true
 
 image_sheet:
+  id: image_sheet
   type: collectra.Image
   path: school1.jpg
 
 table:
+  id: table1
   type: collectra.ImageCrop
   path: school1.jpg
   x_center: 0.501357
@@ -15,6 +17,7 @@ table:
   height_relative: 0.128675
 
 chair:
+  id: chair1
   type: collectra.ImageCrop
   path: school1.jpg
   x_center: 0.887047
