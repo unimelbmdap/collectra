@@ -2,7 +2,6 @@ import shutil
 import tempfile
 from pathlib import Path
 
-import yaml
 from rich.console import Console
 from rich.table import Table
 from ultralytics.engine.results import Results
@@ -18,6 +17,30 @@ from .base import MachineLearningTask
 __all__ = ["ObjectDetectionYOLO"]
 
 
+class DetectionResult:
+    metrics: dict
+    best_result: DetMetrics | None
+
+    def __init__(self, result: DetMetrics | None) -> None:
+        self.best_result = result
+        self.metrics = result.results_dict if result else {}
+
+    @staticmethod
+    def get_best_result(
+        results: list["DetectionResult | None"], metric: str = "metrics/mAP50-95(B)"
+    ) -> DetMetrics | None:
+        best_result: DetMetrics | None = None
+        best_metric_result = 0.0
+        for result in results:
+            if result is None:
+                continue
+            metric_result = result.metrics.get(metric, 0.0)
+            if metric_result > best_metric_result:
+                best_metric_result = metric_result
+                best_result = result.best_result
+        return best_result
+
+
 class ObjectDetectionYOLO(MachineLearningTask):
 
     model: str | Path | YOLO
@@ -25,19 +48,28 @@ class ObjectDetectionYOLO(MachineLearningTask):
 
     def _init_model(self) -> None:
         """Ensure that the YOLO model is loaded before performing any operations."""
-        if self.model and isinstance(self.model, (str, Path)):
-            self._load(Path(self.model))
+        self._load()
         if not isinstance(self.model, YOLO):
             raise ValueError("Model must be a YOLO instance")
 
-    def _load(self, model: str | Path) -> None:
+    def _reload(self) -> None:
+        """Reload the YOLO model from the original model path."""
+        if not self.original_model_path:
+            raise Warning("Original model path is not set. Skipping...")
+        self.model = self.original_model_path
+        self._load()
+
+    def _load(self) -> None:
         """Load the YOLO model for object detection.
 
         Args:
             model (str | Path): The path to the model file or the model itself.
         """
-        self.original_model_path = model
-        self.model = YOLO(model)
+        if self.model and isinstance(self.model, (str, Path)):
+            self.original_model_path = self.model
+            self.model = YOLO(Path(self.model))
+            return
+        raise Warning("Model is already loaded or invalid model path provided.")
 
     @ThreadingLocked()
     def run(self, *args: Image) -> list[Image]:
@@ -110,59 +142,75 @@ class ObjectDetectionYOLO(MachineLearningTask):
         log.mkdir(parents=True, exist_ok=True)
         print(f"Training files will be saved to: {log}")
         classes = kwargs.pop("classes", [])
-        label_matrix, image_paths = self._prepare_assets(classes, log, *images)
+        label_matrix, train, val = self._prepare_assets(classes, log, *images)
 
         if not isinstance(self.model, YOLO):
             raise ValueError("Model must be a YOLO instance for training.")
 
         print(f"Training with model: {self.model.model_name}")
 
-        cv_folds: int | None = kwargs.pop("cv_folds", None)
+        cv_folds: int = kwargs.pop("cv_folds", 1)
+        default_folds: int = 5
 
-        if cv_folds:
+        from iterstrat.ml_stratifiers import MultilabelStratifiedKFold
 
-            from iterstrat.ml_stratifiers import MultilabelStratifiedKFold
-
+        if cv_folds > 1:
             mskf = MultilabelStratifiedKFold(
                 n_splits=cv_folds, shuffle=True, random_state=kwargs.get("seed", 42)
             )
+            results: list[DetectionResult | None] = []
             fold_count = 1
-            results = None
-            for train_index, val_index in mskf.split(image_paths, label_matrix):
-                train = [image_paths[i] for i in train_index]
-                val = [image_paths[i] for i in val_index]
-                kwargs["config_file"] = self._prepare_yolo_config(
-                    classes,
-                    log,
-                    train,
-                    val,
-                    *images,
+            for train_index, val_index in mskf.split(train, label_matrix):
+                new_train = [train[i] for i in train_index]
+                val = [train[i] for i in val_index]
+                result = self._train_per_fold(
+                    new_train, val, classes, log, kwargs, fold_count=fold_count
                 )
-                kwargs["log"] = f"{log.name}_fold_{fold_count}"
-                params = self._prepare_params(**kwargs)
-                if kwargs.get("preview", False):
-                    self._preview_assets(log, classes)
-                with change_dir(kwargs["base_folder"]):
-                    results: DetMetrics | None = self.model.train(**params)
-                    if results is None:
-                        raise Exception(
-                            "[red]Training failed, no results returned.[/red]"
-                        )
+                results.append(DetectionResult(result))
                 fold_count += 1
-                # Reload the original model for the next fold
-                self.model = YOLO(self.original_model_path)
-            return results
+            return DetectionResult.get_best_result(results)
         else:
-            kwargs["config_file"] = self._prepare_yolo_config(
-                classes, log, [], [], *images
-            )
-            params = self._prepare_params(**kwargs)
-            with change_dir(kwargs["base_folder"]):
-                results: DetMetrics | None = self.model.train(**params)
+            if len(val) == 0:
+                # If no validation set is provided, split the training set using a default split of 80-20
+                mskf = MultilabelStratifiedKFold(
+                    n_splits=default_folds,
+                    shuffle=True,
+                    random_state=kwargs.get("seed", 42),
+                )
+                train_index, val_index = next(mskf.split(train, label_matrix))
+                train = [train[i] for i in train_index]
+                val = [train[i] for i in val_index]
+            return self._train_per_fold(train, val, classes, log, kwargs)
+
+    def _train_per_fold(
+        self,
+        train: list[str],
+        val: list[str],
+        classes: list[str],
+        log: Path,
+        kwargs: dict,
+        fold_count: int | None = None,
+    ) -> DetMetrics | None:
+        if not isinstance(self.model, YOLO):
+            raise ValueError("Expected model to be a YOLO instance for training.")
+        kwargs["config_file"] = self._prepare_yolo_config(
+            log,
+            classes,
+            train,
+            val,
+        )
+        kwargs["log"] = f"{log.name}"
+        if fold_count:
+            kwargs["log"] += f"_fold_{fold_count}"
+        params = self._prepare_params(**kwargs)
+        if kwargs.get("preview", False):
+            self._preview_assets(log, classes)
+        with change_dir(kwargs["base_folder"]):
+            results: DetMetrics | None = self.model.train(**params)
             if results is None:
                 raise Exception("[red]Training failed, no results returned.[/red]")
-            validation_results = YOLO(results.save_dir / "weights" / "best.pt").val()
-            return results
+            self._reload()
+        return results
 
     def _preview_assets(self, log: Path, classes: list[str]) -> None:
         from drawyolo.draw import draw_box_on_image_with_labels
@@ -170,9 +218,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
         preview_dir = log / "preview"
         preview_dir.mkdir(exist_ok=True)
 
-        image_types = [".jpg", ".png", ".jpeg", ".tiff", ".bmp", ".gif", ".webp"]
-
-        for image_type in image_types:
+        for image_type in Image.image_types():
             for image_file in log.glob(f"*{image_type}"):
                 dest = preview_dir / image_file.name
                 shutil.copy(image_file, dest)
@@ -186,74 +232,66 @@ class ObjectDetectionYOLO(MachineLearningTask):
 
     def _prepare_yolo_config(
         self,
-        classes: list[str],
         log: Path,
-        train: list[Path] = [],
-        val: list[Path] = [],
-        *images: ImageCrop,
+        classes: list[str],
+        train: list[str],
+        val: list[str],
     ) -> Path:
 
-        train_files = (
-            [f"./{Path(p).name}" for p in train]
-            if train
-            else list(
-                set(
-                    [
-                        f"./{Path(img.get_path()).name}"
-                        for img in images
-                        if not img.validation
-                    ]
-                )
-            )
+        metadata = {
+            "classes": classes,
+            "train": train,
+            "val": val,
+        }
+
+        Path(log / "train.txt").write_text(
+            "\n".join([f"./{Path(p).name}" for p in train])
+        )
+        Path(log / "val.txt").write_text("\n".join([f"./{Path(p).name}" for p in val]))
+
+        print(
+            f"Saved {len(metadata['train'])} training images and {len(metadata['val'])} validation images to {log}"
         )
 
-        val_files = (
-            [f"./{Path(p).name}" for p in val]
-            if val
-            else list(
-                set(
-                    [
-                        f"./{Path(img.get_path()).name}"
-                        for img in images
-                        if img.validation
-                    ]
-                )
-            )
-        )
+        self._check_distribution(log, metadata)
 
-        Path(log / "train.txt").write_text("\n".join(train_files))
-        Path(log / "val.txt").write_text("\n".join(val_files))
+        train_txt = "train.txt"
+        val_txt = "val.txt"
+        num_classes = len(metadata["classes"])
+        names = metadata["classes"]
 
         config = (
-            f"train: train.txt\nval: val.txt\nnc: {len(classes)}\nnames: {classes}\n"
+            f"train: {train_txt}\nval: {val_txt}\nnc: {num_classes}\nnames: {names}\n"
         )
         config_file = log / "config.yml"
         Path(config_file).write_text(config)
-
-        print(
-            f"Saved {len(train_files)} training images and {len(val_files)} validation images to {log}"
-        )
-
-        self._check_distribution(classes, train_files, val_files, *images)
 
         return config_file
 
     def _check_distribution(
         self,
-        classes: list[str],
-        train_files: list[str],
-        val_files: list[str],
-        *images: ImageCrop,
+        log: Path,
+        metadata: dict,
     ) -> None:
-        train_files = [Path(f).name for f in train_files]
-        val_files = [Path(f).name for f in val_files]
-        train_classes = {name: 0 for name in classes}
-        val_classes = {name: 0 for name in classes}
-        for im in images:
-            if im.get_path().name in val_files and im.name in classes:
-                val_classes[im.name] += 1
-            elif im.get_path().name in train_files and im.name in classes:
-                train_classes[im.name] += 1
+
+        train_classes = {name: 0 for name in metadata["classes"]}
+        val_classes = {name: 0 for name in metadata["classes"]}
+
+        for image_type in Image.image_types():
+            for image_file in log.glob(f"*{image_type}"):
+                label_file = image_file.with_suffix(".txt")
+                with open(label_file, "r") as f:
+                    label_lines = [
+                        line.strip() for line in f.readlines() if line.strip()
+                    ]
+
+                for line in label_lines:
+                    class_index = int(line.split()[0])
+                    class_name = metadata["classes"][class_index]
+                    if image_file.name in metadata["train"]:
+                        train_classes[class_name] += 1
+                    elif image_file.name in metadata["val"]:
+                        val_classes[class_name] += 1
 
         table = Table(title="Class Distribution", show_lines=True)
         table.add_column(
@@ -266,7 +304,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
             "Validation Count", justify="right", style="blue", header_style="bold blue"
         )
 
-        for class_name in classes:
+        for class_name in metadata["classes"]:
             table.add_row(
                 class_name,
                 str(train_classes[class_name]),
@@ -286,9 +324,10 @@ class ObjectDetectionYOLO(MachineLearningTask):
 
     def _prepare_assets(
         self, classes: list[str], log: Path, *images: ImageCrop
-    ) -> tuple[list[list[int]], list[str]]:
-        image_paths = list(set([img.get_path().name for img in images]))
-        label_matrix = [len(classes) * [0] for _ in range(len(image_paths))]
+    ) -> tuple[list[list[int]], list[str], list[str]]:
+        train: list[str] = list()
+        val: list[str] = list()
+        label_matrix: list[list[int]] = list()
         for img in images:
             src = img.get_path()
             dst = log / src.name
@@ -301,15 +340,20 @@ class ObjectDetectionYOLO(MachineLearningTask):
                     else img.pil()
                 )
                 im.save(dst)
+                if img.validation:
+                    val.append(dst.name)
+                else:
+                    train.append(dst.name)
+                label_matrix.append(len(classes) * [0])
             if isinstance(img, ImageCrop) and isinstance(img.source_parent, ImageCrop):
                 img.set_rel_to_src_parent()
             name_index = classes.index(img.name) if img.name in classes else -1
             text_dst = log / f"{dst.stem}.txt"
-            label_matrix[image_paths.index(img.get_path().name)][name_index] = 1
+            label_matrix[train.index(dst.name)][name_index] = 1
             write_mode = "a" if text_dst.exists() else "w"
             with open(text_dst, write_mode) as f:
                 self._write_yolo_label(name_index, img, f)
-        return label_matrix, image_paths
+        return label_matrix, train, val
 
     def _prepare_params(self, **kwargs) -> dict:
         import platform
