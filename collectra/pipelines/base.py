@@ -916,7 +916,9 @@ class Collectra:
         inputs = kwargs.get("input", [])
 
         for input_path in inputs:
-            item_files = self._get_training_files(Path(input_path))
+            item_files = self._get_training_files(
+                Path(input_path) if isinstance(input_path, str) else input_path
+            )
             for item_file in item_files:
                 processed_inputs.extend(DataNode.batch_process(item_file, children))
 
