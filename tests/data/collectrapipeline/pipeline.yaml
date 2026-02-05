@@ -38,7 +38,7 @@ text-detector:
   params:
     epochs: 1
     imgsz: 640    
-    cv_folds: 
+    cv_folds: 3
     seed: 37
 
 markdown_converter:
