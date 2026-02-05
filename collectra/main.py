@@ -122,7 +122,7 @@ def train(
         }
 
         pipeline.train(task, **config)
-        pipeline.save()
+        pipeline.save(task)
 
         if not keep_log:
             shutil.rmtree(log, ignore_errors=True)

@@ -64,6 +64,7 @@ class Collectra:
     # Constants
     RESULTS_FILE = "results.yaml"
     METADATA_KEY = "collectra_results_metadata"
+    PIPELINE_FILE = "pipeline.yaml"
     PIPELINE_METADATA_KEY = "collectra_pipeline_metadata"
 
     # Graph visualization colors
@@ -943,10 +944,10 @@ class Collectra:
         """Execute the training process and save results."""
         with change_dir(self.path):
             results = task.train(*processed_inputs, **kwargs)
-            self.save_train(task, results)
+            self.save_train(task, results, **kwargs)
         return results
 
-    def save_train(self, task: MachineLearningTask, results: DetMetrics):
+    def save_train(self, task: MachineLearningTask, results: DetMetrics, **kwargs):
         """Save trained model and update configuration.
 
         Args:
@@ -969,15 +970,19 @@ class Collectra:
         current_model = task_data.get("model", "")
 
         if best_model_path.name != current_model:
-            new_model_path = self._generate_model_filename(task.name)
+            new_model_path = self._generate_model_filename(task.name, **kwargs)
             logger.info(f"Updating model for task {task.name} to {new_model_path}")
             shutil.copy(best_model_path, new_model_path)
             self.data[task.name]["model"] = new_model_path
 
-    def _generate_model_filename(self, task_name: str) -> str:
+    def _generate_model_filename(self, task_name: str, **kwargs) -> str:
         """Generate a timestamped model filename."""
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        return f"{timestamp}_{task_name}.pt"
+        stamp = (
+            kwargs["log"]
+            if "log" in kwargs
+            else datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        )
+        return f"{task_name}-{stamp}.pt"
 
     def ensemble(self, folder: list[Path], output: str | Path):
         """Create ensembled files from source folders.
@@ -1016,15 +1021,29 @@ class Collectra:
             }
         }
 
-    def save(self):
+    def save(self, task_name: str | None = None):
         """Save the workflow configuration to pipeline.yaml."""
         with change_dir(self.path):
-            config = self.metadata | self.data
+            # Pull updated data from file if it exists to ensure we don't overwrite changes
+            data_diff: dict | None = None
+            if Path(self.PIPELINE_FILE).exists():
+                with open(self.PIPELINE_FILE, "r") as f:
+                    file_data = yaml.safe_load(f) or dict()
+                    file_data.pop(self.PIPELINE_METADATA_KEY, None)
+                # compare diffs between current data and file data, prioritizing file data for any keys that exist in both
+                data_diff = dict()
+                for key, data in file_data.items():
+                    if key != task_name and file_data[key] != self.data.get(key, None):
+                        data_diff[key] = data
+            data_to_save = (
+                self.data | data_diff if data_diff and len(data_diff) > 0 else self.data
+            )
+            config = self.metadata | data_to_save
             self._write_pipeline_config(config)
 
     def _write_pipeline_config(self, config: dict):
         """Write pipeline configuration to YAML file."""
-        write_yaml(config, "pipeline.yaml")
+        write_yaml(config, self.PIPELINE_FILE)
 
     def _get_io_list(self, io: list | str) -> list:
         """Convert an IO specification to a list format.
