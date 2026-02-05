@@ -59,7 +59,6 @@ class ObjectDetectionYOLO(MachineLearningTask):
             raise ValueError("Model must be a YOLO instance")
 
     def _reload(self) -> None:
-        breakpoint()
         """Reload the YOLO model from the original model path."""
         if not self.original_model_path:
             raise Warning("Original model path is not set. Skipping...")
@@ -163,7 +162,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
 
         from iterstrat.ml_stratifiers import MultilabelStratifiedKFold
 
-        if cv_folds:
+        if cv_folds > 1:
             mskf = MultilabelStratifiedKFold(
                 n_splits=cv_folds, shuffle=True, random_state=kwargs.get("seed", 42)
             )
@@ -187,7 +186,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
                     random_state=kwargs.get("seed", 42),
                 )
                 train_index, val_index = next(mskf.split(train, label_matrix))
-                train = [train[i] for i in train_index]
+                new_train = [train[i] for i in train_index]
                 val = [train[i] for i in val_index]
             return self._train_per_fold(train, val, classes, log, kwargs)
 
