@@ -59,6 +59,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
             raise ValueError("Model must be a YOLO instance")
 
     def _reload(self) -> None:
+        breakpoint()
         """Reload the YOLO model from the original model path."""
         if not self.original_model_path:
             raise Warning("Original model path is not set. Skipping...")
@@ -215,9 +216,9 @@ class ObjectDetectionYOLO(MachineLearningTask):
             self._preview_assets(log, classes)
         with change_dir(kwargs["base_folder"]):
             results: DetMetrics | None = self.model.train(**params)
-            if results is None:
-                raise Exception("[red]Training failed, no results returned.[/red]")
-            self._reload()
+        if results is None:
+            raise Exception("[red]Training failed, no results returned.[/red]")
+        self._reload()
         return results
 
     def _preview_assets(self, log: Path, classes: list[str]) -> None:
