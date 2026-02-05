@@ -186,8 +186,8 @@ class ObjectDetectionYOLO(MachineLearningTask):
                     random_state=kwargs.get("seed", 42),
                 )
                 train_index, val_index = next(mskf.split(train, label_matrix))
-                new_train = [train[i] for i in train_index]
                 val = [train[i] for i in val_index]
+                train = [train[i] for i in train_index]
             return self._train_per_fold(train, val, classes, log, kwargs)
 
     def _train_per_fold(
