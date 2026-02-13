@@ -27,13 +27,15 @@ class Data(BaseEntity):
     name: str
     id: str = field(default="")
     parents: list[str] = field(default_factory=list)
-    validation: bool = field(default=False)
+    partition: str = field(default="")
 
     def set_parents(self, parents: list["Data"]) -> None:
         self.parents = [parent.id for parent in parents]
 
     def serialize(self) -> dict:
         serialized = super().serialize()
+        if not self.partition:
+            serialized.pop("partition", None)
         if "parents" in serialized:
             if len(serialized["parents"]) == 0:
                 serialized.pop("parents")
@@ -56,7 +58,7 @@ class Data(BaseEntity):
     def attributes_to_ignore(self) -> set:
         attributes = super().attributes_to_ignore()
         attributes.add("name")
-        attributes.add("validation")
+        attributes.add("partition")
         return attributes
 
     @classmethod
@@ -379,9 +381,9 @@ class DataNode(Node):
                     result_file = Path("results.yaml")
                     with open(result_file, "r") as f:
                         results: dict = yaml.safe_load(f)
-                        validation = results.pop(
+                        partition = results.pop(
                             "collectra_results_metadata", dict()
-                        ).get("validation", None)
+                        ).get("partition", None)
                         data = results.get(key, None)
                         if not data:
                             raise ValueError(
@@ -414,10 +416,10 @@ class DataNode(Node):
                                 ):
                                     item["parents"] = [item["parents"]]
                                 if (
-                                    validation is not None
-                                    and "validation" in cls_.all_attributes()
+                                    partition is not None
+                                    and "partition" in cls_.all_attributes()
                                 ):
-                                    item["validation"] = validation
+                                    item["partition"] = partition
                                 if self.ensemble:
                                     self._create_ensemble_instances(value, cls_, **item)
                                 else:
@@ -444,9 +446,9 @@ class DataNode(Node):
                     return data
                 with open(result_file, "r") as f:
                     file_data: dict = yaml.safe_load(f)
-                    validation = file_data.get(
-                        "collectra_results_metadata", dict()
-                    ).get("validation", None)
+                    partition = file_data.get("collectra_results_metadata", dict()).get(
+                        "partition", None
+                    )
                 names = [data_node.name for data_node in data_nodes]
                 all_names_not_found = all(name not in file_data for name in names)
                 if all_names_not_found:
@@ -473,8 +475,8 @@ class DataNode(Node):
                                         if "path" in item
                                         else item["data"]
                                     )
-                                    if validation is not None:
-                                        item["validation"] = validation
+                                    if partition is not None:
+                                        item["partition"] = partition
                                     instance = cls_(**item)
                                     if not instance:
                                         raise Warning(
@@ -517,8 +519,8 @@ class DataNode(Node):
                         item["data"] = (
                             item.pop("path") if "path" in item else item["data"]
                         )
-                        if validation is not None:
-                            item["validation"] = validation
+                        if partition is not None:
+                            item["partition"] = partition
                         try:
                             instance = cls_(**item)
                             if instance:

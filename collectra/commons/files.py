@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -84,7 +85,13 @@ class CollectraFile(pydantic.BaseModel):
             collectra_file_path.mkdir(parents=True, exist_ok=True)
         partition = kwargs.get("partition", None)
         metadata = CollectraResultsMetadata(partition=partition)
-        new_data = {f"{label}": {"type": "collectra.Image", "data": str(file.name)}}
+        new_data = {
+            f"{label}": {
+                "id": f"{label}",
+                "type": "collectra.Image",
+                "data": str(file.name),
+            }
+        }
         return cls(
             collectra_file_path=collectra_file_path,
             collectra_results_metadata=metadata,

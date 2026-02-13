@@ -88,6 +88,13 @@ def train(
     keep_log: Annotated[
         bool, typer.Option("--keep-log", help="Keep previous log files")
     ] = True,
+    validation: Annotated[
+        str, typer.Option("--validation", help="name of validation set to use")
+    ] = "",
+    exclude: Annotated[
+        str,
+        typer.Option("--exclude", help="name of data set to exclude from training"),
+    ] = "",
 ):
     """Train a specific machine learning task in the Collectra workflow.
 
@@ -121,6 +128,8 @@ def train(
             "project": project,
             "log": log,
             "base_folder": Path.cwd(),
+            "validation": validation,
+            "exclude": exclude,
         }
 
         pipeline.train(task, **config)

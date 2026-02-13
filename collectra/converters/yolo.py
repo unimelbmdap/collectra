@@ -129,6 +129,8 @@ class YOLOConverter(Converter):
         with open(txt_file, "r") as f:
             crops = [line.strip().split(" ") for line in f if line.strip()]
 
+        import uuid
+
         for crop in crops:
             class_id, x_center, y_center, width_relative, height_relative = crop
             class_id = int(class_id)
@@ -137,6 +139,7 @@ class YOLOConverter(Converter):
                 collectra_file.data[class_name] = []
             collectra_file.data[class_name].append(
                 {
+                    "id": f"{class_name}-{uuid.uuid4().hex[:8]}",
                     "data": file.name,
                     "type": "collectra.ImageCrop",
                     "x_center": float(x_center),
