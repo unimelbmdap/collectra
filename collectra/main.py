@@ -1,20 +1,3 @@
-"""Main command-line interface for the Collectra workflow management system.
-
-This module provides the CLI commands for creating, rendering, training, and running
-Collectra workflows. It serves as the entry point for the application and handles
-user interactions through the Typer framework.
-
-The module supports the following operations:
-    - Creating new workflow configurations
-    - Rendering workflow diagrams
-    - Training machine learning tasks within workflows
-    - Executing complete workflows or specific tasks
-
-Example:
-    $ collectra make --workflow my_workflow --version 1.0
-    $ collectra run --workflow pipeline.yaml --task detection
-"""
-
 import logging
 import os
 import shutil

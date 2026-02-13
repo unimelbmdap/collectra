@@ -237,18 +237,18 @@ def partition_files(
 
     random.seed(seed)
     random.shuffle(files)
+    num_files = len(files)
 
     for label, value in partitions.items():
         match value_type:
             case "percentage":
-                num_files = int(value * len(files))
+                num_files = int(value * num_files)
             case "integer":
                 num_files = int(value)
             case "float":
-                num_files = int(value * len(files))
+                num_files = int(value * num_files)
             case _:
                 raise ValueError(f"Unknown value type: {value_type}")
-
         partition_files = files[:num_files]
         files = files[num_files:]
         print(f"Partition '{label}': {len(partition_files)} files")

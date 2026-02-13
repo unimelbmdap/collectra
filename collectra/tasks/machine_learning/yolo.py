@@ -176,7 +176,6 @@ class ObjectDetectionYOLO(MachineLearningTask):
             train,
             val,
         )
-        breakpoint()
         kwargs["log"] = f"{log.name}"
         if fold_count:
             kwargs["log"] += f"_fold_{fold_count}"
@@ -365,5 +364,6 @@ class ObjectDetectionYOLO(MachineLearningTask):
             "epochs": kwargs.get("epochs", 1),
             "imgsz": kwargs.get("imgsz", 640),
             "patience": kwargs.get("early_stop", 50),
+            "batch": kwargs.get("batch", 16),
         }
         return params
