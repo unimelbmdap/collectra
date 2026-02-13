@@ -137,6 +137,8 @@ class YOLOConverter(Converter):
             class_name = self._get_config().names[class_id]
             if class_name not in collectra_file.data:
                 collectra_file.data[class_name] = []
+            if not isinstance(collectra_file.data[class_name], list):
+                collectra_file.data[class_name] = [collectra_file.data[class_name]]
             collectra_file.data[class_name].append(
                 {
                     "id": f"{class_name}-{uuid.uuid4().hex[:8]}",
