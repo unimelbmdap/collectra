@@ -189,7 +189,7 @@ def run(
     """
     console = Console()
     try:
-        data: dict[str, str | bool | list[str] | Path | list[Path]] = dict()
+        data: dict = dict()
         data["single"] = single
         data["usage"] = usage
         data["render"] = render
@@ -283,14 +283,39 @@ def convert(
             help="folder containing config file or the config file itself for conversion"
         ),
     ],
+    root_label: Annotated[
+        str, typer.Option("--root-label", "-r", help="Root label for converted data")
+    ],
+    ext: Annotated[
+        str,
+        typer.Option(
+            "--ext", "-e", help="File extension for converted collectra files"
+        ),
+    ],
     converter: Annotated[
         str, typer.Option("--converter", "-c", help="Name of the converter to use")
     ],
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Output folder for converted files")
+    ] = Path("converted_results"),
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Whether to overwrite existing converted files in the output directory",
+        ),
+    ] = False,
 ):
     """Convert files based on the provided configuration.
 
     Args:
-        config (Path): Path to the configuration file for conversion.
+        input (Path): Path to the configuration file or folder for conversion.
+        root_label (str): Root label for converted data.
+        ext (str): File extension for converted collectra files.
+        converter (str): Name of the converter to use.
+        output (Path): Output folder for converted files.
+        force (bool): Whether to overwrite existing converted files in the output directory.
 
     Raises:
         Exception: If the conversion process fails due to invalid configuration
@@ -300,7 +325,7 @@ def convert(
     try:
         from .converters import convert_files
 
-        convert_files(input, converter)
+        convert_files(input, root_label, ext, converter, output, force=force)
 
     except Exception as e:
         console.print(traceback.format_exc())

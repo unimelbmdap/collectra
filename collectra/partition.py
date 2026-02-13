@@ -183,7 +183,7 @@ def assign_partition_label(file: Path, label: str):
     """
     collectra_file = CollectraFile.from_data(file)
     collectra_file.collectra_results_metadata.partition = label
-    collectra_file.save(file)
+    collectra_file.save()
 
 
 def assign_partition_label_to_files(files: list[Path], label: str):
