@@ -370,16 +370,16 @@ def analyse(
         Path, typer.Argument(help="Input folder containing collectra files")
     ],
     workflow: Annotated[
-        Path, typer.Option("--workflow", "-w", help="path to workflow")
-    ] = Path("."),
+        Path | None, typer.Option("--workflow", "-w", help="path to workflow")
+    ] = None,
     ext: Annotated[
         str, typer.Option("--ext", "-e", help="File extension of collectra files")
     ] = "",
 ):
     console = Console()
     try:
-        if workflow.exists():
-            pipeline = resolve_workflow_path(workflow)
+        if workflow:
+            pipeline = resolve_workflow_path(Path(workflow))
             ext = pipeline.ext
         if not ext:
             console.print(
