@@ -11,6 +11,7 @@ pytest_plugins = [
     "tests.fixtures.data",
     "tests.fixtures.types",
     "tests.fixtures.ensemble",
+    "tests.fixtures.converters",
 ]
 
 
