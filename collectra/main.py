@@ -27,6 +27,8 @@ import yaml
 from rich.console import Console
 from typing_extensions import Annotated
 
+from .partition import get_files, get_partitions, process_partitions
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(stream=sys.stdout)
 
@@ -275,7 +277,15 @@ def view(
 
 @app.command()
 def convert(
-    config: Annotated[str, typer.Argument(help="path to conversion config file")],
+    input: Annotated[
+        Path,
+        typer.Argument(
+            help="folder containing config file or the config file itself for conversion"
+        ),
+    ],
+    converter: Annotated[
+        str, typer.Option("--converter", "-c", help="Name of the converter to use")
+    ],
 ):
     """Convert files based on the provided configuration.
 
@@ -286,12 +296,15 @@ def convert(
         Exception: If the conversion process fails due to invalid configuration
             or runtime errors during execution.
     """
+    console = Console()
     try:
-        from collectra.utils import convert_files
+        from .converters import convert_files
 
-        convert_files(config)
+        convert_files(input, converter)
+
     except Exception as e:
-        traceback.print_exc()
+        console.print(traceback.format_exc())
+        console.print(e)
 
 
 @app.command()
@@ -331,14 +344,25 @@ def analyse(
     folder: Annotated[
         Path, typer.Argument(help="Input folder containing collectra files")
     ],
-    extension: Annotated[
+    workflow: Annotated[
+        Path, typer.Option("--workflow", "-w", help="path to workflow")
+    ] = Path("."),
+    ext: Annotated[
         str, typer.Option("--ext", "-e", help="File extension of collectra files")
-    ],
+    ] = "",
 ):
     console = Console()
     try:
+        if workflow.exists():
+            pipeline = resolve_workflow_path(workflow)
+            ext = pipeline.ext
+        if not ext:
+            console.print(
+                "[red]Error: Please specify the file extension using --ext or provide a valid workflow file.[/red]"
+            )
+            return
         feature_count = dict()
-        for item in folder.rglob(f"*.{extension}"):
+        for item in folder.rglob(f"*.{ext}"):
             data_yaml = item / "results.yaml"
             if not data_yaml.exists():
                 continue
@@ -359,6 +383,26 @@ def analyse(
         for feature, count in feature_count.items():
             table.add_row(feature, str(count))
         console.print(table)
+    except Exception as e:
+        traceback.print_exc()
+        console.print(e)
+
+
+@app.command(
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True}
+)
+def partition(
+    ctx: typer.Context,
+    seed: Annotated[
+        int, typer.Option("--seed", "-s", help="Random seed for partitioning")
+    ] = 42,
+):
+    console = Console()
+    inputs = ctx.args
+    try:
+        files, inputs = get_files(inputs)
+        partitions = get_partitions(inputs)
+        process_partitions(files, partitions, seed)
     except Exception as e:
         traceback.print_exc()
         console.print(e)
