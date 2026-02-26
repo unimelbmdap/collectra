@@ -131,7 +131,6 @@ def train(
 @app.command(
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True}
 )
-@app.command()
 def run(
     workflow: Annotated[
         Path, typer.Option("--workflow", "-w", help="path to workflow")

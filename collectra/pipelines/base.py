@@ -315,7 +315,11 @@ class Collectra:
 
     def _is_existing_collectra_folder(self, path: Path) -> bool:
         """Check if path is an existing collectra folder with results."""
-        return path.is_dir() and (path / self.RESULTS_FILE).exists()
+        return (
+            path.is_dir()
+            and path.suffix == f".{self.ext}"
+            and (path / self.RESULTS_FILE).exists()
+        )
 
     def _is_image_file(self, path: Path) -> bool:
         """Check if path is an image file."""
@@ -824,7 +828,7 @@ class Collectra:
             self.log.add_row(
                 "workflow_run",
                 f"Error occurred while executing entries for task {task.name}: {str(e)}",
-                traceback.print_exc(),
+                traceback.format_exc(),
                 str(entries),
             )
             return list()

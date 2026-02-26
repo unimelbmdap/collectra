@@ -411,6 +411,8 @@ class ImageCrop(Image):
             x_center, y_center = 1 - y_center, x_center
             width_relative, height_relative = height_relative, width_relative
 
+        name = name if name else self.name
+
         return super().make_crop(
             x_center=self.x_center + (x_center - 0.5) * self.width_relative,
             y_center=self.y_center + (y_center - 0.5) * self.height_relative,

@@ -383,9 +383,9 @@ LiteralDumper.add_representer(str, str_presenter)
 
 def write_yaml(data, filepath: Path | str):
     with open(filepath, "w") as f:
-        for file_key, data in data.items():
+        for file_key, data_item in data.items():
             yaml.dump(
-                {file_key: data},
+                {file_key: data_item},
                 f,
                 Dumper=LiteralDumper,
                 sort_keys=False,
