@@ -36,6 +36,7 @@ def train_yolo(tmp_path):
             results = task.train(
                 *images,
                 log=log,
+                validation="true",
                 **kwargs,
                 base_folder=tmp_path,
             )

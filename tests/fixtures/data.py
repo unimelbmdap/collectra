@@ -18,8 +18,8 @@ def images(root_data_path) -> list[ImageCrop]:
                 continue
             with open(data, "r") as f:
                 results: dict = yaml.safe_load(f)
-                validation = results.pop("collectra_results_metadata", dict()).get(
-                    "validation", None
+                partition = results.pop("collectra_results_metadata", dict()).get(
+                    "partition", None
                 )
             for key, value in results.items():
                 result = list()
@@ -34,8 +34,8 @@ def images(root_data_path) -> list[ImageCrop]:
                         continue
                     item["name"] = key
                     item["data"] = item.pop("path")
-                    if validation is not None:
-                        item["validation"] = validation
+                    if partition is not None:
+                        item["partition"] = partition
                     try:
                         instance = ImageCrop(**item)
                         if instance:

@@ -1,6 +1,6 @@
 collectra_results_metadata:
   timestamp: '2025-08-16T04:25:51.126362+00:00'
-  validation: true
+  partition: "true"
 
 image_sheet:
   id: image_sheet

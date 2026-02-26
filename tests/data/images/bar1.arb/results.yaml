@@ -1,6 +1,6 @@
 collectra_results_metadata:
   timestamp: '2025-10-21T21:47:33.401817'
-  validation: false
+  partition: "false"
 
 image_sheet:
   id: image_sheet
@@ -12,7 +12,7 @@ human:
   id: human_0
   data: bar1.jpg
   ext: JPEG
-  validation: false
+
   x_center: 0.146729
   y_center: 0.329624
   width_relative: 0.073699
@@ -21,7 +21,7 @@ human:
   id: human_1
   data: bar1.jpg
   ext: JPEG
-  validation: false
+
   x_center: 0.227609
   y_center: 0.309103
   width_relative: 0.082134
@@ -32,7 +32,7 @@ chair:
   id: chair_0
   data: bar1.jpg
   ext: JPEG
-  validation: false
+
   x_center: 0.44427189230918884
   y_center: 0.6847270727157593
   width_relative: 0.24065561592578888
@@ -41,7 +41,7 @@ chair:
   id: chair_1
   data: bar1.jpg
   ext: JPEG
-  validation: false
+
   x_center: 0.8313323855400085
   y_center: 0.7965918183326721
   width_relative: 0.3371221423149109
@@ -50,7 +50,7 @@ chair:
   id: chair_2
   data: bar1.jpg
   ext: JPEG
-  validation: false
+
   x_center: 0.8746703863143921
   y_center: 0.5159797072410583
   width_relative: 0.1440940797328949
@@ -59,7 +59,7 @@ chair:
   id: chair_3
   data: bar1.jpg
   ext: JPEG
-  validation: false
+
   x_center: 0.22229358553886414
   y_center: 0.57211834192276
   width_relative: 0.1595422774553299
@@ -68,7 +68,7 @@ chair:
   id: chair_4
   data: bar1.jpg
   ext: JPEG
-  validation: false
+
   x_center: 0.724765419960022
   y_center: 0.6062978506088257
   width_relative: 0.1698555052280426
@@ -77,7 +77,7 @@ chair:
   id: chair_5
   data: bar1.jpg
   ext: JPEG
-  validation: false
+
   x_center: 0.2229783982038498
   y_center: 0.4121764600276947
   width_relative: 0.0785011425614357
@@ -88,7 +88,7 @@ bar_img:
   type: collectra.types.images.Image
   data: bar1.jpg
   ext: JPEG
-  validation: false
+
 
 md_example:
   id: md_example1
