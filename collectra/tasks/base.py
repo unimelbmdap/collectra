@@ -86,6 +86,14 @@ class Task(BaseEntity, Generic[T]):
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
+    def get_output_name(self) -> str:
+        name = (
+            f"{self.get_name()}_output"
+            if not hasattr(self, "output")
+            else self.output[0] if isinstance(self.output, list) else self.output
+        )
+        return name
+
     def __call__(self, *args) -> T | None:
         """Run the task with the provided arguments.
 

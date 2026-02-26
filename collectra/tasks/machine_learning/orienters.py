@@ -100,11 +100,7 @@ class ImageOrienter(MachineLearningTask):
             predicted_class = predicted_idx.item()
             orientation = Orientation(predicted_class)
 
-        name = (
-            f"{self.get_name()}_output"
-            if not hasattr(self, "output")
-            else self.output[0] if isinstance(self.output, list) else self.output
-        )
+        name = self.get_output_name()
 
         if isinstance(img, ImageCrop):
             new_image = ImageCrop(
