@@ -1,3 +1,4 @@
+.specs/
 docs/_build/
 wandb/*
 wandb*/*
