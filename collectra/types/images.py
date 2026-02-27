@@ -112,6 +112,13 @@ class Image(Data):
         )
         return serialized
 
+    def save(self, path: Path | str = None):
+        path = Path(path)
+        path.parent.mkdir(exist_ok=True, parents=True)
+
+        # Simply copy to new dest
+        shutil.copy(self.get_path(), path)
+
     @staticmethod
     def image_types() -> list[str]:
         return [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp"]
@@ -321,6 +328,12 @@ class ImageCrop(Image):
     width_relative: float = field(default=1.0)
     height_relative: float = field(default=1.0)
     source_parent: "Image | ImageCrop | None" = field(init=False, default=None)
+
+    def save(self, path: Path | str = None):
+        im = self.source_parent.pil() if self.source_parent else self.pil()
+        if path is None:
+            raise ValueError("Path must be provided to save the cropped image.")
+        im.save(path)
 
     @property
     def width(self):
