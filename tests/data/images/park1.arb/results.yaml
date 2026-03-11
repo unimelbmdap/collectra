@@ -11,20 +11,23 @@ human:
   - type: collectra.ImageCrop
     id: human1
     path: park1.jpg
+    parents: image_sheet
     x_center: 0.154942
-    y_center: 0.817391
+    y_center: 0.817391    
     width_relative: 0.035900
     height_relative: 0.095741
   - type: collectra.ImageCrop
     id: human2
+    parents: image_sheet
     path: park1.jpg
     x_center: 0.244298
     y_center: 0.810886
     width_relative: 0.032710
     height_relative: 0.089837
   - type: collectra.ImageCrop
-    id: human3
+    id: human3    
     path: park1.jpg
+    parents: image_sheet
     x_center: 0.579379
     y_center: 0.666678
     width_relative: 0.027923

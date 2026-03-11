@@ -13,6 +13,7 @@ car:
     path: car1.jpg
     x_center: 0.420908
     y_center: 0.716293
+    parents: image_sheet
     width_relative: 0.138966
     height_relative: 0.094565
   - type: collectra.ImageCrop
@@ -20,6 +21,7 @@ car:
     path: car1.jpg
     x_center: 0.664863
     y_center: 0.715704
+    parents: image_sheet
     width_relative: 0.133064
     height_relative: 0.083924
 

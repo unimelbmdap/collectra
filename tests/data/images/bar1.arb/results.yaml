@@ -8,87 +8,72 @@ image_sheet:
   path: bar1.jpg
 
 human:
-- type: collectra.types.images.ImageCrop
+- type: collectra.ImageCrop
   id: human_0
+  parents: image_sheet
   data: bar1.jpg
-  ext: JPEG
-
   x_center: 0.146729
   y_center: 0.329624
   width_relative: 0.073699
   height_relative: 0.343065
-- type: collectra.types.images.ImageCrop
+- type: collectra.ImageCrop
   id: human_1
+  parents: image_sheet
   data: bar1.jpg
-  ext: JPEG
-
   x_center: 0.227609
   y_center: 0.309103
   width_relative: 0.082134
   height_relative: 0.295184
 
 chair:
-- type: collectra.types.images.ImageCrop
+- type: collectra.ImageCrop
   id: chair_0
   data: bar1.jpg
-  ext: JPEG
-
+  parents: image_sheet
   x_center: 0.44427189230918884
   y_center: 0.6847270727157593
   width_relative: 0.24065561592578888
   height_relative: 0.3526153266429901
-- type: collectra.types.images.ImageCrop
+- type: collectra.ImageCrop
   id: chair_1
   data: bar1.jpg
-  ext: JPEG
-
+  parents: image_sheet
   x_center: 0.8313323855400085
   y_center: 0.7965918183326721
   width_relative: 0.3371221423149109
   height_relative: 0.3820488750934601
-- type: collectra.types.images.ImageCrop
+- type: collectra.ImageCrop
   id: chair_2
   data: bar1.jpg
-  ext: JPEG
-
+  parents: image_sheet
   x_center: 0.8746703863143921
   y_center: 0.5159797072410583
   width_relative: 0.1440940797328949
   height_relative: 0.18848729133605957
-- type: collectra.types.images.ImageCrop
+- type: collectra.ImageCrop
   id: chair_3
   data: bar1.jpg
-  ext: JPEG
-
+  parents: image_sheet
   x_center: 0.22229358553886414
   y_center: 0.57211834192276
   width_relative: 0.1595422774553299
   height_relative: 0.23905903100967407
-- type: collectra.types.images.ImageCrop
+- type: collectra.ImageCrop
   id: chair_4
   data: bar1.jpg
-  ext: JPEG
-
+  parents: image_sheet
   x_center: 0.724765419960022
   y_center: 0.6062978506088257
   width_relative: 0.1698555052280426
   height_relative: 0.39607638120651245
-- type: collectra.types.images.ImageCrop
+- type: collectra.ImageCrop
   id: chair_5
   data: bar1.jpg
-  ext: JPEG
-
+  parents: image_sheet
   x_center: 0.2229783982038498
   y_center: 0.4121764600276947
   width_relative: 0.0785011425614357
   height_relative: 0.10216991603374481
-
-bar_img:
-  id: bar_img1
-  type: collectra.types.images.Image
-  data: bar1.jpg
-  ext: JPEG
-
 
 md_example:
   id: md_example1

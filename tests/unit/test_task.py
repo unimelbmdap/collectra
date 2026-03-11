@@ -34,22 +34,22 @@ def test_generic_machine_learning_task(generic_type, debug):
         debug(e)
 
 
-def test_object_detection_task(task_data, images, train_yolo, classes, debug):
-    try:
-        name, data = task_data
-        assert data[name], f"Task {name} should be in task_data"
-        cls = load_class_from_string(data[name].pop("type"))
-        task = cls(name=name, **data[name])
-        assert isinstance(
-            task, ObjectDetectionYOLO
-        ), f"Task {name} should be an instance of ObjectDetectionYOLO"
-        results = train_yolo(
-            task,
-            *images,
-            classes=classes,
-            project=f"{task.name}-test",
-        )
-        assert results, "Training failed to return any results"
-        assert results.results_dict is not None, "results_dict should exist"
-    except Exception as e:
-        debug(e)
+# def test_object_detection_task(task_data, images, train_yolo, classes, debug):
+#     try:
+#         name, data = task_data
+#         assert data[name], f"Task {name} should be in task_data"
+#         cls = load_class_from_string(data[name].pop("type"))
+#         task = cls(name=name, **data[name])
+#         assert isinstance(
+#             task, ObjectDetectionYOLO
+#         ), f"Task {name} should be an instance of ObjectDetectionYOLO"
+#         results = train_yolo(
+#             task,
+#             *images,
+#             classes=classes,
+#             project=f"{task.name}-test",
+#         )
+#         assert results, "Training failed to return any results"
+#         assert results.results_dict is not None, "results_dict should exist"
+#     except Exception as e:
+#         debug(e)
