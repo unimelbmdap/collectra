@@ -16,6 +16,7 @@ Classes:
 
 __all__ = ["LLM"]
 
+import logging
 import os
 import re
 from pathlib import Path
@@ -31,6 +32,8 @@ from collectra.types.images import Image
 from collectra.types.texts import Text
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 class LLM(Task):
@@ -200,5 +203,5 @@ class LLM(Task):
             output = Text(name=name, data=response)
             return output
         except Exception as e:
-            self.catcher.set_err(str(e))
+            logger.error("LLM task '%s' failed: %s", self.name, e, exc_info=True)
             return None

@@ -23,13 +23,11 @@ import json
 import logging
 import shutil
 import time
-import traceback
 from pathlib import Path
 
 import graphviz
 import networkx as nx
 import yaml
-from rich.table import Table
 from ultralytics.utils.metrics import DetMetrics
 
 from collectra.utils import change_dir, load_class_from_string, remove_exif, write_yaml
@@ -51,7 +49,6 @@ from ..types.images import Image, ImageCrop
 from .node_graph_manager import NodeGraphManager
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class Collectra:
@@ -125,18 +122,6 @@ class Collectra:
                 return False
         return True
 
-    def create_log_table(self):
-        """Create a Rich table for logging workflow execution messages.
-
-        Initializes a table with columns for source, message, traceback,
-        and affected inputs to track workflow execution status.
-        """
-        self.log = Table()
-        self.log.add_column("Source", justify="left", style="green")
-        self.log.add_column("Message", justify="left", style="magenta")
-        self.log.add_column("Traceback", justify="left", style="red")
-        self.log.add_column("Affected inputs", justify="left", style="blue")
-
     def run(self, task_name: str = "", **kwargs):
         """Run the workflow from the specified task or from all root tasks.
 
@@ -150,14 +135,13 @@ class Collectra:
                 - render: Whether to render workflow visualization.
                 - output: Output directory for results.
         """
-        self.create_log_table()
         try:
             self._ensure_workflow_connected()
             starting_nodes = self._get_starting_nodes(task_name)
             run_options = self._extract_run_options(kwargs)
             self._process_files(starting_nodes, run_options)
         except Exception as e:
-            self.log.add_row("workflow_run", str(e), traceback.format_exc())
+            logger.error("Workflow run failed: %s", e, exc_info=True)
 
     def _ensure_workflow_connected(self):
         """Ensure the workflow graph is connected before execution.
@@ -231,7 +215,7 @@ class Collectra:
             try:
                 self._process_single_file(starting_nodes, file_path, options)
             except Exception as e:
-                self.log.add_row("workflow_run", str(e), traceback.format_exc())
+                logger.error("Error processing file: %s", e, exc_info=True)
 
     def _process_single_file(
         self, starting_nodes: list[TaskNode], file_path: str, options: dict
@@ -395,7 +379,6 @@ class Collectra:
             if isinstance(node, DataNode):
                 value = kwargs.get(node.name, None)
                 node.process(node.name, value, **kwargs)
-                node.catcher.flush_msg(self.log)
 
             children = list(self.flow.successors(str(node.name)))
             children = [self.node_manager.resolve_node(child) for child in children]
@@ -422,7 +405,6 @@ class Collectra:
             for parent in parents:
                 value = kwargs.get(parent.name, None)
                 parent.process(parent.name, value, **kwargs)
-                parent.catcher.flush_msg(self.log)
         self._populate_active_paths(starting_nodes, **kwargs)
 
     def _set_task_contexts(self, context: TaskContext):
@@ -476,15 +458,11 @@ class Collectra:
     ) -> bool:
         """Check if saving should proceed."""
         if not key or not value:
-            self.log.add_row(
-                "workflow_run", "No save location specified, skipping save."
-            )
+            logger.info("No save location specified, skipping save.")
             return False
 
         if data_node is not None and data_node.status != NodeStatus.READY:
-            self.log.add_row(
-                "workflow_run", f"No new data for {data_node.name}, skipping save."
-            )
+            logger.info("No new data for %s, skipping save.", data_node.name)
             return False
 
         return True
@@ -559,14 +537,9 @@ class Collectra:
     def _log_save_success(self, savef: Path, data_node: DataNode | None):
         """Log successful save operation."""
         if data_node:
-            self.log.add_row(
-                "workflow_run",
-                f"Results saved to [green]{savef}[/green] for [blue]{data_node.name}[/blue]",
-            )
+            logger.info("Results saved to %s for %s", savef, data_node.name)
         else:
-            self.log.add_row(
-                "workflow_run", f"All results saved to [green]{savef}[/green]"
-            )
+            logger.info("All results saved to %s", savef)
 
     def _run_nodes(
         self,
@@ -783,16 +756,12 @@ class Collectra:
         task = task_node.get_task()
         if not isinstance(task, Task):
             raise TypeError(f"Node {task_node.name} is not a Task")
-        self.log.add_row(
-            "workflow_run", f"Attempting to run task: [blue]{task.name}[/blue]"
-        )
+        logger.info("Attempting to run task: %s", task.name)
         parents = self.node_manager.get_parents_data(task_node)
         entries = task.prepare_inputs(parents)
         results = list()
         if len(entries) == 0:
-            self.log.add_row(
-                "workflow_run", f"No input data found for task {task.name}, skipping."
-            )
+            logger.warning("No input data found for task %s, skipping.", task.name)
             return results
         with change_dir(self.path):
             for entry in entries:
@@ -825,11 +794,12 @@ class Collectra:
                 result.set_parents(entries)
             return output
         except Exception as e:
-            self.log.add_row(
-                "workflow_run",
-                f"Error occurred while executing entries for task {task.name}: {str(e)}",
-                traceback.format_exc(),
-                str(entries),
+            logger.error(
+                "Error executing entries for task %s: %s (entries: %s)",
+                task.name,
+                e,
+                entries,
+                exc_info=True,
             )
             return list()
 

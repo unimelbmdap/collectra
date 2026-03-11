@@ -345,7 +345,9 @@ class DataNode(Node):
                 raise ValueError(f"Failed to load {item} with {cls_}")
             self.add_item(instance)
         except Exception as e:
-            self.catcher.set_err(str(e))
+            logger.error(
+                "Failed to create instance of %s: %s", cls_.__name__, e, exc_info=True
+            )
 
     def _create_ensemble_instances(self, base_path: Path, cls_: type, **item) -> None:
         try:
@@ -426,12 +428,23 @@ class DataNode(Node):
                                     self._create_instance(cls_, **item)
                             except Exception as e:
                                 if not primitive_type:
-                                    self.catcher.set_err(str(e))
+                                    logger.error(
+                                        "Error processing item in %s: %s",
+                                        self.name,
+                                        e,
+                                        exc_info=True,
+                                    )
                                 else:
                                     self._create_instances(name=key, data=str(item))
 
                 except Exception as e:
-                    self.catcher.set_err(str(e))
+                    logger.error(
+                        "Error loading data for %s from %s: %s",
+                        key,
+                        value,
+                        e,
+                        exc_info=True,
+                    )
         elif key:
             self._create_instances(name=key, data=value)
 

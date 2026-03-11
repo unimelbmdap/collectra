@@ -1,7 +1,6 @@
 import logging
 import os
 import shutil
-import sys
 import traceback
 from pathlib import Path
 
@@ -10,10 +9,10 @@ import yaml
 from rich.console import Console
 from typing_extensions import Annotated
 
+from .logger import setup_logging
 from .partition import get_files, get_partitions, process_partitions
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(stream=sys.stdout)
 
 app = typer.Typer()
 
@@ -53,6 +52,7 @@ def render(
         Exception: If the workflow file cannot be loaded or rendered due to
             invalid format or missing dependencies.
     """
+    setup_logging(verbose=True)
     try:
         pipeline = resolve_workflow_path(workflow)
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -97,6 +97,7 @@ def train(
         Exception: If the task cannot be trained due to invalid task name,
             missing input files, or training process failures.
     """
+    setup_logging(verbose=True)
     try:
         from datetime import datetime
 
@@ -178,6 +179,7 @@ def run(
         Exception: If the workflow execution fails due to invalid workflow file,
             missing task, or runtime errors during execution.
     """
+    setup_logging(verbose=verbose)
     console = Console()
     try:
         data: dict = dict()
@@ -202,8 +204,6 @@ def run(
                     or (file.is_dir() and file.suffix.lower() == pipeline.ext)
                 ]
         pipeline(task, **data)
-        if verbose:
-            console.print(pipeline.log)
     except Exception as e:
         console.print(traceback.format_exc())
         console.print(e)
@@ -234,6 +234,7 @@ def evaluate(
     """
     from rich.columns import Columns
 
+    setup_logging(verbose=True)
     console = Console()
     try:
         from collectra import Evaluator
