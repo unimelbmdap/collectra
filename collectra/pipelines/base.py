@@ -28,7 +28,7 @@ from pathlib import Path
 import graphviz
 import networkx as nx
 import yaml
-from ultralytics.utils.metrics import DetMetrics
+from ultralytics.utils.metrics import ClassifyMetrics, DetMetrics
 
 from collectra.utils import change_dir, load_class_from_string, remove_exif, write_yaml
 from utils.get_types import get_param_types, get_return_type, unpack_types
@@ -39,13 +39,14 @@ from ..tasks.base import (
     TaskNode,
 )
 from ..tasks.machine_learning import MachineLearningTask
-from ..tasks.machine_learning.yolo import ObjectDetectionYOLO
+from ..tasks.machine_learning.yolo import ClassifierYOLO, ObjectDetectionYOLO
 from ..types.base import (
     Data,
     DataNode,
     NodeStatus,
 )
 from ..types.images import Image, ImageCrop
+from ..types.texts import Text
 from .node_graph_manager import NodeGraphManager
 
 logger = logging.getLogger(__name__)
@@ -803,7 +804,7 @@ class Collectra:
             )
             return list()
 
-    def train(self, task_name: str, **kwargs) -> DetMetrics | None:
+    def train(self, task_name: str, **kwargs) -> DetMetrics | ClassifyMetrics | None:
         """Train a machine learning task.
 
         Args:
@@ -824,9 +825,30 @@ class Collectra:
         kwargs["classes"] = kwargs.get("classes", [child.name for child in children])
         processed_inputs = self._prepare_training_data(kwargs, children)
         processed_parents = self._prepare_training_data(kwargs, parents)
-        if isinstance(task, ObjectDetectionYOLO):
+        if isinstance(task, ObjectDetectionYOLO) and not isinstance(
+            task, ClassifierYOLO
+        ):
             self._validate_relative_image(processed_inputs, processed_parents)
         kwargs = self._merge_task_params(task_name, kwargs)
+        if isinstance(task, ClassifierYOLO):
+            # For classification: parent images are the training data,
+            # child Text objects provide the class labels via their .data field.
+            label_map: dict[str, str] = {}
+            for child in processed_inputs:
+                if not isinstance(child, Text) or not child.parents:
+                    continue
+                parent_ref = (
+                    child.parents
+                    if isinstance(child.parents, str)
+                    else child.parents[0]
+                )
+                label_map[parent_ref] = str(child.data)
+            labeled_parents = []
+            for parent in processed_parents:
+                if parent.id in label_map:
+                    parent.name = label_map[parent.id]
+                    labeled_parents.append(parent)
+            return self._execute_training(task, labeled_parents, kwargs)
         return self._execute_training(task, processed_inputs, kwargs)
 
     def _validate_relative_image(
@@ -914,14 +936,16 @@ class Collectra:
 
     def _execute_training(
         self, task: MachineLearningTask, processed_inputs: list, kwargs: dict
-    ) -> DetMetrics | None:
+    ) -> DetMetrics | ClassifyMetrics | None:
         """Execute the training process and save results."""
         with change_dir(self.path):
             results = task.train(*processed_inputs, **kwargs)
             self.save_train(task, results, **kwargs)
         return results
 
-    def save_train(self, task: MachineLearningTask, results: DetMetrics, **kwargs):
+    def save_train(
+        self, task: MachineLearningTask, results: DetMetrics | ClassifyMetrics, **kwargs
+    ):
         """Save trained model and update configuration.
 
         Args:

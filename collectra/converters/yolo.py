@@ -202,3 +202,69 @@ class YOLOConverter(Converter):
         self._process_files(
             self.input.parent / config.val, partition=str(Path(config.val).stem)
         )
+
+
+class YOLOClassifierCSV:
+    """
+    Converter for YOLO classifier dataset format to Collectra format.
+    This converter extends the YOLOConverter to handle classification datasets in YOLO format.
+    It processes the training and validation datasets, converts the annotations to Collectra format, and saves the converted files in the specified output directory.
+    """
+
+    def __init__(
+        self,
+        input: str | Path,
+        root_label: str,
+        ext: str,
+        output: str | Path,
+        force: bool = False,
+    ):
+        """Initialize the YOLOConverter. Process the input configuration file or folder to extract necessary information for conversion.
+
+        Args:
+            input (str | Path): Path to the YOLO configuration file or folder.
+            root_label (str): Root label for converted data.
+            ext (str): File extension for converted collectra files.
+            output (str | Path): Output folder for converted files.
+            force (bool, optional): Whether to force overwrite existing files. Defaults to False.
+
+        """
+        self.input = Path(input)
+        self.root_label = root_label
+        self.ext = ext
+        self.output = Path(output)
+        self.force = force
+
+    def convert(self) -> None:
+        import pandas as pd
+
+        config_file = pd.read_csv(self.input)
+        for file_data in config_file.itertuples():
+            source_file = self.input.parent / str(file_data.path)
+            label_data = str(file_data.tag)
+            validation = "validation" if file_data.validation else "train"
+            print(
+                f"Processing file {source_file} with label {label_data} for partition {validation}"
+            )
+            self._convert_file(source_file, label_data, partition=validation)
+
+    def _convert_file(
+        self, file: Path, label_data: str, partition: str | None = None
+    ) -> None:
+        import uuid
+
+        collectra_file = CollectraFile.from_file(
+            file=file,
+            label=self.root_label,
+            ext=self.ext,
+            output=self.output,
+            force=self.force,
+            partition=partition,
+        )
+        collectra_file.data[f"{self.root_label}_writing_type"] = {
+            "id": f"{self.root_label}_writing_type-{uuid.uuid4().hex[:8]}",
+            "type": "collectra.Text",
+            "parents": collectra_file.data[self.root_label]["id"],
+            "data": label_data,
+        }
+        collectra_file.save()
