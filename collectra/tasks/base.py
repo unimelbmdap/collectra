@@ -52,17 +52,25 @@ class Task(BaseEntity, Generic[T]):
         for parent in parents:
             if parent.name in input_dict:
                 input_dict[parent.name].extend(parent.items.values())
-        value_lists = [inputs for inputs in input_dict.values()]
-        entries = [list(combination) for combination in list(product(*value_lists))]
-        entries_to_remove = []
 
+        # Filter out empty inputs (READY but no items)
+        non_empty_dict = {k: v for k, v in input_dict.items() if v}
+        if not non_empty_dict:
+            return []
+        non_empty_keys = list(non_empty_dict.keys())
+        value_lists = list(non_empty_dict.values())
+        entries = [list(combination) for combination in list(product(*value_lists))]
+
+        entries_to_remove = []
         for entry_id, entry in enumerate(entries):
             entry_items_by_key = {f"{item.name}": item for item in entry}
             is_valid = True
             for item in entry:
                 for parent_id in item.parents:
                     parent_key = re.sub("-.*", "", parent_id)
-                    if parent_key in input_keys:
+                    if (
+                        parent_key in non_empty_keys
+                    ):  # Only validate against non-empty inputs
                         if (
                             parent_key not in entry_items_by_key
                             or entry_items_by_key[parent_key].id != parent_id

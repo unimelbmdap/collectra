@@ -630,6 +630,10 @@ class Collectra:
             ):
                 self._check_existing(node, arg)
 
+        # Mark as READY even if no items matched — parent task has completed
+        if node.status == NodeStatus.NOT_READY:
+            node.status = NodeStatus.READY
+
         # Save results
         self.save_run(kwargs.get("key", ""), kwargs.get("value", ""), data_node=node)
 

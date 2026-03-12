@@ -386,11 +386,15 @@ class DataNode(Node):
                         partition = results.pop(
                             "collectra_results_metadata", dict()
                         ).get("partition", None)
-                        data = results.get(key, None)
-                        if not data:
+                        if key not in results:
                             raise ValueError(
                                 f"[red]{key}[/red] could not be found in {value}"
                             )
+                        data = results[key]
+                        if not data:
+                            # Key exists but empty — pipeline processed it, found nothing
+                            self.status = NodeStatus.READY
+                            return
                         data = data if isinstance(data, list) else [data]
                         for item in data:
                             primitive_type = False
