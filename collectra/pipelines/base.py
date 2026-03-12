@@ -80,15 +80,13 @@ class Collectra:
             name (str): Name of the workflow.
             ext (str): File extension that the workflow accepts.
             version (str): Version of the workflow.
-            flow (nx.DiGraph): Acyclic directed graph representing the workflow.
             path (str, optional): Path to the workflow files. Defaults to name.
             **kwargs: Additional configuration parameters.
         """
         self.name: str = name
         self.ext: str = ext
         self.version: str = version
-        self.flow: nx.DiGraph = nx.DiGraph()
-        self.node_manager: NodeGraphManager = NodeGraphManager(self.flow)
+        self.node_manager: NodeGraphManager = NodeGraphManager()
         self.path: Path = Path.cwd() / name if not path else Path(path)
         self.data: dict = kwargs
 
@@ -113,13 +111,13 @@ class Collectra:
 
     def _check_is_root(self, node_name: str) -> bool:
         """Check if a node is a root node (no parents or only data parents)."""
-        parents = list(self.flow.predecessors(node_name))
+        node = self.node_manager.resolve_node(node_name)
+        parents = self.node_manager.get_parents(node)
         for parent in parents:
-            grand_parents = list(self.flow.predecessors(parent))
-            if len(grand_parents) > 0:
+            grandparents = self.node_manager.get_parents(parent)
+            if len(grandparents) > 0:
                 return False
-            parent_node = self.node_manager.resolve_node(parent)
-            if isinstance(parent_node, Task):
+            if isinstance(parent, TaskNode):
                 return False
         return True
 
@@ -150,7 +148,7 @@ class Collectra:
         If the workflow graph has no nodes, calls connect() to build
         the graph from the workflow configuration.
         """
-        if self.flow.number_of_nodes() == 0:
+        if self.node_manager.is_empty():
             self.connect()
 
     def _get_starting_nodes(self, task_name: str) -> list[TaskNode]:
@@ -176,11 +174,7 @@ class Collectra:
     def _get_root_starting_nodes(self) -> list[TaskNode]:
         """Get all root task nodes as starting points."""
         starting_nodes = []
-        task_nodes = [
-            node["node"]
-            for node in self.flow.nodes.values()
-            if isinstance(node["node"], TaskNode)
-        ]
+        task_nodes = self.node_manager.get_task_nodes()
         for task_node in task_nodes:
             if self._check_is_root(task_node.name):
                 starting_nodes.append(task_node)
@@ -198,11 +192,9 @@ class Collectra:
 
     def _get_root_input(self) -> str:
         """Get the name of the root input data node for the workflow."""
-        for node in self.flow.nodes.values():
-            if isinstance(node["node"], DataNode):
-                data_node = node["node"]
-                if self._check_is_root(data_node.name):
-                    return data_node.name
+        for data_node in self.node_manager.get_data_nodes():
+            if self._check_is_root(data_node.name):
+                return data_node.name
         raise ValueError("No root input data node found in the workflow")
 
     def _process_files(self, starting_nodes: list[TaskNode], options: dict):
@@ -381,8 +373,7 @@ class Collectra:
                 value = kwargs.get(node.name, None)
                 node.process(node.name, value, **kwargs)
 
-            children = list(self.flow.successors(str(node.name)))
-            children = [self.node_manager.resolve_node(child) for child in children]
+            children = self.node_manager.get_children(node)
             self._populate_active_paths(children, **kwargs)
 
     def _init_input_data(
@@ -414,11 +405,10 @@ class Collectra:
         Args:
             context: TaskContext to apply to all tasks.
         """
-        for node in self.flow.nodes.values():
-            if isinstance(node["node"], TaskNode):
-                task = node["node"].get_task()
-                if isinstance(task, Task):
-                    task.context = context
+        for task_node in self.node_manager.get_task_nodes():
+            task = task_node.get_task()
+            if isinstance(task, Task):
+                task.context = context
 
     def _reset_nodes(self):
         """Reset all nodes in the workflow to their initial state.
@@ -426,14 +416,7 @@ class Collectra:
         Clears items and ensemble items from data nodes and sets all node
         statuses to NOT_READY.
         """
-        nodes = [node["node"] for node in self.flow.nodes.values()]
-        for node in nodes:
-            if isinstance(node, DataNode):
-                node.items = dict()
-                node.ensemble_items = dict()
-                node.status = NodeStatus.NOT_READY
-            if isinstance(node, TaskNode):
-                node.status = NodeStatus.NOT_READY
+        self.node_manager.reset_all_nodes()
 
     def save_run(self, key: str, value: str | Path, data_node: DataNode | None = None):
         """Save workflow execution results to file.
@@ -475,11 +458,7 @@ class Collectra:
         if data_node is not None:
             return [data_node]
 
-        return [
-            node["node"]
-            for node in self.flow.nodes.values()
-            if isinstance(node["node"], DataNode)
-        ]
+        return self.node_manager.get_data_nodes()
 
     def _save_results_to_directory(
         self, directory: Path, key: str, value: str | Path, data_nodes: list[DataNode]
@@ -570,9 +549,9 @@ class Collectra:
     ):
         """Mark nodes as currently being processed in the graph."""
         for node in nodes:
-            graph_node = self.flow.nodes[str(node.name)]
-            graph_node["color"] = self.COLOR_PROCESSING
-            graph_node["fontcolor"] = self.COLOR_FONT
+            self.node_manager.set_node_attr(
+                str(node.name), color=self.COLOR_PROCESSING, fontcolor=self.COLOR_FONT
+            )
 
     def _execute_nodes(
         self,
@@ -649,14 +628,14 @@ class Collectra:
         self, node: TaskNode | DataNode
     ) -> list[TaskNode | DataNode]:
         """Get all children of a node."""
-        children = list(self.flow.successors(str(node.name)))
-        return [self.node_manager.resolve_node(child) for child in children]
+        return self.node_manager.get_children(node)
 
     def _update_node_status(self, node: TaskNode | DataNode, success: bool):
         """Update node visualization status based on execution result."""
         color = self.COLOR_SUCCESS if success else self.COLOR_FAILURE
-        self.flow.nodes[str(node.name)]["color"] = color
-        self.flow.nodes[str(node.name)]["fontcolor"] = self.COLOR_FONT
+        self.node_manager.set_node_attr(
+            str(node.name), color=color, fontcolor=self.COLOR_FONT
+        )
 
     def _check_task_ready(self, task_node: TaskNode) -> NodeStatus:
         """Check if a task node is ready to execute.
@@ -1000,7 +979,6 @@ class Collectra:
         self._ensure_workflow_connected()
         processor = EnsembleProcessor(
             node_manager=self.node_manager,
-            flow=self.flow,
             ext=self.ext,
             name=self.name,
             version=self.version,
@@ -1129,8 +1107,9 @@ class Collectra:
 
     def _create_or_reuse_object(self, name: str, cls_: type, data: dict):
         """Create new object or reuse existing task from graph."""
-        if issubclass(cls_, Task) and self.flow.nodes.get(name, None):
-            return self.flow.nodes[name]["node"].get_task()
+        existing_task = self.node_manager.try_resolve_existing_task(name, cls_)
+        if existing_task is not None:
+            return existing_task
         return cls_(name, **data)
 
     def _process_task_node(self, task: Task, data: dict, relations: dict):
@@ -1163,12 +1142,12 @@ class Collectra:
             outputs = io.get("output", [])
 
             for input_node in inputs:
-                if self.flow.has_node(input_node):
-                    self.flow.add_edge(input_node, task_name)
+                if self.node_manager.has_node(input_node):
+                    self.node_manager.add_edge(input_node, task_name)
 
             for output_node in self._get_io_list(outputs):
-                if self.flow.has_node(output_node):
-                    self.flow.add_edge(task_name, output_node)
+                if self.node_manager.has_node(output_node):
+                    self.node_manager.add_edge(task_name, output_node)
 
     def render(self, dest: str | Path = "", file="", render=False) -> None:
         """Render the workflow graph as an SVG visualization.
@@ -1194,7 +1173,7 @@ class Collectra:
 
         Removes internal node objects that shouldn't be visualized.
         """
-        visual_graph = self.flow.copy()
+        visual_graph = self.node_manager.copy_graph()
         for node_id in visual_graph.nodes:
             node_data = visual_graph.nodes[node_id]
             if "node" in node_data:

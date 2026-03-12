@@ -187,24 +187,21 @@ class EnsembleProcessor:
 
     Attributes:
         node_manager: Node manager for resolving data nodes
-        flow: Workflow graph containing task dependencies
         ext: File extension for collectra result folders
         name: Workflow name
         version: Workflow version
     """
 
-    def __init__(self, node_manager, flow, ext: str, name: str, version: str):
+    def __init__(self, node_manager, ext: str, name: str, version: str):
         """Initialize the EnsembleProcessor.
 
         Args:
             node_manager: Node manager for resolving data nodes
-            flow: Workflow graph containing task dependencies
             ext: File extension for collectra result folders
             name: Workflow name
             version: Workflow version
         """
         self.node_manager = node_manager
-        self.flow = flow
         self.ext = ext
         self.name = name
         self.version = version
@@ -259,17 +256,13 @@ class EnsembleProcessor:
             List of layers, where each layer contains DataNode objects
             that should be processed together
         """
-        from ..tasks.base import TaskNode
-
         layers = []
-        root_node_name = self.flow.predecessors(list(self.flow.nodes.keys())[0])
-        root_nodes = [self.node_manager.resolve_node(n) for n in root_node_name]
+        all_names = self.node_manager.get_node_names()
+        first_node = self.node_manager.resolve_node(all_names[0])
+        root_nodes = self.node_manager.get_parents(first_node)
         layers.append(root_nodes)
-        for node in self.flow.nodes.values():
-            if not isinstance(node["node"], TaskNode):
-                continue
-            output_nodes = self.flow.successors(node["node"].name)
-            output_nodes = [self.node_manager.resolve_node(n) for n in output_nodes]
+        for task_node in self.node_manager.get_task_nodes():
+            output_nodes = self.node_manager.get_children_data(task_node)
             layers.append(output_nodes)
         return layers
 
@@ -612,7 +605,4 @@ class EnsembleProcessor:
 
     def _reset_nodes(self) -> None:
         """Reset all data nodes for fresh processing."""
-        for node in self.node_manager.nodes.values():
-            if isinstance(node, DataNode):
-                node.items = {}
-                node.ensemble_items = {}
+        self.node_manager.reset_all_nodes()

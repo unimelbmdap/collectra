@@ -36,7 +36,6 @@ class TestEnsembleWorkflowIntegration:
 
         processor = EnsembleProcessor(
             node_manager=MagicMock(),
-            flow=MagicMock(),
             ext=".collectra",
             name="test",
             version="1.0",
@@ -59,7 +58,6 @@ class TestEnsembleWorkflowIntegration:
 
         processor = EnsembleProcessor(
             node_manager=MagicMock(),
-            flow=MagicMock(),
             ext=".collectra",
             name="test",
             version="1.0",
@@ -195,7 +193,6 @@ class TestEnsembleEdgeCases:
 
         processor = EnsembleProcessor(
             node_manager=MagicMock(),
-            flow=MagicMock(),
             ext=".collectra",
             name="test",
             version="1.0",
@@ -223,7 +220,6 @@ class TestEnsembleEdgeCases:
 
         processor = EnsembleProcessor(
             node_manager=MagicMock(),
-            flow=MagicMock(),
             ext=".collectra",
             name="test",
             version="1.0",
@@ -320,7 +316,6 @@ class TestEnsembleArtifactHandling:
 
         processor = EnsembleProcessor(
             node_manager=MagicMock(),
-            flow=MagicMock(),
             ext=".collectra",
             name="test",
             version="1.0",
@@ -344,7 +339,6 @@ class TestEnsembleArtifactHandling:
 
         processor = EnsembleProcessor(
             node_manager=MagicMock(),
-            flow=MagicMock(),
             ext=".collectra",
             name="test",
             version="1.0",
