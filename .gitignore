@@ -1,4 +1,5 @@
 .memory
+.specs
 docs/_build/
 wandb/*
 wandb*/*
