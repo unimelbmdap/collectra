@@ -1,16 +1,16 @@
 __all__ = ["Evaluator"]
 
-import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 from rich.table import Table
 
+from ..logger import get_logger
 from ..types import DataNode
 from ..utils import change_dir
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass

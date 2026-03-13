@@ -1,7 +1,5 @@
-import logging
 import os
 import shutil
-import traceback
 from pathlib import Path
 
 import typer
@@ -9,10 +7,10 @@ import yaml
 from rich.console import Console
 from typing_extensions import Annotated
 
-from .logger import setup_logging
+from .logger import get_logger, setup_logging
 from .partition import get_files, get_partitions, process_partitions
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 app = typer.Typer()
 
@@ -58,7 +56,7 @@ def render(
         dest.parent.mkdir(parents=True, exist_ok=True)
         pipeline.render(dest, str(dest), True)
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("Render failed")
 
 
 @app.command()
@@ -126,7 +124,7 @@ def train(
                 os.remove(log_cache)
 
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("Training failed")
 
 
 @app.command(
@@ -180,7 +178,6 @@ def run(
             missing task, or runtime errors during execution.
     """
     setup_logging(verbose=verbose)
-    console = Console()
     try:
         data: dict = dict()
         data["single"] = single
@@ -205,8 +202,7 @@ def run(
                 ]
         pipeline(task, **data)
     except Exception as e:
-        console.print(traceback.format_exc())
-        console.print(e)
+        logger.exception("Workflow run failed")
 
 
 @app.command()
@@ -251,7 +247,7 @@ def evaluate(
         for table in report.tables:
             console.print(table)
     except Exception as e:
-        console.print(traceback.format_exc())
+        logger.exception("Evaluation failed")
 
 
 @app.command()
@@ -264,7 +260,7 @@ def view(
         editor = Editor(file)
         editor.view()
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("View failed")
 
 
 @app.command()
@@ -313,15 +309,13 @@ def convert(
         Exception: If the conversion process fails due to invalid configuration
             or runtime errors during execution.
     """
-    console = Console()
     try:
         from .converters import convert_files
 
         convert_files(input, root_label, ext, converter, output, force=force)
 
     except Exception as e:
-        console.print(traceback.format_exc())
-        console.print(e)
+        logger.exception("Conversion failed")
 
 
 @app.command()
@@ -344,7 +338,6 @@ def ensemble(
         Path, typer.Option("--output", "-o", help="Output folder for ensemble results")
     ] = Path("ensemble_results"),
 ):
-    console = Console()
     try:
         if not folders and ensemble_folder.exists():
             for item in ensemble_folder.iterdir():
@@ -353,7 +346,7 @@ def ensemble(
         pipeline = resolve_workflow_path(workflow)
         pipeline.ensemble(folders, output)
     except Exception as e:
-        console.print(traceback.format_exc())
+        logger.exception("Ensemble failed")
 
 
 @app.command()
@@ -401,8 +394,7 @@ def analyse(
             table.add_row(feature, str(count))
         console.print(table)
     except Exception as e:
-        traceback.print_exc()
-        console.print(e)
+        logger.exception("Analysis failed")
 
 
 @app.command(
@@ -414,15 +406,13 @@ def partition(
         int, typer.Option("--seed", "-s", help="Random seed for partitioning")
     ] = 42,
 ):
-    console = Console()
     inputs = ctx.args
     try:
         files, inputs = get_files(inputs)
         partitions = get_partitions(inputs)
         process_partitions(files, partitions, seed)
     except Exception as e:
-        traceback.print_exc()
-        console.print(e)
+        logger.exception("Partitioning failed")
 
 
 if __name__ == "__main__":

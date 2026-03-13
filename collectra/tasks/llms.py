@@ -16,7 +16,6 @@ Classes:
 
 __all__ = ["LLM"]
 
-import logging
 import os
 import re
 from pathlib import Path
@@ -31,9 +30,11 @@ from collectra.tasks.base import Task
 from collectra.types.images import Image
 from collectra.types.texts import Text
 
+from ..logger import get_logger
+
 load_dotenv()
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class LLM(Task):

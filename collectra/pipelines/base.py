@@ -20,7 +20,6 @@ __all__ = ["Collectra"]
 import copy
 import datetime
 import json
-import logging
 import shutil
 import time
 from pathlib import Path
@@ -34,6 +33,7 @@ from collectra.utils import change_dir, load_class_from_string, remove_exif, wri
 from utils.get_types import get_param_types, get_return_type, unpack_types
 
 from ..commons.base import TaskContext
+from ..logger import get_logger
 from ..tasks.base import (
     Task,
     TaskNode,
@@ -49,7 +49,7 @@ from ..types.images import Image, ImageCrop
 from ..types.texts import Text
 from .node_graph_manager import NodeGraphManager
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class Collectra:
@@ -806,33 +806,36 @@ class Collectra:
             self.node_manager.resolve_node(task_name)
         )
         kwargs["classes"] = kwargs.get("classes", [child.name for child in children])
-        processed_inputs = self._prepare_training_data(kwargs, children)
-        processed_parents = self._prepare_training_data(kwargs, parents)
+        kwargs = self._merge_task_params(task_name, kwargs)
         if isinstance(task, ObjectDetectionYOLO) and not isinstance(
             task, ClassifierYOLO
         ):
+            processed_inputs, _ = self._prepare_training_data(kwargs, children)
+            processed_parents, _ = self._prepare_training_data(kwargs, parents)
             self._validate_relative_image(processed_inputs, processed_parents)
-        kwargs = self._merge_task_params(task_name, kwargs)
+            return self._execute_training(task, processed_inputs, kwargs)
         if isinstance(task, ClassifierYOLO):
+            _, input_maps = self._prepare_training_data(kwargs, children)
+            _, parent_input_maps = self._prepare_training_data(kwargs, parents)
             # For classification: parent images are the training data,
             # child Text objects provide the class labels via their .data field.
-            label_map: dict[str, str] = {}
-            for child in processed_inputs:
-                if not isinstance(child, Text) or not child.parents:
-                    continue
-                parent_ref = (
-                    child.parents
-                    if isinstance(child.parents, str)
-                    else child.parents[0]
-                )
-                label_map[parent_ref] = str(child.data)
             labeled_parents = []
-            for parent in processed_parents:
-                if parent.id in label_map:
-                    parent.name = label_map[parent.id]
-                    labeled_parents.append(parent)
+            for file, inputs in input_maps.items():
+                parents = parent_input_maps.get(file, [])
+                for child in inputs:
+                    if not isinstance(child, Text) or not child.parents:
+                        continue
+                    parent_ref = (
+                        child.parents
+                        if isinstance(child.parents, str)
+                        else child.parents[0]
+                    )
+                    parent = next((p for p in parents if p.id == parent_ref), None)
+                    if parent:
+                        parent.name = str(child.data)
+                        labeled_parents.append(parent)
             return self._execute_training(task, labeled_parents, kwargs)
-        return self._execute_training(task, processed_inputs, kwargs)
+        raise TypeError(f"Unsupported task type for training: {type(task)}")
 
     def _validate_relative_image(
         self, inputs: list[Image | ImageCrop], parents: list[Data]
@@ -890,19 +893,22 @@ class Collectra:
 
     def _prepare_training_data(
         self, kwargs: dict, children: list[DataNode] = []
-    ) -> list:
+    ) -> tuple[list, dict]:
         """Prepare training data from input paths."""
         processed_inputs = []
         inputs = kwargs.get("input", [])
+
+        input_maps = dict()
 
         for input_path in inputs:
             item_files = self._get_training_files(
                 Path(input_path) if isinstance(input_path, str) else input_path
             )
             for item_file in item_files:
-                processed_inputs.extend(DataNode.batch_process(item_file, children))
+                input_maps[item_file.name] = DataNode.batch_process(item_file, children)
+                processed_inputs.extend(input_maps[item_file.name])
 
-        return processed_inputs
+        return processed_inputs, input_maps
 
     def _get_training_files(self, input_path: Path) -> list[Path]:
         """Get training files from input path."""

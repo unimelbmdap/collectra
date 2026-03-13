@@ -25,7 +25,6 @@ Functions:
 
 import importlib
 import os
-import traceback
 import zipfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -35,6 +34,10 @@ import yaml
 from rich import print
 from tqdm import tqdm
 from yaml.emitter import Emitter, ScalarAnalysis
+
+from .logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def get_env(key: str, file: str = ".env") -> str:
@@ -47,7 +50,7 @@ def get_env(key: str, file: str = ".env") -> str:
 
 def traceback_error(e: Exception, message: str = "", verbose: bool = False):
     if verbose:
-        traceback.print_exc()
+        logger.exception("An error occurred")
     if message:
         print(f"{message}\n")
     print(str(e))

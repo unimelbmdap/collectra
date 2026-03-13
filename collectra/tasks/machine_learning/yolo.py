@@ -416,7 +416,6 @@ class ClassifierYOLO(ObjectDetectionYOLO):
         log = kwargs["base_folder"] / log
         log.mkdir(parents=True, exist_ok=True)
         print(f"Training files will be saved to: {log}")
-
         # Derive classes from training data, not from pipeline children nodes
         classes = sorted(set(img.name for img in images))
         kwargs.pop("classes", None)
@@ -430,6 +429,7 @@ class ClassifierYOLO(ObjectDetectionYOLO):
         train_dir, val_dir = self._prepare_assets(
             classes, log, validation, exclude, *images
         )
+        breakpoint()
         return self._train_fold(train_dir, val_dir, classes, log, kwargs)
 
     def _train_fold(
