@@ -429,7 +429,6 @@ class ClassifierYOLO(ObjectDetectionYOLO):
         train_dir, val_dir = self._prepare_assets(
             classes, log, validation, exclude, *images
         )
-        breakpoint()
         return self._train_fold(train_dir, val_dir, classes, log, kwargs)
 
     def _train_fold(
