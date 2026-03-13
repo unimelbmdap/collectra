@@ -13,7 +13,10 @@ from collectra.types.images import Image, ImageCrop
 from collectra.types.texts import Text
 from collectra.utils import change_dir
 
+from ...logger import get_logger
 from .base import MachineLearningTask
+
+logger = get_logger(__name__)
 
 __all__ = ["ObjectDetectionYOLO", "ClassifierYOLO"]
 
@@ -62,7 +65,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
     def _reload(self) -> None:
         """Reload the YOLO model from the original model path."""
         if not self.original_model_path:
-            raise Warning("Original model path is not set. Skipping...")
+            logger.warning("Original model path is not set. Skipping...")
         self.model = self.original_model_path
         self._load()
 
@@ -76,7 +79,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
             self.original_model_path = self.model
             self.model = YOLO(Path(self.model))
             return
-        raise Warning("Model is already loaded or invalid model path provided.")
+        logger.warning("Model is already loaded or invalid model path provided.")
 
     @ThreadingLocked()
     def run(self, *args: Image) -> list[Image]:

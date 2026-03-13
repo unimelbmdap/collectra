@@ -5,7 +5,7 @@ from rich.logging import RichHandler
 
 def setup_logging(verbose: bool = False) -> None:
     level = logging.DEBUG if verbose else logging.WARNING
-    handler = RichHandler(rich_tracebacks=True, show_path=False)
+    handler = RichHandler(rich_tracebacks=True, show_path=False, markup=True)
     handler.setLevel(level)
     pkg_logger = logging.getLogger("collectra")
     pkg_logger.setLevel(level)

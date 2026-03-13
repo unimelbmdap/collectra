@@ -94,6 +94,9 @@ class LLM(Task):
         return self._add_text(value())
 
     def _add_text(self, text: str) -> dict:
+        text = (
+            "''" if len(text.strip()) == 0 else text.strip()
+        )  # Avoid empty string issues in some LLMs
         return {"type": "text", "text": text}
 
     def pre_run(self) -> tuple:
@@ -170,7 +173,7 @@ class LLM(Task):
 
         response = self.parser.invoke(response)
 
-        return response
+        return "" if response in ('""', "''") else response.strip()
 
     def run(self, *args: Text | Image) -> Text | None:
         """Execute LLM inference on the provided inputs with template-based prompt generation.
