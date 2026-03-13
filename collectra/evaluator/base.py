@@ -181,6 +181,9 @@ class Evaluator:
         gold_ids = list(gold_node.items.keys())
 
         return {
+            "types": list(
+                set([type(item).__name__ for item in gold_node.items.values()])
+            ),
             "precision": 0.0,  # No predictions = undefined (0/0), defaults to 0.0
             "recall": 0.0,  # Missed all gold items
             "f1": 0.0,
@@ -218,6 +221,9 @@ class Evaluator:
         predicted_ids = list(input_node.items.keys())
 
         return {
+            "types": list(
+                set([type(item).__name__ for item in input_node.items.values()])
+            ),
             "precision": 0.0,  # All predictions are wrong
             "recall": 1.0,  # Nothing to find = found everything
             "f1": 0.0,
