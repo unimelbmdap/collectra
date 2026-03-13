@@ -88,6 +88,14 @@ class LLMCanonicaliser(CollectraLLM):
                 entities[result[0].page_content] = [result[0].id]
         return entities
 
+    def invoke(self) -> str:
+        response = super().invoke()
+        # Clean response of any leading/trailing whitespace and newlines, and remove any empty quotes
+        response = response.strip()
+        if response in ('""', "''"):
+            response = ""
+        return response
+
     def run(self, *args: Text) -> Text:
         """Canonicalize the input text against known entities.
 

@@ -795,59 +795,69 @@ class Collectra:
             **kwargs: Training parameters including 'input' paths.
 
         Returns:
-            processed_inputs
+            Training metrics (DetMetrics or ClassifyMetrics), or None.
         """
         self._ensure_workflow_connected()
         task = self._get_ml_task(task_name)
-        children = self.node_manager.get_children_data(
-            self.node_manager.resolve_node(task_name)
-        )
-        parents = self.node_manager.get_parents_data(
-            self.node_manager.resolve_node(task_name)
-        )
+        task_node = self.node_manager.resolve_node(task_name)
+        children = self.node_manager.get_children_data(task_node)
+        parents = self.node_manager.get_parents_data(task_node)
         kwargs["classes"] = kwargs.get("classes", [child.name for child in children])
         kwargs = self._merge_task_params(task_name, kwargs)
-        if isinstance(task, ObjectDetectionYOLO) and not isinstance(
-            task, ClassifierYOLO
-        ):
+        if isinstance(task, ClassifierYOLO):
+            _, input_maps = self._prepare_training_data(kwargs, children)
+            _, parent_input_maps = self._prepare_training_data(kwargs, parents)
+            labeled_parents = self._build_labeled_parents(input_maps, parent_input_maps)
+            return self._execute_training(task, labeled_parents, kwargs)
+        if isinstance(task, ObjectDetectionYOLO):
             processed_inputs, _ = self._prepare_training_data(kwargs, children)
             processed_parents, _ = self._prepare_training_data(kwargs, parents)
             self._validate_relative_image(processed_inputs, processed_parents)
             return self._execute_training(task, processed_inputs, kwargs)
-        if isinstance(task, ClassifierYOLO):
-            _, input_maps = self._prepare_training_data(kwargs, children)
-            _, parent_input_maps = self._prepare_training_data(kwargs, parents)
-            # For classification: parent images are the training data,
-            # child Text objects provide the class labels via their .data field.
-            labeled_parents = []
-            for file, inputs in input_maps.items():
-                parents = parent_input_maps.get(file, [])
-                for child in inputs:
-                    if not isinstance(child, Text) or not child.parents:
-                        continue
-                    parent_ref = (
-                        child.parents
-                        if isinstance(child.parents, str)
-                        else child.parents[0]
-                    )
-                    parent = next((p for p in parents if p.id == parent_ref), None)
-                    if parent:
-                        parent.name = str(child.data)
-                        labeled_parents.append(parent)
-            return self._execute_training(task, labeled_parents, kwargs)
         raise TypeError(f"Unsupported task type for training: {type(task)}")
+
+    def _build_labeled_parents(
+        self,
+        input_maps: dict[str, list],
+        parent_input_maps: dict[str, list],
+    ) -> list:
+        """Build labeled parent images from child Text nodes for classification training.
+
+        For classification: parent images are the training data,
+        child Text objects provide the class labels via their .data field.
+
+        Args:
+            input_maps: Mapping of file names to child data nodes.
+            parent_input_maps: Mapping of file names to parent data nodes.
+
+        Returns:
+            List of parent images with class labels assigned.
+        """
+        labeled_parents = []
+        for file, inputs in input_maps.items():
+            file_parents = parent_input_maps.get(file, [])
+            for child in inputs:
+                if not isinstance(child, Text) or not child.parents:
+                    continue
+                parent_ref = (
+                    child.parents
+                    if isinstance(child.parents, str)
+                    else child.parents[0]
+                )
+                parent = next((p for p in file_parents if p.id == parent_ref), None)
+                if parent:
+                    parent.name = str(child.data)
+                    labeled_parents.append(parent)
+        return labeled_parents
 
     def _validate_relative_image(
         self, inputs: list[Image | ImageCrop], parents: list[Data]
-    ) -> list[ImageCrop]:
+    ) -> None:
         """Validate that image dimensions are relative to their parent data node if image is of type collectra.ImageCrop
 
         Args:
             inputs: List of Data objects to validate.
-
-        Returns:
-            List of Data objects with validated image dimensions.
-
+            parents: List of parent Data objects.
         """
         for input in inputs:
             if type(input) == Image:
