@@ -108,9 +108,9 @@ class ObjectDetectionYOLO(MachineLearningTask):
         if isinstance(image, ImageCrop):
             with tempfile.TemporaryDirectory() as temp_dir:
                 img = image.pil()
-                img_path = Path(temp_dir) / Path(image.get_path()).name
-                img.save(img_path)
-                results: Results = (self.model(img_path, iou=0.6))[0]
+                img_path = Path(temp_dir) / f"{Path(image.get_path()).stem}.png"
+                img.save(img_path, format="PNG")
+                results: Results = (self.model(img_path, iou=0.8))[0]
         else:
             results: Results = (self.model(image.get_path()))[0]
 

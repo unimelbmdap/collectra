@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Optional
 
-from collectra import MachineLearningTask, ObjectDetectionYOLO, Task
+from collectra import Image, ImageCrop, MachineLearningTask, ObjectDetectionYOLO, Task
 from collectra.utils import load_class_from_string
 from utils.get_types import get_param_types, get_return_type
 
@@ -34,22 +34,35 @@ def test_generic_machine_learning_task(generic_type, debug):
         debug(e)
 
 
-# def test_object_detection_task(task_data, images, train_yolo, classes, debug):
-#     try:
-#         name, data = task_data
-#         assert data[name], f"Task {name} should be in task_data"
-#         cls = load_class_from_string(data[name].pop("type"))
-#         task = cls(name=name, **data[name])
-#         assert isinstance(
-#             task, ObjectDetectionYOLO
-#         ), f"Task {name} should be an instance of ObjectDetectionYOLO"
-#         results = train_yolo(
-#             task,
-#             *images,
-#             classes=classes,
-#             project=f"{task.name}-test",
-#         )
-#         assert results, "Training failed to return any results"
-#         assert results.results_dict is not None, "results_dict should exist"
-#     except Exception as e:
-#         debug(e)
+def test_object_detection_task(task_data, images, train_yolo, classes, debug):
+    try:
+        name, data = task_data
+        assert data[name], f"Task {name} should be in task_data"
+        cls = load_class_from_string(data[name].pop("type"))
+        task = cls(name=name, **data[name])
+        assert isinstance(
+            task, ObjectDetectionYOLO
+        ), f"Task {name} should be an instance of ObjectDetectionYOLO"
+
+        prepared_images = []
+        for img in images:
+            if isinstance(img, ImageCrop) and img.source_parent is None:
+                img.add_source_parent(
+                    Image(
+                        name="specimen_sheet",
+                        data=img.get_path(),
+                        orientation=img.orientation,
+                    )
+                )
+            prepared_images.append(img)
+
+        results = train_yolo(
+            task,
+            *prepared_images,
+            classes=classes,
+            project=f"{task.name}-test",
+        )
+        assert results, "Training failed to return any results"
+        assert results.results_dict is not None, "results_dict should exist"
+    except Exception as e:
+        debug(e)
