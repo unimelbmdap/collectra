@@ -9,6 +9,7 @@ from typing_extensions import Annotated
 
 from .logger import get_logger, setup_logging
 from .partition import get_files, get_partitions, process_partitions
+from .utils import resolve_files, valid_raw_files
 
 logger = get_logger(__name__)
 
@@ -187,6 +188,7 @@ def run(
             data["output"] = str(output)
         data["files"] = list()
         pipeline = resolve_workflow_path(workflow)
+        files = resolve_files(inputs, [f".{pipeline.ext}", *valid_raw_files()])
         for input_path in inputs:
             input_path = Path(input_path)
             if input_path.is_file() or (
@@ -216,6 +218,10 @@ def evaluate(
     gold: Annotated[
         Path, typer.Option("--gold", "-g", help="folder of gold standard files")
     ],
+    html: Annotated[
+        Path | None,
+        typer.Option("--html", help="Save Plotly HTML report to this path"),
+    ] = None,
 ):
     """Evaluate predicted results against gold standard files.
 
@@ -246,6 +252,10 @@ def evaluate(
             console.print(Columns(report.aggregate_tables))
         for table in report.tables:
             console.print(table)
+        if html:
+            from .evaluator.visualise import generate_evaluation_html
+
+            generate_evaluation_html(report, html)
     except Exception as e:
         logger.exception("Evaluation failed")
 
@@ -408,8 +418,8 @@ def partition(
 ):
     inputs = ctx.args
     try:
-        files, inputs = get_files(inputs)
-        partitions = get_partitions(inputs)
+        files, args = get_files(inputs)
+        partitions = get_partitions(args)
         process_partitions(files, partitions, seed)
     except Exception as e:
         logger.exception("Partitioning failed")

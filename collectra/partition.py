@@ -4,7 +4,7 @@ from .commons.files import CollectraFile
 
 
 def get_files(args: list[str]) -> tuple[list[Path], list[str]]:
-    """Gets the list of files to be partitioned from the command-line arguments. It also returns a reduced list of arguments that excludes the file paths, which can be used for further processing (e.g., extracting partition specifications).
+    """Gets the list of files from the command-line arguments. It also returns a reduced list of arguments that excludes the file paths, which can be used for further processing,
 
     Args:
         args (list[str]): The list of command-line arguments.
