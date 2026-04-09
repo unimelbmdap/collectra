@@ -1,14 +1,12 @@
-from collectra import Image, ImageCrop, ObjectDetectionDETR
-
-TEST_DETR_MODEL = "hf-internal-testing/tiny-random-detr"
+from collectra import Image, ImageCrop, ObjectDetectionRFDETR
 
 
-def test_train_detr_temp_dir(classes, images, train_yolo, debug, tmpdir):
-    """Test training DETR model with temporary directory for logs and weights."""
+def test_train_rfdetr_temp_dir(classes, images, train_yolo, debug):
+    """Test training RF-DETR model with temporary directory for logs and weights."""
     try:
         assert len(images) > 0, "No images provided for training. Check fixture"
-        detr_task = ObjectDetectionDETR(name="label-detector", model=TEST_DETR_MODEL)
-        assert isinstance(detr_task, ObjectDetectionDETR)
+        rfdetr_task = ObjectDetectionRFDETR(name="label-detector")
+        assert isinstance(rfdetr_task, ObjectDetectionRFDETR)
 
         prepared_images = []
         for img in images:
@@ -22,12 +20,11 @@ def test_train_detr_temp_dir(classes, images, train_yolo, debug, tmpdir):
                 )
             prepared_images.append(img)
 
-        # Reuse the same helper fixture used by YOLO tests so setup is identical.
         results = train_yolo(
-            detr_task,
+            rfdetr_task,
             *prepared_images,
             classes=classes,
-            project=f"{detr_task.name}-test",
+            project=f"{rfdetr_task.name}-test",
             batch=1,
             wandb=False,
         )
@@ -39,12 +36,16 @@ def test_train_detr_temp_dir(classes, images, train_yolo, debug, tmpdir):
         debug(e)
 
 
-def test_run_detr(image, debug):
-    """Test the DETR object detection model on a single image."""
+def test_run_rfdetr(image, debug, tmp_path, monkeypatch):
+    """Test the RF-DETR object detection model on a single image."""
     try:
-        detr_task = ObjectDetectionDETR(name="label-detector", model=TEST_DETR_MODEL)
-        assert isinstance(detr_task, ObjectDetectionDETR)
-        detections = detr_task.run(image)
+        # RFDETRBase() downloads "rf-detr-base.pth" relative to cwd. Pin cwd
+        # to pytest's tmp_path (under /tmp) so the weights land there and get
+        # cleaned up automatically by pytest's tmp_path retention policy.
+        monkeypatch.chdir(tmp_path)
+        rfdetr_task = ObjectDetectionRFDETR(name="label-detector")
+        assert isinstance(rfdetr_task, ObjectDetectionRFDETR)
+        detections = rfdetr_task.run(image)
         assert isinstance(detections, list), "Detections should be a list"
         assert all(
             isinstance(det, ImageCrop) for det in detections
