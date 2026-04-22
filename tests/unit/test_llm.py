@@ -84,3 +84,49 @@ def test_pre_run():
     assert len(mock_self.messages) == 1
     assert prompt == "Intro\n\nHello {name}"
     assert pattern == r"\{(.*?)\}"
+
+def test_check_inputs():
+    mock_self = MagicMock(spec=LLM)
+    mock_self.messages = [
+        MagicMock(),
+        MagicMock(content=[{"type": "text", "text": "hello"}])
+    ]
+
+    LLM.check_inputs(mock_self, MagicMock(spec=Text))  # valid - should not raise
+
+    with pytest.raises(ValueError):
+        LLM.check_inputs(mock_self, MagicMock(spec=Text), MagicMock(spec=Text))  # too many inputs
+
+    mock_self.messages = [MagicMock()]
+    with pytest.raises(ValueError):
+        LLM.check_inputs(mock_self, MagicMock(spec=Text))  # wrong message count
+
+def test_replace_inputs():
+    mock_self = MagicMock(spec=LLM)
+    mock_self._add_text.side_effect = lambda t: {"type": "text", "text": t}
+    mock_self._add_content.side_effect = lambda v: {"type": "text", "text": v()}
+
+    mock_text = MagicMock(spec=Text)
+    mock_text.name = "name"
+    mock_text.return_value = "Alice"
+
+    result = LLM.replace_inputs(mock_self, r"\{(.*?)\}", "Hello {name}", mock_text)
+    assert {"type": "text", "text": "Alice"} in result
+
+    result = LLM.replace_inputs(mock_self, r"\{(.*?)\}", "Hello {unknown}")
+    assert any("No content provided" in r.get("text", "") for r in result)
+
+def test_invoke():
+    mock_self = MagicMock()
+    mock_self.context.usage_file = None
+    mock_self.parser.invoke.return_value = "hello"
+
+    result = LLM.invoke(mock_self)
+
+    assert result == "hello"
+    mock_self.chain.invoke.assert_called_once_with(mock_self.messages)
+
+    # empty string handling
+    mock_self.parser.invoke.return_value = "''"
+    result = LLM.invoke(mock_self)
+    assert result == ""
