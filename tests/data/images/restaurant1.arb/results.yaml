@@ -1,6 +1,6 @@
 collectra_results_metadata:
   timestamp: '2025-08-16T04:25:51.126362+00:00'
-  validation: true
+  partition: "true"
 
 image_sheet:
   id: image_sheet
@@ -11,6 +11,7 @@ human:
   - type: collectra.ImageCrop
     id: human1
     path: restaurant1.jpg
+    parents: image_sheet
     x_center: 0.193703
     y_center: 0.634770
     width_relative: 0.050502
@@ -18,6 +19,7 @@ human:
   - type: collectra.ImageCrop
     id: human2
     path: restaurant1.jpg
+    parents: image_sheet
     x_center: 0.907291
     y_center: 0.664313
     width_relative: 0.084213
@@ -27,6 +29,7 @@ chair:
   - type: collectra.ImageCrop
     id: chair1
     path: restaurant1.jpg
+    parents: image_sheet
     x_center: 0.662632
     y_center: 0.671351
     width_relative: 0.048777
@@ -34,8 +37,10 @@ chair:
   - type: collectra.ImageCrop
     path: restaurant1.jpg
     id: chair2
+    parents: image_sheet
     x_center: 0.925907
     y_center: 0.818573
+    parents: image_sheet
     width_relative: 0.148038
     height_relative: 0.098108
 

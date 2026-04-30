@@ -25,7 +25,6 @@ Functions:
 
 import importlib
 import os
-import traceback
 import zipfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -35,6 +34,42 @@ import yaml
 from rich import print
 from tqdm import tqdm
 from yaml.emitter import Emitter, ScalarAnalysis
+
+from .logger import get_logger
+
+logger = get_logger(__name__)
+
+
+def valid_raw_files() -> list[str]:
+    """Return a list of valid raw file extensions for processing."""
+    return [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif", ".webp"]
+
+
+def resolve_files(inputs: list[Path], ext: list[str]) -> list[Path]:
+    """Resolve a list of file paths from the given inputs.
+
+    This function takes a list of Path objects, which can be either files or directories.
+    It recursively collects all files from the directories and returns a flat list of file paths.
+
+    Args:
+        inputs (list[Path]): List of Path objects representing files or directories.
+
+    Returns:
+        list[Path]: A flat list of Path objects representing all files found in the input paths.
+    """
+    files: list[Path] = []
+    for path in inputs:
+        if path.is_dir():
+            if path.suffix.lower() in ext:
+                files.append(path)
+            else:
+                sub_files = [
+                    file for file in path.rglob("*") if file.suffix.lower() in ext
+                ]
+                files.extend(sub_files)
+        elif path.is_file() and path.suffix.lower() in ext:
+            files.append(path)
+    return files
 
 
 def get_env(key: str, file: str = ".env") -> str:
@@ -47,7 +82,7 @@ def get_env(key: str, file: str = ".env") -> str:
 
 def traceback_error(e: Exception, message: str = "", verbose: bool = False):
     if verbose:
-        traceback.print_exc()
+        logger.exception("An error occurred")
     if message:
         print(f"{message}\n")
     print(str(e))
@@ -383,9 +418,9 @@ LiteralDumper.add_representer(str, str_presenter)
 
 def write_yaml(data, filepath: Path | str):
     with open(filepath, "w") as f:
-        for file_key, data in data.items():
+        for file_key, data_item in data.items():
             yaml.dump(
-                {file_key: data},
+                {file_key: data_item},
                 f,
                 Dumper=LiteralDumper,
                 sort_keys=False,

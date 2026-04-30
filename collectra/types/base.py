@@ -16,9 +16,9 @@ from ..utils import (
 
 __all__ = ["Data", "DataNode"]
 
-import logging
+from ..logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -28,6 +28,9 @@ class Data(BaseEntity):
     id: str = field(default="")
     parents: list[str] = field(default_factory=list)
     partition: str = field(default="")
+    embeddings: list[str] = field(default_factory=list)
+    orientation: str = field(default="north")  # e.g., "landscape" or "portrait"
+    ensemble: list[str] = field(default_factory=list)
 
     def set_parents(self, parents: list["Data"]) -> None:
         self.parents = [parent.id for parent in parents]
@@ -157,8 +160,11 @@ class DataNode(Node):
         if threshold > 1.0 or threshold < 0.0:
             raise ValueError(f"Invalid threshold provided: {threshold}")
 
+        # Use gold items for type detection when self is empty, so labels with
+        # no predictions still appear in aggregated metrics (e.g. empty [] in YAML)
+        _type_source = self.items if self.items else gold_items.items
         metrics = {
-            "types": list(set([type(item).__name__ for item in self.items.values()])),
+            "types": list(set([type(item).__name__ for item in _type_source.values()])),
             "precision": 0.0,
             "recall": 0.0,
             "f1": 0.0,
@@ -236,7 +242,7 @@ class DataNode(Node):
                     score = pred_item.evaluate(gold_item)
                     score_matrix[pred_idx, gold_idx] = score
                 except NotImplementedError as e:
-                    logger.info(f"Skipping evaluation for {pred_id} vs {gold_id}: {e}")
+                    logger.debug(f"Skipping evaluation for {pred_id} vs {gold_id}: {e}")
 
         # Step 2: Hungarian algorithm for optimal bipartite matching
         # Convert to cost matrix (minimize cost = maximize score)
@@ -345,7 +351,9 @@ class DataNode(Node):
                 raise ValueError(f"Failed to load {item} with {cls_}")
             self.add_item(instance)
         except Exception as e:
-            self.catcher.set_err(str(e))
+            logger.error(
+                "Failed to create instance of %s: %s", cls_.__name__, e, exc_info=True
+            )
 
     def _create_ensemble_instances(self, base_path: Path, cls_: type, **item) -> None:
         try:
@@ -373,6 +381,8 @@ class DataNode(Node):
         value: str | Path | None = None,
         **kwargs,
     ) -> None:
+        skip_type_check: bool = kwargs.get("skip_type_check", False)
+        ensemble: bool = kwargs.get("ensemble", False)
         value = value if value else kwargs.get("file", None)
         if value and Path(value).exists() and Path(value).is_dir():
             value = Path(value)
@@ -384,11 +394,15 @@ class DataNode(Node):
                         partition = results.pop(
                             "collectra_results_metadata", dict()
                         ).get("partition", None)
-                        data = results.get(key, None)
-                        if not data:
+                        if key not in results:
                             raise ValueError(
                                 f"[red]{key}[/red] could not be found in {value}"
                             )
+                        data = results[key]
+                        if not data:
+                            # Key exists but empty — pipeline processed it, found nothing
+                            self.status = NodeStatus.READY
+                            return
                         data = data if isinstance(data, list) else [data]
                         for item in data:
                             primitive_type = False
@@ -403,7 +417,7 @@ class DataNode(Node):
                                     )
                                 cls_ = load_class_from_string(item.pop("type"))
                                 if not (
-                                    self.skip_type_check or self.ensemble
+                                    skip_type_check or ensemble
                                 ) and not self.check_type(cls_):
                                     raise TypeError(
                                         f"{cls_} is not a subclass or not defined in {self.types}"
@@ -420,23 +434,35 @@ class DataNode(Node):
                                     and "partition" in cls_.all_attributes()
                                 ):
                                     item["partition"] = partition
-                                if self.ensemble:
+                                if ensemble:
                                     self._create_ensemble_instances(value, cls_, **item)
                                 else:
                                     self._create_instance(cls_, **item)
                             except Exception as e:
                                 if not primitive_type:
-                                    self.catcher.set_err(str(e))
+                                    logger.error(
+                                        "Error processing item in %s: %s",
+                                        self.name,
+                                        e,
+                                        exc_info=True,
+                                    )
                                 else:
                                     self._create_instances(name=key, data=str(item))
 
                 except Exception as e:
-                    self.catcher.set_err(str(e))
+                    logger.error(
+                        "Error loading data for %s from %s: %s",
+                        key,
+                        value,
+                        e,
+                        exc_info=True,
+                    )
         elif key:
             self._create_instances(name=key, data=value)
 
     @staticmethod
     def batch_process(item_file: Path, data_nodes: list["DataNode"]) -> list[Data]:
+        names = [data_node.name for data_node in data_nodes]
         with change_dir(item_file):
             try:
                 data: list[Data] = list()
@@ -449,8 +475,8 @@ class DataNode(Node):
                     partition = file_data.get("collectra_results_metadata", dict()).get(
                         "partition", None
                     )
-                names = [data_node.name for data_node in data_nodes]
                 all_names_not_found = all(name not in file_data for name in names)
+                # This is to load empty images without any annotation (for training negative samples).
                 if all_names_not_found:
                     print(
                         f"[yellow]No matching data found in [blue]{item_file}[/blue] for names: {', '.join(names)}. Ignoring..."

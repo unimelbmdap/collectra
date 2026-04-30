@@ -8,6 +8,7 @@ from typing import List, Set, Union
 
 import networkx as nx
 
+from ..commons.base import NodeStatus
 from ..tasks.base import Task, TaskNode
 from ..types.base import Data, DataNode, Node
 
@@ -24,13 +25,25 @@ class NodeGraphManager:
         flow (nx.DiGraph): The NetworkX directed graph representing the workflow.
     """
 
-    def __init__(self, flow: nx.DiGraph):
-        """Initialize the NodeGraphManager.
+    def __init__(self):
+        """Initialize the NodeGraphManager with an empty graph."""
+        self.flow = nx.DiGraph()
 
-        Args:
-            flow (nx.DiGraph): The workflow graph to manage.
-        """
-        self.flow = flow
+    # =========================================================================
+    # Graph Lifecycle
+    # =========================================================================
+
+    def is_empty(self) -> bool:
+        """Returns True if the graph has no nodes."""
+        return len(self.flow.nodes) == 0
+
+    def copy_graph(self) -> nx.DiGraph:
+        """Return a copy of the graph."""
+        return self.flow.copy()
+
+    # =========================================================================
+    # Node Resolution
+    # =========================================================================
 
     def resolve_node(self, node_name: str) -> Union[TaskNode, DataNode]:
         """Get a node from the workflow graph by name.
@@ -54,49 +67,106 @@ class NodeGraphManager:
             )
         return data
 
-    def get_parents_data(self, node: Node) -> List[DataNode]:
-        """Get all parent data nodes for a given node.
+    # =========================================================================
+    # Node Retrieval (hierarchical: get_nodes -> get_task_nodes / get_data_nodes)
+    # =========================================================================
 
-        Args:
-            node (Node): The node to get parents for.
+    def get_nodes(self) -> list[Union[TaskNode, DataNode]]:
+        """Return all node objects in the graph."""
+        return [node["node"] for node in self.flow.nodes.values()]
 
-        Returns:
-            List[DataNode]: List of parent data nodes.
-        """
-        parents: List[DataNode] = list()
+    def get_task_nodes(self) -> list[TaskNode]:
+        """Return only TaskNode instances from the graph."""
+        return [n for n in self.get_nodes() if isinstance(n, TaskNode)]
+
+    def get_data_nodes(self) -> list[DataNode]:
+        """Return only DataNode instances from the graph."""
+        return [n for n in self.get_nodes() if isinstance(n, DataNode)]
+
+    def get_node_names(self) -> list[str]:
+        """Return all node names in the graph."""
+        return list(self.flow.nodes.keys())
+
+    # =========================================================================
+    # Parent Retrieval (hierarchical: get_parents -> get_parents_data / get_parents_task)
+    # =========================================================================
+
+    def get_parents(self, node: Node) -> list[Union[TaskNode, DataNode]]:
+        """Get all resolved parent nodes for a given node."""
         parent_names = list(self.flow.predecessors(str(node.name)))
-        for parent_name in parent_names:
-            parent_node = self.resolve_node(parent_name)
-            if isinstance(parent_node, DataNode):
-                parents.append(parent_node)
-        return parents
+        return [self.resolve_node(name) for name in parent_names]
+
+    def get_parents_data(self, node: Node) -> List[DataNode]:
+        """Get all parent data nodes for a given node."""
+        return [p for p in self.get_parents(node) if isinstance(p, DataNode)]
+
+    def get_parents_task(self, node: Node) -> list[TaskNode]:
+        """Get all parent task nodes for a given node."""
+        return [p for p in self.get_parents(node) if isinstance(p, TaskNode)]
+
+    # =========================================================================
+    # Children Retrieval (hierarchical: get_children -> get_children_data / get_children_task)
+    # =========================================================================
+
+    def get_children(self, node: Node) -> list[Union[TaskNode, DataNode]]:
+        """Get all resolved child nodes for a given node."""
+        child_names = list(self.flow.successors(str(node.name)))
+        return [self.resolve_node(name) for name in child_names]
 
     def get_children_data(self, node: Node) -> List[DataNode]:
-        """Get all child data nodes for a given node.
+        """Get all child data nodes for a given node."""
+        return [c for c in self.get_children(node) if isinstance(c, DataNode)]
 
-        Args:
-            node (Node): The node to get children for.
+    def get_children_task(self, node: Node) -> list[TaskNode]:
+        """Get all child task nodes for a given node."""
+        return [c for c in self.get_children(node) if isinstance(c, TaskNode)]
 
-        Returns:
-            List[DataNode]: List of child data nodes.
-        """
-        return self.get_data_nodes(list(self.flow.successors(str(node.name))))
+    # =========================================================================
+    # Node Attributes
+    # =========================================================================
 
-    def get_data_nodes(self, node_names: List[str]) -> List[DataNode]:
-        """Filter and return only data nodes from a list of node names.
+    def set_node_attr(self, node_name: str, **attrs) -> None:
+        """Set attributes on a graph node."""
+        self.flow.nodes[node_name].update(attrs)
 
-        Args:
-            node_names (List[str]): List of node names to filter.
+    # =========================================================================
+    # Graph Construction
+    # =========================================================================
 
-        Returns:
-            List[DataNode]: List of data nodes matching the names.
-        """
-        nodes: List[DataNode] = list()
-        for node_name in node_names:
-            node = self.resolve_node(node_name)
+    def has_node(self, node_name: str) -> bool:
+        """Check if a node exists in the graph."""
+        return self.flow.has_node(node_name)
+
+    def add_edge(self, source: str, target: str) -> None:
+        """Add an edge between two nodes."""
+        self.flow.add_edge(source, target)
+
+    def try_resolve_existing_task(self, name: str, cls_: type) -> Union[Task, None]:
+        """If node exists and is a TaskNode subclass, return its Task; else None."""
+        node_data = self.flow.nodes.get(name, None)
+        if node_data and issubclass(cls_, Task):
+            resolved = node_data.get("node", None)
+            if resolved and isinstance(resolved, TaskNode):
+                return resolved.get_task()
+        return None
+
+    # =========================================================================
+    # Reset
+    # =========================================================================
+
+    def reset_all_nodes(self) -> None:
+        """Reset all nodes to their initial state."""
+        for node in self.get_nodes():
             if isinstance(node, DataNode):
-                nodes.append(node)
-        return nodes
+                node.items = dict()
+                node.ensemble_items = dict()
+                node.status = NodeStatus.NOT_READY
+            if isinstance(node, TaskNode):
+                node.status = NodeStatus.NOT_READY
+
+    # =========================================================================
+    # Add Nodes
+    # =========================================================================
 
     def add_task_node(self, name: str, obj: Task) -> None:
         """Add a task node to the workflow graph.

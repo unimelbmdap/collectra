@@ -1,16 +1,16 @@
 __all__ = ["Evaluator"]
 
-import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 from rich.table import Table
 
+from ..logger import get_logger
 from ..types import DataNode
 from ..utils import change_dir
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -91,35 +91,55 @@ class Evaluator:
 
     def __init__(self, predicted_folder: Path, gold_folder: Path, ext: str) -> None:
         self.ext = ext.lower().replace(".", "")
-        self.predicted_files: dict[str, Path] = self._discover_collectra_folders(
-            predicted_folder
+        entries = self._discover_collectra_folders(predicted_folder)
+        self.entries = self._discover_collectra_folders(
+            gold_folder, gold=True, entries=entries
         )
-        self.gold_files: dict[str, Path] = self._discover_collectra_folders(gold_folder)
         self.results: list[FileEvaluationResult] = []
         self.aggregate_metrics: dict = {}
 
     def __call__(self) -> None:
         self.evaluate()
 
-    def _discover_collectra_folders(self, folder: Path) -> dict[str, Path]:
+    def _discover_collectra_folders(
+        self,
+        folder: Path,
+        entries: dict[str, list[Path | None]] | None = None,
+        gold: bool = False,
+    ) -> dict[str, list[Path | None]]:
         """
         Find all .{ext} directories (e.g., .grapto folders).
 
+        Args:
+            folder: Path to search for .{ext} directories
+            entries: dictionary of tuples base_name: (gold_path, predicted_path) to extend if empty, or to have entries updated.
+            gold: Whether to look for gold files (as opposed to predicted files)
+
         Returns:
-            dict mapping base filename -> full path
-            e.g., {"MMRIRN1505070_P350015": Path(".../MMRIRN1505070_P350015.grapto")}
+            dictionary mapping base_name to tuples (gold_path, predicted_path) for each discovered .{ext} directory
         """
-        result = {}
+        if entries is None:
+            entries = {}
         for item in folder.iterdir():
-            if item.is_dir() and item.suffix == f".{self.ext}":
-                # Extract base name without extension for matching
-                base_name = item.stem
-                result[base_name] = item
-        return result
+            if not (item.is_dir() and item.suffix == f".{self.ext}"):
+                continue
+            base_name = item.stem
+            if base_name not in entries:
+                if gold:
+                    entries[base_name] = [item, None]
+                else:
+                    entries[base_name] = [None, item]
+            else:
+                existing_gold, existing_predicted = entries[base_name]
+                if gold:
+                    entries[base_name] = [item, existing_predicted]
+                else:
+                    entries[base_name] = [existing_gold, item]
+        return entries
 
     def _validate_file_pairs(
         self,
-    ) -> tuple[list[tuple[Path, Path, str]], list[str], list[str]]:
+    ) -> tuple[list[tuple[Path, Path]], list[Path], list[Path]]:
         """
         Match input files to gold files and identify mismatches.
 
@@ -128,19 +148,26 @@ class Evaluator:
             - missing_gold: input files without corresponding gold
             - extra_gold: gold files without corresponding input
         """
-        input_names = set(self.predicted_files.keys())
-        gold_names = set(self.gold_files.keys())
 
-        matched_names = input_names & gold_names
-        missing_gold = input_names - gold_names
-        extra_gold = gold_names - input_names
+        matched_pairs: list[tuple[Path, Path]] = []
+        missing_golds: list[Path] = []
+        extra_golds: list[Path] = []
 
-        matched_pairs = [
-            (self.predicted_files[name], self.gold_files[name], name)
-            for name in matched_names
-        ]
+        for key, (gold_path, predicted_path) in self.entries.items():
+            missing_gold = gold_path is None
+            missing_predicted = predicted_path is None
+            if not missing_gold and not missing_predicted:
+                matched_pairs.append((predicted_path, gold_path))
+            if missing_gold and missing_predicted:
+                raise ValueError(
+                    f"Entry '{key}' has neither gold nor predicted file. This should not happen."
+                )
+            if missing_gold and predicted_path is not None:
+                missing_golds.append(predicted_path)
+            if missing_predicted and gold_path is not None:
+                extra_golds.append(gold_path)
 
-        return matched_pairs, list(missing_gold), list(extra_gold)
+        return matched_pairs, list(missing_golds), list(extra_golds)
 
     def _load_collectra_file(self, path: Path) -> dict[str, DataNode]:
         """
@@ -181,6 +208,9 @@ class Evaluator:
         gold_ids = list(gold_node.items.keys())
 
         return {
+            "types": list(
+                set([type(item).__name__ for item in gold_node.items.values()])
+            ),
             "precision": 0.0,  # No predictions = undefined (0/0), defaults to 0.0
             "recall": 0.0,  # Missed all gold items
             "f1": 0.0,
@@ -218,6 +248,9 @@ class Evaluator:
         predicted_ids = list(input_node.items.keys())
 
         return {
+            "types": list(
+                set([type(item).__name__ for item in input_node.items.values()])
+            ),
             "precision": 0.0,  # All predictions are wrong
             "recall": 1.0,  # Nothing to find = found everything
             "f1": 0.0,
@@ -251,7 +284,11 @@ class Evaluator:
 
         file_result = FileEvaluationResult(filename=input_path.stem, label_metrics={})
 
-        all_labels = set(input_labels.keys()) | set(gold_labels.keys())
+        all_labels = {
+            l
+            for l in (set(input_labels.keys()) | set(gold_labels.keys()))
+            if not l.endswith("_draft")
+        }
 
         for label_name in all_labels:
             input_node = input_labels.get(label_name)
@@ -342,7 +379,24 @@ class Evaluator:
                     if (file_precision + file_recall) > 0
                     else 0
                 )
-                file_f1_scores.append(file_f1)
+                # Issues 2 & 3: skip files with no items of this type (vacuous truth)
+                if (file_tp + file_fp + file_fn) == 0:
+                    logger.warning(
+                        "Skipping vacuous file-level metrics for '%s' (no items of "
+                        "type '%s'). Excluded from file-averaged F1.",
+                        file_result.filename,
+                        data_type,
+                    )
+                # Issue 5: skip files with predictions but no gold items for this type
+                elif (file_tp + file_fn) == 0:
+                    logger.warning(
+                        "File '%s' has predictions but no gold items for type '%s'. "
+                        "Excluding from file-averaged F1 to avoid inflating recall.",
+                        file_result.filename,
+                        data_type,
+                    )
+                else:
+                    file_f1_scores.append(file_f1)
 
             # Compute per-label micro metrics
             per_label_metrics = {}
@@ -423,7 +477,7 @@ class Evaluator:
             logger.warning(f"Gold files without predictions: {extra_gold}")
 
         # Evaluate each pair
-        for input_path, gold_path, base_name in matched_pairs:
+        for input_path, gold_path in matched_pairs:
             file_result = self._evaluate_file_pair(input_path, gold_path, threshold)
             self.results.append(file_result)
 

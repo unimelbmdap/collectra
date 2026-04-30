@@ -69,6 +69,7 @@ def test_train(pipeline, debug, tmp_path):
                 task_name,
                 input=input_data,
                 log=log,
+                validation="true",
                 project=f"{pipeline.name}-{task_name}",
                 base_folder=tmp_path,
             )

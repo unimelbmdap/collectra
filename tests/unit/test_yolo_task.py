@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from collectra import ImageCrop, ObjectDetectionYOLO
+from collectra import Image, ImageCrop, ObjectDetectionYOLO
 
 
 def test_train_yolo_temp_dir(classes, images, model, train_yolo, debug, tmpdir):
@@ -17,8 +17,6 @@ def test_train_yolo_temp_dir(classes, images, model, train_yolo, debug, tmpdir):
         classes (list): A list of class names for object detection.
 
     """
-    import shutil
-
     try:
         assert len(images) > 0, "No images provided for training. Check fixture"
         yolo_task = ObjectDetectionYOLO(name="label-detector", model=model)
@@ -26,9 +24,22 @@ def test_train_yolo_temp_dir(classes, images, model, train_yolo, debug, tmpdir):
         assert isinstance(yolo_task.model, str) or isinstance(
             yolo_task.model, Path
         ), "Model should be a string or path initially"
+
+        prepared_images = []
+        for img in images:
+            if isinstance(img, ImageCrop) and img.source_parent is None:
+                img.add_source_parent(
+                    Image(
+                        name="specimen_sheet",
+                        data=img.get_path(),
+                        orientation=img.orientation,
+                    )
+                )
+            prepared_images.append(img)
+
         results = train_yolo(
             yolo_task,
-            *images,
+            *prepared_images,
             classes=classes,
             project=f"{yolo_task.name}-test",
         )

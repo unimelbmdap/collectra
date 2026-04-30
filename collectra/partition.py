@@ -4,7 +4,7 @@ from .commons.files import CollectraFile
 
 
 def get_files(args: list[str]) -> tuple[list[Path], list[str]]:
-    """Gets the list of files to be partitioned from the command-line arguments. It also returns a reduced list of arguments that excludes the file paths, which can be used for further processing (e.g., extracting partition specifications).
+    """Gets the list of files from the command-line arguments. It also returns a reduced list of arguments that excludes the file paths, which can be used for further processing,
 
     Args:
         args (list[str]): The list of command-line arguments.
@@ -237,18 +237,18 @@ def partition_files(
 
     random.seed(seed)
     random.shuffle(files)
+    total_files = len(files)
 
     for label, value in partitions.items():
         match value_type:
             case "percentage":
-                num_files = int(value * len(files))
+                num_files = int(value * total_files)
             case "integer":
                 num_files = int(value)
             case "float":
-                num_files = int(value * len(files))
+                num_files = int(value * total_files)
             case _:
                 raise ValueError(f"Unknown value type: {value_type}")
-
         partition_files = files[:num_files]
         files = files[num_files:]
         print(f"Partition '{label}': {len(partition_files)} files")

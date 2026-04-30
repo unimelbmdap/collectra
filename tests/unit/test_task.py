@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Optional
 
-from collectra import MachineLearningTask, ObjectDetectionYOLO, Task
+from collectra import Image, ImageCrop, MachineLearningTask, ObjectDetectionYOLO, Task
 from collectra.utils import load_class_from_string
 from utils.get_types import get_param_types, get_return_type
 
@@ -43,9 +43,22 @@ def test_object_detection_task(task_data, images, train_yolo, classes, debug):
         assert isinstance(
             task, ObjectDetectionYOLO
         ), f"Task {name} should be an instance of ObjectDetectionYOLO"
+
+        prepared_images = []
+        for img in images:
+            if isinstance(img, ImageCrop) and img.source_parent is None:
+                img.add_source_parent(
+                    Image(
+                        name="specimen_sheet",
+                        data=img.get_path(),
+                        orientation=img.orientation,
+                    )
+                )
+            prepared_images.append(img)
+
         results = train_yolo(
             task,
-            *images,
+            *prepared_images,
             classes=classes,
             project=f"{task.name}-test",
         )

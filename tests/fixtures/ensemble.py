@@ -111,8 +111,14 @@ def mock_data_node():
 def mock_node_manager():
     """Create a mock NodeGraphManager."""
     manager = MagicMock()
-    manager.nodes = {}
     manager.resolve_node = MagicMock(side_effect=lambda n: MagicMock(name=n))
+    manager.reset_all_nodes = MagicMock()
+    manager.get_task_nodes = MagicMock(return_value=[])
+    manager.get_data_nodes = MagicMock(return_value=[])
+    manager.get_node_names = MagicMock(return_value=[])
+    manager.get_parents = MagicMock(return_value=[])
+    manager.get_children = MagicMock(return_value=[])
+    manager.get_children_data = MagicMock(return_value=[])
     return manager
 
 
@@ -127,13 +133,12 @@ def mock_flow():
 
 
 @pytest.fixture
-def mock_ensemble_processor(mock_node_manager, mock_flow):
+def mock_ensemble_processor(mock_node_manager):
     """Create an EnsembleProcessor with mocked dependencies."""
     from collectra.pipelines.ensemble import EnsembleProcessor
 
     processor = EnsembleProcessor(
         node_manager=mock_node_manager,
-        flow=mock_flow,
         ext=".collectra",
         name="test_workflow",
         version="1.0.0",

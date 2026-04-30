@@ -1,9 +1,10 @@
 from pathlib import Path
 
-from .yolo import YOLOConverter
+from .yolo import YOLOClassifierCSV, YOLOConverter
 
 converters = {
     "yolo": YOLOConverter,
+    "yoloclassifier_csv": YOLOClassifierCSV,
 }
 
 

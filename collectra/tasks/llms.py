@@ -30,7 +30,11 @@ from collectra.tasks.base import Task
 from collectra.types.images import Image
 from collectra.types.texts import Text
 
+from ..logger import get_logger
+
 load_dotenv()
+
+logger = get_logger(__name__)
 
 
 class LLM(Task):
@@ -90,6 +94,9 @@ class LLM(Task):
         return self._add_text(value())
 
     def _add_text(self, text: str) -> dict:
+        text = (
+            "''" if len(text.strip()) == 0 else text.strip()
+        )  # Avoid empty string issues in some LLMs
         return {"type": "text", "text": text}
 
     def pre_run(self) -> tuple:
@@ -166,7 +173,7 @@ class LLM(Task):
 
         response = self.parser.invoke(response)
 
-        return response
+        return "" if response in ('""', "''") else response.strip()
 
     def run(self, *args: Text | Image) -> Text | None:
         """Execute LLM inference on the provided inputs with template-based prompt generation.
@@ -196,13 +203,9 @@ class LLM(Task):
 
             response = self.invoke()
 
-            name = (
-                f"{self.get_name()}_output"
-                if not hasattr(self, "output")
-                else self.output[0] if isinstance(self.output, list) else self.output
-            )
+            name = self.get_output_name()
             output = Text(name=name, data=response)
             return output
         except Exception as e:
-            self.catcher.set_err(str(e))
+            logger.error("LLM task '%s' failed: %s", self.name, e, exc_info=True)
             return None

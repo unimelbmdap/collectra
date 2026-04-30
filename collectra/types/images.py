@@ -21,6 +21,7 @@ __all__ = ["Image", "ImageCrop"]
 
 import base64
 import io
+import shutil
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -111,6 +112,13 @@ class Image(Data):
             else self.orientation
         )
         return serialized
+
+    def save(self, path: Path | str = None):
+        path = Path(path)
+        path.parent.mkdir(exist_ok=True, parents=True)
+
+        # Simply copy to new dest
+        shutil.copy(self.get_path(), path)
 
     @staticmethod
     def image_types() -> list[str]:
@@ -322,6 +330,12 @@ class ImageCrop(Image):
     height_relative: float = field(default=1.0)
     source_parent: "Image | ImageCrop | None" = field(init=False, default=None)
 
+    def save(self, path: Path | str = None):
+        im = self.source_parent.pil() if self.source_parent else self.pil()
+        if path is None:
+            raise ValueError("Path must be provided to save the cropped image.")
+        im.save(path)
+
     @property
     def width(self):
         return self.width_relative * self.raw_width
@@ -410,6 +424,8 @@ class ImageCrop(Image):
         elif degree_transformed == -270:
             x_center, y_center = 1 - y_center, x_center
             width_relative, height_relative = height_relative, width_relative
+
+        name = name if name else self.name
 
         return super().make_crop(
             x_center=self.x_center + (x_center - 0.5) * self.width_relative,

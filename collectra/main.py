@@ -1,25 +1,5 @@
-"""Main command-line interface for the Collectra workflow management system.
-
-This module provides the CLI commands for creating, rendering, training, and running
-Collectra workflows. It serves as the entry point for the application and handles
-user interactions through the Typer framework.
-
-The module supports the following operations:
-    - Creating new workflow configurations
-    - Rendering workflow diagrams
-    - Training machine learning tasks within workflows
-    - Executing complete workflows or specific tasks
-
-Example:
-    $ collectra make --workflow my_workflow --version 1.0
-    $ collectra run --workflow pipeline.yaml --task detection
-"""
-
-import logging
 import os
 import shutil
-import sys
-import traceback
 from pathlib import Path
 
 import typer
@@ -27,10 +7,11 @@ import yaml
 from rich.console import Console
 from typing_extensions import Annotated
 
+from .logger import get_logger, setup_logging
 from .partition import get_files, get_partitions, process_partitions
+from .utils import resolve_files, valid_raw_files
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(stream=sys.stdout)
+logger = get_logger(__name__)
 
 app = typer.Typer()
 
@@ -70,12 +51,13 @@ def render(
         Exception: If the workflow file cannot be loaded or rendered due to
             invalid format or missing dependencies.
     """
+    setup_logging(verbose=True)
     try:
         pipeline = resolve_workflow_path(workflow)
         dest.parent.mkdir(parents=True, exist_ok=True)
         pipeline.render(dest, str(dest), True)
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("Render failed")
 
 
 @app.command()
@@ -114,6 +96,7 @@ def train(
         Exception: If the task cannot be trained due to invalid task name,
             missing input files, or training process failures.
     """
+    setup_logging(verbose=True)
     try:
         from datetime import datetime
 
@@ -142,13 +125,12 @@ def train(
                 os.remove(log_cache)
 
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("Training failed")
 
 
 @app.command(
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True}
 )
-@app.command()
 def run(
     workflow: Annotated[
         Path, typer.Option("--workflow", "-w", help="path to workflow")
@@ -196,7 +178,7 @@ def run(
         Exception: If the workflow execution fails due to invalid workflow file,
             missing task, or runtime errors during execution.
     """
-    console = Console()
+    setup_logging(verbose=verbose)
     try:
         data: dict = dict()
         data["single"] = single
@@ -206,6 +188,7 @@ def run(
             data["output"] = str(output)
         data["files"] = list()
         pipeline = resolve_workflow_path(workflow)
+        files = resolve_files(inputs, [f".{pipeline.ext}", *valid_raw_files()])
         for input_path in inputs:
             input_path = Path(input_path)
             if input_path.is_file() or (
@@ -220,11 +203,8 @@ def run(
                     or (file.is_dir() and file.suffix.lower() == pipeline.ext)
                 ]
         pipeline(task, **data)
-        if verbose:
-            console.print(pipeline.log)
     except Exception as e:
-        console.print(traceback.format_exc())
-        console.print(e)
+        logger.exception("Workflow run failed")
 
 
 @app.command()
@@ -238,6 +218,10 @@ def evaluate(
     gold: Annotated[
         Path, typer.Option("--gold", "-g", help="folder of gold standard files")
     ],
+    html: Annotated[
+        Path | None,
+        typer.Option("--html", help="Save Plotly HTML report to this path"),
+    ] = None,
 ):
     """Evaluate predicted results against gold standard files.
 
@@ -252,6 +236,7 @@ def evaluate(
     """
     from rich.columns import Columns
 
+    setup_logging(verbose=True)
     console = Console()
     try:
         from collectra import Evaluator
@@ -267,8 +252,12 @@ def evaluate(
             console.print(Columns(report.aggregate_tables))
         for table in report.tables:
             console.print(table)
+        if html:
+            from .evaluator.visualise import generate_evaluation_html
+
+            generate_evaluation_html(report, html)
     except Exception as e:
-        console.print(traceback.format_exc())
+        logger.exception("Evaluation failed")
 
 
 @app.command()
@@ -281,7 +270,7 @@ def view(
         editor = Editor(file)
         editor.view()
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("View failed")
 
 
 @app.command()
@@ -330,15 +319,13 @@ def convert(
         Exception: If the conversion process fails due to invalid configuration
             or runtime errors during execution.
     """
-    console = Console()
     try:
         from .converters import convert_files
 
         convert_files(input, root_label, ext, converter, output, force=force)
 
     except Exception as e:
-        console.print(traceback.format_exc())
-        console.print(e)
+        logger.exception("Conversion failed")
 
 
 @app.command()
@@ -361,7 +348,6 @@ def ensemble(
         Path, typer.Option("--output", "-o", help="Output folder for ensemble results")
     ] = Path("ensemble_results"),
 ):
-    console = Console()
     try:
         if not folders and ensemble_folder.exists():
             for item in ensemble_folder.iterdir():
@@ -370,7 +356,7 @@ def ensemble(
         pipeline = resolve_workflow_path(workflow)
         pipeline.ensemble(folders, output)
     except Exception as e:
-        console.print(traceback.format_exc())
+        logger.exception("Ensemble failed")
 
 
 @app.command()
@@ -418,8 +404,7 @@ def analyse(
             table.add_row(feature, str(count))
         console.print(table)
     except Exception as e:
-        traceback.print_exc()
-        console.print(e)
+        logger.exception("Analysis failed")
 
 
 @app.command(
@@ -431,15 +416,13 @@ def partition(
         int, typer.Option("--seed", "-s", help="Random seed for partitioning")
     ] = 42,
 ):
-    console = Console()
     inputs = ctx.args
     try:
-        files, inputs = get_files(inputs)
-        partitions = get_partitions(inputs)
+        files, args = get_files(inputs)
+        partitions = get_partitions(args)
         process_partitions(files, partitions, seed)
     except Exception as e:
-        traceback.print_exc()
-        console.print(e)
+        logger.exception("Partitioning failed")
 
 
 if __name__ == "__main__":

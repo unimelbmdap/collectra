@@ -126,11 +126,7 @@ class LLMCanonicaliser(CollectraLLM):
 
         response = self.invoke()
 
-        name = (
-            f"{self.get_name()}_output"
-            if not hasattr(self, "output")
-            else self.output[0] if isinstance(self.output, list) else self.output
-        )
+        name = self.get_output_name()
 
         output = Text(name=name, data=response)
 

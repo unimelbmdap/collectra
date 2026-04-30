@@ -6,6 +6,7 @@ import pytest
 
 from collectra import DataNode, Text
 from collectra.evaluator import Evaluator
+from collectra.evaluator.base import FileEvaluationResult
 
 
 class TestDataNodeEvaluateEdgeCases:
@@ -218,6 +219,14 @@ class TestDataNodeEvaluateEdgeCases:
 class TestEvaluatorHelperMethods:
     """Test Evaluator helper methods for edge case handling."""
 
+    def _create_evaluator_with_empty_folders(self, tmp_path):
+        """Helper to create an Evaluator without real folder discovery."""
+        pred_dir = tmp_path / "pred"
+        gold_dir = tmp_path / "gold"
+        pred_dir.mkdir()
+        gold_dir.mkdir()
+        return Evaluator(pred_dir, gold_dir, ext="grapto")
+
     def test_create_missing_prediction_metrics_returns_zero_precision(self):
         """
         _create_missing_prediction_metrics should return precision=0.0.
@@ -276,6 +285,95 @@ class TestEvaluatorHelperMethods:
         assert metrics["num_false_negatives"] == 0
         assert len(metrics["unmatched_predicted"]) == 2
         assert metrics["unmatched_gold"] == []
+
+    def test_missing_prediction_metrics_includes_types(self, tmp_path):
+        """
+        _create_missing_prediction_metrics must include a 'types' key
+        derived from the gold node's items, so aggregation doesn't skip them.
+        """
+        evaluator = self._create_evaluator_with_empty_folders(tmp_path)
+
+        gold_node = DataNode(name="test_label")
+        gold_node.add_item(Text(name="gold_1", data="item1"))
+        gold_node.add_item(Text(name="gold_2", data="item2"))
+
+        metrics = evaluator._create_missing_prediction_metrics(gold_node)
+
+        assert "types" in metrics
+        assert "Text" in metrics["types"]
+        assert metrics["num_false_negatives"] == 2
+
+    def test_extra_prediction_metrics_includes_types(self, tmp_path):
+        """
+        _create_extra_prediction_metrics must include a 'types' key
+        derived from the input node's items, so aggregation doesn't skip them.
+        """
+        evaluator = self._create_evaluator_with_empty_folders(tmp_path)
+
+        input_node = DataNode(name="test_label")
+        input_node.add_item(Text(name="pred_1", data="item1"))
+
+        metrics = evaluator._create_extra_prediction_metrics(input_node)
+
+        assert "types" in metrics
+        assert "Text" in metrics["types"]
+        assert metrics["num_false_positives"] == 1
+
+    def test_missing_prediction_metrics_appear_in_aggregate(self, tmp_path):
+        """
+        Labels that go through _create_missing_prediction_metrics should
+        contribute their false negatives to aggregate results (not be silently dropped).
+        """
+        evaluator = self._create_evaluator_with_empty_folders(tmp_path)
+
+        gold_node = DataNode(name="missing_label")
+        gold_node.add_item(Text(name="gold_1", data="item1"))
+        gold_node.add_item(Text(name="gold_2", data="item2"))
+
+        metrics = evaluator._create_missing_prediction_metrics(gold_node)
+
+        # Simulate a file result with only this missing-prediction label
+        file_result = FileEvaluationResult(
+            filename="test_file",
+            label_metrics={"missing_label": metrics},
+        )
+        evaluator.results.append(file_result)
+
+        aggregate = evaluator._aggregate_results()
+
+        # The "Text" data type should appear in aggregate
+        assert "Text" in aggregate
+        per_label = aggregate["Text"]["per_label"]
+        assert "missing_label" in per_label
+        assert per_label["missing_label"]["support"] == 2
+        assert per_label["missing_label"]["recall"] == 0.0
+
+    def test_extra_prediction_metrics_appear_in_aggregate(self, tmp_path):
+        """
+        Labels that go through _create_extra_prediction_metrics should
+        contribute their false positives to aggregate results (not be silently dropped).
+        """
+        evaluator = self._create_evaluator_with_empty_folders(tmp_path)
+
+        input_node = DataNode(name="extra_label")
+        input_node.add_item(Text(name="pred_1", data="item1"))
+        input_node.add_item(Text(name="pred_2", data="item2"))
+        input_node.add_item(Text(name="pred_3", data="item3"))
+
+        metrics = evaluator._create_extra_prediction_metrics(input_node)
+
+        file_result = FileEvaluationResult(
+            filename="test_file",
+            label_metrics={"extra_label": metrics},
+        )
+        evaluator.results.append(file_result)
+
+        aggregate = evaluator._aggregate_results()
+
+        assert "Text" in aggregate
+        per_label = aggregate["Text"]["per_label"]
+        assert "extra_label" in per_label
+        assert per_label["extra_label"]["precision"] == 0.0
 
 
 class TestMetricsConsistency:
