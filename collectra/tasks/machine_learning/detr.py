@@ -294,18 +294,15 @@ class ObjectDetectionDETR(MachineLearningTask):
         grouped: dict[Path, dict] = {}
 
         for img in images:
-            if not isinstance(img, ImageCrop):
-                continue
             if exclude_flag and img.partition == exclude_flag:
-                continue
-            if img.name not in class_to_idx:
                 continue
 
             base_img: Image | ImageCrop = img
-            if img.source_parent:
-                base_img = img.source_parent
-                if isinstance(img.source_parent, ImageCrop):
-                    img.set_rel_to_src_parent()
+            if isinstance(img, ImageCrop):
+                if img.source_parent:
+                    base_img = img.source_parent
+                    if isinstance(img.source_parent, ImageCrop):
+                        img.set_rel_to_src_parent()
 
             image_path = base_img.get_path()
             if image_path not in grouped:
@@ -315,6 +312,11 @@ class ObjectDetectionDETR(MachineLearningTask):
                     "boxes": [],
                     "labels": [],
                 }
+
+            if not isinstance(img, ImageCrop):
+                continue
+            if img.name not in class_to_idx:
+                continue
 
             width, height = base_img.width, base_img.height
             box_w = float(img.width_relative) * width
@@ -335,8 +337,6 @@ class ObjectDetectionDETR(MachineLearningTask):
         train_samples: list[dict] = []
         val_samples: list[dict] = []
         for sample in grouped.values():
-            if not sample["boxes"]:
-                continue
             if validation_flag and sample["partition"] == validation_flag:
                 val_samples.append(sample)
             elif not exclude_flag or sample["partition"] != exclude_flag:

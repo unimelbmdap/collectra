@@ -462,6 +462,7 @@ class DataNode(Node):
 
     @staticmethod
     def batch_process(item_file: Path, data_nodes: list["DataNode"]) -> list[Data]:
+        names = [data_node.name for data_node in data_nodes]
         with change_dir(item_file):
             try:
                 data: list[Data] = list()
@@ -474,8 +475,8 @@ class DataNode(Node):
                     partition = file_data.get("collectra_results_metadata", dict()).get(
                         "partition", None
                     )
-                names = [data_node.name for data_node in data_nodes]
                 all_names_not_found = all(name not in file_data for name in names)
+                # This is to load empty images without any annotation (for training negative samples).
                 if all_names_not_found:
                     print(
                         f"[yellow]No matching data found in [blue]{item_file}[/blue] for names: {', '.join(names)}. Ignoring..."

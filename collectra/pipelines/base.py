@@ -918,7 +918,6 @@ class Collectra:
             for item_file in item_files:
                 input_maps[item_file.name] = DataNode.batch_process(item_file, children)
                 processed_inputs.extend(input_maps[item_file.name])
-
         return processed_inputs, input_maps
 
     def _get_training_files(self, input_path: Path) -> list[Path]:

@@ -1,6 +1,7 @@
 import shutil
 import tempfile
 from pathlib import Path
+from collections import Counter
 
 from rich.console import Console
 from rich.table import Table
@@ -55,6 +56,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
 
     model: str | Path | YOLO
     original_model_path: str | Path = ""
+    singletons:bool = False
 
     def _init_model(self) -> None:
         """Ensure that the YOLO model is loaded before performing any operations."""
@@ -124,21 +126,32 @@ class ObjectDetectionYOLO(MachineLearningTask):
             results.names[class_name.int().item()] for class_name in results.boxes.cls
         ]
 
+        counts = Counter()
         if len(names) == 0:
             # No objects detected, return empty list
             return detections
         for index in range(len(coordinates)):
+            name = names[index]
+            
+            if self.singletons and counts[name]:
+                continue
+
             x, y, w, h = coordinates[index]
+
             image_crop = image.make_crop(
                 x_center=float(x),
                 y_center=float(y),
                 width_relative=float(w),
                 height_relative=float(h),
                 orientation=image.orientation,
-                name=names[index],
+                name=name,
             )
+            counts[name] += 1
             detections.append(image_crop)
-        print(f"Found {len(detections)} objects in the image.")
+        
+        print(f"Found {len(detections)} objects in the image:")
+        for name, count in counts.items():
+            print(f"\t{name}: {count}")
         return detections
 
     def train(
@@ -336,10 +349,10 @@ class ObjectDetectionYOLO(MachineLearningTask):
             if isinstance(img, ImageCrop) and img.source_parent:
                 dst = log / f"{src.stem}-{str(img.source_parent.id)}{src.suffix}"
             if not dst.exists():
-                if not hasattr(img, "source_parent"):
-                    img.save(dst)
-                else:
+                if hasattr(img, "source_parent") and img.source_parent is not None:
                     img.source_parent.save(dst)
+                else:
+                    img.save(dst)
                 if img.partition == validation_flag:
                     val.append(dst.name)
                 elif not exclude_flag or img.partition != exclude_flag:
