@@ -336,7 +336,10 @@ class ObjectDetectionYOLO(MachineLearningTask):
             if isinstance(img, ImageCrop) and img.source_parent:
                 dst = log / f"{src.stem}-{str(img.source_parent.id)}{src.suffix}"
             if not dst.exists():
-                img.source_parent.save(dst)
+                if not hasattr(img, "source_parent"):
+                    img.save(dst)
+                else:
+                    img.source_parent.save(dst)
                 if img.partition == validation_flag:
                     val.append(dst.name)
                 elif not exclude_flag or img.partition != exclude_flag:
