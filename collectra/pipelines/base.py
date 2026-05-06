@@ -41,7 +41,7 @@ from ..tasks.base import (
 from ..tasks.machine_learning import MachineLearningTask
 from ..tasks.machine_learning.detr import ObjectDetectionDETR
 from ..tasks.machine_learning.rfdetr import ObjectDetectionRFDETR
-from ..tasks.machine_learning.yolo import ClassifierYOLO, ObjectDetectionYOLO
+from ..tasks.machine_learning.yolo import ImageClassifierYOLO, ObjectDetectionYOLO
 from ..types.base import (
     Data,
     DataNode,
@@ -806,12 +806,14 @@ class Collectra:
         parents = self.node_manager.get_parents_data(task_node)
         kwargs["classes"] = kwargs.get("classes", [child.name for child in children])
         kwargs = self._merge_task_params(task_name, kwargs)
-        if isinstance(task, ClassifierYOLO):
+        if isinstance(task, ImageClassifierYOLO):
             _, input_maps = self._prepare_training_data(kwargs, children)
             _, parent_input_maps = self._prepare_training_data(kwargs, parents)
             labeled_parents = self._build_labeled_parents(input_maps, parent_input_maps)
             return self._execute_training(task, labeled_parents, kwargs)
-        if isinstance(task, (ObjectDetectionYOLO, ObjectDetectionDETR, ObjectDetectionRFDETR)):
+        if isinstance(
+            task, (ObjectDetectionYOLO, ObjectDetectionDETR, ObjectDetectionRFDETR)
+        ):
             processed_inputs, _ = self._prepare_training_data(kwargs, children)
             processed_parents, _ = self._prepare_training_data(kwargs, parents)
             self._validate_relative_image(processed_inputs, processed_parents)

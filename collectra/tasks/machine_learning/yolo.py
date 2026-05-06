@@ -1,7 +1,7 @@
 import shutil
 import tempfile
-from pathlib import Path
 from collections import Counter
+from pathlib import Path
 
 from rich.console import Console
 from rich.table import Table
@@ -19,7 +19,7 @@ from .base import MachineLearningTask
 
 logger = get_logger(__name__)
 
-__all__ = ["ObjectDetectionYOLO", "ClassifierYOLO"]
+__all__ = ["ObjectDetectionYOLO", "ImageClassifierYOLO"]
 
 
 class DetectionResult:
@@ -56,7 +56,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
 
     model: str | Path | YOLO
     original_model_path: str | Path = ""
-    singletons:bool = False
+    singletons: bool = False
 
     def _init_model(self) -> None:
         """Ensure that the YOLO model is loaded before performing any operations."""
@@ -132,7 +132,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
             return detections
         for index in range(len(coordinates)):
             name = names[index]
-            
+
             if self.singletons and counts[name]:
                 continue
 
@@ -148,7 +148,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
             )
             counts[name] += 1
             detections.append(image_crop)
-        
+
         print(f"Found {len(detections)} objects in the image:")
         for name, count in counts.items():
             print(f"\t{name}: {count}")
@@ -388,7 +388,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
         return params
 
 
-class ClassifierYOLO(ObjectDetectionYOLO):
+class ImageClassifierYOLO(ObjectDetectionYOLO):
 
     @ThreadingLocked()
     def run(self, *args: Image) -> Text:
