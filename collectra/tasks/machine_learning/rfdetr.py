@@ -92,6 +92,14 @@ class ObjectDetectionRFDETR(MachineLearningTask):
             self.original_model_path = checkpoint_path
             self.model = RFDETRBase(pretrain_weights=str(checkpoint_path))
             self._load_categories_from_json(checkpoint_path.parent)
+            if not (checkpoint_path.parent / "classes.json").exists():
+                logger.warning(
+                    "No classes.json found alongside checkpoint %s "
+                    "(expected at %s); inference labels will fall back to "
+                    "numeric class indices because no class metadata is available.",
+                    checkpoint_path,
+                    checkpoint_path.parent / "classes.json",
+                )
             return
 
         raise ValueError(
@@ -362,7 +370,7 @@ class ObjectDetectionRFDETR(MachineLearningTask):
         params_kwargs["output_dir"] = str(weights_dir)
         params = self._prepare_params(**params_kwargs)
 
-        model = RFDETRBase()
+        model = self.model
         model.train(
             dataset_dir=str(dataset_dir),
             **params,
@@ -397,6 +405,7 @@ class ObjectDetectionRFDETR(MachineLearningTask):
         return DetectionTrainResult(save_dir=log, results_dict=best_metrics)
 
     def train(self, *images: ImageCrop, **kwargs) -> DetectionTrainResult:
+        self._init_model()
         log = kwargs.get("log", None)
         if log is None:
             raise ValueError(
