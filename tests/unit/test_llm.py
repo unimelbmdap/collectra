@@ -1,9 +1,11 @@
 """Tests for collectra.llms module"""
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from collectra.tasks.llms import LLM
-from collectra.types import Text, Image
+from collectra.types import Image, Text
 
 
 def test_add_text():
@@ -64,6 +66,8 @@ def test_image_content():
         "data": "iiVBORw0KGgoAAAANSUhEUgAAAAUA",
         "mime_type": "image/png",
     }
+
+
 def test_get_pattern_matches():
     mock_self = MagicMock(spec=LLM)
     mock_self.template = "Hello {name}"
@@ -73,6 +77,7 @@ def test_get_pattern_matches():
 
     assert prompt == "Intro\n\nHello {name}"
     assert pattern == r"\{(.*?)\}"
+
 
 def test_pre_run():
     mock_self = MagicMock(spec=LLM)
@@ -85,21 +90,25 @@ def test_pre_run():
     assert prompt == "Intro\n\nHello {name}"
     assert pattern == r"\{(.*?)\}"
 
+
 def test_check_inputs():
     mock_self = MagicMock(spec=LLM)
     mock_self.messages = [
         MagicMock(),
-        MagicMock(content=[{"type": "text", "text": "hello"}])
+        MagicMock(content=[{"type": "text", "text": "hello"}]),
     ]
 
     LLM.check_inputs(mock_self, MagicMock(spec=Text))  # valid - should not raise
 
     with pytest.raises(ValueError):
-        LLM.check_inputs(mock_self, MagicMock(spec=Text), MagicMock(spec=Text))  # too many inputs
+        LLM.check_inputs(
+            mock_self, MagicMock(spec=Text), MagicMock(spec=Text)
+        )  # too many inputs
 
     mock_self.messages = [MagicMock()]
     with pytest.raises(ValueError):
         LLM.check_inputs(mock_self, MagicMock(spec=Text))  # wrong message count
+
 
 def test_replace_inputs():
     mock_self = MagicMock(spec=LLM)
@@ -116,6 +125,7 @@ def test_replace_inputs():
     result = LLM.replace_inputs(mock_self, r"\{(.*?)\}", "Hello {unknown}")
     assert any("No content provided" in r.get("text", "") for r in result)
 
+
 def test_invoke():
     mock_self = MagicMock()
     mock_self.context.usage_file = None
@@ -130,3 +140,28 @@ def test_invoke():
     mock_self.parser.invoke.return_value = "''"
     result = LLM.invoke(mock_self)
     assert result == ""
+
+
+def test_run_returns_text():
+    mock_self = MagicMock(spec=LLM)
+    mock_self.pre_run.return_value = ("Hello {name}", r"\{(.*?)\}")
+    mock_self.replace_inputs.return_value = [{"type": "text", "text": "Hello Alice"}]
+    mock_self.messages = [MagicMock()]
+    mock_self.invoke.return_value = "some response"
+    mock_self.get_output_name.return_value = "output_name"
+
+    result = LLM.run(mock_self, MagicMock(spec=Text))
+
+    assert isinstance(result, Text)
+    assert result.name == "output_name"
+    assert result.data == "some response"
+
+
+def test_run_returns_none_on_exception():
+    mock_self = MagicMock(spec=LLM)
+    mock_self.name = "test_task"
+    mock_self.pre_run.side_effect = RuntimeError("model failed")
+
+    result = LLM.run(mock_self)
+
+    assert result is None
