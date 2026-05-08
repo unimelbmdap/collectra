@@ -975,6 +975,11 @@ class Collectra:
             shutil.copy(best_model_path, new_model_path)
             self.data[task.name]["model"] = new_model_path
 
+            classes_src = best_model_path.parent / "classes.json"
+            if classes_src.exists():
+                classes_dest = f"{Path(new_model_path).stem}.classes.json"
+                shutil.copy(classes_src, classes_dest)
+
     def _generate_model_filename(self, task_name: str, **kwargs) -> str:
         """Generate a timestamped model filename."""
         stamp = (

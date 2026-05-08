@@ -58,14 +58,22 @@ class ObjectDetectionRFDETR(MachineLearningTask):
             return
 
         self.model = RFDETRBase(pretrain_weights=str(self.original_model_path))
-        self._load_categories_from_json(Path(self.original_model_path).parent)
+        self._load_categories_from_json(Path(self.original_model_path))
 
-    def _load_categories_from_json(self, weights_dir: Path) -> None:
-        classes_file = weights_dir / "classes.json"
-        if classes_file.exists():
-            with open(classes_file, "r") as f:
-                metadata = json.load(f)
-            self._categories = metadata.get("classes", self._categories)
+    def _classes_sidecar_candidates(self, checkpoint_path: Path) -> list[Path]:
+        weights_dir = checkpoint_path.parent
+        return [
+            weights_dir / f"{checkpoint_path.stem}.classes.json",
+            weights_dir / "classes.json",
+        ]
+
+    def _load_categories_from_json(self, checkpoint_path: Path) -> None:
+        for classes_file in self._classes_sidecar_candidates(checkpoint_path):
+            if classes_file.exists():
+                with open(classes_file, "r") as f:
+                    metadata = json.load(f)
+                self._categories = metadata.get("classes", self._categories)
+                return
 
     def _load(self) -> None:
         if isinstance(self.model, RFDETRBase):
@@ -91,14 +99,15 @@ class ObjectDetectionRFDETR(MachineLearningTask):
         if checkpoint_path.exists() and checkpoint_path.is_file():
             self.original_model_path = checkpoint_path
             self.model = RFDETRBase(pretrain_weights=str(checkpoint_path))
-            self._load_categories_from_json(checkpoint_path.parent)
-            if not (checkpoint_path.parent / "classes.json").exists():
+            self._load_categories_from_json(checkpoint_path)
+            candidates = self._classes_sidecar_candidates(checkpoint_path)
+            if not any(c.exists() for c in candidates):
                 logger.warning(
-                    "No classes.json found alongside checkpoint %s "
-                    "(expected at %s); inference labels will fall back to "
+                    "No classes sidecar found alongside checkpoint %s "
+                    "(looked for %s); inference labels will fall back to "
                     "numeric class indices because no class metadata is available.",
                     checkpoint_path,
-                    checkpoint_path.parent / "classes.json",
+                    [str(c) for c in candidates],
                 )
             return
 
