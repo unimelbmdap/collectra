@@ -1,9 +1,6 @@
 """Tests for collectra.commons.base module"""
 
 from dataclasses import dataclass
-from pathlib import Path
-
-import pytest
 
 from collectra.commons.base import BaseEntity, Node, NodeStatus, TaskContext
 
