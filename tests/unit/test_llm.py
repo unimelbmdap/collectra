@@ -21,6 +21,12 @@ def test_add_text_empty():
     assert result == {"type": "text", "text": "''"}
 
 
+def test_add_text_empty():
+    llm = LLM(name="test", model="dummy")
+    result = llm._add_text("   ")
+    assert result == {"type": "text", "text": "''"}
+
+
 def test_add_content():
     mock_self = MagicMock(spec=LLM)
 
