@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
 from collectra.tasks.llms import LLM
 from collectra.types import Image, Text
@@ -12,6 +13,12 @@ def test_add_text():
     mock_self = MagicMock(spec=LLM)
     result = LLM._add_text(mock_self, "test text")
     assert result == {"type": "text", "text": "test text"}
+
+
+def test_add_text_empty():
+    mock_self = MagicMock(spec=LLM)
+    result = LLM._add_text(mock_self, "   ")
+    assert result == {"type": "text", "text": "''"}
 
 
 def test_add_content():
@@ -126,6 +133,16 @@ def test_replace_inputs():
     assert any("No content provided" in r.get("text", "") for r in result)
 
 
+def test_replace_inputs_entities_kwarg():
+    mock_self = MagicMock(spec=LLM)
+    mock_self._add_text.side_effect = lambda t: {"type": "text", "text": t}
+
+    result = LLM.replace_inputs(
+        mock_self, r"\{(.*?)\}", "Result: {entities}", entities="some entity text"
+    )
+    assert {"type": "text", "text": "some entity text"} in result
+
+
 def test_invoke():
     mock_self = MagicMock()
     mock_self.context.usage_file = None
@@ -140,6 +157,72 @@ def test_invoke():
     mock_self.parser.invoke.return_value = "''"
     result = LLM.invoke(mock_self)
     assert result == ""
+
+    mock_self.parser.invoke.return_value = '""'
+    result = LLM.invoke(mock_self)
+    assert result == ""
+
+
+def test_invoke_writes_usage_file(tmp_path):
+    usage_file = tmp_path / "usage.yaml"
+    mock_self = MagicMock()
+    mock_self.name = "my_task"
+    mock_self.context.usage_file = usage_file
+    mock_self.parser.invoke.return_value = "response"
+
+    with patch(
+        "collectra.tasks.llms.llmloader.LLMWrapper.get_token_count"
+    ) as mock_count:
+        mock_count.return_value = {"prompt_tokens": 10, "completion_tokens": 5}
+        LLM.invoke(mock_self)
+
+    data = yaml.safe_load(usage_file.read_text())
+    assert data == {"my_task": {"prompt_tokens": 10, "completion_tokens": 5}}
+
+
+def test_invoke_merges_usage_same_key(tmp_path):
+    usage_file = tmp_path / "usage.yaml"
+    usage_file.write_text(
+        yaml.dump({"my_task": {"prompt_tokens": 10, "completion_tokens": 5}})
+    )
+
+    mock_self = MagicMock()
+    mock_self.name = "my_task"
+    mock_self.context.usage_file = usage_file
+    mock_self.parser.invoke.return_value = "response"
+
+    with patch(
+        "collectra.tasks.llms.llmloader.LLMWrapper.get_token_count"
+    ) as mock_count:
+        mock_count.return_value = {"prompt_tokens": 3, "completion_tokens": 2}
+        LLM.invoke(mock_self)
+
+    data = yaml.safe_load(usage_file.read_text())
+    assert data == {"my_task": {"prompt_tokens": 13, "completion_tokens": 7}}
+
+
+def test_invoke_merges_usage_different_key(tmp_path):
+    usage_file = tmp_path / "usage.yaml"
+    usage_file.write_text(
+        yaml.dump({"other_task": {"prompt_tokens": 10, "completion_tokens": 5}})
+    )
+
+    mock_self = MagicMock()
+    mock_self.name = "my_task"
+    mock_self.context.usage_file = usage_file
+    mock_self.parser.invoke.return_value = "response"
+
+    with patch(
+        "collectra.tasks.llms.llmloader.LLMWrapper.get_token_count"
+    ) as mock_count:
+        mock_count.return_value = {"prompt_tokens": 3, "completion_tokens": 2}
+        LLM.invoke(mock_self)
+
+    data = yaml.safe_load(usage_file.read_text())
+    assert data == {
+        "my_task": {"prompt_tokens": 3, "completion_tokens": 2},
+        "other_task": {"prompt_tokens": 10, "completion_tokens": 5},
+    }
 
 
 def test_run_returns_text():
