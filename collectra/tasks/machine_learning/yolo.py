@@ -5,6 +5,7 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.table import Table
+from torchvision.ops import batched_nms
 from ultralytics.engine.results import Results
 from ultralytics.models import YOLO
 from ultralytics.utils import ThreadingLocked
@@ -112,9 +113,18 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 img = image.pil()
                 img_path = Path(temp_dir) / f"{Path(image.get_path()).stem}.png"
                 img.save(img_path, format="PNG")
-                results: Results = (self.model(img_path, iou=0.8))[0]
+                results: Results = (self.model(img_path, iou=0.7, conf=0.25))[0]
         else:
-            results: Results = (self.model(image.get_path()))[0]
+            results: Results = (self.model(image.get_path(), iou=0.7, conf=0.25))[0]
+
+        if getattr(self.model.model, "end2end", False) and len(results.boxes):
+            keep = batched_nms(
+                results.boxes.xyxy,
+                results.boxes.conf,
+                results.boxes.cls,
+                iou_threshold=0.7,
+            )
+            results = results[keep]
 
         detections: list[Image] = []
 
