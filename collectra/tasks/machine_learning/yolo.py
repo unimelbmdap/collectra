@@ -1,9 +1,11 @@
 import shutil
 import tempfile
+from collections import Counter
 from pathlib import Path
 
 from rich.console import Console
 from rich.table import Table
+from torchvision.ops import batched_nms
 from ultralytics.engine.results import Results
 from ultralytics.models import YOLO
 from ultralytics.utils import ThreadingLocked
@@ -18,7 +20,7 @@ from .base import MachineLearningTask
 
 logger = get_logger(__name__)
 
-__all__ = ["ObjectDetectionYOLO", "ClassifierYOLO"]
+__all__ = ["ObjectDetectionYOLO", "ImageClassifierYOLO"]
 
 
 class DetectionResult:
@@ -55,6 +57,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
 
     model: str | Path | YOLO
     original_model_path: str | Path = ""
+    singletons: bool = False
 
     def _init_model(self) -> None:
         """Ensure that the YOLO model is loaded before performing any operations."""
@@ -110,9 +113,18 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 img = image.pil()
                 img_path = Path(temp_dir) / f"{Path(image.get_path()).stem}.png"
                 img.save(img_path, format="PNG")
-                results: Results = (self.model(img_path, iou=0.8))[0]
+                results: Results = (self.model(img_path, iou=0.7, conf=0.25))[0]
         else:
-            results: Results = (self.model(image.get_path()))[0]
+            results: Results = (self.model(image.get_path(), iou=0.7, conf=0.25))[0]
+
+        if getattr(self.model.model, "end2end", False) and len(results.boxes):
+            keep = batched_nms(
+                results.boxes.xyxy,
+                results.boxes.conf,
+                results.boxes.cls,
+                iou_threshold=0.7,
+            )
+            results = results[keep]
 
         detections: list[Image] = []
 
@@ -124,21 +136,32 @@ class ObjectDetectionYOLO(MachineLearningTask):
             results.names[class_name.int().item()] for class_name in results.boxes.cls
         ]
 
+        counts = Counter()
         if len(names) == 0:
             # No objects detected, return empty list
             return detections
         for index in range(len(coordinates)):
+            name = names[index]
+
+            if self.singletons and counts[name]:
+                continue
+
             x, y, w, h = coordinates[index]
+
             image_crop = image.make_crop(
                 x_center=float(x),
                 y_center=float(y),
                 width_relative=float(w),
                 height_relative=float(h),
                 orientation=image.orientation,
-                name=names[index],
+                name=name,
             )
+            counts[name] += 1
             detections.append(image_crop)
-        print(f"Found {len(detections)} objects in the image.")
+
+        print(f"Found {len(detections)} objects in the image:")
+        for name, count in counts.items():
+            print(f"\t{name}: {count}")
         return detections
 
     def train(
@@ -375,7 +398,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
         return params
 
 
-class ClassifierYOLO(ObjectDetectionYOLO):
+class ImageClassifierYOLO(ObjectDetectionYOLO):
 
     @ThreadingLocked()
     def run(self, *args: Image) -> Text:
