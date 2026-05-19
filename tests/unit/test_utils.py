@@ -110,6 +110,13 @@ def test_get_all_files_raises_when_none_found(tmp_path):
         get_all_files([str(tmp_path)], "jpg")
 
 
+def test_get_all_files_single_file(tmp_path):
+    f = tmp_path / "a.jpg"
+    f.write_bytes(b"")
+    result = get_all_files([str(f)], "jpg")
+    assert len(result) == 1
+
+
 # =============================================================================
 # unzip
 # =============================================================================

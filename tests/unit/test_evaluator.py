@@ -1,12 +1,114 @@
-"""
-Tests for evaluation edge cases in DataNode.evaluate() and Evaluator helper methods.
-"""
+"""Tests for collectra.evaluator.base module"""
+
+from pathlib import Path
 
 import pytest
 
 from collectra import DataNode, Text
 from collectra.evaluator import Evaluator
-from collectra.evaluator.base import FileEvaluationResult
+from collectra.evaluator.base import EvaluationReport, FileEvaluationResult
+
+
+def _make_evaluator(tmp_path):
+    pred_dir = tmp_path / "pred"
+    gold_dir = tmp_path / "gold"
+    pred_dir.mkdir()
+    gold_dir.mkdir()
+    return Evaluator(pred_dir, gold_dir, ext="grapto")
+
+
+# =============================================================================
+# EvaluationReport
+# =============================================================================
+
+
+def test_evaluation_report_builds_aggregate_and_per_label_tables():
+    report = EvaluationReport(
+        file_results=[],
+        aggregate={
+            "Text": {
+                "overall": {
+                    "precision": 0.9,
+                    "recall": 0.8,
+                    "f1_micro": 0.85,
+                    "f1_file_averaged": 0.84,
+                    "total_files": 5,
+                },
+                "per_label": {
+                    "species": {
+                        "precision": 0.9,
+                        "recall": 0.8,
+                        "f1": 0.85,
+                        "mean_score": 0.9,
+                        "support": 10,
+                    }
+                },
+            }
+        },
+        threshold=0.5,
+    )
+    assert len(report.aggregate_tables) == 1
+    assert len(report.tables) == 1
+
+
+def test_evaluation_report_empty_per_label_skips_table():
+    report = EvaluationReport(
+        file_results=[],
+        aggregate={
+            "Text": {
+                "overall": {
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "f1_micro": 0.0,
+                    "f1_file_averaged": 0.0,
+                    "total_files": 0,
+                },
+                "per_label": {},
+            }
+        },
+        threshold=0.5,
+    )
+    assert len(report.aggregate_tables) == 1
+    assert len(report.tables) == 0
+
+
+# =============================================================================
+# Evaluator._validate_file_pairs
+# =============================================================================
+
+
+def test_validate_file_pairs_matched(tmp_path):
+    evaluator = _make_evaluator(tmp_path)
+    evaluator.entries = {"file1": [Path("gold.grapto"), Path("pred.grapto")]}
+    matched, missing, extra = evaluator._validate_file_pairs()
+    assert len(matched) == 1
+    assert missing == []
+    assert extra == []
+
+
+def test_validate_file_pairs_missing_gold(tmp_path):
+    evaluator = _make_evaluator(tmp_path)
+    evaluator.entries = {"file1": [None, Path("pred.grapto")]}
+    matched, missing, extra = evaluator._validate_file_pairs()
+    assert matched == []
+    assert len(missing) == 1
+    assert extra == []
+
+
+def test_validate_file_pairs_extra_gold(tmp_path):
+    evaluator = _make_evaluator(tmp_path)
+    evaluator.entries = {"file1": [Path("gold.grapto"), None]}
+    matched, missing, extra = evaluator._validate_file_pairs()
+    assert matched == []
+    assert missing == []
+    assert len(extra) == 1
+
+
+def test_validate_file_pairs_both_none_raises(tmp_path):
+    evaluator = _make_evaluator(tmp_path)
+    evaluator.entries = {"file1": [None, None]}
+    with pytest.raises(ValueError):
+        evaluator._validate_file_pairs()
 
 
 class TestDataNodeEvaluateEdgeCases:
