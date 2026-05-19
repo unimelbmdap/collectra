@@ -386,3 +386,62 @@ def test_imagecrop_make_crop_east_orientation(img_path):
     )
     crop = parent.make_crop(0.5, 0.5, 0.5, 0.5, orientation=Orientation.EAST)
     assert isinstance(crop, ImageCrop)
+
+
+def test_image_embeddings_string_wrapped_in_list(img_path):
+    img = Image(name="test", data=img_path, embeddings="embed123")
+    assert img.embeddings == ["embed123"]
+
+
+def test_imagecrop_compute_iou_both_zero_area():
+    boxA = [5, 5, 5, 5]
+    boxB = [5, 5, 5, 5]
+    assert ImageCrop.compute_iou(boxA, boxB) == 0.0
+
+
+def test_imagecrop_set_rel_to_src_parent_west_orientation(img_path):
+    parent = Image(name="parent", data=img_path, orientation="west")
+    child = ImageCrop(
+        name="child",
+        data=img_path,
+        x_center=0.5,
+        y_center=0.5,
+        width_relative=0.5,
+        height_relative=0.5,
+    )
+    child.add_source_parent(parent)
+    child.set_rel_to_src_parent()
+    assert child.width_relative == pytest.approx(0.5)
+    assert child.height_relative == pytest.approx(0.5)
+
+
+def test_imagecrop_set_rel_to_src_parent_south_orientation(img_path):
+    parent = Image(name="parent", data=img_path, orientation="south")
+    child = ImageCrop(
+        name="child",
+        data=img_path,
+        x_center=0.5,
+        y_center=0.5,
+        width_relative=0.5,
+        height_relative=0.5,
+    )
+    child.add_source_parent(parent)
+    child.set_rel_to_src_parent()
+    assert child.x_center == pytest.approx(0.5)
+    assert child.y_center == pytest.approx(0.5)
+
+
+def test_imagecrop_set_rel_to_src_parent_east_orientation(img_path):
+    parent = Image(name="parent", data=img_path, orientation="east")
+    child = ImageCrop(
+        name="child",
+        data=img_path,
+        x_center=0.5,
+        y_center=0.5,
+        width_relative=0.5,
+        height_relative=0.5,
+    )
+    child.add_source_parent(parent)
+    child.set_rel_to_src_parent()
+    assert child.width_relative == pytest.approx(0.5)
+    assert child.height_relative == pytest.approx(0.5)
