@@ -188,3 +188,7 @@ cython_debug/
 .github/prompts/
 .devcontainer/
 .claude/
+rf-detr-base.pth
+*.slurm
+train.sh
+archive/
