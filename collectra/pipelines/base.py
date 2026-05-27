@@ -934,7 +934,7 @@ class Collectra:
     def _merge_task_params(self, task_name: str, kwargs: dict) -> dict:
         """Merge task-specific parameters with provided kwargs."""
         task_params = self.data.get(task_name, dict()).get("params", dict())
-        return kwargs | task_params
+        return task_params | kwargs
 
     def _execute_training(
         self, task: MachineLearningTask, processed_inputs: list, kwargs: dict

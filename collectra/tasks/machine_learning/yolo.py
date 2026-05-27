@@ -379,6 +379,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
     def _prepare_params(self, **kwargs) -> dict:
         import platform
 
+        breakpoint()
         import torch
 
         params = {
@@ -395,6 +396,9 @@ class ObjectDetectionYOLO(MachineLearningTask):
             "patience": kwargs.get("early_stop", 50),
             "batch": kwargs.get("batch", 16),
         }
+        if 'model' in kwargs:
+            self.model = kwargs['model']
+            self._load()
         return params
 
 

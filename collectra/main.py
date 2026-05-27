@@ -16,6 +16,37 @@ logger = get_logger(__name__)
 app = typer.Typer()
 
 
+def _parse_extra_args(args: list[str]) -> dict:
+    """Parse extra CLI options into keyword arguments."""
+    extra_args: dict = {}
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if not arg.startswith("--"):
+            raise typer.BadParameter(f"Unexpected extra argument: {arg}")
+
+        option = arg[2:]
+        if not option:
+            raise typer.BadParameter("Empty extra option is not allowed")
+
+        if "=" in option:
+            key, value = option.split("=", 1)
+        else:
+            key = option
+            next_index = index + 1
+            if next_index >= len(args) or args[next_index].startswith("--"):
+                value = "true"
+            else:
+                value = args[next_index]
+                index = next_index
+
+        key = key.replace("-", "_")
+        extra_args[key] = yaml.safe_load(value)
+        index += 1
+
+    return extra_args
+
+
 def resolve_workflow_path(workflow: Path):
     from collectra import Collectra
 
@@ -60,8 +91,11 @@ def render(
         logger.exception("Render failed")
 
 
-@app.command()
+@app.command(
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True}
+)
 def train(
+    ctx: typer.Context,
     workflow: Annotated[
         Path, typer.Option("--workflow", "-w", help="path to workflow")
     ],
@@ -114,6 +148,7 @@ def train(
             "validation": validation,
             "exclude": exclude,
         }
+        config.update(_parse_extra_args(ctx.args))
 
         pipeline.train(task, **config)
         pipeline.save(task)
