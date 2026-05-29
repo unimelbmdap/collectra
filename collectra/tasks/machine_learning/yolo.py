@@ -167,6 +167,8 @@ class ObjectDetectionYOLO(MachineLearningTask):
     def train(
         self, *images: ImageCrop, **kwargs
     ) -> DetMetrics | ClassifyMetrics | None:
+        if "model" in kwargs:
+            self.model = kwargs["model"]
         self._init_model()
         log = kwargs.get("log", None)
         if log is None:
@@ -379,7 +381,6 @@ class ObjectDetectionYOLO(MachineLearningTask):
     def _prepare_params(self, **kwargs) -> dict:
         import platform
 
-        breakpoint()
         import torch
 
         params = {
@@ -396,9 +397,6 @@ class ObjectDetectionYOLO(MachineLearningTask):
             "patience": kwargs.get("early_stop", 50),
             "batch": kwargs.get("batch", 16),
         }
-        if 'model' in kwargs:
-            self.model = kwargs['model']
-            self._load()
         return params
 
 
@@ -440,6 +438,8 @@ class ImageClassifierYOLO(ObjectDetectionYOLO):
         return Text(name=self.get_output_name(), data=predicted_class)
 
     def train(self, *images: Image, **kwargs) -> ClassifyMetrics | None:
+        if "model" in kwargs:
+            self.model = kwargs["model"]
         self._init_model()
         log = kwargs.get("log", None)
         if log is None:

@@ -47,6 +47,14 @@ def _parse_extra_args(args: list[str]) -> dict:
     return extra_args
 
 
+def _split_input_and_extra_args(input_args: list[str]) -> tuple[list[str], list[str]]:
+    """Split variadic input args from trailing unknown CLI options."""
+    for index, arg in enumerate(input_args):
+        if arg.startswith("--"):
+            return input_args[:index], input_args[index:]
+    return input_args, []
+
+
 def resolve_workflow_path(workflow: Path):
     from collectra import Collectra
 
@@ -140,15 +148,17 @@ def train(
 
         log = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
+        input_paths, trailing_extra_args = _split_input_and_extra_args(input)
+
         config = {
-            "input": input,
+            "input": input_paths,
             "project": project,
             "log": log,
             "base_folder": Path.cwd(),
             "validation": validation,
             "exclude": exclude,
         }
-        config.update(_parse_extra_args(ctx.args))
+        config.update(_parse_extra_args([*ctx.args, *trailing_extra_args]))
 
         pipeline.train(task, **config)
         pipeline.save(task)
