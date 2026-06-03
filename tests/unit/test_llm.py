@@ -1,167 +1,204 @@
-"""Tests for collectra.llms module"""
+"""Tests for collectra.tasks.llms module"""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
+from langchain_core.messages import HumanMessage
 
 from collectra.tasks.llms import LLM
 from collectra.types import Image, Text
 
 
-def test_add_text():
-    mock_self = MagicMock(spec=LLM)
-    result = LLM._add_text(mock_self, "test text")
-    assert result == {"type": "text", "text": "test text"}
+@pytest.fixture
+def llm():
+    return LLM(name="test", model="dummy")
 
 
-def test_add_content():
-    mock_self = MagicMock(spec=LLM)
-
-    # Test Text branch
-    mock_self._add_text.return_value = {"type": "text", "text": "hello"}
-    mock_text = MagicMock(spec=Text)
-    mock_text.return_value = "hello"
-
-    result = LLM._add_content(mock_self, mock_text)
-    assert result == {"type": "text", "text": "hello"}
-
-    # Test Image branch
-    mock_self.image_content.return_value = {
-        "type": "image",
-        "data": "iiVBORw0KGgoAAAANSUhEUgAAAAUA",
-    }
-    mock_image = MagicMock(spec=Image)
-    result = LLM._add_content(mock_self, mock_image)
-    assert result == {"type": "image", "data": "iiVBORw0KGgoAAAANSUhEUgAAAAUA"}
+@pytest.fixture
+def llm_template():
+    return LLM(name="test", model="dummy", template="Hello {name}", preamble="Intro")
 
 
-def test_image_content():
-    mock_self = MagicMock(spec=LLM)
-    mock_self.llm = MagicMock()
+@pytest.fixture
+def llm_run():
+    return LLM(name="test", model="dummy", template="{label}", output="result")
 
-    mock_image = MagicMock(spec=Image)
-    mock_image.get_encoding.return_value = "iiVBORw0KGgoAAAANSUhEUgAAAAUA"
-    mock_image.mime.return_value = "image/png"
 
-    with patch("collectra.tasks.llms.llmloader.LLMWrapper.format") as mock_format:
-        mock_format.return_value = {
-            "type": "image",
-            "data": "iiVBORw0KGgoAAAANSUhEUgAAAAUA",
-            "mime_type": "image/png",
-        }
+@pytest.fixture
+def img_path(tmp_path):
+    from PIL import Image as ImagePil
 
-        result = LLM.image_content(mock_self, mock_image)
+    img = ImagePil.new("RGB", (10, 10), color=(255, 0, 0))
+    path = tmp_path / "test.png"
+    img.save(path)
+    return path
 
-        mock_format.assert_called_once_with(
-            mock_self.llm,
-            data_type="image",
-            data={
-                "data": "iiVBORw0KGgoAAAANSUhEUgAAAAUA",
-                "mime_type": "image/png",
-            },
-        )
 
+# =============================================================================
+# _add_text
+# =============================================================================
+
+
+def test_add_text(llm):
+    assert llm._add_text("test text") == {"type": "text", "text": "test text"}
+
+
+def test_add_text_strips_whitespace(llm):
+    assert llm._add_text("  hello  ") == {"type": "text", "text": "hello"}
+
+
+def test_add_text_empty(llm):
+    assert llm._add_text("   ") == {"type": "text", "text": "''"}
+
+
+# =============================================================================
+# _add_content
+# =============================================================================
+
+
+def test_add_content_text(llm):
+    text = Text("t", data="hello")
+    assert llm._add_content(text) == {"type": "text", "text": "hello"}
+
+
+def test_add_content_image(llm, img_path):
+    image = Image("img", data=img_path)
+    result = llm._add_content(image)
+    assert result["type"] == "image"
+
+
+# =============================================================================
+# image_content
+# =============================================================================
+
+
+def test_image_content(llm, img_path):
+    image = Image("img", data=img_path)
+    result = llm.image_content(image)
     assert result == {
         "type": "image",
-        "data": "iiVBORw0KGgoAAAANSUhEUgAAAAUA",
-        "mime_type": "image/png",
+        "source_type": "base64",
+        "mime_type": image.mime(),
+        "data": image.get_encoding(),
     }
 
 
-def test_get_pattern_matches():
-    mock_self = MagicMock(spec=LLM)
-    mock_self.template = "Hello {name}"
-    mock_self.preamble = "Intro"
+# =============================================================================
+# get_pattern_matches
+# =============================================================================
 
-    prompt, pattern = LLM.get_pattern_matches(mock_self)
 
+def test_get_pattern_matches(llm_template):
+    prompt, pattern = llm_template.get_pattern_matches()
     assert prompt == "Intro\n\nHello {name}"
     assert pattern == r"\{(.*?)\}"
 
 
-def test_pre_run():
-    mock_self = MagicMock(spec=LLM)
-    mock_self.messages = [MagicMock(), MagicMock(), MagicMock()]  # system + extras
-    mock_self.get_pattern_matches.return_value = ("Intro\n\nHello {name}", r"\{(.*?)\}")
+# =============================================================================
+# pre_run
+# =============================================================================
 
-    prompt, pattern = LLM.pre_run(mock_self)
 
-    assert len(mock_self.messages) == 1
+def test_pre_run(llm_template):
+    llm_template.messages.append(HumanMessage(content="extra1"))
+    llm_template.messages.append(HumanMessage(content="extra2"))
+    prompt, pattern = llm_template.pre_run()
+    assert len(llm_template.messages) == 1
     assert prompt == "Intro\n\nHello {name}"
     assert pattern == r"\{(.*?)\}"
 
 
-def test_check_inputs():
-    mock_self = MagicMock(spec=LLM)
-    mock_self.messages = [
-        MagicMock(),
-        MagicMock(content=[{"type": "text", "text": "hello"}]),
+# =============================================================================
+# check_inputs
+# =============================================================================
+
+
+def test_check_inputs_valid(llm):
+    llm.messages.append(HumanMessage(content=[{"type": "text", "text": "hello"}]))
+    llm.check_inputs(Text("t", data="hello"))
+
+
+def test_check_inputs_too_many_inputs(llm):
+    llm.messages.append(HumanMessage(content=[{"type": "text", "text": "hello"}]))
+    with pytest.raises(ValueError):
+        llm.check_inputs(Text("t", data="a"), Text("t", data="b"))
+
+
+def test_check_inputs_wrong_message_count(llm):
+    with pytest.raises(ValueError):
+        llm.check_inputs(Text("t", data="hello"))  # only system message, no human
+
+
+# =============================================================================
+# replace_inputs
+# =============================================================================
+
+
+def test_replace_inputs(llm):
+    text = Text("name", data="Alice")
+    result = llm.replace_inputs(r"\{(.*?)\}", "Hello {name}", text)
+    assert result == [
+        {"type": "text", "text": "Hello"},
+        {"type": "text", "text": "Alice"},
     ]
 
-    LLM.check_inputs(mock_self, MagicMock(spec=Text))  # valid - should not raise
 
-    with pytest.raises(ValueError):
-        LLM.check_inputs(
-            mock_self, MagicMock(spec=Text), MagicMock(spec=Text)
-        )  # too many inputs
-
-    mock_self.messages = [MagicMock()]
-    with pytest.raises(ValueError):
-        LLM.check_inputs(mock_self, MagicMock(spec=Text))  # wrong message count
-
-
-def test_replace_inputs():
-    mock_self = MagicMock(spec=LLM)
-    mock_self._add_text.side_effect = lambda t: {"type": "text", "text": t}
-    mock_self._add_content.side_effect = lambda v: {"type": "text", "text": v()}
-
-    mock_text = MagicMock(spec=Text)
-    mock_text.name = "name"
-    mock_text.return_value = "Alice"
-
-    result = LLM.replace_inputs(mock_self, r"\{(.*?)\}", "Hello {name}", mock_text)
-    assert {"type": "text", "text": "Alice"} in result
-
-    result = LLM.replace_inputs(mock_self, r"\{(.*?)\}", "Hello {unknown}")
+def test_replace_inputs_unknown_key(llm):
+    result = llm.replace_inputs(r"\{(.*?)\}", "Hello {unknown}")
     assert any("No content provided" in r.get("text", "") for r in result)
 
 
-def test_invoke():
-    mock_self = MagicMock()
-    mock_self.context.usage_file = None
-    mock_self.parser.invoke.return_value = "hello"
-
-    result = LLM.invoke(mock_self)
-
-    assert result == "hello"
-    mock_self.chain.invoke.assert_called_once_with(mock_self.messages)
-
-    # empty string handling
-    mock_self.parser.invoke.return_value = "''"
-    result = LLM.invoke(mock_self)
-    assert result == ""
+def test_replace_inputs_entities_kwarg(llm):
+    result = llm.replace_inputs(
+        r"\{(.*?)\}", "Result: {entities}", entities="some entity text"
+    )
+    assert result == [
+        {"type": "text", "text": "Result:"},
+        {"type": "text", "text": "some entity text"},
+    ]
 
 
-def test_run_returns_text():
-    mock_self = MagicMock(spec=LLM)
-    mock_self.pre_run.return_value = ("Hello {name}", r"\{(.*?)\}")
-    mock_self.replace_inputs.return_value = [{"type": "text", "text": "Hello Alice"}]
-    mock_self.messages = [MagicMock()]
-    mock_self.invoke.return_value = "some response"
-    mock_self.get_output_name.return_value = "output_name"
+# =============================================================================
+# invoke
+# =============================================================================
 
-    result = LLM.run(mock_self, MagicMock(spec=Text))
 
+def test_invoke_returns_string(llm):
+    result = llm.invoke()
+    assert isinstance(result, str)
+    assert len(result) > 0
+    assert result == result.strip()
+
+
+def test_invoke_empty_string_handling(llm):
+    class _FixedChain:
+        def __init__(self, val):
+            self._val = val
+
+        def invoke(self, _):
+            return self._val
+
+    llm.chain = _FixedChain("''")
+    assert llm.invoke() == ""
+
+    llm.chain = _FixedChain('""')
+    assert llm.invoke() == ""
+
+
+# =============================================================================
+# run
+# =============================================================================
+
+
+def test_run_returns_text(llm_run):
+    result = llm_run.run(Text("label", data="hello"))
     assert isinstance(result, Text)
-    assert result.name == "output_name"
-    assert result.data == "some response"
+    assert result.name == "result"
+    assert isinstance(result.data, str) and result.data
+    assert "hello" in result.data
 
 
-def test_run_returns_none_on_exception():
-    mock_self = MagicMock(spec=LLM)
-    mock_self.name = "test_task"
-    mock_self.pre_run.side_effect = RuntimeError("model failed")
-
-    result = LLM.run(mock_self)
-
+def test_run_returns_none_on_exception(llm):
+    with patch.object(llm, "pre_run", side_effect=RuntimeError("model failed")):
+        result = llm.run()
     assert result is None
