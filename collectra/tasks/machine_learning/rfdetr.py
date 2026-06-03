@@ -42,9 +42,14 @@ class ObjectDetectionRFDETR(MachineLearningTask):
 
         return (
             "mps"
-            if platform.system() == "Darwin"
+            if platform.system() == "Darwin" and torch.backends.mps.is_available()
             else "cuda" if torch.cuda.is_available() else "cpu"
         )
+
+    def _ensure_device(self) -> str:
+        if self._device is None:
+            self._device = self._select_device()
+        return self._device
 
     def _init_model(self) -> None:
         self._load()
@@ -57,7 +62,10 @@ class ObjectDetectionRFDETR(MachineLearningTask):
             logger.warning("Original model path is not set. Skipping...")
             return
 
-        self.model = RFDETRBase(pretrain_weights=str(self.original_model_path))
+        self.model = RFDETRBase(
+            pretrain_weights=str(self.original_model_path),
+            device=self._ensure_device(),
+        )
         self._load_categories_from_json(Path(self.original_model_path))
 
     def _classes_sidecar_candidates(self, checkpoint_path: Path) -> list[Path]:
@@ -79,12 +87,12 @@ class ObjectDetectionRFDETR(MachineLearningTask):
         if isinstance(self.model, RFDETRBase):
             return
 
-        self._device = self._select_device()
+        self._ensure_device()
 
         if self.model is None or (
             isinstance(self.model, str) and self.model == "default"
         ):
-            self.model = RFDETRBase()
+            self.model = RFDETRBase(device=self._ensure_device())
             from rfdetr.assets.coco_classes import COCO_CLASSES
 
             self._categories = list(COCO_CLASSES)
@@ -98,7 +106,10 @@ class ObjectDetectionRFDETR(MachineLearningTask):
         checkpoint_path = Path(str(self.model))
         if checkpoint_path.exists() and checkpoint_path.is_file():
             self.original_model_path = checkpoint_path
-            self.model = RFDETRBase(pretrain_weights=str(checkpoint_path))
+            self.model = RFDETRBase(
+                pretrain_weights=str(checkpoint_path),
+                device=self._ensure_device(),
+            )
             self._load_categories_from_json(checkpoint_path)
             candidates = self._classes_sidecar_candidates(checkpoint_path)
             if not any(c.exists() for c in candidates):
@@ -130,7 +141,11 @@ class ObjectDetectionRFDETR(MachineLearningTask):
         pil_image = image.pil().convert("RGB")
         width, height = pil_image.size
 
-        detections = self.model.predict(pil_image, threshold=threshold)
+        detections = self.model.predict(
+            pil_image,
+            threshold=threshold,
+            device=self._ensure_device(),
+        )
 
         results: list[Image] = []
         for i in range(len(detections.xyxy)):
@@ -178,6 +193,7 @@ class ObjectDetectionRFDETR(MachineLearningTask):
             "grad_accum_steps": int(kwargs.get("grad_accum_steps", 4)),
             "lr": float(kwargs.get("lr", 1e-4)),
             "output_dir": str(kwargs["output_dir"]),
+            "device": self._ensure_device(),
             "wandb": bool(kwargs.get("wandb", True)),
             "project": kwargs.get("project", "runs/rfdetr"),
             "run": kwargs.get("log", "rfdetr-run"),
