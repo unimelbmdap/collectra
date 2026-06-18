@@ -983,7 +983,7 @@ class Collectra:
     def _generate_model_filename(self, task_name: str, **kwargs) -> str:
         """Generate a timestamped model filename."""
         stamp = (
-            kwargs["log"]
+            Path(kwargs["log"]).name
             if "log" in kwargs
             else datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         )
