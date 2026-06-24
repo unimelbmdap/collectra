@@ -262,6 +262,7 @@ class Image(Data):
         y_center: float,
         width_relative: float,
         height_relative: float,
+        confidence: float | None = None,
         orientation: Orientation = Orientation.NORTH,
         name: str = "",
     ) -> "ImageCrop":
@@ -280,11 +281,14 @@ class Image(Data):
             y_center=y_center,
             width_relative=width_relative,
             height_relative=height_relative,
+            confidence=confidence,
             orientation=orientation,
         )
 
     def make_crop_bounding_box(
-        self, left, top, right, bottom, min_height: float = 0.0
+        self, left, top, right, bottom, 
+        min_height: float = 0.0,
+        confidence:float|None = None,
     ) -> "ImageCrop":
         bbox_width = right - left
         bbox_height = bottom - top
@@ -298,6 +302,7 @@ class Image(Data):
             y_center=y_center,
             width_relative=width_relative,
             height_relative=height_relative,
+            confidence=confidence,
         )
 
     def evaluate(self, gold: "ImageCrop") -> float:
@@ -328,6 +333,7 @@ class ImageCrop(Image):
     y_center: float = field(default=0.5)
     width_relative: float = field(default=1.0)
     height_relative: float = field(default=1.0)
+    confidence: float | None = field(default=None)
     source_parent: "Image | ImageCrop | None" = field(init=False, default=None)
 
     def save(self, path: Path | str = None):
@@ -410,6 +416,7 @@ class ImageCrop(Image):
         y_center: float,
         width_relative: float,
         height_relative: float,
+        confidence: float | None = None,
         orientation: Orientation = Orientation.NORTH,
         name: str = "",
     ) -> "ImageCrop":
@@ -432,6 +439,7 @@ class ImageCrop(Image):
             y_center=self.y_center + (y_center - 0.5) * self.height_relative,
             width_relative=width_relative * self.width_relative,
             height_relative=height_relative * self.height_relative,
+            confidence=confidence,
             orientation=orientation,
             name=name,
         )
