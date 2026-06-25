@@ -2,7 +2,8 @@ import json
 import shutil
 from pathlib import Path
 
-from rfdetr import RFDETRBase
+from rfdetr.detr import RFDETR
+from rfdetr import RFDETRBase, RFDETRMedium, RFDETRLarge
 from rich.console import Console
 from rich.table import Table
 from ultralytics.utils import ThreadingLocked
@@ -17,6 +18,18 @@ from .detr import DetectionTrainResult
 logger = get_logger(__name__)
 
 __all__ = ["ObjectDetectionRFDETR"]
+
+def load_rfdetr_model(model_path: str | Path) -> RFDETR:
+    model_classes = [RFDETRBase, RFDETRMedium, RFDETRLarge]
+    errors = []
+    for model_class in model_classes:
+        try:
+            model = model_class(pretrain_weights=str(model_path))
+            return model
+        except Exception as e:
+            errors.append((model_class.__name__, str(e)))
+    
+    logger.error("Failed to load RF-DETR model from %s. Errors: %s", model_path, errors)
 
 
 class ObjectDetectionRFDETR(MachineLearningTask):
@@ -49,15 +62,15 @@ class ObjectDetectionRFDETR(MachineLearningTask):
     def _init_model(self) -> None:
         self._load()
 
-        if not isinstance(self.model, RFDETRBase):
-            raise ValueError("Model must be an RFDETRBase instance")
+        if not isinstance(self.model, (RFDETR)):
+            raise ValueError("Model must be an RFDETR instance")
 
     def _reload(self) -> None:
         if not self.original_model_path:
             logger.warning("Original model path is not set. Skipping...")
             return
 
-        self.model = RFDETRBase(pretrain_weights=str(self.original_model_path))
+        self.model = load_rfdetr_model(self.original_model_path)
         self._load_categories_from_json(Path(self.original_model_path))
 
     def _classes_sidecar_candidates(self, checkpoint_path: Path) -> list[Path]:
@@ -76,7 +89,7 @@ class ObjectDetectionRFDETR(MachineLearningTask):
                 return
 
     def _load(self) -> None:
-        if isinstance(self.model, RFDETRBase):
+        if isinstance(self.model, RFDETR):
             return
 
         self._device = self._select_device()
@@ -92,13 +105,13 @@ class ObjectDetectionRFDETR(MachineLearningTask):
 
         if not isinstance(self.model, (str, Path)):
             raise ValueError(
-                "Model must be None, 'default', a checkpoint path, or an RFDETRBase instance"
+                "Model must be None, 'default', a checkpoint path, or an RFDETR instance"
             )
 
         checkpoint_path = Path(str(self.model))
         if checkpoint_path.exists() and checkpoint_path.is_file():
             self.original_model_path = checkpoint_path
-            self.model = RFDETRBase(pretrain_weights=str(checkpoint_path))
+            self.model = load_rfdetr_model(self.original_model_path)
             self._load_categories_from_json(checkpoint_path)
             candidates = self._classes_sidecar_candidates(checkpoint_path)
             if not any(c.exists() for c in candidates):
@@ -416,7 +429,7 @@ class ObjectDetectionRFDETR(MachineLearningTask):
     def train(self, *images: ImageCrop, **kwargs) -> DetectionTrainResult:
         if "model" in kwargs:
             self.model = kwargs["model"]
-            
+
         self._init_model()
         log = kwargs.get("log", None)
         if log is None:
