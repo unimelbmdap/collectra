@@ -147,12 +147,14 @@ class ObjectDetectionYOLO(MachineLearningTask):
                 continue
 
             x, y, w, h = coordinates[index]
+            confidence = results.boxes.conf[index]
 
             image_crop = image.make_crop(
                 x_center=float(x),
                 y_center=float(y),
                 width_relative=float(w),
                 height_relative=float(h),
+                confidence=confidence.item(),
                 orientation=image.orientation,
                 name=name,
             )

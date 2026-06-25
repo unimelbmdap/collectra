@@ -67,8 +67,10 @@ def test_run_yolo(image, model, debug):
         assert isinstance(yolo_task, ObjectDetectionYOLO)
         detections = yolo_task.run(image)
         assert isinstance(detections, list), "Detections should be a list"
-        assert all(
-            isinstance(det, ImageCrop) for det in detections
-        ), "All detections should be ImageCrop instances"
     except Exception as e:
         debug(e)
+    
+    for detection in detections:
+        assert isinstance(detection, ImageCrop), "All detections should be ImageCrop instances"
+        assert isinstance(detection.confidence, float), "Confidence should be a float"
+

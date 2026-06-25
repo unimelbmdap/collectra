@@ -192,3 +192,11 @@ rf-detr-base.pth
 *.slurm
 train.sh
 archive/
+
+runs/
+results/
+node_modules/
+Livy*
+TextUndTextwert*
+TuT*
+detected_images/
