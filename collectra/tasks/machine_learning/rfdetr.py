@@ -414,6 +414,9 @@ class ObjectDetectionRFDETR(MachineLearningTask):
         return DetectionTrainResult(save_dir=log, results_dict=best_metrics)
 
     def train(self, *images: ImageCrop, **kwargs) -> DetectionTrainResult:
+        if "model" in kwargs:
+            self.model = kwargs["model"]
+            
         self._init_model()
         log = kwargs.get("log", None)
         if log is None:
