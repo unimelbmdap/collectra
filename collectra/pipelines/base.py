@@ -184,13 +184,15 @@ class Collectra:
 
     def _extract_run_options(self, kwargs: dict) -> dict:
         """Extract and return run options from kwargs."""
-        return {
+        options = {
             "single": kwargs.pop("single", False),
             "files": kwargs.pop("files", []),
             "usage": kwargs.pop("usage", False),
             "render": kwargs.pop("render", False),
             "output": kwargs.pop("output", None),
         }
+        options["task_overrides"] = kwargs.copy()
+        return options
 
     def _get_root_input(self) -> str:
         """Get the name of the root input data node for the workflow."""
@@ -254,6 +256,7 @@ class Collectra:
             key=key,
             value=value,
             render=options["render"],
+            task_overrides=options["task_overrides"],
         )
 
     def _create_collectra_file(
@@ -723,6 +726,14 @@ class Collectra:
 
         return serialized
 
+    def _apply_task_run_overrides(self, task: Task, overrides: dict) -> None:
+        """Apply runtime CLI overrides to a task before execution."""
+        if not overrides:
+            return
+        merged_overrides = self._merge_task_params(task.name, dict(overrides))
+        for key, value in merged_overrides.items():
+            setattr(task, key, value)
+
     def _run_task(self, task_node: TaskNode, **kwargs) -> list:
         """Execute a task node and return its output results.
 
@@ -743,6 +754,7 @@ class Collectra:
         if not isinstance(task, Task):
             raise TypeError(f"Node {task_node.name} is not a Task")
         logger.info("Attempting to run task: %s", task.name)
+        self._apply_task_run_overrides(task, kwargs.get("task_overrides", {}))
         parents = self.node_manager.get_parents_data(task_node)
         entries = task.prepare_inputs(parents)
         results = list()

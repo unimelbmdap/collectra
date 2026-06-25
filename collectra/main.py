@@ -48,11 +48,26 @@ def _parse_extra_args(args: list[str]) -> dict:
 
 
 def _split_input_and_extra_args(input_args: list[str]) -> tuple[list[str], list[str]]:
-    """Split variadic input args from trailing unknown CLI options."""
-    for index, arg in enumerate(input_args):
-        if arg.startswith("--"):
-            return input_args[:index], input_args[index:]
-    return input_args, []
+    """Split variadic input args from unknown CLI options in any position."""
+    inputs: list[str] = []
+    extra_args: list[str] = []
+    index = 0
+    while index < len(input_args):
+        arg = input_args[index]
+        if not arg.startswith("--"):
+            inputs.append(arg)
+            index += 1
+            continue
+
+        extra_args.append(arg)
+        if "=" not in arg:
+            next_index = index + 1
+            if next_index < len(input_args) and not input_args[next_index].startswith("--"):
+                extra_args.append(input_args[next_index])
+                index = next_index
+        index += 1
+
+    return inputs, extra_args
 
 
 def resolve_workflow_path(workflow: Path):
@@ -177,10 +192,11 @@ def train(
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True}
 )
 def run(
+    ctx: typer.Context,
     workflow: Annotated[
         Path, typer.Option("--workflow", "-w", help="path to workflow")
     ],
-    inputs: Annotated[list[Path], typer.Argument(help="Input files for the workflow")],
+    inputs: Annotated[list[str], typer.Argument(help="Input files for the workflow")],
     task: Annotated[str, typer.Option("--task", "-t", help="task to run")] = "",
     output: Annotated[
         Path | None, typer.Option("--output", "-o", help="output directory")
@@ -232,9 +248,12 @@ def run(
         if output:
             data["output"] = str(output)
         data["files"] = list()
+        input_paths, trailing_extra_args = _split_input_and_extra_args(inputs)
+
+        data.update(_parse_extra_args([*ctx.args, *trailing_extra_args]))
         pipeline = resolve_workflow_path(workflow)
-        files = resolve_files(inputs, [f".{pipeline.ext}", *valid_raw_files()])
-        for input_path in inputs:
+        files = resolve_files(input_paths, [f".{pipeline.ext}", *valid_raw_files()])
+        for input_path in input_paths:
             input_path = Path(input_path)
             if input_path.is_file() or (
                 input_path.is_dir() and input_path.suffix.lower() == f".{pipeline.ext}"

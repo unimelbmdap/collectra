@@ -85,7 +85,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
         logger.warning("Model is already loaded or invalid model path provided.")
 
     @ThreadingLocked()
-    def run(self, *args: Image) -> list[Image]:
+    def run(self, *args: Image, **kwargs) -> list[Image]:
         """Run object detection inference on the provided Image.
 
         This method performs object detection on the provided input image
@@ -403,7 +403,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
 class ImageClassifierYOLO(ObjectDetectionYOLO):
 
     @ThreadingLocked()
-    def run(self, *args: Image) -> Text:
+    def run(self, *args: Image, **kwargs) -> Text:
         """Run image classification inference on the provided Image.
 
         Args:

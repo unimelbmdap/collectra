@@ -59,6 +59,7 @@ def resolve_files(inputs: list[Path], ext: list[str]) -> list[Path]:
     """
     files: list[Path] = []
     for path in inputs:
+        path = Path(path)
         if path.is_dir():
             if path.suffix.lower() in ext:
                 files.append(path)
