@@ -60,6 +60,9 @@ def resolve_files(inputs: list[Path], ext: list[str]) -> list[Path]:
     files: list[Path] = []
     for path in inputs:
         path = Path(path)
+        if not path.exists():
+            logger.warning(f"Path does not exist: {path}")
+            continue
         if path.is_dir():
             if path.suffix.lower() in ext:
                 files.append(path)

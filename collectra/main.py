@@ -489,5 +489,37 @@ def partition(
         logger.exception("Partitioning failed")
 
 
+@app.command()
+def extract(
+    workflow_path: Annotated[
+        Path, typer.Option("--workflow", "-w", help="path to workflow")
+    ],
+    node: Annotated[str, typer.Option("--node", "-n", help="node to extract")],
+    input_paths: Annotated[list[str], typer.Argument(help="Input directory of files")],
+    output_dir: Annotated[Path, typer.Option(default=..., help="output directory")],
+):
+    pipeline = resolve_workflow_path(workflow_path) # TODO Should be Collectra(workflow_path)
+
+    all_paths = resolve_files(input_paths, [f".{pipeline.ext}"]) # TODO Should be simpler, e.g. pipeline.resolve_files(input_paths)
+
+    for input_path in all_paths:
+        from collectra.commons.files import CollectraFile
+        from collectra.types.base import load_artefact
+        from collectra.utils import change_dir
+
+        file_data = CollectraFile.from_data(input_path)
+        with change_dir(input_path):
+            if node not in file_data:
+                print(f"Node '{node}' not present in {input_path}")
+                continue
+
+            for artefact_data in [file_data[node]]:# TODO Make CollectraFile read as list
+                artefact_data['name'] = node
+
+                artefact = load_artefact(artefact_data)
+                output_path = output_dir/input_path.with_suffix("").name/artefact.id
+                artefact.extract(output_path)
+
+
 if __name__ == "__main__":
     app()

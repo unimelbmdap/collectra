@@ -5,7 +5,7 @@ from pathlib import Path
 import pydantic
 
 from ..utils import write_yaml
-
+from ..types.base import load_artefact
 
 class CollectraResultsMetadata(pydantic.BaseModel):
     workflow: str | None = None
@@ -30,6 +30,13 @@ class CollectraFile(pydantic.BaseModel):
     collectra_results_metadata: CollectraResultsMetadata
     data: dict
     assets: dict[str, Path] = dict()
+
+    def __getitem__(self, key):
+        item = self.data[key]
+        return item
+
+    def __contains__(self, key):
+        return key in self.data
 
     def model_dump(self, *args, **kwargs) -> dict:
         data = super().model_dump(*args, **kwargs)

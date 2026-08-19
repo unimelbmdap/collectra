@@ -237,6 +237,12 @@ class Image(Data):
         image = ImagePil.open(self.get_path())
         return image.rotate(self.orientation.to_degree(), expand=True)
 
+    def _extract(self, path: Path) -> None:
+        """ Extract the image to a specified path. """
+        if path.suffix == "":
+            path = path.with_suffix(".jpg")
+        self.pil().save(path)
+
     def check_valid_relative_crop_values(
         self,
         x_center: float,

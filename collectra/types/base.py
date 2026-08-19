@@ -1,6 +1,7 @@
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import yaml
@@ -23,7 +24,6 @@ logger = get_logger(__name__)
 
 @dataclass
 class Data(BaseEntity):
-
     name: str
     id: str = field(default="")
     parents: list[str] = field(default_factory=list)
@@ -48,6 +48,14 @@ class Data(BaseEntity):
 
     def evaluate(self, gold) -> float:
         raise NotImplementedError("Eval method not implemented for base Data class.")
+
+    def _extract(self, path: Path) -> None:
+        raise NotImplementedError("Extract method not implemented for base Data class.")
+
+    def extract(self, path: Path | str) -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._extract(path)
 
     def _generate_id(self) -> str:
         # Generate a unique ID based on the name and other attributes
@@ -560,3 +568,9 @@ class DataNode(Node):
             except Exception as e:
                 traceback_error(e, verbose=True)
                 return list()
+
+
+def load_artefact(item:dict[str,Any]):
+    artefact_class = load_class_from_string(item.pop("type"))
+
+    return artefact_class(**item)
