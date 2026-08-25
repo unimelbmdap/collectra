@@ -13,7 +13,7 @@ md_example:
 
 object_detector:
   type: collectra.ObjectDetectionYOLO
-  model: yolo11n.pt
+  model: object_detector-20260825_114653.pt
   input:
   - bar_img
   output:
@@ -23,7 +23,7 @@ object_detector:
   - car
   params:
     epochs: 1
-    imgsz: 640    
+    imgsz: 640
     cv_folds: 3
     seed: 37
 
@@ -37,7 +37,7 @@ text-detector:
   - text
   params:
     epochs: 1
-    imgsz: 640    
+    imgsz: 640
     cv_folds: 3
     seed: 37
 

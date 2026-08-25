@@ -5,13 +5,13 @@ import subprocess
 import sys
 
 import cappa
+import collectra
 import pytest
 
 from collectra.cli import command, group, invoke
 from collectra.main import find_pipeline
 from collectra.main import main
 from collectra.pipelines.base import Collectra
-from collectra.tasks.machine_learning.base import MachineLearningTask
 
 
 class Detector:
@@ -259,14 +259,11 @@ def test_pipeline_help_with_model_tasks_does_not_import_backends(tmp_path):
     assert result.stderr == ""
 
 
-def test_training_is_owned_by_machine_learning_tasks():
+def test_training_is_owned_by_concrete_tasks():
     assert not hasattr(Collectra, "train")
     assert not hasattr(Collectra, "save_train")
-    assert not hasattr(MachineLearningTask, "train")
-    assert not hasattr(MachineLearningTask, "cli_train")
-    assert not hasattr(MachineLearningTask, "eval")
-    assert not hasattr(MachineLearningTask, "cluster")
-    assert not hasattr(MachineLearningTask, "set_model")
+    assert "MachineLearningTask" not in collectra.__all__
+    assert not hasattr(collectra, "MachineLearningTask")
 
 
 def test_model_task_classes_have_domain_specific_module_paths():

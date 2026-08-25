@@ -12,7 +12,7 @@ from collectra.types.images import Image, ImageCrop
 from collectra.utils import change_dir
 
 from ...logger import get_logger
-from ..machine_learning.base import MachineLearningTask
+from ..base import Task
 from ..machine_learning.locking import threading_locked
 from ..machine_learning.training import (
     prepare_object_detection_inputs,
@@ -33,7 +33,7 @@ class DetectionTrainResult:
     results_dict: dict
 
 
-class ObjectDetectionDETR(MachineLearningTask):
+class ObjectDetectionDETR(Task):
     """DETR task backed by Hugging Face Transformers."""
 
     model: str | Path | nn.Module | None

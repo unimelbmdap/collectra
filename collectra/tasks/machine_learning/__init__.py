@@ -5,7 +5,6 @@ from __future__ import annotations
 from importlib import import_module
 
 _EXPORTS = {
-    "MachineLearningTask": "collectra.tasks.machine_learning.base",
     "YOLOTask": "collectra.tasks.machine_learning.yolo",
     "ImageOrienter": "collectra.tasks.machine_learning.orienters",
 }

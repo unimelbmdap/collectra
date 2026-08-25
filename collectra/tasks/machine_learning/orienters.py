@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from collectra.types.images import Image, ImageCrop, Orientation
 
-from .base import MachineLearningTask
+from ..base import Task
 
 if TYPE_CHECKING:
     from torchvision.models import EfficientNet
@@ -13,16 +13,13 @@ if TYPE_CHECKING:
 __all__ = ["ImageOrienter"]
 
 
-class ImageOrienter(MachineLearningTask):
+class ImageOrienter(Task):
 
     model: str | Path | EfficientNet
 
     def __init__(self, name, model: str | Path | EfficientNet, **kwargs):
-        super().__init__(name, model, **kwargs)
+        super().__init__(name, model=model, **kwargs)
         self.transforms = None
-
-    def train(self, **kwargs):
-        raise NotImplementedError("Training not implemented for ImageOrienter.")
 
     def _init_model(self):
         """Initialisation code here is emulated from https://github.com/duartebarbosadev/deep-image-orientation-detection"""

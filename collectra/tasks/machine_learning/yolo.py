@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ...logger import get_logger
-from .base import MachineLearningTask
+from ..base import Task
 
 if TYPE_CHECKING:
     from ultralytics.models import YOLO
@@ -16,11 +16,14 @@ __all__ = ["YOLOTask"]
 logger = get_logger(__name__)
 
 
-class YOLOTask(MachineLearningTask):
+class YOLOTask(Task):
     """Base class for tasks backed by an Ultralytics YOLO model."""
 
     model: str | Path | YOLO
     original_model_path: str | Path = ""
+
+    def __init__(self, name: str, model: str | Path | YOLO = "", **kwargs) -> None:
+        super().__init__(name, model=model, **kwargs)
 
     def _init_model(self) -> None:
         """Load and validate the configured YOLO model."""

@@ -28,7 +28,6 @@ import yaml
 
 from collectra.pipelines.base import Collectra
 from collectra.tasks.base import Task
-from collectra.tasks.machine_learning.base import MachineLearningTask
 from collectra.utils import error_msg, processing_msg, success_msg
 
 
@@ -55,31 +54,31 @@ class DataHandler:
             "If this is being called, the incorrect handler is not assigned."
         )
 
-    def get_models(self, task: MachineLearningTask) -> tuple[str, str]:
+    def get_models(self, task: Task) -> tuple[str, str]:
         """Extract current and previous model paths from a machine learning task.
 
         Args:
-            task (MachineLearningTask): The ML task to extract models from.
+            task: A task exposing a model attribute.
 
         Returns:
             tuple[str, str]: Current model path and old model path.
         """
         task_config = self.pipeline.data.get(task.name, {})
-        return str(task.model or ""), str(task_config.get("old_model", ""))
+        return str(getattr(task, "model", "") or ""), str(
+            task_config.get("old_model", "")
+        )
 
-    def is_machine_learning_task(self, task: Task | MachineLearningTask) -> bool:
-        """Check if a task is a machine learning task.
+    def has_model(self, task: Task) -> bool:
+        """Return whether a task exposes a model artifact.
 
         Args:
-            task (Task | MachineLearningTask): The task to check.
+            task: Task to inspect.
 
         Returns:
             bool: True if the task is a machine learning task, False otherwise.
         """
-        if not isinstance(task, MachineLearningTask):
-            error_message = (
-                f"Task {task.name} is not a machine learning task. Skipping..."
-            )
+        if not hasattr(task, "model"):
+            error_message = f"Task {task.name} does not expose a model. Skipping..."
             print(error_msg(error_message))
             return False
         return True
@@ -142,9 +141,9 @@ class DirectoryHandler(DataHandler):
         """
         old_models: dict[str, Path] = dict()
         for task_item in self.pipeline.tasks:
-            if not self.is_machine_learning_task(task_item):
+            if not self.has_model(task_item):
                 continue
-            task: MachineLearningTask = task_item  # type: ignore
+            task = task_item
             model, old_model = self.get_models(task)
             if not model:
                 error_message = f"Task {task.name} does not have a model associated with it. Skipping..."
@@ -233,9 +232,9 @@ class ZipHandler(DataHandler):
         if not self.pipeline.out_dir:
             raise ValueError("Output directory is not specified.")
         for task_item in self.pipeline.tasks:
-            if not self.is_machine_learning_task(task_item):
+            if not self.has_model(task_item):
                 continue
-            task: MachineLearningTask = task_item  # type: ignore
+            task = task_item
             model, old_model = self.get_models(task)
             if not model:
                 error_message = f"Task {task.name} does not have a model associated with it. Skipping..."

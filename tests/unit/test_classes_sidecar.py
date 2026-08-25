@@ -28,7 +28,7 @@ except Exception:  # pragma: no cover - environment guard
     sys.modules["cv2"] = MagicMock()
 
 from collectra.pipelines.base import Collectra  # noqa: E402
-from collectra.tasks.machine_learning.base import MachineLearningTask  # noqa: E402
+from collectra.tasks.base import Task  # noqa: E402
 from collectra.tasks.machine_learning.training import save_training_result  # noqa: E402
 from collectra.tasks.object_detection.rfdetr import (  # noqa: E402
     ObjectDetectionRFDETR,
@@ -54,7 +54,7 @@ def test_save_train_copies_classes_sidecar(tmp_path: Path, monkeypatch):
 
     results = SimpleNamespace(save_dir=tmp_path / "run", results_dict={})
     pipeline = _make_pipeline("rfdetr")
-    task = MachineLearningTask(name="rfdetr")
+    task = Task(name="rfdetr", model="")
     task.pipeline = pipeline
 
     save_training_result(task, results, log="20260101_120000")
@@ -74,7 +74,7 @@ def test_save_train_no_classes_json_no_crash(tmp_path: Path, monkeypatch):
 
     results = SimpleNamespace(save_dir=tmp_path / "run", results_dict={})
     pipeline = _make_pipeline("rfdetr")
-    task = MachineLearningTask(name="rfdetr")
+    task = Task(name="rfdetr", model="")
     task.pipeline = pipeline
 
     save_training_result(task, results, log="20260101_120000")

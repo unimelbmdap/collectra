@@ -13,7 +13,6 @@ _EXPORTS = {
     "Collectra": "collectra.pipelines.base",
     "Task": "collectra.tasks.base",
     "TaskNode": "collectra.tasks.base",
-    "MachineLearningTask": "collectra.tasks.machine_learning.base",
     "YOLOTask": "collectra.tasks.machine_learning.yolo",
     "ObjectDetectionYOLO": "collectra.tasks.object_detection.yolo",
     "ImageClassifierYOLO": "collectra.tasks.image_classifier.yolo",

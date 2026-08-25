@@ -13,7 +13,7 @@ from collectra.types.images import Image, ImageCrop
 from collectra.utils import change_dir
 
 from ...logger import get_logger
-from ..machine_learning.base import MachineLearningTask
+from ..base import Task
 from ..machine_learning.locking import threading_locked
 from ..machine_learning.training import (
     prepare_object_detection_inputs,
@@ -63,7 +63,7 @@ def load_rfdetr_model(model_path: str | Path) -> RFDETR:
     logger.error("Failed to load RF-DETR model from %s. Errors: %s", model_path, errors)
 
 
-class ObjectDetectionRFDETR(MachineLearningTask):
+class ObjectDetectionRFDETR(Task):
     """RF-DETR task backed by the Roboflow rfdetr package."""
 
     model: str | Path | object | None
