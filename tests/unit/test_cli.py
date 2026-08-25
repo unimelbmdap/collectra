@@ -412,6 +412,9 @@ def test_concrete_model_tasks_own_typed_train_commands(capsys):
     detector_help = help_for(app, ["task", "detector", "train", "--help"], capsys)
 
     assert "--imgsz" in classifier_help
+    assert "--model" in classifier_help
+    assert "--output" in classifier_help
     assert "--model-name" not in classifier_help
     assert "--model-name" in detector_help
+    assert "--output" in detector_help
     assert "--weight-decay" in detector_help

@@ -131,6 +131,7 @@ def run_training_command(
     trainer: Callable,
     *,
     keep_log: bool,
+    output: Path | None,
     validation: str,
     exclude: str,
     prepare_inputs: Callable | None = None,
@@ -138,7 +139,11 @@ def run_training_command(
 ):
     """Run the common filesystem lifecycle requested by a concrete command."""
     pipeline = _pipeline_for(task)
-    log = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log = (
+        Path(output).expanduser().resolve()
+        if output is not None
+        else Path.cwd() / datetime.now().strftime("%Y%m%d_%H%M%S")
+    )
     results = train_from_files(
         task,
         inputs,

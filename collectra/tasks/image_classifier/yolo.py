@@ -96,12 +96,14 @@ class ImageClassifierYOLO(YOLOTask):
     def train(
         self,
         inputs: list[str],
+        model: str = "",
+        output: Path | None = None,
         keep_log: bool = True,
         validation: str = "",
         exclude: str = "",
-        epochs: int = 1,
+        epochs: int = 200,
         batch: int = 16,
-        imgsz: int = 640,
+        imgsz: int = 1280,
         early_stop: int = 50,
     ):
         """Train this YOLO image classifier."""
@@ -110,9 +112,11 @@ class ImageClassifierYOLO(YOLOTask):
             inputs,
             self._train,
             keep_log=keep_log,
+            output=output,
             validation=validation,
             exclude=exclude,
             prepare_inputs=self.prepare_training_inputs,
+            model=model,
             epochs=epochs,
             batch=batch,
             imgsz=imgsz,
@@ -122,7 +126,7 @@ class ImageClassifierYOLO(YOLOTask):
     def _train(self, *images: Image, **kwargs) -> ClassifyMetrics | None:
         from ultralytics.models import YOLO
 
-        if "model" in kwargs:
+        if kwargs.get("model"):
             self.model = kwargs["model"]
         self._init_model()
         log = kwargs.get("log", None)

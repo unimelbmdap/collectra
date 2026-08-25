@@ -149,6 +149,8 @@ class ObjectDetectionYOLO(YOLOTask):
     def train(
         self,
         inputs: list[str],
+        model: str = "",
+        output: Path | None = None,
         keep_log: bool = True,
         validation: str = "",
         exclude: str = "",
@@ -164,9 +166,11 @@ class ObjectDetectionYOLO(YOLOTask):
             inputs,
             self._train,
             keep_log=keep_log,
+            output=output,
             validation=validation,
             exclude=exclude,
             prepare_inputs=prepare_object_detection_inputs,
+            model=model,
             epochs=epochs,
             batch=batch,
             imgsz=imgsz,
@@ -179,7 +183,7 @@ class ObjectDetectionYOLO(YOLOTask):
     ) -> DetMetrics | ClassifyMetrics | None:
         from ultralytics.models import YOLO
 
-        if "model" in kwargs:
+        if kwargs.get("model"):
             self.model = kwargs["model"]
         self._init_model()
         log = kwargs.get("log", None)

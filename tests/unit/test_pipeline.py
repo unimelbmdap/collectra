@@ -66,6 +66,7 @@ def test_train(pipeline, tmp_path, monkeypatch):
     subset.mkdir()
     shutil.copytree(Path.cwd() / "tests/data/images/bar1.arb", subset / "bar1.arb")
     input_data = [subset]
+    training_output = tmp_path / "chosen-training-output"
     with change_dir(tmp_path):
         pipeline.connect()
         task = pipeline.cli_tasks()[task_name]
@@ -83,10 +84,19 @@ def test_train(pipeline, tmp_path, monkeypatch):
             "collectra.tasks.object_detection.yolo.prepare_object_detection_inputs",
             lambda processed_inputs, *args: processed_inputs,
         )
+        monkeypatch.setattr(
+            "collectra.tasks.machine_learning.training.save_training_result",
+            lambda *args, **kwargs: None,
+        )
         monkeypatch.setattr(pipeline, "save", lambda *args, **kwargs: None)
-        result = task.train(input_data, validation="true")
+        result = task.train(
+            input_data,
+            validation="true",
+            output=training_output,
+        )
 
     assert result.results_dict == {"mock": True}
+    assert result.save_dir == training_output
 
 
 def test_run_full(pipeline, debug, tmpdir, raw_img_path):

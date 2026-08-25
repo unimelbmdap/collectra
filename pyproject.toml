@@ -44,8 +44,7 @@ supervision = ">=0.18.0"
 onnxruntime = "=1.23.2"
 torch = "=2.9.0"
 torchvision = "=0.24.0"
-tyro = "^1.0.15"
-cappa = "^0.32.2"
+cappa = ">=0.32.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=6.2.5"

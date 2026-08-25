@@ -463,6 +463,7 @@ class ObjectDetectionRFDETR(Task):
     def train(
         self,
         inputs: list[str],
+        output: Path | None = None,
         keep_log: bool = True,
         validation: str = "",
         exclude: str = "",
@@ -479,6 +480,7 @@ class ObjectDetectionRFDETR(Task):
             inputs,
             self._train,
             keep_log=keep_log,
+            output=output,
             validation=validation,
             exclude=exclude,
             prepare_inputs=prepare_object_detection_inputs,
