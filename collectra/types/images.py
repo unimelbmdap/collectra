@@ -24,6 +24,7 @@ import io
 import shutil
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import lru_cache
 from pathlib import Path
 
 from PIL import Image as ImagePil
@@ -31,6 +32,16 @@ from PIL import Image as ImagePil
 from collectra.cli import command
 
 from .base import Artefact, ArtefactCommands, ArtefactNode
+
+
+@lru_cache(maxsize=4096)
+def _image_metadata(
+    path: str, modified_ns: int, file_size: int
+) -> tuple[int, int, str | None]:
+    """Read image dimensions and format once per file version."""
+    with ImagePil.open(path) as image:
+        width, height = image.size
+        return width, height, image.format
 
 
 class ImageArtefactCommands(ArtefactCommands):
@@ -199,9 +210,10 @@ class Image(Artefact):
             self.embeddings = [self.embeddings]
         if isinstance(self.orientation, str):
             self.orientation = Orientation.from_string(self.orientation)
-        with ImagePil.open(self.data) as imf:
-            self.raw_width, self.raw_height = imf.size
-            self.ext = imf.format
+        stat = self.data.stat()
+        self.raw_width, self.raw_height, self.ext = _image_metadata(
+            str(self.data.resolve()), stat.st_mtime_ns, stat.st_size
+        )
 
     def __call__(self) -> str:
         return str(self.get_path())

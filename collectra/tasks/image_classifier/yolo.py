@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.table import Table
+from PIL import Image as PillowImage
 
 from collectra.cli import command
 from collectra.types.images import Image, ImageCrop
@@ -238,6 +239,7 @@ class ImageClassifierYOLO(YOLOTask):
             (train_dir / cls).mkdir(parents=True, exist_ok=True)
             (val_dir / cls).mkdir(parents=True, exist_ok=True)
 
+        source_images: dict[Path, PillowImage.Image] = {}
         for img in images:
             if exclude_flag and img.partition == exclude_flag:
                 continue
@@ -251,18 +253,19 @@ class ImageClassifierYOLO(YOLOTask):
             else:
                 target_dir = train_dir / cls_name
 
-            src = img.get_path()
+            target = img.resolve() if isinstance(img, Link) else img
+            src = target.get_path()
             dst = target_dir / src.name
             pixel_box = None
-            if isinstance(img, ImageCrop):
+            if isinstance(target, ImageCrop):
                 dst = target_dir / f"{src.stem}-{img.id}{src.suffix}"
-                left, upper, right, bottom = img.coordinates()
+                left, upper, right, bottom = target.coordinates()
                 width = right - left
                 height = bottom - upper
                 pixel_box = (left, upper, right, bottom)
             else:
-                width = int(img.width)
-                height = int(img.height)
+                width = int(target.width)
+                height = int(target.height)
 
             if isinstance(img, Link):
                 dst = target_dir / f"{src.stem}-{img.id}{src.suffix}"
@@ -283,10 +286,25 @@ class ImageClassifierYOLO(YOLOTask):
                 continue
 
             if not dst.exists():
-                if isinstance(img, ImageCrop):
-                    img.pil().save(dst)
+                if isinstance(target, ImageCrop):
+                    source_path = src.resolve()
+                    if source_path not in source_images:
+                        with PillowImage.open(source_path) as source:
+                            source.load()
+                            source_images[source_path] = source.copy()
+                    with source_images[source_path].crop(pixel_box) as cropped:
+                        rotated = cropped.rotate(
+                            target.orientation.to_degree(), expand=True
+                        )
+                        try:
+                            rotated.save(dst)
+                        finally:
+                            rotated.close()
                 else:
-                    shutil.copy(img.get_path(), dst)
+                    shutil.copy(src, dst)
+
+        for source in source_images.values():
+            source.close()
 
         return train_dir, val_dir
 

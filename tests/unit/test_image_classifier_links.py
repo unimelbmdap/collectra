@@ -238,7 +238,7 @@ def test_classifier_skips_empty_linked_crop_with_ids(tmp_path, caplog):
     assert "image is 3x0 pixels" in caplog.text
 
 
-def test_classifier_writes_each_linked_crop_with_a_unique_name(tmp_path):
+def test_classifier_writes_each_linked_crop_with_a_unique_name(tmp_path, monkeypatch):
     image = make_image(tmp_path)
     links = []
     for index, x_center in enumerate((0.25, 0.75), start=1):
@@ -261,6 +261,19 @@ def test_classifier_writes_each_linked_crop_with_a_unique_name(tmp_path):
         )
     task = ImageClassifierYOLO("classifier", model="unused.pt")
     log = tmp_path / "training"
+    from PIL import Image as PillowImage
+
+    real_open = PillowImage.open
+    opened = []
+
+    def tracking_open(path, *args, **kwargs):
+        opened.append(path)
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(
+        "collectra.tasks.image_classifier.yolo.PillowImage",
+        SimpleNamespace(open=tracking_open),
+    )
 
     train, _ = task._prepare_assets(["Pollen"], log, "validation", "", *links)
 
@@ -268,6 +281,7 @@ def test_classifier_writes_each_linked_crop_with_a_unique_name(tmp_path):
         f"{image.get_path().stem}-Pollen1.jpg",
         f"{image.get_path().stem}-Pollen2.jpg",
     ]
+    assert opened == [image.get_path().resolve()]
 
 
 def test_classifier_min_size_also_applies_to_whole_images(tmp_path, caplog):
