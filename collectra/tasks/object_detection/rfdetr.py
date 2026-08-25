@@ -5,9 +5,6 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from rich.console import Console
-from rich.table import Table
-
 from collectra.cli import command
 from collectra.types.images import Image, ImageCrop
 from collectra.utils import change_dir
@@ -17,6 +14,7 @@ from ..base import Task
 from collectra.utils import threading_locked
 from ..machine_learning.training import (
     prepare_object_detection_inputs,
+    print_distribution_table,
     run_training_command,
 )
 from .detr import DetectionTrainResult
@@ -252,28 +250,9 @@ class ObjectDetectionRFDETR(Task):
                 if class_name:
                     val_classes[class_name] += 1
 
-        table = Table(title="Class Distribution", show_lines=True)
-        table.add_column(
-            "Class Name", justify="left", style="green", header_style="bold green"
+        print_distribution_table(
+            "Class Distribution", classes, train_classes, val_classes
         )
-        table.add_column(
-            "Train Count", justify="right", style="red", header_style="bold red"
-        )
-        table.add_column(
-            "Validation Count",
-            justify="right",
-            style="blue",
-            header_style="bold blue",
-        )
-
-        for class_name in classes:
-            table.add_row(
-                class_name,
-                str(train_classes[class_name]),
-                str(val_classes[class_name]),
-            )
-
-        Console().print(table)
 
     def _prepare_assets(
         self,

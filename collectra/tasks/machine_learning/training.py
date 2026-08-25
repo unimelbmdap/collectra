@@ -7,6 +7,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from rich.console import Console
+from rich.table import Table
+
 from collectra.types.base import ArtefactNode
 from collectra.types.images import Image, ImageCrop
 from collectra.utils import change_dir
@@ -14,6 +17,53 @@ from collectra.utils import change_dir
 from ...logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def print_distribution_table(
+    title: str,
+    classes: list[str],
+    train_counts: dict[str, int],
+    validation_counts: dict[str, int],
+) -> None:
+    """Print class counts and each class's held-out validation percentage."""
+    table = Table(title=title, show_lines=True)
+    table.add_column(
+        "Class Name", justify="left", style="green", header_style="bold green"
+    )
+    table.add_column(
+        "Train Count", justify="right", style="red", header_style="bold red"
+    )
+    table.add_column(
+        "Validation Count", justify="right", style="blue", header_style="bold blue"
+    )
+    table.add_column("Validation %", justify="right", header_style="bold")
+
+    total_train = 0
+    total_validation = 0
+    for class_name in classes:
+        train_count = train_counts[class_name]
+        validation_count = validation_counts[class_name]
+        total = train_count + validation_count
+        percentage = 100 * validation_count / total if total else 0.0
+        table.add_row(
+            class_name,
+            str(train_count),
+            str(validation_count),
+            f"{percentage:.1f}%",
+        )
+        total_train += train_count
+        total_validation += validation_count
+
+    grand_total = total_train + total_validation
+    total_percentage = 100 * total_validation / grand_total if grand_total else 0.0
+    table.add_row(
+        "Total",
+        str(total_train),
+        str(total_validation),
+        f"{total_percentage:.1f}%",
+        style="bold",
+    )
+    Console().print(table)
 
 
 def prepare_object_detection_inputs(

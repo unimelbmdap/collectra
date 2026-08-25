@@ -400,6 +400,8 @@ def test_classification_distribution_includes_totals(tmp_path, capsys):
     task._check_distribution(tmp_path, ["Pollen", "Spore"])
 
     output = capsys.readouterr().out
+    assert "Validation %" in output
     total_row = next(line for line in output.splitlines() if "Total" in line)
     assert "3" in total_row
     assert "4" in total_row
+    assert "57.1%" in total_row

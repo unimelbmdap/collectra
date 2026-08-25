@@ -5,8 +5,6 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from rich.console import Console
-from rich.table import Table
 from PIL import Image as PillowImage
 
 from collectra.cli import command
@@ -16,7 +14,7 @@ from collectra.utils import change_dir
 
 from collectra.logger import get_logger
 from collectra.utils import threading_locked
-from ..machine_learning.training import run_training_command
+from ..machine_learning.training import print_distribution_table, run_training_command
 from ..machine_learning.yolo import YOLOTask
 
 if TYPE_CHECKING:
@@ -371,43 +369,22 @@ class ImageClassifierYOLO(YOLOTask):
         train_dir = log / "train"
         val_dir = log / "val"
 
-        table = Table(title="Classification Distribution", show_lines=True)
-        table.add_column(
-            "Class Name", justify="left", style="green", header_style="bold green"
-        )
-        table.add_column(
-            "Train Count", justify="right", style="red", header_style="bold red"
-        )
-        table.add_column(
-            "Validation Count", justify="right", style="blue", header_style="bold blue"
-        )
-
-        total_train = 0
-        total_validation = 0
+        train_counts = {}
+        validation_counts = {}
         for cls_name in classes:
-            train_count = sum(
+            train_counts[cls_name] = sum(
                 1
                 for ext in Image.image_types()
                 for _ in (train_dir / cls_name).glob(f"*{ext}")
             )
-            val_count = sum(
+            validation_counts[cls_name] = sum(
                 1
                 for ext in Image.image_types()
                 for _ in (val_dir / cls_name).glob(f"*{ext}")
             )
-            table.add_row(cls_name, str(train_count), str(val_count))
-            total_train += train_count
-            total_validation += val_count
-
-        table.add_row(
-            "Total",
-            str(total_train),
-            str(total_validation),
-            style="bold",
+        print_distribution_table(
+            "Classification Distribution", classes, train_counts, validation_counts
         )
-
-        console = Console()
-        console.print(table)
 
     def _prepare_params(self, **kwargs) -> dict:
         import platform
