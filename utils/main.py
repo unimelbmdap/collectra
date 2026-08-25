@@ -8,7 +8,6 @@ from datetime import datetime
 from pathlib import Path
 
 import pytz
-import tqdm
 import typer as tp
 import yaml
 from rich import print
@@ -66,7 +65,7 @@ def convert_files(config: dict) -> None:
     output_dir = Path(config.get("output_dir", "output"))
     format = re.sub(r"[^0-9a-zA-Z]+", "", config.get("format", "grapto").lower())
     label_paths = get_label_paths(config, files)
-    for index in tqdm.tqdm(range(len(files)), desc="Converting files"):
+    for index in track(range(len(files)), description="Converting files"):
         image = Path(files[index]["path"])
         results_yaml = {
             "collectra_results_metadata": {

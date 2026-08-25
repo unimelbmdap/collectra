@@ -34,7 +34,7 @@ from typing import List
 
 import yaml
 from rich import print
-from tqdm import tqdm
+from rich.progress import track
 from yaml.emitter import Emitter, ScalarAnalysis
 
 from .logger import get_logger
@@ -184,7 +184,7 @@ def get_all_files(data: list[str], format: str) -> List[Path]:
         Exception: If no files are found matching the specified format.
     """
     files: list[Path] = []
-    for path in tqdm(data, desc="Collecting files"):
+    for path in track(data, description="Collecting files"):
         path = Path(path)
         if path.is_dir():
             sub_files = [Path(file) for file in path.glob(f"**/*{format}")]
@@ -339,7 +339,6 @@ def farthest_first(
 
     import h5py
     import numpy as np
-    from rich.progress import track
 
     with h5py.File(ref, "r") as f:
         dist_matrix = f["distmatrix"][:]
