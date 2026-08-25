@@ -13,7 +13,7 @@ md_example:
 
 object_detector:
   type: collectra.ObjectDetectionYOLO
-  model: object_detector-20260825_131114.pt
+  model: object_detector-20260825_131409.pt
   input:
   - bar_img
   output:
