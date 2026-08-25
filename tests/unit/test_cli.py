@@ -212,6 +212,14 @@ def test_pipeline_exposes_commands_for_artefact_types(tmp_path, capsys):
 
     assert "Palynomorph" in artefact_help
     assert "extract" in image_help
+    assert "evaluate" in image_help
+
+    evaluate_help = help_for(
+        pipeline,
+        ["artefact", "Palynomorph", "evaluate", "--help"],
+        capsys,
+    )
+    assert "--match-by-order" in evaluate_help
 
 
 def test_image_artefact_extract_command(tmp_path):
@@ -239,6 +247,58 @@ def test_image_artefact_extract_command(tmp_path):
     )
 
     assert len(list(output.glob("*.jpg"))) == 1
+
+
+def test_artefact_evaluate_command_uses_selected_node(tmp_path, capsys):
+    source = tmp_path / "source.txt"
+    source.write_text("configured value")
+    pipeline_file = tmp_path / "pipeline.yaml"
+    pipeline_file.write_text(
+        "collectra_pipeline_metadata:\n"
+        "  name: Artefacts\n"
+        "  ext: collectra\n"
+        "  version: 1.0.0\n"
+        "Palynomorph:\n"
+        "  type: collectra.Text\n"
+        "  data: source.txt\n"
+    )
+    predictions = tmp_path / "predictions" / "sample.collectra"
+    ground_truth = tmp_path / "ground_truth" / "differently-named.collectra"
+    predictions.mkdir(parents=True)
+    ground_truth.mkdir(parents=True)
+    result = (
+        "collectra_results_metadata: {}\n"
+        "Palynomorph:\n"
+        "  type: collectra.Text\n"
+        "  id: palynomorph-1\n"
+        "  data: matching text\n"
+    )
+    (predictions / "results.yaml").write_text(result)
+    (ground_truth / "results.yaml").write_text(result)
+    pipeline = Collectra.from_file(pipeline_file)
+    csv_output = tmp_path / "reports" / "evaluation.csv"
+
+    invoke(
+        pipeline,
+        [
+            "artefact",
+            "Palynomorph",
+            "evaluate",
+            str(predictions),
+            str(ground_truth),
+            "--output",
+            str(csv_output),
+        ],
+        name="palynomorph",
+    )
+
+    output = capsys.readouterr().out
+    assert "Aggregate Evaluation Metrics" in output
+    assert "for Text" in output
+    assert "Palynomorph" in output
+    csv_text = csv_output.read_text()
+    assert "filename,label,artefact_type,precision" in csv_text
+    assert "sample,Palynomorph,Text,1.0" in csv_text
 
 
 def test_cli_import_does_not_import_ml_backends():

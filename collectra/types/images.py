@@ -133,9 +133,9 @@ class Image(Artefact):
     orientation: Orientation = field(default=Orientation.NORTH)  # Image orientation
 
     @classmethod
-    def cli_commands(cls, node: ArtefactNode) -> ImageArtefactCommands:
+    def cli_commands(cls, node: ArtefactNode, ext: str) -> ImageArtefactCommands:
         """Expose image operations for a named pipeline artefact node."""
-        return ImageArtefactCommands(node)
+        return ImageArtefactCommands(node, ext)
 
     def attributes_to_ignore(self):
         attributes = super().attributes_to_ignore()

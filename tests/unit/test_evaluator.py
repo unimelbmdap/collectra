@@ -227,6 +227,31 @@ class TestEvaluatorHelperMethods:
         gold_dir.mkdir()
         return Evaluator(pred_dir, gold_dir, ext="grapto")
 
+    def test_match_by_order_pairs_independently_sorted_folders(self, tmp_path):
+        predictions = tmp_path / "predictions"
+        gold = tmp_path / "gold"
+        predictions.mkdir()
+        gold.mkdir()
+        for name in ("prediction-b.grapto", "prediction-a.grapto"):
+            (predictions / name).mkdir()
+        for name in ("target-b.grapto", "target-a.grapto", "target-c.grapto"):
+            (gold / name).mkdir()
+
+        evaluator = Evaluator(
+            predictions,
+            gold,
+            ext="grapto",
+            match_by_order=True,
+        )
+        matched, missing_gold, extra_gold = evaluator._validate_file_pairs()
+
+        assert [(pred.name, target.name) for pred, target in matched] == [
+            ("prediction-a.grapto", "target-a.grapto"),
+            ("prediction-b.grapto", "target-b.grapto"),
+        ]
+        assert missing_gold == []
+        assert [path.name for path in extra_gold] == ["target-c.grapto"]
+
     def test_create_missing_prediction_metrics_returns_zero_precision(self):
         """
         _create_missing_prediction_metrics should return precision=0.0.

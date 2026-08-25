@@ -181,7 +181,7 @@ class Collectra:
                 artefact_types,
                 key=lambda type_: len(type_.mro()),
             )
-            artefacts[node.name] = artefact_type.cli_commands(node)
+            artefacts[node.name] = artefact_type.cli_commands(node, self.ext)
         return artefacts
 
     def task(self, task_name: str) -> dict:

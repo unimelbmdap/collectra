@@ -7,6 +7,8 @@ import numpy as np
 import yaml
 from rich import print
 
+from collectra.cli import command
+
 from ..commons import BaseEntity, Node, NodeStatus
 from ..utils import (
     change_dir,
@@ -29,8 +31,33 @@ class ArtefactCommands:
     expose commands applying to every matching item in that node.
     """
 
-    def __init__(self, node: "ArtefactNode") -> None:
+    def __init__(self, node: "ArtefactNode", ext: str) -> None:
         self.node = node
+        self.ext = ext
+
+    @command
+    def evaluate(
+        self,
+        predicted_folder: Path,
+        gold_folder: Path,
+        threshold: float = 0.5,
+        match_by_order: bool = False,
+        output: Path | None = None,
+    ) -> None:
+        """Evaluate this artefact against ground-truth Collectra results."""
+        from collectra.evaluator.base import Evaluator
+
+        report = Evaluator(
+            predicted_folder,
+            gold_folder,
+            ext=self.ext,
+            labels={self.node.name},
+            match_by_order=match_by_order,
+        ).evaluate(threshold=threshold)
+        for table in [*report.aggregate_tables, *report.tables]:
+            print(table)
+        if output is not None:
+            report.save_csv(output)
 
 
 @dataclass
@@ -73,9 +100,9 @@ class Artefact(BaseEntity):
         self._extract(path)
 
     @classmethod
-    def cli_commands(cls, node: "ArtefactNode") -> ArtefactCommands:
+    def cli_commands(cls, node: "ArtefactNode", ext: str) -> ArtefactCommands:
         """Return the CLI object representing this artefact type in ``node``."""
-        return ArtefactCommands(node)
+        return ArtefactCommands(node, ext)
 
     def _generate_id(self) -> str:
         # Generate a unique ID based on the name and other attributes

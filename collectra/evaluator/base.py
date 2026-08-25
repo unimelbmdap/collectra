@@ -1,5 +1,6 @@
 __all__ = ["Evaluator"]
 
+import csv
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -70,6 +71,52 @@ class EvaluationReport:
                 )
             self.tables.append(table)
 
+    def save_csv(self, output: Path) -> None:
+        """Save file- and label-level evaluation metrics as a tidy CSV."""
+        output = Path(output).expanduser()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        fieldnames = [
+            "filename",
+            "label",
+            "artefact_type",
+            "precision",
+            "recall",
+            "f1",
+            "mean_score",
+            "num_predicted",
+            "num_gold",
+            "true_positives",
+            "false_positives",
+            "false_negatives",
+        ]
+        with output.open("w", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fieldnames)
+            writer.writeheader()
+            for result in self.file_results:
+                for label, metrics in result.label_metrics.items():
+                    types = metrics.get("types", []) or [""]
+                    for artefact_type in types:
+                        writer.writerow(
+                            {
+                                "filename": result.filename,
+                                "label": label,
+                                "artefact_type": artefact_type,
+                                "precision": metrics.get("precision", 0),
+                                "recall": metrics.get("recall", 0),
+                                "f1": metrics.get("f1", 0),
+                                "mean_score": metrics.get("mean_score", 0),
+                                "num_predicted": metrics.get("num_predicted", 0),
+                                "num_gold": metrics.get("num_gold", 0),
+                                "true_positives": metrics.get("num_matched", 0),
+                                "false_positives": metrics.get(
+                                    "num_false_positives", 0
+                                ),
+                                "false_negatives": metrics.get(
+                                    "num_false_negatives", 0
+                                ),
+                            }
+                        )
+
 
 class EvaluationError(Exception):
     """Raised when evaluation cannot proceed (e.g., missing gold files)."""
@@ -89,14 +136,55 @@ class Evaluator:
     5. Export results in tabular format
     """
 
-    def __init__(self, predicted_folder: Path, gold_folder: Path, ext: str) -> None:
+    def __init__(
+        self,
+        predicted_folder: Path,
+        gold_folder: Path,
+        ext: str,
+        labels: set[str] | None = None,
+        match_by_order: bool = False,
+    ) -> None:
         self.ext = ext.lower().replace(".", "")
-        entries = self._discover_collectra_folders(predicted_folder)
-        self.entries = self._discover_collectra_folders(
-            gold_folder, gold=True, entries=entries
-        )
+        self.labels = labels
+        predicted_folder = Path(predicted_folder).expanduser().resolve()
+        gold_folder = Path(gold_folder).expanduser().resolve()
+        direct_pair = self._is_collectra_folder(
+            predicted_folder
+        ) and self._is_collectra_folder(gold_folder)
+        if match_by_order or direct_pair:
+            self.entries = self._pair_folders_by_order(predicted_folder, gold_folder)
+        else:
+            entries = self._discover_collectra_folders(predicted_folder)
+            self.entries = self._discover_collectra_folders(
+                gold_folder, gold=True, entries=entries
+            )
         self.results: list[FileEvaluationResult] = []
         self.aggregate_metrics: dict = {}
+
+    def _is_collectra_folder(self, path: Path) -> bool:
+        return path.is_dir() and path.suffix == f".{self.ext}"
+
+    def _pair_folders_by_order(
+        self, predicted_folder: Path, gold_folder: Path
+    ) -> dict[str, list[Path | None]]:
+        """Pair independently sorted prediction and gold result folders."""
+        predicted_entries = self._discover_collectra_folders(predicted_folder)
+        gold_entries = self._discover_collectra_folders(gold_folder, gold=True)
+        predictions = sorted(
+            (paths[1] for paths in predicted_entries.values() if paths[1]),
+            key=lambda path: path.name,
+        )
+        golds = sorted(
+            (paths[0] for paths in gold_entries.values() if paths[0]),
+            key=lambda path: path.name,
+        )
+        return {
+            f"pair-{index:06d}": [
+                golds[index] if index < len(golds) else None,
+                predictions[index] if index < len(predictions) else None,
+            ]
+            for index in range(max(len(predictions), len(golds)))
+        }
 
     def __call__(self) -> None:
         self.evaluate()
@@ -108,7 +196,10 @@ class Evaluator:
         gold: bool = False,
     ) -> dict[str, list[Path | None]]:
         """
-        Find all .{ext} directories (e.g., .grapto folders).
+        Find .{ext} directories (e.g., .grapto folders).
+
+        ``folder`` may be either one result directory or a parent containing
+        multiple result directories.
 
         Args:
             folder: Path to search for .{ext} directories
@@ -120,7 +211,12 @@ class Evaluator:
         """
         if entries is None:
             entries = {}
-        for item in folder.iterdir():
+        folder = Path(folder).expanduser().resolve()
+        if not folder.is_dir():
+            raise FileNotFoundError(f"Evaluation path is not a directory: {folder}")
+
+        items = [folder] if folder.suffix == f".{self.ext}" else list(folder.iterdir())
+        for item in items:
             if not (item.is_dir() and item.suffix == f".{self.ext}"):
                 continue
             base_name = item.stem
@@ -287,7 +383,7 @@ class Evaluator:
         all_labels = {
             l
             for l in (set(input_labels.keys()) | set(gold_labels.keys()))
-            if not l.endswith("_draft")
+            if not l.endswith("_draft") and (self.labels is None or l in self.labels)
         }
 
         for label_name in all_labels:
@@ -466,6 +562,7 @@ class Evaluator:
         Raises:
             EvaluationError: If any input file lacks a corresponding gold file
         """
+        self.results = []
         matched_pairs, missing_gold, extra_gold = self._validate_file_pairs()
 
         # Fail fast if gold files are missing
