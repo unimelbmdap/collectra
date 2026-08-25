@@ -117,8 +117,10 @@ def test_classifier_training_uses_link_node_name_as_class(tmp_path):
         {"sample": [image]},
     )
 
-    assert training == [image]
-    assert image.name == "Fungi"
+    assert training == [link]
+    assert link.target is image
+    assert isinstance(link, Image)
+    assert link.name == "Fungi"
 
 
 def test_classifier_training_reports_missing_link_parent(tmp_path):
@@ -196,3 +198,96 @@ def test_unclassified_file_is_ignored_for_link_training(tmp_path):
     )
     assert len(negative_samples) == 1
     assert isinstance(negative_samples[0], Image)
+
+
+def test_classifier_skips_empty_linked_crop_with_ids(tmp_path, caplog):
+    image = make_image(tmp_path)
+    crop = image.make_crop(
+        x_center=0.5,
+        y_center=0.0,
+        width_relative=0.25,
+        height_relative=0.0,
+        name="Palynomorph",
+    )
+    crop.id = "Palynomorph1"
+    crop.source_file = tmp_path / "sample.palynomorph"
+    link = Link(
+        name="Pollen",
+        id="Pollen1",
+        parents=[crop.id],
+        target=crop,
+        partition="training",
+    )
+    link.source_file = crop.source_file
+    task = ImageClassifierYOLO("classifier", model="unused.pt")
+    log = tmp_path / "training"
+
+    train, validation = task._prepare_assets(
+        ["Pollen"],
+        log,
+        "validation",
+        "",
+        link,
+    )
+
+    assert train == log / "train"
+    assert validation == log / "val"
+    assert list(train.rglob("*.jpg")) == []
+    assert "Pollen1 -> Palynomorph1" in caplog.text
+    assert "sample.palynomorph" in caplog.text
+    assert "image is 3x0 pixels" in caplog.text
+
+
+def test_classifier_writes_each_linked_crop_with_a_unique_name(tmp_path):
+    image = make_image(tmp_path)
+    links = []
+    for index, x_center in enumerate((0.25, 0.75), start=1):
+        crop = image.make_crop(
+            x_center=x_center,
+            y_center=0.5,
+            width_relative=0.25,
+            height_relative=0.25,
+            name="Palynomorph",
+        )
+        crop.id = f"Palynomorph{index}"
+        links.append(
+            Link(
+                name="Pollen",
+                id=f"Pollen{index}",
+                parents=[crop.id],
+                target=crop,
+                partition="training",
+            )
+        )
+    task = ImageClassifierYOLO("classifier", model="unused.pt")
+    log = tmp_path / "training"
+
+    train, _ = task._prepare_assets(["Pollen"], log, "validation", "", *links)
+
+    assert sorted(path.name for path in train.rglob("*.jpg")) == [
+        f"{image.get_path().stem}-Pollen1.jpg",
+        f"{image.get_path().stem}-Pollen2.jpg",
+    ]
+
+
+def test_classifier_min_size_also_applies_to_whole_images(tmp_path, caplog):
+    from PIL import Image as PillowImage
+
+    path = tmp_path / "tiny.jpg"
+    PillowImage.new("RGB", (1, 10), "white").save(path)
+    image = Image(name="specimen", id="image1", data=path)
+    link = Link(
+        name="Pollen",
+        id="Pollen1",
+        parents=[image.id],
+        target=image,
+        partition="training",
+    )
+    task = ImageClassifierYOLO("classifier", model="unused.pt")
+    log = tmp_path / "training"
+
+    train, _ = task._prepare_assets(["Pollen"], log, "validation", "", link, min_size=2)
+
+    assert list(train.rglob("*.jpg")) == []
+    assert "Pollen1 -> image1" in caplog.text
+    assert "image is 1x10 pixels (minimum 2)" in caplog.text

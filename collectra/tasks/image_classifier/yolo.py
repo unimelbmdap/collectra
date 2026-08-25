@@ -13,6 +13,7 @@ from collectra.types.images import Image, ImageCrop
 from collectra.types.links import Link
 from collectra.utils import change_dir
 
+from collectra.logger import get_logger
 from collectra.utils import threading_locked
 from ..machine_learning.training import run_training_command
 from ..machine_learning.yolo import YOLOTask
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
     from ultralytics.utils.metrics import ClassifyMetrics
 
 __all__ = ["ImageClassifierYOLO"]
+
+logger = get_logger(__name__)
 
 
 class ImageClassifierYOLO(YOLOTask):
@@ -64,8 +67,9 @@ class ImageClassifierYOLO(YOLOTask):
                         f"Classifier Link {child.id!r} points to {type(parent).__name__} "
                         f"parent {parent_id!r}, expected Image or ImageCrop"
                     )
-                parent.name = child.name
-                labeled_parents.append(parent)
+                child.target = parent
+                child.partition = parent.partition
+                labeled_parents.append(child)
         return labeled_parents
 
     @threading_locked()
@@ -122,6 +126,7 @@ class ImageClassifierYOLO(YOLOTask):
         batch: int = 16,
         imgsz: int = 1280,
         early_stop: int = 50,
+        min_size: int = 1,
     ):
         """Train this YOLO image classifier."""
         return run_training_command(
@@ -138,6 +143,7 @@ class ImageClassifierYOLO(YOLOTask):
             batch=batch,
             imgsz=imgsz,
             early_stop=early_stop,
+            min_size=min_size,
         )
 
     def _train(self, *images: Image, **kwargs) -> ClassifyMetrics | None:
@@ -165,7 +171,12 @@ class ImageClassifierYOLO(YOLOTask):
         validation = kwargs.get("validation", "")
         exclude = kwargs.get("exclude", "")
         train_dir, val_dir = self._prepare_assets(
-            classes, log, validation, exclude, *images
+            classes,
+            log,
+            validation,
+            exclude,
+            *images,
+            min_size=int(kwargs.get("min_size", 1)),
         )
         return self._train_fold(train_dir, val_dir, classes, log, kwargs)
 
@@ -201,6 +212,7 @@ class ImageClassifierYOLO(YOLOTask):
         validation_flag: str,
         exclude_flag: str,
         *images: Image,
+        min_size: int = 1,
     ) -> tuple[Path, Path]:
         """Prepare assets for YOLO classification training.
 
@@ -218,6 +230,9 @@ class ImageClassifierYOLO(YOLOTask):
         """
         train_dir = log / "train"
         val_dir = log / "val"
+
+        if min_size < 1:
+            raise ValueError("min_size must be at least 1 pixel")
 
         for cls in classes:
             (train_dir / cls).mkdir(parents=True, exist_ok=True)
@@ -238,8 +253,34 @@ class ImageClassifierYOLO(YOLOTask):
 
             src = img.get_path()
             dst = target_dir / src.name
-            if isinstance(img, ImageCrop) and img.source_parent:
-                dst = target_dir / f"{src.stem}-{str(img.source_parent.id)}{src.suffix}"
+            pixel_box = None
+            if isinstance(img, ImageCrop):
+                dst = target_dir / f"{src.stem}-{img.id}{src.suffix}"
+                left, upper, right, bottom = img.coordinates()
+                width = right - left
+                height = bottom - upper
+                pixel_box = (left, upper, right, bottom)
+            else:
+                width = int(img.width)
+                height = int(img.height)
+
+            if isinstance(img, Link):
+                dst = target_dir / f"{src.stem}-{img.id}{src.suffix}"
+
+            if width < min_size or height < min_size:
+                parent_id = img.parent_id if isinstance(img, Link) else ""
+                logger.warning(
+                    "Skipping classifier image %s%s from %s: image is %dx%d "
+                    "pixels (minimum %d)%s",
+                    img.id,
+                    f" -> {parent_id}" if parent_id else "",
+                    img.source_file or src,
+                    width,
+                    height,
+                    min_size,
+                    f", pixel_box={pixel_box}" if pixel_box else "",
+                )
+                continue
 
             if not dst.exists():
                 if isinstance(img, ImageCrop):

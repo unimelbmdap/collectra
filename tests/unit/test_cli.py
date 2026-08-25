@@ -414,6 +414,7 @@ def test_concrete_model_tasks_own_typed_train_commands(capsys):
     assert "--imgsz" in classifier_help
     assert "--model" in classifier_help
     assert "--output" in classifier_help
+    assert "--min-size" in classifier_help
     assert "--model-name" not in classifier_help
     assert "--model-name" in detector_help
     assert "--output" in detector_help
