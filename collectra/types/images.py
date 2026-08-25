@@ -28,7 +28,40 @@ from pathlib import Path
 
 from PIL import Image as ImagePil
 
-from .base import Artefact
+from collectra.cli import command
+
+from .base import Artefact, ArtefactCommands, ArtefactNode
+
+
+class ImageArtefactCommands(ArtefactCommands):
+    """Commands applying to image artefacts stored in a pipeline node."""
+
+    @command
+    def extract(
+        self,
+        *inputs: str,
+        output: Path = Path("extracted"),
+    ) -> None:
+        """Extract this artefact from Collectra result folders."""
+        output = output.expanduser().resolve()
+        output.mkdir(parents=True, exist_ok=True)
+
+        sources: list[tuple[str, dict[str, Artefact]]] = []
+        if self.node.items:
+            sources.append(("configured", self.node.items))
+
+        for input_path in inputs:
+            path = Path(input_path).expanduser().resolve()
+            loaded = ArtefactNode(self.node.name, types=set(self.node.types))
+            loaded.process(self.node.name, path)
+            sources.append((path.stem, loaded.items))
+
+        for source_name, items in sources:
+            destination = output / source_name if len(sources) > 1 else output
+            destination.mkdir(parents=True, exist_ok=True)
+            for item in items.values():
+                if isinstance(item, Image):
+                    item.extract(destination / f"{item.id}.jpg")
 
 
 class Orientation(Enum):
@@ -98,6 +131,11 @@ class Image(Artefact):
     ext: str | None = field(default="")  # Image format (e.g., PNG, JPEG)
     embeddings: str | list[str] = field(default_factory=list)  # Optional embedding data
     orientation: Orientation = field(default=Orientation.NORTH)  # Image orientation
+
+    @classmethod
+    def cli_commands(cls, node: ArtefactNode) -> ImageArtefactCommands:
+        """Expose image operations for a named pipeline artefact node."""
+        return ImageArtefactCommands(node)
 
     def attributes_to_ignore(self):
         attributes = super().attributes_to_ignore()

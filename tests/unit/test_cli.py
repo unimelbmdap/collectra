@@ -170,7 +170,7 @@ def test_actual_entry_point_root_help(tmp_path, capsys):
     with pytest.raises(cappa.HelpExit):
         main(["--pipeline", str(pipeline_file), "--help"])
     output = capsys.readouterr().out
-    assert all(name in output for name in ("run", "install", "task"))
+    assert all(name in output for name in ("run", "install", "task", "artefact"))
 
 
 def test_installed_pipeline_launcher_delegates_to_main(tmp_path):
@@ -187,7 +187,58 @@ def test_installed_pipeline_launcher_delegates_to_main(tmp_path):
         text=True,
     )
     assert result.returncode == 0
-    assert all(name in result.stdout for name in ("run", "install", "task"))
+    assert all(name in result.stdout for name in ("run", "install", "task", "artefact"))
+
+
+def test_pipeline_exposes_commands_for_artefact_types(tmp_path, capsys):
+    image_path = tmp_path / "source.jpg"
+    from PIL import Image as PillowImage
+
+    PillowImage.new("RGB", (10, 10)).save(image_path)
+    pipeline_file = tmp_path / "pipeline.yaml"
+    pipeline_file.write_text(
+        "collectra_pipeline_metadata:\n"
+        "  name: Artefacts\n"
+        "  ext: collectra\n"
+        "  version: 1.0.0\n"
+        "Palynomorph:\n"
+        "  type: collectra.ImageCrop\n"
+        "  data: source.jpg\n"
+    )
+    pipeline = Collectra.from_file(pipeline_file)
+
+    artefact_help = help_for(pipeline, ["artefact", "--help"], capsys)
+    image_help = help_for(pipeline, ["artefact", "Palynomorph", "--help"], capsys)
+
+    assert "Palynomorph" in artefact_help
+    assert "extract" in image_help
+
+
+def test_image_artefact_extract_command(tmp_path):
+    image_path = tmp_path / "source.jpg"
+    from PIL import Image as PillowImage
+
+    PillowImage.new("RGB", (10, 10), "red").save(image_path)
+    pipeline_file = tmp_path / "pipeline.yaml"
+    pipeline_file.write_text(
+        "collectra_pipeline_metadata:\n"
+        "  name: Artefacts\n"
+        "  ext: collectra\n"
+        "  version: 1.0.0\n"
+        "Palynomorph:\n"
+        "  type: collectra.Image\n"
+        "  data: source.jpg\n"
+    )
+    pipeline = Collectra.from_file(pipeline_file)
+    output = tmp_path / "output"
+
+    invoke(
+        pipeline,
+        ["artefact", "Palynomorph", "extract", "--output", str(output)],
+        name="collectra",
+    )
+
+    assert len(list(output.glob("*.jpg"))) == 1
 
 
 def test_cli_import_does_not_import_ml_backends():

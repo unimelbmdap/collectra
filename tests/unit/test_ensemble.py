@@ -302,21 +302,23 @@ class TestCreateFileLinkage:
 
 
 # =============================================================================
-# Tests for EnsembleProcessor.ensemble_data_node
+# Tests for EnsembleProcessor.ensemble_artefact_node
 # =============================================================================
 
 
 class TestEnsembleDataNode:
-    """Tests for EnsembleProcessor.ensemble_data_node method."""
+    """Tests for EnsembleProcessor.ensemble_artefact_node method."""
 
-    def test_empty_items_returns_none(self, mock_ensemble_processor, mock_data_node):
+    def test_empty_items_returns_none(
+        self, mock_ensemble_processor, mock_artefact_node
+    ):
         """Empty ensemble_items should return None."""
-        node = mock_data_node("test_node", ensemble_items={})
-        result = mock_ensemble_processor.ensemble_data_node(node, {})
+        node = mock_artefact_node("test_node", ensemble_items={})
+        result = mock_ensemble_processor.ensemble_artefact_node(node, {})
         assert result is None
 
     def test_image_returns_first_with_ensemble_refs(
-        self, mock_ensemble_processor, mock_data_node
+        self, mock_ensemble_processor, mock_artefact_node
     ):
         """Image type should return first item with ensemble refs."""
         from collectra.types.images import Image
@@ -331,7 +333,7 @@ class TestEnsembleDataNode:
         type(img1).__name__ = "Image"
         type(img2).__name__ = "Image"
 
-        node = mock_data_node(
+        node = mock_artefact_node(
             "input_image",
             ensemble_items={
                 "src1::img1": img1,
@@ -342,14 +344,14 @@ class TestEnsembleDataNode:
         # Patch type() to return Image
         with patch("collectra.pipelines.ensemble.type") as mock_type:
             mock_type.return_value = Image
-            result = mock_ensemble_processor.ensemble_data_node(node, {})
+            result = mock_ensemble_processor.ensemble_artefact_node(node, {})
 
         assert result["type"] == "collectra.Image"
         assert result["id"] == "input_image_ensemble"
         assert "ensemble" in result
 
     def test_image_crops_calls_ensemble_method(
-        self, mock_ensemble_processor, mock_data_node, mock_image_crop
+        self, mock_ensemble_processor, mock_artefact_node, mock_image_crop
     ):
         """ImageCrop type should call ensemble_image_crops method."""
         from collectra.types.images import ImageCrop
@@ -357,7 +359,7 @@ class TestEnsembleDataNode:
         crop1 = mock_image_crop("src1::crop1")
         crop2 = mock_image_crop("src2::crop1")
 
-        node = mock_data_node(
+        node = mock_artefact_node(
             "crops",
             ensemble_items={
                 "src1::crop1": crop1,
@@ -372,12 +374,12 @@ class TestEnsembleDataNode:
 
         with patch("collectra.pipelines.ensemble.type") as mock_type:
             mock_type.return_value = ImageCrop
-            result = mock_ensemble_processor.ensemble_data_node(node, {})
+            result = mock_ensemble_processor.ensemble_artefact_node(node, {})
 
         mock_ensemble_processor.ensemble_image_crops.assert_called_once()
 
     def test_text_calls_ensemble_method(
-        self, mock_ensemble_processor, mock_data_node, mock_text
+        self, mock_ensemble_processor, mock_artefact_node, mock_text
     ):
         """Text type should call ensemble_text method."""
         from collectra.types.texts import Text
@@ -385,7 +387,7 @@ class TestEnsembleDataNode:
         text1 = mock_text("src1::text1", "hello")
         text2 = mock_text("src2::text1", "hello")
 
-        node = mock_data_node(
+        node = mock_artefact_node(
             "texts",
             ensemble_items={
                 "src1::text1": text1,
@@ -398,7 +400,7 @@ class TestEnsembleDataNode:
 
         with patch("collectra.pipelines.ensemble.type") as mock_type:
             mock_type.return_value = Text
-            result = mock_ensemble_processor.ensemble_data_node(node, {})
+            result = mock_ensemble_processor.ensemble_artefact_node(node, {})
 
         mock_ensemble_processor.ensemble_text.assert_called_once()
 

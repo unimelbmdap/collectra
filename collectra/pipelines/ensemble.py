@@ -33,7 +33,7 @@ import yaml
 from ensemble_boxes import weighted_boxes_fusion
 from rich.progress import track
 
-from ..types.base import Artefact, DataNode
+from ..types.base import Artefact, ArtefactNode
 from ..types.images import Image, ImageCrop
 from ..types.texts import Text
 
@@ -186,7 +186,7 @@ class EnsembleProcessor:
     sources into a single merged result with provenance tracking.
 
     Attributes:
-        node_manager: Node manager for resolving data nodes
+        node_manager: Node manager for resolving artefact nodes
         ext: File extension for collectra result folders
         name: Workflow name
         version: Workflow version
@@ -196,7 +196,7 @@ class EnsembleProcessor:
         """Initialize the EnsembleProcessor.
 
         Args:
-            node_manager: Node manager for resolving data nodes
+            node_manager: Node manager for resolving artefact nodes
             ext: File extension for collectra result folders
             name: Workflow name
             version: Workflow version
@@ -214,7 +214,7 @@ class EnsembleProcessor:
             output: Output folder path for ensembled results
         """
         file_linkage = self.create_file_linkage(folders)
-        layers: list[list[DataNode]] = self.generate_ensembling_layers()
+        layers: list[list[ArtefactNode]] = self.generate_ensembling_layers()
         output_folder = Path(output)
         for filename, source_paths in track(
             file_linkage.items(), description="Ensembling files..."
@@ -249,11 +249,11 @@ class EnsembleProcessor:
 
         return file_linkage
 
-    def generate_ensembling_layers(self) -> list[list[DataNode]]:
-        """Generate layers of data nodes for ensemble processing.
+    def generate_ensembling_layers(self) -> list[list[ArtefactNode]]:
+        """Generate layers of artefact nodes for ensemble processing.
 
         Returns:
-            List of layers, where each layer contains DataNode objects
+            List of layers, where each layer contains ArtefactNode objects
             that should be processed together
         """
         layers = []
@@ -262,7 +262,7 @@ class EnsembleProcessor:
         root_nodes = self.node_manager.get_parents(first_node)
         layers.append(root_nodes)
         for task_node in self.node_manager.get_task_nodes():
-            output_nodes = self.node_manager.get_children_data(task_node)
+            output_nodes = self.node_manager.get_children_artefact(task_node)
             layers.append(output_nodes)
         return layers
 
@@ -270,7 +270,7 @@ class EnsembleProcessor:
         self,
         filename: str,
         source_paths: list[str],
-        layers: list[list[DataNode]],
+        layers: list[list[ArtefactNode]],
         output_folder: Path,
     ) -> None:
         """Ensemble a single file from source paths and save to output path.
@@ -278,16 +278,16 @@ class EnsembleProcessor:
         Args:
             filename: Name of the file being ensembled
             source_paths: List of paths to source collectra folders
-            layers: List of data node layers to process
+            layers: List of artefact node layers to process
             output_folder: Output folder for the ensembled result
         """
         output_path = output_folder / filename
         output_path.mkdir(parents=True, exist_ok=True)
         ensembled_data = dict()
         for layer in layers:
-            for data_node in layer:
-                ensembled_data[data_node.name] = self.ensemble_at_layer(
-                    data_node, source_paths, ensembled_data
+            for artefact_node in layer:
+                ensembled_data[artefact_node.name] = self.ensemble_at_layer(
+                    artefact_node, source_paths, ensembled_data
                 )
         full_data = dict()
         full_data["collectra_results_metadata"] = {
@@ -304,22 +304,24 @@ class EnsembleProcessor:
         self.copy_artifact_files(Path(source_paths[0]), output_path)
 
     def ensemble_at_layer(
-        self, data_node: DataNode, source_paths: list[str], ensembled_data: dict
+        self, artefact_node: ArtefactNode, source_paths: list[str], ensembled_data: dict
     ) -> dict | list[dict]:
         """Ensemble data at a specific layer from source paths.
 
         Args:
-            data_node: The data node to ensemble
+            artefact_node: The artefact node to ensemble
             source_paths: List of source paths to read data from
             ensembled_data: Previously ensembled data for reference
 
         Returns:
             Ensembled data as dict or list of dicts
         """
-        data_node.ensemble = True
+        artefact_node.ensemble = True
         for source_path in source_paths:
-            data_node.process(data_node.name, Path(source_path), skip_type_check=True)
-        label_data = self.ensemble_data_node(data_node, ensembled_data)
+            artefact_node.process(
+                artefact_node.name, Path(source_path), skip_type_check=True
+            )
+        label_data = self.ensemble_artefact_node(artefact_node, ensembled_data)
         if label_data is None:
             return []
         if isinstance(label_data, list) and len(label_data) == 1:
@@ -327,19 +329,19 @@ class EnsembleProcessor:
         else:
             return label_data
 
-    def ensemble_data_node(
-        self, data_node: DataNode, ensembled_data: dict
+    def ensemble_artefact_node(
+        self, artefact_node: ArtefactNode, ensembled_data: dict
     ) -> list[dict] | dict | None:
-        """Ensemble a data node based on its item types.
+        """Ensemble an artefact node based on its item types.
 
         Args:
-            data_node: The data node containing ensemble items
+            artefact_node: The artefact node containing ensemble items
             ensembled_data: Previously ensembled data for parent resolution
 
         Returns:
             Ensembled result or None if no items
         """
-        items: dict[str, Artefact] = data_node.ensemble_items
+        items: dict[str, Artefact] = artefact_node.ensemble_items
 
         if not items:
             return None
@@ -348,43 +350,43 @@ class EnsembleProcessor:
             first_item: Image = list(items.values())[0]
             return {
                 "type": "collectra.Image",
-                "id": f"{data_node.name}_ensemble",
+                "id": f"{artefact_node.name}_ensemble",
                 "data": first_item.get_path().name,
                 "ensemble": list(items.keys()),
             }
 
         elif all(type(item) == ImageCrop for item in items.values()):
-            return self.ensemble_image_crops(data_node, ensembled_data)
+            return self.ensemble_image_crops(artefact_node, ensembled_data)
 
         elif all(type(item) == Text for item in items.values()):
-            return self.ensemble_text(data_node, ensembled_data)
+            return self.ensemble_text(artefact_node, ensembled_data)
 
         else:
             raise Warning(
-                f"Ensembling not supported for data type in node {data_node.name}"
+                f"Ensembling not supported for data type in node {artefact_node.name}"
             )
 
     def ensemble_image_crops(
         self,
-        data_node: DataNode,
+        artefact_node: ArtefactNode,
         ensembled_data: dict,
     ) -> dict | list[dict]:
         """Ensemble ImageCrop items using Weighted Box Fusion.
 
         Args:
-            data_node: The data node containing ImageCrop items
+            artefact_node: The artefact node containing ImageCrop items
             ensembled_data: Previously ensembled data for parent resolution
 
         Returns:
             Ensembled ImageCrop result(s)
         """
         sources = list(
-            set([key.split("::")[0] for key in data_node.ensemble_items.keys()])
+            set([key.split("::")[0] for key in artefact_node.ensemble_items.keys()])
         )
 
         source_crops = dict()
 
-        for idx, item in data_node.ensemble_items.items():
+        for idx, item in artefact_node.ensemble_items.items():
             for source in sources:
                 if not idx.startswith(source):
                     continue
@@ -452,8 +454,8 @@ class EnsembleProcessor:
             )
 
             ensemble_ref_nodes = [
-                data_node.ensemble_items[key]
-                for key in data_node.ensemble_items.keys()
+                artefact_node.ensemble_items[key]
+                for key in artefact_node.ensemble_items.keys()
                 if key in ensemble_refs
             ]
 
@@ -465,7 +467,7 @@ class EnsembleProcessor:
             result.append(
                 {
                     "type": "collectra.ImageCrop",
-                    "id": f"{data_node.name}_ensembled_{i+1}",
+                    "id": f"{artefact_node.name}_ensembled_{i+1}",
                     "data": data_source,
                     "ensemble": ensemble_refs,
                     "parents": ensembled_parents,
@@ -479,23 +481,23 @@ class EnsembleProcessor:
         return result[0] if len(result) == 1 else result
 
     def ensemble_text(
-        self, data_node: DataNode, ensembled_data: dict
+        self, artefact_node: ArtefactNode, ensembled_data: dict
     ) -> dict | list[dict]:
         """Ensemble Text items using edit distance clustering.
 
         Args:
-            data_node: The data node containing Text items
+            artefact_node: The artefact node containing Text items
             ensembled_data: Previously ensembled data for parent resolution
 
         Returns:
             Ensembled Text result(s) with provenance
         """
         sources = list(
-            set([key.split("::")[0] for key in data_node.ensemble_items.keys()])
+            set([key.split("::")[0] for key in artefact_node.ensemble_items.keys()])
         )
         source_texts: dict[str, list] = {}
 
-        for idx, item in data_node.ensemble_items.items():
+        for idx, item in artefact_node.ensemble_items.items():
             for source in sources:
                 if idx.startswith(source):
                     source_texts.setdefault(source, []).append(item)
@@ -526,8 +528,8 @@ class EnsembleProcessor:
             ensemble_refs = cluster["contributors"]
 
             ensemble_ref_nodes = [
-                data_node.ensemble_items[key]
-                for key in data_node.ensemble_items.keys()
+                artefact_node.ensemble_items[key]
+                for key in artefact_node.ensemble_items.keys()
                 if key in ensemble_refs
             ]
 
@@ -538,7 +540,7 @@ class EnsembleProcessor:
             result.append(
                 {
                     "type": "collectra.Text",
-                    "id": f"{data_node.name}_ensembled_{i+1}",
+                    "id": f"{artefact_node.name}_ensembled_{i+1}",
                     "ensemble": ensemble_refs,
                     "parents": ensembled_parents,
                     "data": cluster["centroid"],
@@ -604,5 +606,5 @@ class EnsembleProcessor:
                 shutil.copy2(item, dest_file)
 
     def _reset_nodes(self) -> None:
-        """Reset all data nodes for fresh processing."""
+        """Reset all artefact nodes for fresh processing."""
         self.node_manager.reset_all_nodes()

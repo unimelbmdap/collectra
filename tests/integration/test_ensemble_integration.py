@@ -204,10 +204,10 @@ class TestEnsembleEdgeCases:
         assert "file_0.collectra" in linkage
         assert len(linkage["file_0.collectra"]) == 1
 
-    def test_empty_data_nodes(self, mock_ensemble_processor, mock_data_node):
-        """Test handling of empty data nodes."""
-        node = mock_data_node("empty_node", ensemble_items={})
-        result = mock_ensemble_processor.ensemble_data_node(node, {})
+    def test_empty_artefact_nodes(self, mock_ensemble_processor, mock_artefact_node):
+        """Test handling of empty artefact nodes."""
+        node = mock_artefact_node("empty_node", ensemble_items={})
+        result = mock_ensemble_processor.ensemble_artefact_node(node, {})
         assert result is None
 
     def test_missing_source_folders(self, tmp_path):

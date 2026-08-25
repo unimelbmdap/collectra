@@ -7,7 +7,7 @@ import yaml
 from rich.table import Table
 
 from ..logger import get_logger
-from ..types import DataNode
+from ..types import ArtefactNode
 from ..utils import change_dir
 
 logger = get_logger(__name__)
@@ -84,7 +84,7 @@ class Evaluator:
     Responsibilities:
     1. Match input files to gold standard files by filename
     2. Load and parse .grapto (or other ext) folder structures
-    3. Delegate per-label evaluation to DataNode.evaluate()
+    3. Delegate per-label evaluation to ArtefactNode.evaluate()
     4. Aggregate metrics across files and labels
     5. Export results in tabular format
     """
@@ -169,15 +169,15 @@ class Evaluator:
 
         return matched_pairs, list(missing_golds), list(extra_golds)
 
-    def _load_collectra_file(self, path: Path) -> dict[str, DataNode]:
+    def _load_collectra_file(self, path: Path) -> dict[str, ArtefactNode]:
         """
-        Parse a collectra file data into DataNodes organized by label.
+        Parse a collectra file data into ArtefactNodes organized by label.
 
         Each label (e.g., "registration_number", "local_text") becomes
-        a separate DataNode containing its items (ImageCrops, Texts).
+        a separate ArtefactNode containing its items (ImageCrops, Texts).
 
         Returns:
-            dict mapping label_name -> DataNode
+            dict mapping label_name -> ArtefactNode
         """
         labels = dict()
         with change_dir(path):
@@ -186,12 +186,12 @@ class Evaluator:
                 data.pop("collectra_results_metadata", "")
                 node_names = list(data.keys())
         for name in node_names:
-            node = DataNode(name=name)
+            node = ArtefactNode(name=name)
             node.process(key=node.name, value=path, skip_type_check=True)
             labels[name] = node
         return labels
 
-    def _create_missing_prediction_metrics(self, gold_node: DataNode) -> dict:
+    def _create_missing_prediction_metrics(self, gold_node: ArtefactNode) -> dict:
         """
         Generate metrics when predictions are entirely missing for a gold label.
 
@@ -202,7 +202,7 @@ class Evaluator:
             - F1 = 0.0
             - All gold items are false negatives
 
-        This mirrors the edge case handling in DataNode.evaluate()
+        This mirrors the edge case handling in ArtefactNode.evaluate()
         when self.items is empty but gold_items is not.
         """
         gold_ids = list(gold_node.items.keys())
@@ -225,7 +225,7 @@ class Evaluator:
             "unmatched_gold": gold_ids,
         }
 
-    def _create_extra_prediction_metrics(self, input_node: DataNode) -> dict:
+    def _create_extra_prediction_metrics(self, input_node: ArtefactNode) -> dict:
         """
         Generate metrics when predictions exist for a label not in gold.
 
@@ -236,7 +236,7 @@ class Evaluator:
             - F1 = 0.0
             - All predicted items are false positives
 
-        This mirrors the edge case handling in DataNode.evaluate()
+        This mirrors the edge case handling in ArtefactNode.evaluate()
         when gold_items.items is empty but self.items is not.
 
         Note: This typically indicates either:
@@ -272,7 +272,7 @@ class Evaluator:
         Evaluate a single input file against its gold standard.
 
         Process:
-        1. Load both files into label -> DataNode mappings
+        1. Load both files into label -> ArtefactNode mappings
         2. For each label present in gold, evaluate predictions
         3. Handle labels present in only one file (missing predictions or extra labels)
 
@@ -304,7 +304,7 @@ class Evaluator:
                 # Extra predictions for non-existent gold label
                 metrics = self._create_extra_prediction_metrics(input_node)
             else:
-                # Both exist - use DataNode.evaluate()
+                # Both exist - use ArtefactNode.evaluate()
                 metrics = input_node.evaluate(gold_node, threshold=threshold)
 
             file_result.label_metrics[label_name] = metrics

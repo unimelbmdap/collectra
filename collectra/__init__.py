@@ -26,7 +26,7 @@ _EXPORTS = {
     "SuryaOCR": "collectra.tasks.ocr",
     "SuryaLineDetector": "collectra.tasks.ocr",
     "Artefact": "collectra.types.base",
-    "DataNode": "collectra.types.base",
+    "ArtefactNode": "collectra.types.base",
     "Image": "collectra.types.images",
     "ImageCrop": "collectra.types.images",
     "Orientation": "collectra.types.images",

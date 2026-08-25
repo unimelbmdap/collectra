@@ -44,7 +44,7 @@ from ..tasks.base import (
 )
 from ..types.base import (
     Artefact,
-    DataNode,
+    ArtefactNode,
     NodeStatus,
 )
 from ..types.images import Image, ImageCrop
@@ -164,6 +164,26 @@ class Collectra:
             node.name: node.get_task() for node in self.node_manager.get_task_nodes()
         }
 
+    @group(name="artefact")
+    def cli_artefacts(self) -> dict[str, object]:
+        """Operate on one of the artefacts in this pipeline."""
+        self._ensure_workflow_connected()
+        artefacts: dict[str, object] = {}
+        for node in self.node_manager.get_artefact_nodes():
+            artefact_types = [
+                type_ for type_ in node.types if issubclass(type_, Artefact)
+            ]
+            if not artefact_types:
+                continue
+            # IO inference can add a base and a more-specific type to a node.
+            # Prefer the most specific class so its CLI capabilities win.
+            artefact_type = max(
+                artefact_types,
+                key=lambda type_: len(type_.mro()),
+            )
+            artefacts[node.name] = artefact_type.cli_commands(node)
+        return artefacts
+
     def task(self, task_name: str) -> dict:
         """Get a task from the workflow by name.
 
@@ -263,11 +283,11 @@ class Collectra:
         return options
 
     def _get_root_input(self) -> str:
-        """Get the name of the root input data node for the workflow."""
-        for data_node in self.node_manager.get_data_nodes():
-            if self._check_is_root(data_node.name):
-                return data_node.name
-        raise ValueError("No root input data node found in the workflow")
+        """Get the name of the root input artefact node for the workflow."""
+        for artefact_node in self.node_manager.get_artefact_nodes():
+            if self._check_is_root(artefact_node.name):
+                return artefact_node.name
+        raise ValueError("No root input artefact node found in the workflow")
 
     def _process_files(self, starting_nodes: list[TaskNode], options: dict):
         """Process each file in the workflow.
@@ -429,12 +449,12 @@ class Collectra:
 
     def _populate_active_paths(
         self,
-        nodes: list[TaskNode | DataNode] | list[TaskNode] | list[DataNode],
+        nodes: list[TaskNode | ArtefactNode] | list[TaskNode] | list[ArtefactNode],
         **kwargs,
     ):
         """Recursively populate active paths in the workflow with input data.
 
-        Traverses the workflow graph from the given nodes, processing data nodes
+        Traverses the workflow graph from the given nodes, processing artefact nodes
         and propagating values to their children.
 
         Args:
@@ -442,7 +462,7 @@ class Collectra:
             **kwargs: Key-value pairs of input data to populate into matching nodes.
         """
         for node in nodes:
-            if isinstance(node, DataNode):
+            if isinstance(node, ArtefactNode):
                 value = kwargs.get(node.name, None)
                 node.process(node.name, value, **kwargs)
 
@@ -451,7 +471,9 @@ class Collectra:
 
     def _init_input_data(
         self,
-        starting_nodes: list[TaskNode | DataNode] | list[TaskNode] | list[DataNode],
+        starting_nodes: (
+            list[TaskNode | ArtefactNode] | list[TaskNode] | list[ArtefactNode]
+        ),
         **kwargs,
     ):
         """Initialize input data for workflow execution.
@@ -466,7 +488,7 @@ class Collectra:
         self._reset_nodes()
         self.connect()
         for node in starting_nodes:
-            parents = self.node_manager.get_parents_data(node)
+            parents = self.node_manager.get_parents_artefact(node)
             for parent in parents:
                 value = kwargs.get(parent.name, None)
                 parent.process(parent.name, value, **kwargs)
@@ -486,60 +508,66 @@ class Collectra:
     def _reset_nodes(self):
         """Reset all nodes in the workflow to their initial state.
 
-        Clears items and ensemble items from data nodes and sets all node
+        Clears items and ensemble items from artefact nodes and sets all node
         statuses to NOT_READY.
         """
         self.node_manager.reset_all_nodes()
 
-    def save_run(self, key: str, value: str | Path, data_node: DataNode | None = None):
+    def save_run(
+        self, key: str, value: str | Path, artefact_node: ArtefactNode | None = None
+    ):
         """Save workflow execution results to file.
 
         Args:
             key: Key identifier for the data.
             value: Path where results should be saved.
-            data_node: Specific data node to save, or None for all nodes.
+            artefact_node: Specific artefact node to save, or None for all nodes.
         """
-        if not self._should_save(key, value, data_node):
+        if not self._should_save(key, value, artefact_node):
             return
 
         savef = Path(value)
         if not savef.is_dir():
             return
 
-        data_nodes = self._get_data_nodes_to_save(data_node)
-        self._save_results_to_directory(savef, key, value, data_nodes)
-        self._log_save_success(savef, data_node)
+        artefact_nodes = self._get_artefact_nodes_to_save(artefact_node)
+        self._save_results_to_directory(savef, key, value, artefact_nodes)
+        self._log_save_success(savef, artefact_node)
 
     def _should_save(
-        self, key: str, value: str | Path, data_node: DataNode | None
+        self, key: str, value: str | Path, artefact_node: ArtefactNode | None
     ) -> bool:
         """Check if saving should proceed."""
         if not key or not value:
             logger.info("No save location specified, skipping save.")
             return False
 
-        if data_node is not None and data_node.status != NodeStatus.READY:
-            logger.info("No new data for %s, skipping save.", data_node.name)
+        if artefact_node is not None and artefact_node.status != NodeStatus.READY:
+            logger.info("No new data for %s, skipping save.", artefact_node.name)
             return False
 
         return True
 
-    def _get_data_nodes_to_save(
-        self, data_node: DataNode | None = None
-    ) -> list[DataNode]:
-        """Get list of data nodes to save."""
-        if data_node is not None:
-            return [data_node]
+    def _get_artefact_nodes_to_save(
+        self, artefact_node: ArtefactNode | None = None
+    ) -> list[ArtefactNode]:
+        """Get list of artefact nodes to save."""
+        if artefact_node is not None:
+            return [artefact_node]
 
-        return self.node_manager.get_data_nodes()
+        return self.node_manager.get_artefact_nodes()
 
     def _save_results_to_directory(
-        self, directory: Path, key: str, value: str | Path, data_nodes: list[DataNode]
+        self,
+        directory: Path,
+        key: str,
+        value: str | Path,
+        artefact_nodes: list[ArtefactNode],
     ):
         """Save results to directory with proper formatting."""
         with change_dir(directory):
             results = self._load_or_create_results(key, value)
-            results = self._collect_node_data(results, data_nodes)
+            results = self._collect_node_data(results, artefact_nodes)
             self._write_results_file(results)
 
     def _load_or_create_results(self, key: str, value: str | Path) -> dict:
@@ -567,43 +595,45 @@ class Collectra:
 
         return results
 
-    def _collect_node_data(self, results: dict, data_nodes: list[DataNode]) -> dict:
+    def _collect_node_data(
+        self, results: dict, artefact_nodes: list[ArtefactNode]
+    ) -> dict:
         """Collect data from all ready nodes and add to results."""
-        for data_node in data_nodes:
-            if data_node.status != NodeStatus.READY:
+        for artefact_node in artefact_nodes:
+            if artefact_node.status != NodeStatus.READY:
                 continue
 
-            name = data_node.name
-            results[name] = self._serialize_node_items(data_node)
+            name = artefact_node.name
+            results[name] = self._serialize_node_items(artefact_node)
 
         return results
 
-    def _serialize_node_items(self, data_node: DataNode) -> dict | list:
-        """Serialize all items in a data node."""
-        serialized_items = [item.serialize() for item in data_node.items.values()]
+    def _serialize_node_items(self, artefact_node: ArtefactNode) -> dict | list:
+        """Serialize all items in an artefact node."""
+        serialized_items = [item.serialize() for item in artefact_node.items.values()]
         return serialized_items[0] if len(serialized_items) == 1 else serialized_items
 
     def _write_results_file(self, results: dict):
         """Write results dictionary to YAML file."""
         write_yaml(results, self.RESULTS_FILE)
 
-    def _log_save_success(self, savef: Path, data_node: DataNode | None):
+    def _log_save_success(self, savef: Path, artefact_node: ArtefactNode | None):
         """Log successful save operation."""
-        if data_node:
-            logger.info("Results saved to %s for %s", savef, data_node.name)
+        if artefact_node:
+            logger.info("Results saved to %s for %s", savef, artefact_node.name)
         else:
             logger.info("All results saved to %s", savef)
 
     def _run_nodes(
         self,
-        nodes: list[TaskNode | DataNode] | list[TaskNode] | list[DataNode],
+        nodes: list[TaskNode | ArtefactNode] | list[TaskNode] | list[ArtefactNode],
         *args,
         **kwargs,
     ):
-        """Execute a list of nodes (tasks or data nodes) in the workflow.
+        """Execute a list of nodes (tasks or artefact nodes) in the workflow.
 
         This method recursively processes nodes, handling both task execution
-        and data node updates. It maintains visualization state and manages
+        and artefact node updates. It maintains visualization state and manages
         child node execution.
         """
         single_run = kwargs.get("single", False)
@@ -618,7 +648,7 @@ class Collectra:
             self._run_nodes(child_tasks, *args, **kwargs)
 
     def _mark_nodes_as_processing(
-        self, nodes: list[TaskNode | DataNode] | list[TaskNode] | list[DataNode]
+        self, nodes: list[TaskNode | ArtefactNode] | list[TaskNode] | list[ArtefactNode]
     ):
         """Mark nodes as currently being processed in the graph."""
         for node in nodes:
@@ -628,7 +658,7 @@ class Collectra:
 
     def _execute_nodes(
         self,
-        nodes: list[TaskNode | DataNode] | list[TaskNode] | list[DataNode],
+        nodes: list[TaskNode | ArtefactNode] | list[TaskNode] | list[ArtefactNode],
         args: tuple,
         kwargs: dict,
         render: bool,
@@ -638,16 +668,16 @@ class Collectra:
         Returns:
             List of child tasks that are ready to execute.
         """
-        child_tasks_of_data_nodes = dict()
+        child_tasks_of_artefact_nodes = dict()
 
         for node in nodes:
             if isinstance(node, TaskNode):
                 self._execute_task_node(node, args, kwargs, render)
-            elif isinstance(node, DataNode):
-                child_tasks = self._execute_data_node(node, args, kwargs, render)
-                child_tasks_of_data_nodes.update(child_tasks)
+            elif isinstance(node, ArtefactNode):
+                child_tasks = self._execute_artefact_node(node, args, kwargs, render)
+                child_tasks_of_artefact_nodes.update(child_tasks)
 
-        return self._check_tasks_ready(list(child_tasks_of_data_nodes.values()))
+        return self._check_tasks_ready(list(child_tasks_of_artefact_nodes.values()))
 
     def _execute_task_node(
         self, node: TaskNode, args: tuple, kwargs: dict, render: bool
@@ -665,10 +695,10 @@ class Collectra:
 
         self._run_nodes(children, *results, **kwargs)
 
-    def _execute_data_node(
-        self, node: DataNode, args: tuple, kwargs: dict, render: bool
+    def _execute_artefact_node(
+        self, node: ArtefactNode, args: tuple, kwargs: dict, render: bool
     ) -> dict:
-        """Execute a single data node and return child tasks.
+        """Execute a single artefact node and return child tasks.
 
         Returns:
             Dictionary of child task names to TaskNode objects.
@@ -687,7 +717,9 @@ class Collectra:
             node.status = NodeStatus.READY
 
         # Save results
-        self.save_run(kwargs.get("key", ""), kwargs.get("value", ""), data_node=node)
+        self.save_run(
+            kwargs.get("key", ""), kwargs.get("value", ""), artefact_node=node
+        )
 
         # Update visualization
         self._update_node_status(node, True)
@@ -698,12 +730,12 @@ class Collectra:
         return {child.name: child for child in children if isinstance(child, TaskNode)}
 
     def _get_node_children(
-        self, node: TaskNode | DataNode
-    ) -> list[TaskNode | DataNode]:
+        self, node: TaskNode | ArtefactNode
+    ) -> list[TaskNode | ArtefactNode]:
         """Get all children of a node."""
         return self.node_manager.get_children(node)
 
-    def _update_node_status(self, node: TaskNode | DataNode, success: bool):
+    def _update_node_status(self, node: TaskNode | ArtefactNode, success: bool):
         """Update node visualization status based on execution result."""
         color = self.COLOR_SUCCESS if success else self.COLOR_FAILURE
         self.node_manager.set_node_attr(
@@ -713,7 +745,7 @@ class Collectra:
     def _check_task_ready(self, task_node: TaskNode) -> NodeStatus:
         """Check if a task node is ready to execute.
 
-        A task is ready when all its parent data nodes have READY status.
+        A task is ready when all its parent artefact nodes have READY status.
 
         Args:
             task_node: The task node to check.
@@ -721,7 +753,7 @@ class Collectra:
         Returns:
             The updated status of the task node.
         """
-        parents = self.node_manager.get_parents_data(task_node)
+        parents = self.node_manager.get_parents_artefact(task_node)
         if all(parent.status == NodeStatus.READY for parent in parents):
             task_node.status = NodeStatus.READY
         return task_node.status
@@ -743,14 +775,14 @@ class Collectra:
         ]
         return ready_tasks
 
-    def _check_existing(self, node: DataNode, new_item: Artefact) -> None:
-        """Check if an identical item already exists in the data node.
+    def _check_existing(self, node: ArtefactNode, new_item: Artefact) -> None:
+        """Check if an identical item already exists in the artefact node.
 
         If an identical item is found, update the existing item with the new item's ID.
-        If no identical item is found, add the new item to the data node.
+        If no identical item is found, add the new item to the artefact node.
 
         Args:
-            node: The data node to check.
+            node: The artefact node to check.
             new_item: The new data item to check or add.
         """
         items = node.items
@@ -807,7 +839,7 @@ class Collectra:
     def _run_task(self, task_node: TaskNode, **kwargs) -> list:
         """Execute a task node and return its output results.
 
-        Prepares inputs from parent data nodes, runs the task, and collects
+        Prepares inputs from parent artefact nodes, runs the task, and collects
         all output data items.
 
         Args:
@@ -825,7 +857,7 @@ class Collectra:
             raise TypeError(f"Node {task_node.name} is not a Task")
         logger.info("Attempting to run task: %s", task.name)
         self._apply_task_run_overrides(task, kwargs.get("task_overrides", {}))
-        parents = self.node_manager.get_parents_data(task_node)
+        parents = self.node_manager.get_parents_artefact(task_node)
         entries = task.prepare_inputs(parents)
         results = list()
         if len(entries) == 0:
@@ -1014,7 +1046,7 @@ class Collectra:
             if isinstance(obj, Task):
                 self._process_task_node(obj, data, relations)
             else:
-                self.node_manager.add_data_node(name, obj=obj)
+                self.node_manager.add_artefact_node(name, obj=obj)
 
     def _create_or_reuse_object(self, name: str, cls_: type, data: dict):
         """Create new object or reuse existing task from graph."""
@@ -1033,10 +1065,10 @@ class Collectra:
         }
         self.node_manager.add_task_node(task_key, task)
 
-        # Add data nodes for task inputs and outputs
+        # Add artefact nodes for task inputs and outputs
         ios = self._extract_task_io_nodes(task, data)
         for io_key, io_types in ios:
-            self.node_manager.add_data_node(io_key, types=list(io_types))
+            self.node_manager.add_artefact_node(io_key, types=list(io_types))
 
     def _extract_task_io_nodes(
         self, task: Task, task_config: dict

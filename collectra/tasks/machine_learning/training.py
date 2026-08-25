@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from collectra.types.base import DataNode
+from collectra.types.base import ArtefactNode
 from collectra.types.images import Image, ImageCrop
 from collectra.utils import change_dir
 
@@ -62,11 +62,11 @@ def _training_files(task, inputs: list[str]) -> list[Path]:
     return files
 
 
-def _prepare_data(task, inputs: list[str], nodes: list[DataNode]):
+def _prepare_data(task, inputs: list[str], nodes: list[ArtefactNode]):
     processed = []
     input_maps = {}
     for item_file in _training_files(task, inputs):
-        input_maps[item_file.name] = DataNode.batch_process(item_file, nodes)
+        input_maps[item_file.name] = ArtefactNode.batch_process(item_file, nodes)
         processed.extend(input_maps[item_file.name])
     return processed, input_maps
 
@@ -106,8 +106,8 @@ def train_from_files(
     """Resolve pipeline artefacts and invoke a concrete backend trainer."""
     pipeline = _pipeline_for(task)
     task_node = pipeline.node_manager.resolve_node(task.name)
-    children = pipeline.node_manager.get_children_data(task_node)
-    parents = pipeline.node_manager.get_parents_data(task_node)
+    children = pipeline.node_manager.get_children_artefact(task_node)
+    parents = pipeline.node_manager.get_parents_artefact(task_node)
     kwargs["classes"] = kwargs.get("classes", [child.name for child in children])
     kwargs = pipeline._merge_task_params(task.name, kwargs)
     processed_inputs, input_maps = _prepare_data(task, inputs, children)

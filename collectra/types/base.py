@@ -15,11 +15,22 @@ from ..utils import (
     traceback_error,
 )
 
-__all__ = ["Artefact", "DataNode"]
+__all__ = ["Artefact", "ArtefactNode"]
 
 from ..logger import get_logger
 
 logger = get_logger(__name__)
+
+
+class ArtefactCommands:
+    """CLI capabilities for a named pipeline artefact node.
+
+    Concrete artefact classes can return a subclass from ``cli_commands`` to
+    expose commands applying to every matching item in that node.
+    """
+
+    def __init__(self, node: "ArtefactNode") -> None:
+        self.node = node
 
 
 @dataclass
@@ -61,6 +72,11 @@ class Artefact(BaseEntity):
         path.parent.mkdir(parents=True, exist_ok=True)
         self._extract(path)
 
+    @classmethod
+    def cli_commands(cls, node: "ArtefactNode") -> ArtefactCommands:
+        """Return the CLI object representing this artefact type in ``node``."""
+        return ArtefactCommands(node)
+
     def _generate_id(self) -> str:
         # Generate a unique ID based on the name and other attributes
         return f"{self.name}-{uuid.uuid4()}"
@@ -88,7 +104,7 @@ class Artefact(BaseEntity):
 
 
 @dataclass
-class DataNode(Node):
+class ArtefactNode(Node):
 
     items: dict[str, Artefact] = field(default_factory=dict)
     ensemble_items: dict[str, Artefact] = field(default_factory=dict)
@@ -105,7 +121,7 @@ class DataNode(Node):
             self.items[item.id] = item
             self.status = NodeStatus.READY
         except Exception as e:
-            raise RuntimeError(f"Error adding item to DataNode: {str(e)}")
+            raise RuntimeError(f"Error adding item to ArtefactNode: {str(e)}")
 
     def get_item(self, item_id: str) -> Artefact | None:
         return self.items.get(item_id, None)
@@ -124,7 +140,7 @@ class DataNode(Node):
         return f"{self.name}\n{types_str}"
 
     def evaluate(
-        self, gold_items: "DataNode", threshold: float = 0.5
+        self, gold_items: "ArtefactNode", threshold: float = 0.5
     ) -> dict[str, int | float]:
         """
         Evaluate predicted items against gold standard items.
@@ -137,7 +153,7 @@ class DataNode(Node):
         5. Computes aggregate metrics (precision, recall, F1, mean score)
 
         Args:
-            gold_items: DataNode containing ground truth items
+            gold_items: ArtefactNode containing ground truth items
             threshold: Minimum score for a valid match (default 0.5)
                     - For ImageCrop: IoU threshold
                     - For Text: similarity threshold
@@ -473,8 +489,10 @@ class DataNode(Node):
             self._create_instances(name=key, data=value)
 
     @staticmethod
-    def batch_process(item_file: Path, data_nodes: list["DataNode"]) -> list[Artefact]:
-        names = [data_node.name for data_node in data_nodes]
+    def batch_process(
+        item_file: Path, artefact_nodes: list["ArtefactNode"]
+    ) -> list[Artefact]:
+        names = [artefact_node.name for artefact_node in artefact_nodes]
         with change_dir(item_file):
             try:
                 data: list[Artefact] = list()
@@ -547,7 +565,7 @@ class DataNode(Node):
                             continue
                         cls_ = load_class_from_string(item.pop("type"))
                         match = False
-                        for type_ in data_nodes[i].types:
+                        for type_ in artefact_nodes[i].types:
                             if issubclass(cls_, type_) or cls_ == type_:
                                 match = True
                                 break
