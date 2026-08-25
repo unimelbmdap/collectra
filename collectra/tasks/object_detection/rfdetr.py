@@ -216,17 +216,68 @@ class ObjectDetectionRFDETR(Task):
         return results
 
     def _prepare_params(self, **kwargs) -> dict:
-        return {
+        params = {
             "epochs": int(kwargs.get("epochs", 1)),
             "batch_size": int(kwargs.get("batch", 4)),
             "grad_accum_steps": int(kwargs.get("grad_accum_steps", 4)),
             "lr": float(kwargs.get("lr", 1e-4)),
+            "lr_encoder": float(kwargs.get("lr_encoder", 1.5e-4)),
+            "lr_vit_layer_decay": float(kwargs.get("lr_vit_layer_decay", 0.8)),
+            "lr_component_decay": float(kwargs.get("lr_component_decay", 0.7)),
+            "warmup_epochs": float(kwargs.get("warmup_epochs", 0.0)),
+            "weight_decay": float(kwargs.get("weight_decay", 1e-4)),
+            "drop_path": float(kwargs.get("drop_path", 0.0)),
+            "multi_scale": bool(kwargs.get("multi_scale", True)),
+            "expanded_scales": bool(kwargs.get("expanded_scales", True)),
+            "do_random_resize_via_padding": bool(
+                kwargs.get("do_random_resize_via_padding", False)
+            ),
+            "augmentation_backend": kwargs.get("augmentation_backend", "cpu"),
+            "use_ema": bool(kwargs.get("use_ema", True)),
+            "ema_decay": float(kwargs.get("ema_decay", 0.993)),
+            "ema_tau": int(kwargs.get("ema_tau", 100)),
+            "ema_update_interval": int(kwargs.get("ema_update_interval", 1)),
             "output_dir": str(kwargs["output_dir"]),
             "wandb": bool(kwargs.get("wandb", True)),
             "project": kwargs.get("project", "runs/rfdetr"),
             "run": kwargs.get("log", "rfdetr-run"),
             "early_stopping": bool(kwargs.get("early_stopping", False)),
+            "early_stopping_patience": int(kwargs.get("early_stopping_patience", 10)),
+            "early_stopping_min_delta": float(
+                kwargs.get("early_stopping_min_delta", 0.001)
+            ),
+            "early_stopping_use_ema": bool(kwargs.get("early_stopping_use_ema", False)),
         }
+        augmentation = kwargs.get("augmentation", "default").lower()
+        if augmentation != "default":
+            preset_names = {
+                "none",
+                "conservative",
+                "aggressive",
+                "aerial",
+                "industrial",
+            }
+            if augmentation not in preset_names:
+                raise ValueError(
+                    "augmentation must be one of: default, none, conservative, "
+                    "aggressive, aerial, industrial"
+                )
+            from rfdetr.datasets.aug_configs import (
+                AUG_AERIAL,
+                AUG_AGGRESSIVE,
+                AUG_CONSERVATIVE,
+                AUG_INDUSTRIAL,
+            )
+
+            presets = {
+                "none": {},
+                "conservative": AUG_CONSERVATIVE,
+                "aggressive": AUG_AGGRESSIVE,
+                "aerial": AUG_AERIAL,
+                "industrial": AUG_INDUSTRIAL,
+            }
+            params["aug_config"] = presets[augmentation]
+        return params
 
     def _check_distribution(
         self,
@@ -452,6 +503,24 @@ class ObjectDetectionRFDETR(Task):
         learning_rate: float = 1e-4,
         wandb: bool = True,
         early_stopping: bool = False,
+        weight_decay: float = 1e-4,
+        drop_path: float = 0.0,
+        augmentation: str = "default",
+        augmentation_backend: str = "cpu",
+        multi_scale: bool = True,
+        expanded_scales: bool = True,
+        do_random_resize_via_padding: bool = False,
+        use_ema: bool = True,
+        ema_decay: float = 0.993,
+        ema_tau: int = 100,
+        ema_update_interval: int = 1,
+        early_stopping_patience: int = 10,
+        early_stopping_min_delta: float = 0.001,
+        early_stopping_use_ema: bool = False,
+        lr_encoder: float = 1.5e-4,
+        lr_vit_layer_decay: float = 0.8,
+        lr_component_decay: float = 0.7,
+        warmup_epochs: float = 0.0,
     ):
         """Train this RF-DETR object detector."""
         return run_training_command(
@@ -470,6 +539,24 @@ class ObjectDetectionRFDETR(Task):
             lr=learning_rate,
             wandb=wandb,
             early_stopping=early_stopping,
+            weight_decay=weight_decay,
+            drop_path=drop_path,
+            augmentation=augmentation,
+            augmentation_backend=augmentation_backend,
+            multi_scale=multi_scale,
+            expanded_scales=expanded_scales,
+            do_random_resize_via_padding=do_random_resize_via_padding,
+            use_ema=use_ema,
+            ema_decay=ema_decay,
+            ema_tau=ema_tau,
+            ema_update_interval=ema_update_interval,
+            early_stopping_patience=early_stopping_patience,
+            early_stopping_min_delta=early_stopping_min_delta,
+            early_stopping_use_ema=early_stopping_use_ema,
+            lr_encoder=lr_encoder,
+            lr_vit_layer_decay=lr_vit_layer_decay,
+            lr_component_decay=lr_component_decay,
+            warmup_epochs=warmup_epochs,
         )
 
     def _train(self, *images: ImageCrop, **kwargs) -> DetectionTrainResult:

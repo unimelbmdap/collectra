@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from collectra import Image, ImageCrop, ObjectDetectionRFDETR
 from collectra.tasks.object_detection.detr import DetectionTrainResult
@@ -69,3 +70,63 @@ def test_run_rfdetr(image, monkeypatch):
     assert len(detections) == 1
     assert isinstance(detections[0], ImageCrop)
     assert detections[0].name == "human"
+
+
+def test_rfdetr_train_forwards_regularization_options(monkeypatch):
+    captured = {}
+
+    def fake_training_command(task, inputs, trainer, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "collectra.tasks.object_detection.rfdetr.run_training_command",
+        fake_training_command,
+    )
+    task = ObjectDetectionRFDETR(name="label-detector")
+
+    task.train(
+        [],
+        weight_decay=0.001,
+        drop_path=0.1,
+        augmentation="conservative",
+        augmentation_backend="auto",
+        multi_scale=False,
+        use_ema=False,
+        early_stopping=True,
+        early_stopping_patience=20,
+        lr_encoder=5e-5,
+        warmup_epochs=2,
+    )
+
+    assert captured["weight_decay"] == 0.001
+    assert captured["drop_path"] == 0.1
+    assert captured["augmentation"] == "conservative"
+    assert captured["augmentation_backend"] == "auto"
+    assert captured["multi_scale"] is False
+    assert captured["use_ema"] is False
+    assert captured["early_stopping"] is True
+    assert captured["early_stopping_patience"] == 20
+    assert captured["lr_encoder"] == 5e-5
+    assert captured["warmup_epochs"] == 2
+
+
+def test_rfdetr_prepare_params_includes_regularization_defaults(tmp_path):
+    task = ObjectDetectionRFDETR(name="label-detector")
+
+    params = task._prepare_params(output_dir=tmp_path)
+
+    assert params["weight_decay"] == 1e-4
+    assert params["drop_path"] == 0.0
+    assert params["multi_scale"] is True
+    assert params["use_ema"] is True
+    assert params["ema_decay"] == 0.993
+    assert params["early_stopping_patience"] == 10
+    assert params["lr_encoder"] == 1.5e-4
+    assert "aug_config" not in params
+
+
+def test_rfdetr_rejects_unknown_augmentation_preset(tmp_path):
+    task = ObjectDetectionRFDETR(name="label-detector")
+
+    with pytest.raises(ValueError, match="augmentation must be one of"):
+        task._prepare_params(output_dir=tmp_path, augmentation="surprise")
