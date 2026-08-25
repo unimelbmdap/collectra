@@ -14,7 +14,7 @@ from collectra.types.images import Image, ImageCrop
 from collectra.types.texts import Text
 from collectra.utils import change_dir
 
-from ..machine_learning.locking import threading_locked
+from collectra.utils import threading_locked
 from ..machine_learning.training import (
     prepare_object_detection_inputs,
     run_training_command,

@@ -13,7 +13,7 @@ from collectra.utils import change_dir
 
 from ...logger import get_logger
 from ..base import Task
-from ..machine_learning.locking import threading_locked
+from collectra.utils import threading_locked
 from ..machine_learning.training import (
     prepare_object_detection_inputs,
     run_training_command,

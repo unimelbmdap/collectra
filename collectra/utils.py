@@ -27,7 +27,9 @@ import importlib
 import os
 import zipfile
 from contextlib import contextmanager
+from functools import wraps
 from pathlib import Path
+from threading import Lock
 from typing import List
 
 import yaml
@@ -38,6 +40,21 @@ from yaml.emitter import Emitter, ScalarAnalysis
 from .logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def threading_locked():
+    """Return a decorator that serializes calls to the decorated callable."""
+    lock = Lock()
+
+    def decorate(func):
+        @wraps(func)
+        def wrapped(*args, **kwargs):
+            with lock:
+                return func(*args, **kwargs)
+
+        return wrapped
+
+    return decorate
 
 
 def valid_raw_files() -> list[str]:
