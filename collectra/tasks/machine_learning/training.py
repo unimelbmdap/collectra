@@ -118,7 +118,7 @@ def train_from_files(
     pipeline = _pipeline_for(task)
     task_node = pipeline.node_manager.resolve_node(task.name)
     children = pipeline.node_manager.get_children_artefact(task_node)
-    parents = pipeline.node_manager.get_parents_artefact(task_node)
+    parents = pipeline.node_manager.get_ancestor_artefacts(task_node)
     kwargs["classes"] = kwargs.get("classes", [child.name for child in children])
     kwargs = pipeline._merge_task_params(task.name, kwargs)
     processed_inputs, input_maps = _prepare_data(

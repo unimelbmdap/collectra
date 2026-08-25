@@ -154,7 +154,7 @@ class ObjectDetectionYOLO(YOLOTask):
         keep_log: bool = True,
         validation: str = "",
         exclude: str = "",
-        epochs: int = 1,
+        epochs: int = 100,
         batch: int = 16,
         imgsz: int = 640,
         early_stop: int = 50,
@@ -411,7 +411,7 @@ class ObjectDetectionYOLO(YOLOTask):
                 if platform.system() == "Darwin"
                 else "cuda" if torch.cuda.is_available() else "cpu"
             ),
-            "epochs": kwargs.get("epochs", 1),
+            "epochs": kwargs.get("epochs", 100),
             "imgsz": kwargs.get("imgsz", 640),
             "patience": kwargs.get("early_stop", 50),
             "batch": kwargs.get("batch", 16),

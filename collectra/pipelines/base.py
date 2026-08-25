@@ -502,11 +502,10 @@ class Collectra:
             item.id: item
             for node in self.node_manager.get_artefact_nodes()
             for item in node.items.values()
-            if not isinstance(item, Link)
         }
         for node in self.node_manager.get_artefact_nodes():
             for item in node.items.values():
-                if isinstance(item, Link):
+                if type(item) is Link:
                     item.bind(artefacts)
 
     def _set_task_contexts(self, context: TaskContext):

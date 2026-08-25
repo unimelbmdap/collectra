@@ -123,6 +123,49 @@ def test_classifier_training_uses_link_node_name_as_class(tmp_path):
     assert link.name == "Fungi"
 
 
+def test_link_resolves_through_multiple_links(tmp_path):
+    image = make_image(tmp_path)
+    fungi = Link(name="Fungi", id="Fungi1", parents=[image.id], target=image)
+    bulbilspore = Link(
+        name="Bulbilspore", id="Bulbilspore1", parents=[fungi.id], target=fungi
+    )
+
+    assert bulbilspore.resolve() is image
+    assert isinstance(bulbilspore, Image)
+    assert bulbilspore.get_path() == image.get_path()
+
+
+def test_link_reports_cycles():
+    first = Link(name="First", id="First1", parents=["Second1"])
+    second = Link(name="Second", id="Second1", parents=["First1"])
+    first.target = second
+    second.target = first
+
+    with pytest.raises(RuntimeError, match="Cyclic Link chain.*First1.*Second1"):
+        first.resolve()
+
+
+def test_classifier_training_resolves_link_to_link(tmp_path):
+    image = make_image(tmp_path)
+    image.partition = "training"
+    fungi = Link(name="Fungi", id="Fungi1", parents=[image.id])
+    bulbilspore = Link(name="Bulbilspore", id="Bulbilspore1", parents=[fungi.id])
+    task = ImageClassifierYOLO("classifier", model="unused.pt")
+
+    training = task.prepare_training_inputs(
+        [],
+        [fungi, image],
+        {"sample": [bulbilspore]},
+        {"sample": [fungi, image]},
+    )
+
+    assert training == [bulbilspore]
+    assert bulbilspore.target is fungi
+    assert fungi.target is image
+    assert bulbilspore.resolve() is image
+    assert bulbilspore.partition == "training"
+
+
 def test_classifier_training_reports_missing_link_parent(tmp_path):
     image = make_image(tmp_path)
     link = Link(name="Fungi", id="Fungi1", parents=["missing-parent"])
@@ -305,3 +348,55 @@ def test_classifier_min_size_also_applies_to_whole_images(tmp_path, caplog):
     assert list(train.rglob("*.jpg")) == []
     assert "Pollen1 -> image1" in caplog.text
     assert "image is 1x10 pixels (minimum 2)" in caplog.text
+
+
+def test_classifier_min_size_zero_disables_filtering(tmp_path):
+    from PIL import Image as PillowImage
+
+    path = tmp_path / "tiny.jpg"
+    PillowImage.new("RGB", (1, 1), "white").save(path)
+    image = Image(name="specimen", id="image1", data=path)
+    link = Link(
+        name="Pollen",
+        id="Pollen1",
+        parents=[image.id],
+        target=image,
+        partition="training",
+    )
+    task = ImageClassifierYOLO("classifier", model="unused.pt")
+
+    train, _ = task._prepare_assets(
+        ["Pollen"], tmp_path / "training", "validation", "", link
+    )
+
+    assert [path.name for path in train.rglob("*.jpg")] == ["tiny-Pollen1.jpg"]
+
+
+def test_classifier_rejects_negative_min_size(tmp_path):
+    task = ImageClassifierYOLO("classifier", model="unused.pt")
+
+    with pytest.raises(ValueError, match="min_size cannot be negative"):
+        task._prepare_assets(
+            ["Pollen"], tmp_path / "training", "validation", "", min_size=-1
+        )
+
+
+def test_classification_distribution_includes_totals(tmp_path, capsys):
+    for partition, class_name, count in (
+        ("train", "Pollen", 2),
+        ("train", "Spore", 1),
+        ("val", "Pollen", 1),
+        ("val", "Spore", 3),
+    ):
+        directory = tmp_path / partition / class_name
+        directory.mkdir(parents=True, exist_ok=True)
+        for index in range(count):
+            (directory / f"{index}.jpg").touch()
+
+    task = ImageClassifierYOLO("classifier", model="unused.pt")
+    task._check_distribution(tmp_path, ["Pollen", "Spore"])
+
+    output = capsys.readouterr().out
+    total_row = next(line for line in output.splitlines() if "Total" in line)
+    assert "3" in total_row
+    assert "4" in total_row

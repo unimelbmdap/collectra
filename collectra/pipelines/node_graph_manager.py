@@ -104,6 +104,14 @@ class NodeGraphManager:
         """Get all parent task nodes for a given node."""
         return [p for p in self.get_parents(node) if isinstance(p, TaskNode)]
 
+    def get_ancestor_artefacts(self, node: Node) -> list[ArtefactNode]:
+        """Return every artefact node upstream of ``node``."""
+        return [
+            resolved
+            for name in nx.ancestors(self.flow, str(node.name))
+            if isinstance((resolved := self.resolve_node(name)), ArtefactNode)
+        ]
+
     # =========================================================================
     # Children Retrieval (hierarchical: get_children -> get_children_artefact / get_children_task)
     # =========================================================================

@@ -41,8 +41,12 @@ class ImageClassifierYOLO(YOLOTask):
         labeled_parents = []
         for file_name, children in input_maps.items():
             parents = parent_input_maps.get(file_name, [])
+            artefacts = {item.id: item for item in [*parents, *children]}
+            for item in artefacts.values():
+                if type(item) is Link:
+                    item.bind(artefacts)
             for child in children:
-                if not isinstance(child, Link):
+                if type(child) is not Link:
                     raise TypeError(
                         f"Classifier label {child.id!r} in {file_name!r} must be "
                         f"a Link, got {type(child).__name__}"
@@ -56,20 +60,27 @@ class ImageClassifierYOLO(YOLOTask):
                     if isinstance(child.parents, str)
                     else child.parents[0]
                 )
-                parent = next((item for item in parents if item.id == parent_id), None)
+                parent = artefacts.get(parent_id)
                 if parent is None:
                     raise ValueError(
                         f"Classifier Link {child.id!r} in {file_name!r} points to "
                         f"missing parent {parent_id!r}; available parent IDs: "
                         f"{[item.id for item in parents]}"
                     )
-                if not isinstance(parent, Image):
-                    raise TypeError(
-                        f"Classifier Link {child.id!r} points to {type(parent).__name__} "
-                        f"parent {parent_id!r}, expected Image or ImageCrop"
-                    )
                 child.target = parent
-                child.partition = parent.partition
+                try:
+                    target = child.resolve()
+                except RuntimeError as error:
+                    raise ValueError(
+                        f"Classifier Link {child.id!r} in {file_name!r} cannot "
+                        f"resolve parent chain: {error}"
+                    ) from error
+                if not isinstance(target, Image):
+                    raise TypeError(
+                        f"Classifier Link {child.id!r} resolves to "
+                        f"{type(target).__name__}, expected Image or ImageCrop"
+                    )
+                child.partition = target.partition
                 labeled_parents.append(child)
         return labeled_parents
 
@@ -123,11 +134,22 @@ class ImageClassifierYOLO(YOLOTask):
         keep_log: bool = True,
         validation: str = "",
         exclude: str = "",
-        epochs: int = 200,
+        epochs: int = 100,
         batch: int = 16,
         imgsz: int = 1280,
         early_stop: int = 50,
-        min_size: int = 1,
+        min_size: int = 0,
+        weight_decay: float = 0.0005,
+        dropout: float = 0.0,
+        erasing: float = 0.4,
+        auto_augment: str = "randaugment",
+        fliplr: float = 0.5,
+        flipud: float = 0.0,
+        hsv_h: float = 0.015,
+        hsv_s: float = 0.7,
+        hsv_v: float = 0.4,
+        cls_pw: float = 0.0,
+        freeze: int | None = None,
     ):
         """Train this YOLO image classifier."""
         return run_training_command(
@@ -145,6 +167,17 @@ class ImageClassifierYOLO(YOLOTask):
             imgsz=imgsz,
             early_stop=early_stop,
             min_size=min_size,
+            weight_decay=weight_decay,
+            dropout=dropout,
+            erasing=erasing,
+            auto_augment=auto_augment,
+            fliplr=fliplr,
+            flipud=flipud,
+            hsv_h=hsv_h,
+            hsv_s=hsv_s,
+            hsv_v=hsv_v,
+            cls_pw=cls_pw,
+            freeze=freeze,
         )
 
     def _train(self, *images: Image, **kwargs) -> ClassifyMetrics | None:
@@ -177,7 +210,7 @@ class ImageClassifierYOLO(YOLOTask):
             validation,
             exclude,
             *images,
-            min_size=int(kwargs.get("min_size", 1)),
+            min_size=int(kwargs.get("min_size", 0)),
         )
         return self._train_fold(train_dir, val_dir, classes, log, kwargs)
 
@@ -213,7 +246,7 @@ class ImageClassifierYOLO(YOLOTask):
         validation_flag: str,
         exclude_flag: str,
         *images: Image,
-        min_size: int = 1,
+        min_size: int = 0,
     ) -> tuple[Path, Path]:
         """Prepare assets for YOLO classification training.
 
@@ -232,8 +265,8 @@ class ImageClassifierYOLO(YOLOTask):
         train_dir = log / "train"
         val_dir = log / "val"
 
-        if min_size < 1:
-            raise ValueError("min_size must be at least 1 pixel")
+        if min_size < 0:
+            raise ValueError("min_size cannot be negative")
 
         for cls in classes:
             (train_dir / cls).mkdir(parents=True, exist_ok=True)
@@ -253,25 +286,28 @@ class ImageClassifierYOLO(YOLOTask):
             else:
                 target_dir = train_dir / cls_name
 
-            target = img.resolve() if isinstance(img, Link) else img
+            target = img.resolve() if type(img) is Link else img
             src = target.get_path()
             dst = target_dir / src.name
             pixel_box = None
             if isinstance(target, ImageCrop):
                 dst = target_dir / f"{src.stem}-{img.id}{src.suffix}"
                 left, upper, right, bottom = target.coordinates()
+                pixel_box = (left, upper, right, bottom)
                 width = right - left
                 height = bottom - upper
-                pixel_box = (left, upper, right, bottom)
-            else:
+            elif min_size:
                 width = int(target.width)
                 height = int(target.height)
 
-            if isinstance(img, Link):
+            if type(img) is Link:
                 dst = target_dir / f"{src.stem}-{img.id}{src.suffix}"
 
-            if width < min_size or height < min_size:
-                parent_id = img.parent_id if isinstance(img, Link) else ""
+            empty_crop = isinstance(target, ImageCrop) and (width <= 0 or height <= 0)
+            below_minimum = min_size and (width < min_size or height < min_size)
+            if empty_crop or below_minimum:
+                effective_minimum = min_size or 1
+                parent_id = img.parent_id if type(img) is Link else ""
                 logger.warning(
                     "Skipping classifier image %s%s from %s: image is %dx%d "
                     "pixels (minimum %d)%s",
@@ -280,7 +316,7 @@ class ImageClassifierYOLO(YOLOTask):
                     img.source_file or src,
                     width,
                     height,
-                    min_size,
+                    effective_minimum,
                     f", pixel_box={pixel_box}" if pixel_box else "",
                 )
                 continue
@@ -346,6 +382,8 @@ class ImageClassifierYOLO(YOLOTask):
             "Validation Count", justify="right", style="blue", header_style="bold blue"
         )
 
+        total_train = 0
+        total_validation = 0
         for cls_name in classes:
             train_count = sum(
                 1
@@ -358,6 +396,15 @@ class ImageClassifierYOLO(YOLOTask):
                 for _ in (val_dir / cls_name).glob(f"*{ext}")
             )
             table.add_row(cls_name, str(train_count), str(val_count))
+            total_train += train_count
+            total_validation += val_count
+
+        table.add_row(
+            "Total",
+            str(total_train),
+            str(total_validation),
+            style="bold",
+        )
 
         console = Console()
         console.print(table)
@@ -376,9 +423,21 @@ class ImageClassifierYOLO(YOLOTask):
                 if platform.system() == "Darwin"
                 else "cuda" if torch.cuda.is_available() else "cpu"
             ),
-            "epochs": kwargs.get("epochs", 1),
+            "epochs": kwargs.get("epochs", 100),
             "imgsz": kwargs.get("imgsz", 640),
             "patience": kwargs.get("early_stop", 50),
             "batch": kwargs.get("batch", 16),
+            "weight_decay": kwargs.get("weight_decay", 0.0005),
+            "dropout": kwargs.get("dropout", 0.0),
+            "erasing": kwargs.get("erasing", 0.4),
+            "auto_augment": kwargs.get("auto_augment", "randaugment"),
+            "fliplr": kwargs.get("fliplr", 0.5),
+            "flipud": kwargs.get("flipud", 0.0),
+            "hsv_h": kwargs.get("hsv_h", 0.015),
+            "hsv_s": kwargs.get("hsv_s", 0.7),
+            "hsv_v": kwargs.get("hsv_v", 0.4),
+            "cls_pw": kwargs.get("cls_pw", 0.0),
         }
+        if kwargs.get("freeze") is not None:
+            params["freeze"] = kwargs["freeze"]
         return params

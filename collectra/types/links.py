@@ -23,7 +23,13 @@ class Link(Artefact):
     def __class__(self) -> type:
         """Present the resolved target type to ``isinstance`` consumers."""
         target = self.__dict__.get("target")
-        return target.__class__ if target is not None else Link
+        seen = {id(self)}
+        while type(target) is Link:
+            if id(target) in seen:
+                return Link
+            seen.add(id(target))
+            target = target.__dict__.get("target")
+        return type(target) if target is not None else Link
 
     def bind(self, artefacts: dict[str, Artefact]) -> Artefact | None:
         """Resolve the first parent ID and retain it as the runtime target."""
@@ -31,11 +37,24 @@ class Link(Artefact):
         return self.target
 
     def resolve(self) -> Artefact:
-        if self.target is None:
-            raise RuntimeError(
-                f"Link {self.id!r} has not been resolved to parent {self.parent_id!r}"
-            )
-        return self.target
+        """Follow any number of Links and return the concrete artefact."""
+        current: Artefact = self
+        chain: list[str] = []
+        seen: set[int] = set()
+        while type(current) is Link:
+            if id(current) in seen:
+                chain.append(current.id)
+                raise RuntimeError(f"Cyclic Link chain: {' -> '.join(chain)}")
+            seen.add(id(current))
+            chain.append(current.id)
+            target = current.__dict__.get("target")
+            if target is None:
+                raise RuntimeError(
+                    f"Link chain {' -> '.join(chain)!r} is unresolved at "
+                    f"parent {current.parent_id!r}"
+                )
+            current = target
+        return current
 
     def __call__(self) -> Any:
         return self.resolve()()
@@ -45,7 +64,7 @@ class Link(Artefact):
         target = self.__dict__.get("target")
         if target is None:
             raise AttributeError(name)
-        return getattr(target, name)
+        return getattr(self.resolve(), name)
 
     def attributes_to_ignore(self) -> set:
         attributes = super().attributes_to_ignore()
@@ -68,8 +87,8 @@ class Link(Artefact):
         self.resolve().extract(path)
 
     def evaluate(self, gold: Artefact) -> float:
-        if isinstance(gold, Link):
+        if type(gold) is Link:
             if self.target is not None and gold.target is not None:
-                return self.target.evaluate(gold.target)
+                return self.resolve().evaluate(gold.resolve())
             return float(bool(self.parent_id) and self.parent_id == gold.parent_id)
         return self.resolve().evaluate(gold)
