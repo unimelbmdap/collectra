@@ -38,17 +38,34 @@ class ImageClassifierYOLO(YOLOTask):
         for file_name, children in input_maps.items():
             parents = parent_input_maps.get(file_name, [])
             for child in children:
-                if not isinstance(child, Link) or not child.parents:
-                    continue
+                if not isinstance(child, Link):
+                    raise TypeError(
+                        f"Classifier label {child.id!r} in {file_name!r} must be "
+                        f"a Link, got {type(child).__name__}"
+                    )
+                if not child.parents:
+                    raise ValueError(
+                        f"Classifier Link {child.id!r} in {file_name!r} has no parent"
+                    )
                 parent_id = (
                     child.parents
                     if isinstance(child.parents, str)
                     else child.parents[0]
                 )
                 parent = next((item for item in parents if item.id == parent_id), None)
-                if parent is not None:
-                    parent.name = child.name
-                    labeled_parents.append(parent)
+                if parent is None:
+                    raise ValueError(
+                        f"Classifier Link {child.id!r} in {file_name!r} points to "
+                        f"missing parent {parent_id!r}; available parent IDs: "
+                        f"{[item.id for item in parents]}"
+                    )
+                if not isinstance(parent, Image):
+                    raise TypeError(
+                        f"Classifier Link {child.id!r} points to {type(parent).__name__} "
+                        f"parent {parent_id!r}, expected Image or ImageCrop"
+                    )
+                parent.name = child.name
+                labeled_parents.append(parent)
         return labeled_parents
 
     @threading_locked()

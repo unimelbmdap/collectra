@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import pytest
 import yaml
 
 from collectra import Collectra, Image, ImageClassifierYOLO, Link
@@ -118,3 +119,31 @@ def test_classifier_training_uses_link_node_name_as_class(tmp_path):
 
     assert training == [image]
     assert image.name == "Fungi"
+
+
+def test_classifier_training_reports_missing_link_parent(tmp_path):
+    image = make_image(tmp_path)
+    link = Link(name="Fungi", id="Fungi1", parents=["missing-parent"])
+    task = ImageClassifierYOLO("classifier", model="unused.pt")
+
+    with pytest.raises(ValueError, match="Fungi1.*missing parent.*missing-parent"):
+        task.prepare_training_inputs(
+            [],
+            [image],
+            {"sample": [link]},
+            {"sample": [image]},
+        )
+
+
+def test_image_crop_reports_empty_pixel_geometry(tmp_path):
+    image = make_image(tmp_path)
+    crop = image.make_crop(
+        x_center=0.5,
+        y_center=0.5,
+        width_relative=0.0,
+        height_relative=0.25,
+        name="Palynomorph",
+    )
+
+    with pytest.raises(ValueError, match="empty pixel crop.*width=0.0"):
+        crop.pil()

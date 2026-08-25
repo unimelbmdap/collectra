@@ -433,6 +433,15 @@ class ImageCrop(Image):
 
     def pil(self) -> ImagePil.Image:
         coordinates = self.coordinates()
+        left, upper, right, bottom = coordinates
+        if right <= left or bottom <= upper:
+            raise ValueError(
+                f"ImageCrop {self.id!r} produces an empty pixel crop from "
+                f"{str(self.get_path())!r}: raw_size=({self.raw_width}, "
+                f"{self.raw_height}), normalized=(x_center={self.x_center}, "
+                f"y_center={self.y_center}, width={self.width_relative}, "
+                f"height={self.height_relative}), pixel_box={coordinates}"
+            )
         with ImagePil.open(self.get_path()) as imf:
             im_crop = imf.crop(coordinates)
         return im_crop.rotate(self.orientation.to_degree(), expand=True)
