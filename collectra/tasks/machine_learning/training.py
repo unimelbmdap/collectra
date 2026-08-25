@@ -62,11 +62,21 @@ def _training_files(task, inputs: list[str]) -> list[Path]:
     return files
 
 
-def _prepare_data(task, inputs: list[str], nodes: list[ArtefactNode]):
+def _prepare_data(
+    task,
+    inputs: list[str],
+    nodes: list[ArtefactNode],
+    *,
+    include_unlabelled: bool = False,
+):
     processed = []
     input_maps = {}
     for item_file in _training_files(task, inputs):
-        input_maps[item_file.name] = ArtefactNode.batch_process(item_file, nodes)
+        input_maps[item_file.name] = ArtefactNode.batch_process(
+            item_file,
+            nodes,
+            include_unlabelled=include_unlabelled,
+        )
         processed.extend(input_maps[item_file.name])
     return processed, input_maps
 
@@ -101,6 +111,7 @@ def train_from_files(
     trainer: Callable,
     *,
     prepare_inputs: Callable | None = None,
+    include_unlabelled: bool = False,
     **kwargs,
 ):
     """Resolve pipeline artefacts and invoke a concrete backend trainer."""
@@ -110,7 +121,12 @@ def train_from_files(
     parents = pipeline.node_manager.get_parents_artefact(task_node)
     kwargs["classes"] = kwargs.get("classes", [child.name for child in children])
     kwargs = pipeline._merge_task_params(task.name, kwargs)
-    processed_inputs, input_maps = _prepare_data(task, inputs, children)
+    processed_inputs, input_maps = _prepare_data(
+        task,
+        inputs,
+        children,
+        include_unlabelled=include_unlabelled,
+    )
     processed_parents, parent_input_maps = _prepare_data(task, inputs, parents)
     if prepare_inputs is not None:
         processed_inputs = prepare_inputs(
@@ -135,6 +151,7 @@ def run_training_command(
     validation: str,
     exclude: str,
     prepare_inputs: Callable | None = None,
+    include_unlabelled: bool = False,
     **kwargs,
 ):
     """Run the common filesystem lifecycle requested by a concrete command."""
@@ -149,6 +166,7 @@ def run_training_command(
         inputs,
         trainer,
         prepare_inputs=prepare_inputs,
+        include_unlabelled=include_unlabelled,
         project=f"{pipeline.path.name}-{task.name}",
         log=log,
         base_folder=Path.cwd(),

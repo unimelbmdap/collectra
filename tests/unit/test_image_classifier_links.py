@@ -144,6 +144,55 @@ def test_image_crop_reports_empty_pixel_geometry(tmp_path):
         height_relative=0.25,
         name="Palynomorph",
     )
+    crop.source_file = tmp_path / "invalid.palynomorph"
 
-    with pytest.raises(ValueError, match="empty pixel crop.*width=0.0"):
+    with pytest.raises(ValueError) as error:
         crop.pil()
+
+    message = str(error.value)
+    assert crop.id in message
+    assert "invalid.palynomorph" in message
+    assert str(image.get_path()) in message
+    assert "width=0.0" in message
+
+
+def test_unclassified_file_is_ignored_for_link_training(tmp_path):
+    image = make_image(tmp_path)
+    result_dir = tmp_path / "unclassified.palynomorph"
+    result_dir.mkdir()
+    (result_dir / "results.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "collectra_results_metadata": {"partition": "training"},
+                "image": {
+                    "type": "collectra.Image",
+                    "id": "image",
+                    "data": str(image.get_path()),
+                },
+                "Palynomorph": {
+                    "type": "collectra.ImageCrop",
+                    "id": "Palynomorph1",
+                    "parents": "image",
+                    "data": str(image.get_path()),
+                    "x_center": 0.5,
+                    "y_center": 0.5,
+                    "width_relative": 0.1,
+                    "height_relative": 0.1,
+                },
+            }
+        )
+    )
+    output_nodes = [
+        ArtefactNode(name, types={Link})
+        for name in ("Algae", "Dinocyst", "Fungi", "Pollen", "Spore", "TCT")
+    ]
+
+    assert ArtefactNode.batch_process(result_dir, output_nodes) == []
+
+    negative_samples = ArtefactNode.batch_process(
+        result_dir,
+        output_nodes,
+        include_unlabelled=True,
+    )
+    assert len(negative_samples) == 1
+    assert isinstance(negative_samples[0], Image)

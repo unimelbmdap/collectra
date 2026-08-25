@@ -69,6 +69,9 @@ class Artefact(BaseEntity):
     embeddings: list[str] = field(default_factory=list)
     orientation: str = field(default="north")  # e.g., "landscape" or "portrait"
     ensemble: list[str] = field(default_factory=list)
+    source_file: Path | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def set_parents(self, parents: list["Artefact"]) -> None:
         self.parents = [parent.id for parent in parents]
@@ -117,6 +120,7 @@ class Artefact(BaseEntity):
         attributes = super().attributes_to_ignore()
         attributes.add("name")
         attributes.add("partition")
+        attributes.add("source_file")
         return attributes
 
     @classmethod
@@ -399,11 +403,14 @@ class ArtefactNode(Node):
         )
         return metrics
 
-    def _create_instance(self, cls_: type, **item) -> None:
+    def _create_instance(
+        self, cls_: type, *, source_file: Path | None = None, **item
+    ) -> None:
         try:
             instance = cls_(**item)
             if not instance:
                 raise ValueError(f"Failed to load {item} with {cls_}")
+            instance.source_file = source_file
             self.add_item(instance)
         except Exception as e:
             logger.error(
@@ -496,7 +503,9 @@ class ArtefactNode(Node):
                                 if ensemble:
                                     self._create_ensemble_instances(value, cls_, **item)
                                 else:
-                                    self._create_instance(cls_, **item)
+                                    self._create_instance(
+                                        cls_, source_file=value, **item
+                                    )
                             except Exception as e:
                                 if not primitive_type:
                                     logger.error(
@@ -521,7 +530,10 @@ class ArtefactNode(Node):
 
     @staticmethod
     def batch_process(
-        item_file: Path, artefact_nodes: list["ArtefactNode"]
+        item_file: Path,
+        artefact_nodes: list["ArtefactNode"],
+        *,
+        include_unlabelled: bool = False,
     ) -> list[Artefact]:
         names = [artefact_node.name for artefact_node in artefact_nodes]
         with change_dir(item_file):
@@ -537,10 +549,14 @@ class ArtefactNode(Node):
                         "partition", None
                     )
                 all_names_not_found = all(name not in file_data for name in names)
-                # This is to load empty images without any annotation (for training negative samples).
-                if all_names_not_found:
+                # Object detection can opt into base images with no annotations
+                # as negative samples. Classification must not treat an
+                # unlabelled image as a training example.
+                if all_names_not_found and include_unlabelled:
                     print(
-                        f"[yellow]No matching data found in [blue]{item_file}[/blue] for names: {', '.join(names)}. Ignoring..."
+                        f"[yellow]No matching labels found in [blue]{item_file}[/blue] "
+                        f"for names: {', '.join(names)}. Using its base image as an "
+                        "unlabelled detection sample."
                     )
                     found_base = False
                     for name, values in file_data.items():
@@ -580,6 +596,8 @@ class ArtefactNode(Node):
                                     )
                         if found_base:
                             break
+                elif all_names_not_found:
+                    return data
                 for i, name in enumerate(names):
                     if name not in file_data:
                         continue
@@ -615,6 +633,7 @@ class ArtefactNode(Node):
                         try:
                             instance = cls_(**item)
                             if instance:
+                                instance.source_file = item_file
                                 data.append(instance)
                         except Exception as e:
                             traceback_error(

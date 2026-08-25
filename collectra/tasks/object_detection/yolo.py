@@ -170,6 +170,7 @@ class ObjectDetectionYOLO(YOLOTask):
             validation=validation,
             exclude=exclude,
             prepare_inputs=prepare_object_detection_inputs,
+            include_unlabelled=True,
             model=model,
             epochs=epochs,
             batch=batch,
