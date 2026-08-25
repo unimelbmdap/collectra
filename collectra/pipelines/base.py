@@ -48,6 +48,7 @@ from ..types.base import (
     NodeStatus,
 )
 from ..types.images import Image, ImageCrop
+from ..types.links import Link
 from ..types.texts import Text
 from .node_graph_manager import NodeGraphManager
 
@@ -493,6 +494,20 @@ class Collectra:
                 value = kwargs.get(parent.name, None)
                 parent.process(parent.name, value, **kwargs)
         self._populate_active_paths(starting_nodes, **kwargs)
+        self._resolve_links()
+
+    def _resolve_links(self) -> None:
+        """Bind loaded links to artefacts in the active pipeline graph."""
+        artefacts = {
+            item.id: item
+            for node in self.node_manager.get_artefact_nodes()
+            for item in node.items.values()
+            if not isinstance(item, Link)
+        }
+        for node in self.node_manager.get_artefact_nodes():
+            for item in node.items.values():
+                if isinstance(item, Link):
+                    item.bind(artefacts)
 
     def _set_task_contexts(self, context: TaskContext):
         """Set context for all tasks in the workflow.

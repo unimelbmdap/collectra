@@ -10,7 +10,7 @@ from rich.table import Table
 
 from collectra.cli import command
 from collectra.types.images import Image, ImageCrop
-from collectra.types.texts import Text
+from collectra.types.links import Link
 from collectra.utils import change_dir
 
 from collectra.utils import threading_locked
@@ -33,12 +33,12 @@ class ImageClassifierYOLO(YOLOTask):
         input_maps: dict[str, list],
         parent_input_maps: dict[str, list],
     ) -> list:
-        """Use parent images labelled by their child Text values."""
+        """Use parent images labelled by their child Link node names."""
         labeled_parents = []
         for file_name, children in input_maps.items():
             parents = parent_input_maps.get(file_name, [])
             for child in children:
-                if not isinstance(child, Text) or not child.parents:
+                if not isinstance(child, Link) or not child.parents:
                     continue
                 parent_id = (
                     child.parents
@@ -47,19 +47,19 @@ class ImageClassifierYOLO(YOLOTask):
                 )
                 parent = next((item for item in parents if item.id == parent_id), None)
                 if parent is not None:
-                    parent.name = str(child.data)
+                    parent.name = child.name
                     labeled_parents.append(parent)
         return labeled_parents
 
     @threading_locked()
-    def run(self, *args: Image, **kwargs) -> Text:
+    def run(self, *args: Image, **kwargs) -> Link:
         """Run image classification inference on the provided Image.
 
         Args:
             *args: A single Image (or ImageCrop) to classify.
 
         Returns:
-            Text: A Text object with the predicted class name.
+            Link: A link from the predicted class node to the input image.
         """
         if len(args) != 1:
             raise ValueError("This task only supports a single Image input.")
@@ -82,9 +82,15 @@ class ImageClassifierYOLO(YOLOTask):
 
         top1_index = results.probs.top1
         predicted_class = results.names[top1_index]
+        outputs = self.output if isinstance(self.output, list) else [self.output]
+        if predicted_class not in outputs:
+            raise ValueError(
+                f"Predicted class {predicted_class!r} is not a configured output: "
+                f"{outputs}"
+            )
         print(f"Classified as: {predicted_class}")
 
-        return Text(name=self.get_output_name(), data=predicted_class)
+        return Link(name=predicted_class, target=image)
 
     @command
     def train(

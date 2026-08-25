@@ -29,6 +29,7 @@ _EXPORTS = {
     "ArtefactNode": "collectra.types.base",
     "Image": "collectra.types.images",
     "ImageCrop": "collectra.types.images",
+    "Link": "collectra.types.links",
     "Orientation": "collectra.types.images",
     "Text": "collectra.types.texts",
     "Editor": "collectra.editor.base",

@@ -464,7 +464,11 @@ class ArtefactNode(Node):
                             try:
                                 primitive_type = not isinstance(item, dict) or not (
                                     "type" in item
-                                    and ("path" in item or "data" in item)
+                                    and (
+                                        "path" in item
+                                        or "data" in item
+                                        or item["type"].endswith(".Link")
+                                    )
                                 )
                                 if primitive_type:
                                     raise ValueError(
@@ -478,7 +482,7 @@ class ArtefactNode(Node):
                                         f"{cls_} is not a subclass or not defined in {self.types}"
                                     )
                                 item["name"] = key
-                                if "data" not in item:
+                                if "data" not in item and "path" in item:
                                     item["data"] = item.pop("path")
                                 if "parents" in item and not isinstance(
                                     item["parents"], list
@@ -587,7 +591,12 @@ class ArtefactNode(Node):
                     value = value if isinstance(value, list) else [value]
                     for item in value:
                         if not isinstance(item, dict) or not (
-                            "type" in item and ("data" in item or "path" in item)
+                            "type" in item
+                            and (
+                                "data" in item
+                                or "path" in item
+                                or item["type"].endswith(".Link")
+                            )
                         ):
                             continue
                         cls_ = load_class_from_string(item.pop("type"))
@@ -599,9 +608,8 @@ class ArtefactNode(Node):
                         if not match:
                             continue
                         item["name"] = name
-                        item["data"] = (
-                            item.pop("path") if "path" in item else item["data"]
-                        )
+                        if "path" in item:
+                            item["data"] = item.pop("path")
                         if partition is not None:
                             item["partition"] = partition
                         try:
