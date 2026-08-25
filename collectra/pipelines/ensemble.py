@@ -33,7 +33,7 @@ import yaml
 from ensemble_boxes import weighted_boxes_fusion
 from rich.progress import track
 
-from ..types.base import Data, DataNode
+from ..types.base import Artefact, DataNode
 from ..types.images import Image, ImageCrop
 from ..types.texts import Text
 
@@ -339,7 +339,7 @@ class EnsembleProcessor:
         Returns:
             Ensembled result or None if no items
         """
-        items: dict[str, Data] = data_node.ensemble_items
+        items: dict[str, Artefact] = data_node.ensemble_items
 
         if not items:
             return None
@@ -549,7 +549,7 @@ class EnsembleProcessor:
 
     def resolve_ensemble_parents(
         self,
-        ensemble_ref_nodes: list[Data],
+        ensemble_ref_nodes: list[Artefact],
         ensemble_data: dict,
     ) -> list[str]:
         """Resolve parent references from ensemble data.

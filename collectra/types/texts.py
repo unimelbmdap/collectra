@@ -5,7 +5,7 @@ from pathlib import Path
 
 from markdown import Markdown as MDown
 
-from .base import Data
+from .base import Artefact
 
 __all__ = ["Text"]
 
@@ -33,7 +33,7 @@ def unmark(text):
 
 
 @dataclass
-class Text(Data):
+class Text(Artefact):
 
     data: str | Path = field(default="")
 

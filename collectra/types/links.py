@@ -1,9 +1,8 @@
 from dataclasses import dataclass, field
 
-from .base import Data
+from .base import Artefact
+
 
 @dataclass
-class Link(Data):
-    target:Data
-
-    
+class Link(Artefact):
+    target: Artefact

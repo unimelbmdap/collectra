@@ -211,7 +211,7 @@ class TestDataNodeEvaluateEdgeCases:
         predicted2.add_item(Text(name="pred_1", data="hello"))
 
         # This test verifies the type checking mechanism exists
-        # The actual type mismatch would require different Data subclasses
+        # The actual type mismatch would require different Artefact subclasses
         metrics = predicted2.evaluate(gold2)  # Should not raise with empty gold
         assert metrics["recall"] == 1.0
 

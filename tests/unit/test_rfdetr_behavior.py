@@ -38,8 +38,8 @@ try:  # pragma: no cover - environment guard
 except Exception:  # pragma: no cover - environment guard
     sys.modules["cv2"] = MagicMock()
 
-from collectra.tasks.machine_learning import rfdetr as rfdetr_module  # noqa: E402
-from collectra.tasks.machine_learning.rfdetr import ObjectDetectionRFDETR  # noqa: E402
+from collectra.tasks.object_detection import rfdetr as rfdetr_module  # noqa: E402
+from collectra.tasks.object_detection.rfdetr import ObjectDetectionRFDETR  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -85,7 +85,7 @@ def patched_rfdetr_base():
     """
     _FakeRFDETRBase.instances = []
     with patch(
-        "collectra.tasks.machine_learning.rfdetr.RFDETRBase",
+        "collectra.tasks.object_detection.rfdetr.RFDETRBase",
         new=_FakeRFDETRBase,
     ) as patched:
         yield patched
@@ -173,7 +173,7 @@ def test_train_raises_for_nonexistent_model_path(
     # Spy on the dataset writer to confirm we error out *before* it runs.
     with patch.object(ObjectDetectionRFDETR, "_write_coco_dataset") as write_mock:
         with pytest.raises(ValueError):
-            task.train(
+            task._train(
                 log="run",
                 base_folder=tmp_path,
                 classes=["a"],
@@ -206,7 +206,7 @@ def test_train_raises_when_load_returns_non_rfdetrbase(
     ):
         with patch.object(ObjectDetectionRFDETR, "_write_coco_dataset") as write_mock:
             with pytest.raises(ValueError):
-                task.train(
+                task._train(
                     log="run",
                     base_folder=tmp_path,
                     classes=["a"],

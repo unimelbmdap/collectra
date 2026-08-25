@@ -11,6 +11,7 @@ from collectra.cli import command, group, invoke
 from collectra.main import find_pipeline
 from collectra.main import main
 from collectra.pipelines.base import Collectra
+from collectra.tasks.machine_learning.base import MachineLearningTask
 
 
 class Detector:
@@ -208,9 +209,10 @@ def test_cli_import_does_not_import_ml_backends():
 def test_model_task_class_discovery_does_not_import_backends():
     script = (
         "import sys; "
-        "from collectra.tasks.machine_learning.yolo import ObjectDetectionYOLO; "
-        "from collectra.tasks.machine_learning.detr import ObjectDetectionDETR; "
-        "from collectra.tasks.machine_learning.rfdetr import ObjectDetectionRFDETR; "
+        "from collectra.tasks.object_detection.yolo import ObjectDetectionYOLO; "
+        "from collectra.tasks.image_classifier.yolo import ImageClassifierYOLO; "
+        "from collectra.tasks.object_detection.detr import ObjectDetectionDETR; "
+        "from collectra.tasks.object_detection.rfdetr import ObjectDetectionRFDETR; "
         "from collectra.tasks.machine_learning.orienters import ImageOrienter; "
         "print(*(name in sys.modules for name in "
         "('torch', 'torchvision', 'ultralytics', 'rfdetr', 'transformers')))"
@@ -255,3 +257,53 @@ def test_pipeline_help_with_model_tasks_does_not_import_backends(tmp_path):
     )
     assert "BACKENDS False False False False False" in result.stdout
     assert result.stderr == ""
+
+
+def test_training_is_owned_by_machine_learning_tasks():
+    assert not hasattr(Collectra, "train")
+    assert not hasattr(Collectra, "save_train")
+    assert not hasattr(MachineLearningTask, "train")
+    assert not hasattr(MachineLearningTask, "cli_train")
+    assert not hasattr(MachineLearningTask, "eval")
+    assert not hasattr(MachineLearningTask, "cluster")
+    assert not hasattr(MachineLearningTask, "set_model")
+
+
+def test_model_task_classes_have_domain_specific_module_paths():
+    from collectra import (
+        ImageClassifierYOLO,
+        ObjectDetectionDETR,
+        ObjectDetectionRFDETR,
+        ObjectDetectionYOLO,
+    )
+
+    assert ObjectDetectionYOLO.__module__ == "collectra.tasks.object_detection.yolo"
+    assert ObjectDetectionDETR.__module__ == "collectra.tasks.object_detection.detr"
+    assert ObjectDetectionRFDETR.__module__ == "collectra.tasks.object_detection.rfdetr"
+    assert ImageClassifierYOLO.__module__ == "collectra.tasks.image_classifier.yolo"
+
+
+def test_yolo_task_types_are_siblings():
+    from collectra import ImageClassifierYOLO, ObjectDetectionYOLO, YOLOTask
+
+    assert issubclass(ObjectDetectionYOLO, YOLOTask)
+    assert issubclass(ImageClassifierYOLO, YOLOTask)
+    assert not issubclass(ImageClassifierYOLO, ObjectDetectionYOLO)
+
+
+def test_concrete_model_tasks_own_typed_train_commands(capsys):
+    from collectra import ImageClassifierYOLO, ObjectDetectionDETR
+
+    app = RuntimeApplication(
+        {
+            "classifier": ImageClassifierYOLO("classifier", model="model.pt"),
+            "detector": ObjectDetectionDETR("detector", model="default"),
+        }
+    )
+    classifier_help = help_for(app, ["task", "classifier", "train", "--help"], capsys)
+    detector_help = help_for(app, ["task", "detector", "train", "--help"], capsys)
+
+    assert "--imgsz" in classifier_help
+    assert "--model-name" not in classifier_help
+    assert "--model-name" in detector_help
+    assert "--weight-decay" in detector_help

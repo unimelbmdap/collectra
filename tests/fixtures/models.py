@@ -11,7 +11,7 @@ class MockYOLOType(MagicMock):
             if key not in kwargs:
                 raise ValueError(f"Missing '{key}' parameter")
         with patch(
-            "collectra.tasks.machine_learning.yolo.DetMetrics"
+            "collectra.tasks.object_detection.yolo.DetMetrics"
         ) as det_metrics_mock:
             det_metrics_instance = MagicMock()
             det_metrics_mock.return_value = det_metrics_instance
@@ -30,7 +30,7 @@ class MockYOLOType(MagicMock):
         for key in required_keys:
             if key not in kwargs:
                 raise ValueError(f"Missing '{key}' parameter")
-        with patch("collectra.tasks.machine_learning.yolo.Results") as results_mock:
+        with patch("collectra.tasks.object_detection.yolo.Results") as results_mock:
             results_instance = MagicMock()
             results_mock.return_value = results_instance
             results_instance.boxes = ["box1", "box2"]  # Mocked boxes
@@ -46,7 +46,7 @@ class MockYOLOType(MagicMock):
 @pytest.fixture
 def initalised_yolo_model(classes):
     with patch(
-        "collectra.tasks.machine_learning.yolo.YOLO", new=MockYOLOType
+        "collectra.tasks.object_detection.yolo.YOLO", new=MockYOLOType
     ) as yolo_mock:
         yolo_mock_client = MagicMock()
         yolo_mock.return_value = yolo_mock_client

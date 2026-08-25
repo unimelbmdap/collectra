@@ -7,12 +7,17 @@ from typing import TYPE_CHECKING
 from rich.console import Console
 from rich.table import Table
 
+from collectra.cli import command
 from collectra.types.images import Image, ImageCrop
 from collectra.utils import change_dir
 
 from ...logger import get_logger
-from .base import MachineLearningTask
-from .locking import threading_locked
+from ..machine_learning.base import MachineLearningTask
+from ..machine_learning.locking import threading_locked
+from ..machine_learning.training import (
+    prepare_object_detection_inputs,
+    run_training_command,
+)
 
 if TYPE_CHECKING:
     from torch import nn
@@ -594,7 +599,40 @@ class ObjectDetectionDETR(MachineLearningTask):
         self._reload()
         return DetectionTrainResult(save_dir=log, results_dict=best_metrics)
 
-    def train(self, *images: ImageCrop, **kwargs) -> DetectionTrainResult:
+    @command
+    def train(
+        self,
+        inputs: list[str],
+        keep_log: bool = True,
+        validation: str = "",
+        exclude: str = "",
+        epochs: int = 1,
+        batch: int = 2,
+        workers: int = 0,
+        learning_rate: float = 1e-4,
+        weight_decay: float = 1e-4,
+        pretrained: bool = True,
+        model_name: str = "facebook/detr-resnet-50",
+    ):
+        """Train this DETR object detector."""
+        return run_training_command(
+            self,
+            inputs,
+            self._train,
+            keep_log=keep_log,
+            validation=validation,
+            exclude=exclude,
+            prepare_inputs=prepare_object_detection_inputs,
+            epochs=epochs,
+            batch=batch,
+            workers=workers,
+            lr=learning_rate,
+            weight_decay=weight_decay,
+            pretrained=pretrained,
+            model_name=model_name,
+        )
+
+    def _train(self, *images: ImageCrop, **kwargs) -> DetectionTrainResult:
         log = kwargs.get("log", None)
         if log is None:
             raise ValueError(

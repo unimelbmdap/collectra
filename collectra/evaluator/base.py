@@ -52,7 +52,7 @@ class EvaluationReport:
             per_label = metrics.get("per_label", {})
             if not per_label:
                 continue
-            table = Table(title=f"Per-Label Metrics for Data Type: {data_type}")
+            table = Table(title=f"Per-Label Metrics for Artefact Type: {data_type}")
             table.add_column("Label", style="magenta")
             table.add_column("Precision", justify="right", style="green")
             table.add_column("Recall", justify="right", style="green")

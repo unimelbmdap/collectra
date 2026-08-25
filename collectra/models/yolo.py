@@ -9,7 +9,7 @@ The YOLOModel class supports:
     - Training with custom datasets and configurations
     - Model validation and performance evaluation
     - Object detection inference with bounding box results
-    - Data preprocessing and YOLO format conversion
+    - Artefact preprocessing and YOLO format conversion
     - Thread-safe detection for concurrent processing
     - Automatic GPU acceleration on macOS (MPS) and other platforms
 

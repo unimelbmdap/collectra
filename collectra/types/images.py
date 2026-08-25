@@ -28,7 +28,7 @@ from pathlib import Path
 
 from PIL import Image as ImagePil
 
-from .base import Data
+from .base import Artefact
 
 
 class Orientation(Enum):
@@ -78,7 +78,7 @@ class Orientation(Enum):
 
 
 @dataclass
-class Image(Data):
+class Image(Artefact):
     """Base class for handling image data and metadata in Collectra workflows.
 
     Provides core functionality for loading, encoding, and managing image files
@@ -177,7 +177,7 @@ class Image(Data):
         if not isinstance(self.data, Path):
             if not isinstance(self.data, Image):
                 raise Exception(
-                    "This appear to be not an Image object. Data path is only available for Image object."
+                    "This appear to be not an Image object. Artefact path is only available for Image object."
                 )
             raise Exception("Image data is not a valid Path object.")
         return self.data
@@ -238,7 +238,7 @@ class Image(Data):
         return image.rotate(self.orientation.to_degree(), expand=True)
 
     def _extract(self, path: Path) -> None:
-        """ Extract the image to a specified path. """
+        """Extract the image to a specified path."""
         if path.suffix == "":
             path = path.with_suffix(".jpg")
         self.pil().save(path)
@@ -292,9 +292,13 @@ class Image(Data):
         )
 
     def make_crop_bounding_box(
-        self, left, top, right, bottom, 
+        self,
+        left,
+        top,
+        right,
+        bottom,
         min_height: float = 0.0,
-        confidence:float|None = None,
+        confidence: float | None = None,
     ) -> "ImageCrop":
         bbox_width = right - left
         bbox_height = bottom - top

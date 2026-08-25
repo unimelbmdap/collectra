@@ -1,13 +1,14 @@
-"""Machine-learning task classes with lazy backend imports."""
+"""Object-detection task implementations."""
 
 from __future__ import annotations
 
 from importlib import import_module
 
 _EXPORTS = {
-    "MachineLearningTask": "collectra.tasks.machine_learning.base",
-    "YOLOTask": "collectra.tasks.machine_learning.yolo",
-    "ImageOrienter": "collectra.tasks.machine_learning.orienters",
+    "ObjectDetectionYOLO": "collectra.tasks.object_detection.yolo",
+    "ObjectDetectionDETR": "collectra.tasks.object_detection.detr",
+    "DetectionTrainResult": "collectra.tasks.object_detection.detr",
+    "ObjectDetectionRFDETR": "collectra.tasks.object_detection.rfdetr",
 }
 
 __all__ = sorted(_EXPORTS)
@@ -23,7 +24,3 @@ def __getattr__(name: str):
     value = getattr(import_module(module_name), name)
     globals()[name] = value
     return value
-
-
-def __dir__() -> list[str]:
-    return sorted([*globals(), *__all__])

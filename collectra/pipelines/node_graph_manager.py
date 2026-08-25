@@ -10,7 +10,7 @@ import networkx as nx
 
 from ..commons.base import NodeStatus
 from ..tasks.base import Task, TaskNode
-from ..types.base import Data, DataNode, Node
+from ..types.base import Artefact, DataNode, Node
 
 
 class NodeGraphManager:
@@ -197,7 +197,7 @@ class NodeGraphManager:
     def add_data_node(
         self,
         name: str,
-        obj: Union[Data, None] = None,
+        obj: Union[Artefact, None] = None,
         types: Union[List[type], Set[type]] = [],
     ) -> None:
         """Add a data node to the workflow graph.
@@ -207,7 +207,7 @@ class NodeGraphManager:
 
         Args:
             name (str): Name of the data node.
-            obj (Union[Data, None], optional): The data object to store. Defaults to None.
+            obj (Union[Artefact, None], optional): The data object to store. Defaults to None.
             types (Union[List[type], Set[type]], optional): Expected data types. Defaults to [].
         """
         node = self.flow.nodes.get(name, None)

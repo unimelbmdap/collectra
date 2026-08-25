@@ -55,23 +55,18 @@ def test_get_task(pipeline, debug):
 
 
 def test_train(pipeline, debug, tmp_path):
-    from datetime import datetime
-
     from collectra.utils import change_dir
 
     try:
         pipeline = build_pipeline(pipeline)
         task_name = "object_detector"
-        log = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         input_data = [Path.cwd() / "tests/data/images"]
         with change_dir(tmp_path):
-            result = pipeline.train(
-                task_name,
-                input=input_data,
-                log=log,
+            pipeline.connect()
+            task = pipeline.cli_tasks()[task_name]
+            result = task.train(
+                input_data,
                 validation="true",
-                project=f"{pipeline.name}-{task_name}",
-                base_folder=tmp_path,
             )
         assert result, "Train method should not return None"
     except Exception as e:

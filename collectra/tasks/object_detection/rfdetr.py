@@ -8,13 +8,18 @@ from typing import TYPE_CHECKING
 from rich.console import Console
 from rich.table import Table
 
+from collectra.cli import command
 from collectra.types.images import Image, ImageCrop
 from collectra.utils import change_dir
 
 from ...logger import get_logger
-from .base import MachineLearningTask
+from ..machine_learning.base import MachineLearningTask
+from ..machine_learning.locking import threading_locked
+from ..machine_learning.training import (
+    prepare_object_detection_inputs,
+    run_training_command,
+)
 from .detr import DetectionTrainResult
-from .locking import threading_locked
 
 if TYPE_CHECKING:
     from rfdetr.detr import RFDETR
@@ -454,7 +459,38 @@ class ObjectDetectionRFDETR(MachineLearningTask):
         logger.info("RF-DETR training completed. Weights saved to: %s", weights_dir)
         return DetectionTrainResult(save_dir=log, results_dict=best_metrics)
 
-    def train(self, *images: ImageCrop, **kwargs) -> DetectionTrainResult:
+    @command
+    def train(
+        self,
+        inputs: list[str],
+        keep_log: bool = True,
+        validation: str = "",
+        exclude: str = "",
+        epochs: int = 1,
+        batch: int = 4,
+        grad_accum_steps: int = 4,
+        learning_rate: float = 1e-4,
+        wandb: bool = True,
+        early_stopping: bool = False,
+    ):
+        """Train this RF-DETR object detector."""
+        return run_training_command(
+            self,
+            inputs,
+            self._train,
+            keep_log=keep_log,
+            validation=validation,
+            exclude=exclude,
+            prepare_inputs=prepare_object_detection_inputs,
+            epochs=epochs,
+            batch=batch,
+            grad_accum_steps=grad_accum_steps,
+            lr=learning_rate,
+            wandb=wandb,
+            early_stopping=early_stopping,
+        )
+
+    def _train(self, *images: ImageCrop, **kwargs) -> DetectionTrainResult:
         if "model" in kwargs:
             self.model = kwargs["model"]
 

@@ -15,7 +15,7 @@ from ..utils import (
     traceback_error,
 )
 
-__all__ = ["Data", "DataNode"]
+__all__ = ["Artefact", "DataNode"]
 
 from ..logger import get_logger
 
@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 
 
 @dataclass
-class Data(BaseEntity):
+class Artefact(BaseEntity):
     name: str
     id: str = field(default="")
     parents: list[str] = field(default_factory=list)
@@ -32,7 +32,7 @@ class Data(BaseEntity):
     orientation: str = field(default="north")  # e.g., "landscape" or "portrait"
     ensemble: list[str] = field(default_factory=list)
 
-    def set_parents(self, parents: list["Data"]) -> None:
+    def set_parents(self, parents: list["Artefact"]) -> None:
         self.parents = [parent.id for parent in parents]
 
     def serialize(self) -> dict:
@@ -47,10 +47,14 @@ class Data(BaseEntity):
         return serialized
 
     def evaluate(self, gold) -> float:
-        raise NotImplementedError("Eval method not implemented for base Data class.")
+        raise NotImplementedError(
+            "Eval method not implemented for base Artefact class."
+        )
 
     def _extract(self, path: Path) -> None:
-        raise NotImplementedError("Extract method not implemented for base Data class.")
+        raise NotImplementedError(
+            "Extract method not implemented for base Artefact class."
+        )
 
     def extract(self, path: Path | str) -> None:
         path = Path(path)
@@ -86,8 +90,8 @@ class Data(BaseEntity):
 @dataclass
 class DataNode(Node):
 
-    items: dict[str, Data] = field(default_factory=dict)
-    ensemble_items: dict[str, Data] = field(default_factory=dict)
+    items: dict[str, Artefact] = field(default_factory=dict)
+    ensemble_items: dict[str, Artefact] = field(default_factory=dict)
     types: set[type] = field(default_factory=set)
     skip_type_check: bool = False
     ensemble: bool = False
@@ -96,14 +100,14 @@ class DataNode(Node):
         super().__post_init__()
         self.status = NodeStatus.READY if self.items else NodeStatus.NOT_READY
 
-    def add_item(self, item: Data) -> None:
+    def add_item(self, item: Artefact) -> None:
         try:
             self.items[item.id] = item
             self.status = NodeStatus.READY
         except Exception as e:
             raise RuntimeError(f"Error adding item to DataNode: {str(e)}")
 
-    def get_item(self, item_id: str) -> Data | None:
+    def get_item(self, item_id: str) -> Artefact | None:
         return self.items.get(item_id, None)
 
     def add_type(self, type_: type) -> None:
@@ -469,11 +473,11 @@ class DataNode(Node):
             self._create_instances(name=key, data=value)
 
     @staticmethod
-    def batch_process(item_file: Path, data_nodes: list["DataNode"]) -> list[Data]:
+    def batch_process(item_file: Path, data_nodes: list["DataNode"]) -> list[Artefact]:
         names = [data_node.name for data_node in data_nodes]
         with change_dir(item_file):
             try:
-                data: list[Data] = list()
+                data: list[Artefact] = list()
                 result_file = Path("results.yaml")
                 if not result_file.exists():
                     print(error_msg(f"Invalid file: {Path.cwd()}. Ignoring..."))
@@ -533,7 +537,7 @@ class DataNode(Node):
                     value = file_data[name]
                     if not value:
                         raise Warning(
-                            f"Data seems to be empty for {name} in {item_file}. Provided: {value}"
+                            f"Artefact seems to be empty for {name} in {item_file}. Provided: {value}"
                         )
                     value = value if isinstance(value, list) else [value]
                     for item in value:
@@ -570,7 +574,7 @@ class DataNode(Node):
                 return list()
 
 
-def load_artefact(item:dict[str,Any]):
+def load_artefact(item: dict[str, Any]):
     artefact_class = load_class_from_string(item.pop("type"))
 
     return artefact_class(**item)

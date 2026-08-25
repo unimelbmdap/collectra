@@ -1,4 +1,4 @@
-"""Data handling and persistence classes for Collectra workflows.
+"""Artefact handling and persistence classes for Collectra workflows.
 
 This module provides specialized handlers for saving workflow configurations
 and artifacts to different storage formats. It supports both directory-based
@@ -28,7 +28,7 @@ import yaml
 
 from collectra.pipelines.base import Collectra
 from collectra.tasks.base import Task
-from collectra.tasks.ml import MachineLearningTask
+from collectra.tasks.machine_learning.base import MachineLearningTask
 from collectra.utils import error_msg, processing_msg, success_msg
 
 
@@ -64,10 +64,8 @@ class DataHandler:
         Returns:
             tuple[str, str]: Current model path and old model path.
         """
-        model, old_model = "", ""
-        model = task.get_model()
-        old_model = task.get_old_model()
-        return model, old_model
+        task_config = self.pipeline.data.get(task.name, {})
+        return str(task.model or ""), str(task_config.get("old_model", ""))
 
     def is_machine_learning_task(self, task: Task | MachineLearningTask) -> bool:
         """Check if a task is a machine learning task.
@@ -169,13 +167,13 @@ class DirectoryHandler(DataHandler):
                 shutil.move(model_path, tmp_dir / task_model_path)
                 if old_model and Path(old_model).exists():
                     old_models[old_model] = Path(old_model)
-                task.config["model"] = task_model_path
+                self.pipeline.data[task.name]["model"] = task_model_path
             else:
                 old_models.pop(model, None)
                 processing_message = f"Model {model_path} already exists. Copying to temporary directory..."
                 print(processing_msg(processing_message))
                 shutil.copy(model_path, tmp_dir / model_path.name)
-                task.config["model"] = model_path.name
+                self.pipeline.data[task.name]["model"] = model_path.name
 
         for old_model in old_models:
             if old_models[old_model].exists():
@@ -258,10 +256,10 @@ class ZipHandler(DataHandler):
                         f"Moving model {model_path} to temporary directory with new name {task_model_path}..."
                     )
                     shutil.move(model_path, tmp_dir / task_model_path)
-                    task.config["model"] = task_model_path
+                    self.pipeline.data[task.name]["model"] = task_model_path
                 else:
                     processing_message = f"Model {model_path} already exists. Copying to temporary directory..."
                     zipf.extract(str(model_path.name), tmp_dir)
                     print(processing_msg(processing_message))
                     shutil.copy(model_path, tmp_dir / model_path.name)
-                    task.config["model"] = model_path.name
+                    self.pipeline.data[task.name]["model"] = model_path.name

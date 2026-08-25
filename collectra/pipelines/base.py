@@ -27,7 +27,6 @@ import stat
 import sys
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import graphviz
 import networkx as nx
@@ -44,18 +43,13 @@ from ..tasks.base import (
     TaskNode,
 )
 from ..types.base import (
-    Data,
+    Artefact,
     DataNode,
     NodeStatus,
 )
 from ..types.images import Image, ImageCrop
 from ..types.texts import Text
 from .node_graph_manager import NodeGraphManager
-
-if TYPE_CHECKING:
-    from ultralytics.utils.metrics import ClassifyMetrics, DetMetrics
-
-    from ..tasks.machine_learning.base import MachineLearningTask
 
 logger = get_logger(__name__)
 
@@ -682,7 +676,7 @@ class Collectra:
         # Process incoming data
         for arg in args:
             if (
-                isinstance(arg, Data)
+                isinstance(arg, Artefact)
                 and node.name == arg.get_name()
                 and node.check_type(type(arg))
             ):
@@ -749,7 +743,7 @@ class Collectra:
         ]
         return ready_tasks
 
-    def _check_existing(self, node: DataNode, new_item: Data) -> None:
+    def _check_existing(self, node: DataNode, new_item: Artefact) -> None:
         """Check if an identical item already exists in the data node.
 
         If an identical item is found, update the existing item with the new item's ID.
@@ -769,7 +763,7 @@ class Collectra:
         # No identical item found, add as new
         node.add_item(new_item)
 
-    def _is_identical_item(self, original_item: Data, new_item: Data) -> bool:
+    def _is_identical_item(self, original_item: Artefact, new_item: Artefact) -> bool:
         """Check if two data items are identical.
 
         Compares both parent relationships and serialized data attributes.
@@ -779,7 +773,9 @@ class Collectra:
 
         return self._compare_serialized_data(original_item, new_item)
 
-    def _compare_serialized_data(self, original_item: Data, new_item: Data) -> bool:
+    def _compare_serialized_data(
+        self, original_item: Artefact, new_item: Artefact
+    ) -> bool:
         """Compare serialized data of two items, ignoring IDs and parents."""
         temp_original = self._prepare_for_comparison(copy.deepcopy(original_item))
         temp_new = self._prepare_for_comparison(copy.deepcopy(new_item))
@@ -788,7 +784,7 @@ class Collectra:
             temp_new, sort_keys=True
         )
 
-    def _prepare_for_comparison(self, item: Data) -> dict:
+    def _prepare_for_comparison(self, item: Artefact) -> dict:
         """Prepare data item for comparison by normalizing and removing metadata."""
         serialized = item.serialize()
         serialized.pop("parents", None)
@@ -819,7 +815,7 @@ class Collectra:
             **kwargs: Additional execution parameters.
 
         Returns:
-            List of Data objects produced by the task execution.
+            List of Artefact objects produced by the task execution.
 
         Raises:
             TypeError: If the node does not contain a valid Task.
@@ -843,20 +839,20 @@ class Collectra:
                 results.extend(entry_result)
         return results
 
-    def _execute_entries(self, entries: list[Data], task: Task) -> list[Data]:
+    def _execute_entries(self, entries: list[Artefact], task: Task) -> list[Artefact]:
         """Execute a task with the given input entries.
 
         Runs the task with the provided data entries, sets parent relationships
         on output items, and handles any execution errors.
 
         Args:
-            entries: List of input Data objects for the task.
+            entries: List of input Artefact objects for the task.
             task: The task to execute.
 
         Returns:
-            List of Data objects produced by the task, with parent relationships set.
+            List of Artefact objects produced by the task, with parent relationships set.
         """
-        output: Data | list[Data] | None = task.run(*entries)
+        output: Artefact | list[Artefact] | None = task.run(*entries)
         try:
             if output is None:
                 return list()
@@ -875,214 +871,10 @@ class Collectra:
             )
             return list()
 
-    def train(self, task_name: str, **kwargs) -> DetMetrics | ClassifyMetrics | None:
-        """Train a machine learning task.
-
-        Args:
-            task_name: Name of the ML task to train.
-            **kwargs: Training parameters including 'input' paths.
-
-        Returns:
-            Training metrics (DetMetrics or ClassifyMetrics), or None.
-        """
-        from ..tasks.machine_learning.detr import ObjectDetectionDETR
-        from ..tasks.machine_learning.rfdetr import ObjectDetectionRFDETR
-        from ..tasks.machine_learning.yolo import (
-            ImageClassifierYOLO,
-            ObjectDetectionYOLO,
-        )
-
-        self._ensure_workflow_connected()
-        task = self._get_ml_task(task_name)
-        task_node = self.node_manager.resolve_node(task_name)
-        children = self.node_manager.get_children_data(task_node)
-        parents = self.node_manager.get_parents_data(task_node)
-        kwargs["classes"] = kwargs.get("classes", [child.name for child in children])
-        kwargs = self._merge_task_params(task_name, kwargs)
-        if isinstance(task, ImageClassifierYOLO):
-            _, input_maps = self._prepare_training_data(kwargs, children)
-            _, parent_input_maps = self._prepare_training_data(kwargs, parents)
-            labeled_parents = self._build_labeled_parents(input_maps, parent_input_maps)
-            return self._execute_training(task, labeled_parents, kwargs)
-        if isinstance(
-            task, (ObjectDetectionYOLO, ObjectDetectionDETR, ObjectDetectionRFDETR)
-        ):
-            processed_inputs, _ = self._prepare_training_data(kwargs, children)
-            processed_parents, _ = self._prepare_training_data(kwargs, parents)
-            self._validate_relative_image(processed_inputs, processed_parents)
-            return self._execute_training(task, processed_inputs, kwargs)
-        raise TypeError(f"Unsupported task type for training: {type(task)}")
-
-    def _build_labeled_parents(
-        self,
-        input_maps: dict[str, list],
-        parent_input_maps: dict[str, list],
-    ) -> list:
-        """Build labeled parent images from child Text nodes for classification training.
-
-        For classification: parent images are the training data,
-        child Text objects provide the class labels via their .data field.
-
-        Args:
-            input_maps: Mapping of file names to child data nodes.
-            parent_input_maps: Mapping of file names to parent data nodes.
-
-        Returns:
-            List of parent images with class labels assigned.
-        """
-        labeled_parents = []
-        for file, inputs in input_maps.items():
-            file_parents = parent_input_maps.get(file, [])
-            for child in inputs:
-                if not isinstance(child, Text) or not child.parents:
-                    continue
-                parent_ref = (
-                    child.parents
-                    if isinstance(child.parents, str)
-                    else child.parents[0]
-                )
-                parent = next((p for p in file_parents if p.id == parent_ref), None)
-                if parent:
-                    parent.name = str(child.data)
-                    labeled_parents.append(parent)
-        return labeled_parents
-
-    def _validate_relative_image(
-        self, inputs: list[Image | ImageCrop], parents: list[Data]
-    ) -> None:
-        """Validate that image dimensions are relative to their parent data node if image is of type collectra.ImageCrop
-
-        Args:
-            inputs: List of Data objects to validate.
-            parents: List of parent Data objects.
-        """
-        for input in inputs:
-            if type(input) == Image:
-                # Skip because it is already an image
-                continue
-            if not type(input) == ImageCrop:
-                # Expected all inputs to be of type ImageCrop
-                raise TypeError(f"Input {input.id} is not of type ImageCrop")
-            parent_id = ""
-            if isinstance(input.parents, str):
-                parent_id = input.parents
-            elif isinstance(input.parents, list) and len(input.parents) == 1:
-                parent_id = input.parents[0]
-            else:
-                continue
-            found_parent = None
-            for parent in parents:
-                if not (parent_id == parent.id and input.data == parent.data):
-                    continue
-                if not isinstance(parent, Image):
-                    raise TypeError(
-                        f"Parent {parent.id} of input {input.id} is not of type Image"
-                    )
-                found_parent = parent
-                break
-            if found_parent is None:
-                raise ValueError(
-                    f"Parent {parent_id} of input {input.id} not found in provided parents"
-                )
-            input.add_source_parent(found_parent)
-
-    def _get_ml_task(self, task_name: str) -> MachineLearningTask:
-        """Get and validate machine learning task."""
-        from ..tasks.machine_learning.base import MachineLearningTask
-
-        task_node = self.node_manager.resolve_node(task_name)
-        if not isinstance(task_node, TaskNode):
-            raise TypeError(f"Task {task_name} not found in workflow")
-
-        task = task_node.get_task()
-        if not isinstance(task, MachineLearningTask):
-            raise TypeError(f"Task {task_name} is not a MachineLearningTask")
-
-        return task
-
-    def _prepare_training_data(
-        self, kwargs: dict, children: list[DataNode] = []
-    ) -> tuple[list, dict]:
-        """Prepare training data from input paths."""
-        processed_inputs = []
-        inputs = kwargs.get("input", [])
-
-        input_maps = dict()
-
-        for input_path in inputs:
-            item_files = self._get_training_files(
-                Path(input_path) if isinstance(input_path, str) else input_path
-            )
-            for item_file in item_files:
-                input_maps[item_file.name] = DataNode.batch_process(item_file, children)
-                processed_inputs.extend(input_maps[item_file.name])
-        return processed_inputs, input_maps
-
-    def _get_training_files(self, input_path: Path) -> list[Path]:
-        """Get training files from input path."""
-        if input_path.is_dir():
-            return list(input_path.glob(f"*.{self.ext}"))
-        elif input_path.suffix == f".{self.ext}":
-            return [input_path]
-        return []
-
     def _merge_task_params(self, task_name: str, kwargs: dict) -> dict:
         """Merge task-specific parameters with provided kwargs."""
         task_params = self.data.get(task_name, dict()).get("params", dict())
         return task_params | kwargs
-
-    def _execute_training(
-        self, task: MachineLearningTask, processed_inputs: list, kwargs: dict
-    ) -> DetMetrics | ClassifyMetrics | None:
-        """Execute the training process and save results."""
-        with change_dir(self.path):
-            results = task.train(*processed_inputs, **kwargs)
-            self.save_train(task, results, **kwargs)
-        return results
-
-    def save_train(
-        self, task: MachineLearningTask, results: DetMetrics | ClassifyMetrics, **kwargs
-    ):
-        """Save trained model and update configuration.
-
-        Args:
-            task: The machine learning task that was trained.
-            results: Training results containing model path.
-        """
-        best_model_path = results.save_dir / "weights" / "best.pt"
-
-        if not best_model_path.exists():
-            raise Exception(
-                f"[red]Best model file not found at {best_model_path}[/red]"
-            )
-
-        logger.info(f"Training metrics: {results.results_dict}")
-
-        logger.info(f"Best model found at: [green]{best_model_path}[/green]")
-
-        # Check if we need to update the model path
-        task_data = self.data.get(task.name, dict())
-        current_model = task_data.get("model", "")
-
-        if best_model_path.name != current_model:
-            new_model_path = self._generate_model_filename(task.name, **kwargs)
-            logger.info(f"Updating model for task {task.name} to {new_model_path}")
-            shutil.copy(best_model_path, new_model_path)
-            self.data[task.name]["model"] = new_model_path
-
-            classes_src = best_model_path.parent / "classes.json"
-            if classes_src.exists():
-                classes_dest = f"{Path(new_model_path).stem}.classes.json"
-                shutil.copy(classes_src, classes_dest)
-
-    def _generate_model_filename(self, task_name: str, **kwargs) -> str:
-        """Generate a timestamped model filename."""
-        stamp = (
-            Path(kwargs["log"]).name
-            if "log" in kwargs
-            else datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        )
-        return f"{task_name}-{stamp}.pt"
 
     def ensemble(self, folder: list[Path], output: str | Path):
         """Create ensembled files from source folders.
