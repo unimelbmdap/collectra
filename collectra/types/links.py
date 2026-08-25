@@ -17,6 +17,8 @@ class Link(Artefact):
 
     @property
     def parent_id(self) -> str:
+        if isinstance(self.parents, str):
+            return self.parents
         return self.parents[0] if self.parents else ""
 
     @property
@@ -79,7 +81,9 @@ class Link(Artefact):
         }
         if self.parents:
             serialized["parents"] = (
-                self.parents[0] if len(self.parents) == 1 else self.parents
+                self.parents
+                if isinstance(self.parents, str)
+                else self.parents[0] if len(self.parents) == 1 else self.parents
             )
         return serialized
 

@@ -148,8 +148,9 @@ def test_link_reports_cycles():
 def test_classifier_training_resolves_link_to_link(tmp_path):
     image = make_image(tmp_path)
     image.partition = "training"
-    fungi = Link(name="Fungi", id="Fungi1", parents=[image.id])
-    bulbilspore = Link(name="Bulbilspore", id="Bulbilspore1", parents=[fungi.id])
+    # YAML's compact ``parents: id`` form deserializes as a scalar string.
+    fungi = Link(name="Fungi", id="Fungi1", parents=image.id)
+    bulbilspore = Link(name="Bulbilspore", id="Bulbilspore1", parents=fungi.id)
     task = ImageClassifierYOLO("classifier", model="unused.pt")
 
     training = task.prepare_training_inputs(
@@ -164,6 +165,8 @@ def test_classifier_training_resolves_link_to_link(tmp_path):
     assert fungi.target is image
     assert bulbilspore.resolve() is image
     assert bulbilspore.partition == "training"
+    assert fungi.parent_id == image.id
+    assert bulbilspore.parent_id == fungi.id
 
 
 def test_classifier_training_reports_missing_link_parent(tmp_path):
