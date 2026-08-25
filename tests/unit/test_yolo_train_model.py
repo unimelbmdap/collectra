@@ -173,3 +173,65 @@ def test_detector_prepare_params_defaults_to_100_epochs():
     )
 
     assert params["epochs"] == 100
+
+
+def test_detector_train_forwards_yolo_options(monkeypatch):
+    captured = {}
+
+    def fake_training_command(task, inputs, trainer, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "collectra.tasks.object_detection.yolo.run_training_command",
+        fake_training_command,
+    )
+    task = ObjectDetectionYOLO("detector", model="stored.pt")
+
+    task.train(
+        [],
+        optimizer="AdamW",
+        weight_decay=0.001,
+        freeze=8,
+        mosaic=0.5,
+        mixup=0.1,
+        degrees=90,
+        cls_pw=0.25,
+        device="0",
+        cache="ram",
+        distill_model="teacher.pt",
+    )
+
+    assert captured["optimizer"] == "AdamW"
+    assert captured["weight_decay"] == 0.001
+    assert captured["freeze"] == 8
+    assert captured["mosaic"] == 0.5
+    assert captured["mixup"] == 0.1
+    assert captured["degrees"] == 90
+    assert captured["cls_pw"] == 0.25
+    assert captured["device"] == "0"
+    assert captured["cache"] == "ram"
+    assert captured["distill_model"] == "teacher.pt"
+
+
+def test_detector_prepare_params_forwards_optional_yolo_options():
+    task = ObjectDetectionYOLO("detector", model="stored.pt")
+
+    params = task._prepare_params(
+        log="run",
+        config_file="dataset.yaml",
+        project="project",
+        base_folder=None,
+        freeze=8,
+        time=2.5,
+        cache="disk",
+        device="1",
+        compile="default",
+        distill_model="teacher.pt",
+    )
+
+    assert params["freeze"] == 8
+    assert params["time"] == 2.5
+    assert params["cache"] == "disk"
+    assert params["device"] == "1"
+    assert params["compile"] == "default"
+    assert params["distill_model"] == "teacher.pt"

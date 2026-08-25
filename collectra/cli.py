@@ -65,7 +65,12 @@ def _callable_schema(name: str, func: Callable[..., Any]) -> type:
         elif parameter.default is inspect.Parameter.empty:
             schema_fields.append((parameter.name, annotation))
         else:
-            option = Annotated[annotation, cappa.Arg(long=True)]
+            if annotation is bool:
+                cli_name = parameter.name.replace("_", "-")
+                long = f"--{cli_name}/--no-{cli_name}"
+            else:
+                long = True
+            option = Annotated[annotation, cappa.Arg(long=long)]
             schema_fields.append((parameter.name, option, parameter.default))
 
     return make_dataclass(f"{name.title().replace('-', '')}Arguments", schema_fields)
