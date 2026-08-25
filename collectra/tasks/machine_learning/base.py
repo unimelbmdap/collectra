@@ -7,9 +7,12 @@ Classes:
     MachineLearningTask: Base class for all machine learning tasks
 """
 
+from datetime import datetime
+from pathlib import Path
 from typing import Generic
 
 from collectra.commons import T
+from collectra.cli import command
 
 from ..base import Task
 
@@ -54,6 +57,33 @@ class MachineLearningTask(Task, Generic[T]):
 
         """
         raise NotImplementedError("Subclasses must implement the train method.")
+
+    @command(name="train")
+    def cli_train(
+        self,
+        inputs: list[str],
+        keep_log: bool = True,
+        validation: str = "",
+        exclude: str = "",
+    ) -> None:
+        """Train this task using the supplied Collectra data."""
+        if self.pipeline is None:
+            raise RuntimeError(f"Task {self.name!r} is not attached to a pipeline")
+        log = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.pipeline.train(
+            self.name,
+            input=inputs,
+            project=f"{self.pipeline.path.name}-{self.name}",
+            log=log,
+            base_folder=Path.cwd(),
+            validation=validation,
+            exclude=exclude,
+        )
+        self.pipeline.save(self.name)
+        if not keep_log:
+            import shutil
+
+            shutil.rmtree(log, ignore_errors=True)
 
     def eval(self, **kwargs) -> None:
         """Evaluate the machine learning model performance.

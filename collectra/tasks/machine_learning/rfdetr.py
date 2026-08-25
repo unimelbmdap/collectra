@@ -1,12 +1,12 @@
+from __future__ import annotations
+
 import json
 import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from rfdetr.detr import RFDETR
-from rfdetr import RFDETRBase, RFDETRMedium, RFDETRLarge
 from rich.console import Console
 from rich.table import Table
-from ultralytics.utils import ThreadingLocked
 
 from collectra.types.images import Image, ImageCrop
 from collectra.utils import change_dir
@@ -14,13 +14,39 @@ from collectra.utils import change_dir
 from ...logger import get_logger
 from .base import MachineLearningTask
 from .detr import DetectionTrainResult
+from .locking import threading_locked
+
+if TYPE_CHECKING:
+    from rfdetr.detr import RFDETR
 
 logger = get_logger(__name__)
 
 __all__ = ["ObjectDetectionRFDETR"]
 
+
+def __getattr__(name: str):
+    """Expose patchable backend classes without importing them during CLI help."""
+    if name == "RFDETR":
+        from rfdetr.detr import RFDETR
+
+        return RFDETR
+    if name in {"RFDETRBase", "RFDETRMedium", "RFDETRLarge"}:
+        import rfdetr
+
+        return getattr(rfdetr, name)
+    raise AttributeError(name)
+
+
+def _backend_class(name: str):
+    return globals().get(name) or __getattr__(name)
+
+
 def load_rfdetr_model(model_path: str | Path) -> RFDETR:
-    model_classes = [RFDETRBase, RFDETRMedium, RFDETRLarge]
+    model_classes = [
+        _backend_class("RFDETRBase"),
+        _backend_class("RFDETRMedium"),
+        _backend_class("RFDETRLarge"),
+    ]
     errors = []
     for model_class in model_classes:
         try:
@@ -28,7 +54,7 @@ def load_rfdetr_model(model_path: str | Path) -> RFDETR:
             return model
         except Exception as e:
             errors.append((model_class.__name__, str(e)))
-    
+
     logger.error("Failed to load RF-DETR model from %s. Errors: %s", model_path, errors)
 
 
@@ -62,7 +88,7 @@ class ObjectDetectionRFDETR(MachineLearningTask):
     def _init_model(self) -> None:
         self._load()
 
-        if not isinstance(self.model, (RFDETR)):
+        if not isinstance(self.model, _backend_class("RFDETRBase")):
             raise ValueError("Model must be an RFDETR instance")
 
     def _reload(self) -> None:
@@ -89,7 +115,9 @@ class ObjectDetectionRFDETR(MachineLearningTask):
                 return
 
     def _load(self) -> None:
-        if isinstance(self.model, RFDETR):
+        model_class = _backend_class("RFDETRBase")
+
+        if isinstance(self.model, model_class):
             return
 
         self._device = self._select_device()
@@ -97,7 +125,7 @@ class ObjectDetectionRFDETR(MachineLearningTask):
         if self.model is None or (
             isinstance(self.model, str) and self.model == "default"
         ):
-            self.model = RFDETRBase()
+            self.model = model_class()
             from rfdetr.assets.coco_classes import COCO_CLASSES
 
             self._categories = list(COCO_CLASSES)
@@ -129,7 +157,7 @@ class ObjectDetectionRFDETR(MachineLearningTask):
             "RF-DETR requires None/'default' for pretrained or a valid checkpoint path."
         )
 
-    @ThreadingLocked()
+    @threading_locked()
     def run(self, *args: Image) -> list[Image]:
         if len(args) != 1:
             raise ValueError("This task only supports a single Image input.")

@@ -15,21 +15,26 @@ Classes:
     Collectra: Main workflow management class
 """
 
+from __future__ import annotations
+
 __all__ = ["Collectra"]
 
 import copy
 import datetime
 import json
 import shutil
+import stat
+import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import graphviz
 import networkx as nx
 import yaml
-from ultralytics.utils.metrics import ClassifyMetrics, DetMetrics
 
 from collectra.utils import change_dir, load_class_from_string, remove_exif, write_yaml
+from collectra.cli import command, group
 from utils.get_types import get_param_types, get_return_type, unpack_types
 
 from ..commons.base import TaskContext
@@ -38,10 +43,6 @@ from ..tasks.base import (
     Task,
     TaskNode,
 )
-from ..tasks.machine_learning import MachineLearningTask
-from ..tasks.machine_learning.detr import ObjectDetectionDETR
-from ..tasks.machine_learning.rfdetr import ObjectDetectionRFDETR
-from ..tasks.machine_learning.yolo import ImageClassifierYOLO, ObjectDetectionYOLO
 from ..types.base import (
     Data,
     DataNode,
@@ -50,6 +51,11 @@ from ..types.base import (
 from ..types.images import Image, ImageCrop
 from ..types.texts import Text
 from .node_graph_manager import NodeGraphManager
+
+if TYPE_CHECKING:
+    from ultralytics.utils.metrics import ClassifyMetrics, DetMetrics
+
+    from ..tasks.machine_learning.base import MachineLearningTask
 
 logger = get_logger(__name__)
 
@@ -95,6 +101,74 @@ class Collectra:
     def __call__(self, task_name: str, **kwargs):
         """Allow instance to be called directly to run workflow."""
         self.run(task_name, **kwargs)
+
+    @classmethod
+    def from_file(cls, pipeline_path: str | Path) -> "Collectra":
+        """Load a pipeline from a directory or a pipeline YAML file."""
+        path = Path(pipeline_path).expanduser().resolve()
+        config_path = path / cls.PIPELINE_FILE if path.is_dir() else path
+        with config_path.open() as stream:
+            metadata = yaml.safe_load(stream) or {}
+        initials = metadata.pop(cls.PIPELINE_METADATA_KEY)
+        return cls(
+            initials["name"],
+            initials["ext"],
+            initials["version"],
+            path=config_path.parent,
+            **metadata,
+        )
+
+    @command(name="run")
+    def cli_run(
+        self,
+        inputs: list[str],
+        task: str = "",
+        output: Path | None = None,
+        single: bool = False,
+        verbose: bool = False,
+        usage: bool = False,
+        render: bool = False,
+    ) -> None:
+        """Run the complete pipeline or start at a named task."""
+        from collectra.logger import setup_logging
+        from collectra.utils import resolve_files, valid_raw_files
+
+        setup_logging(verbose=verbose)
+        files = resolve_files(inputs, [f".{self.ext}", *valid_raw_files()])
+        self.run(
+            task,
+            files=files,
+            output=str(output) if output else None,
+            single=single,
+            usage=usage,
+            render=render,
+        )
+
+    @command(name="install")
+    def cli_install(self, name: str, bin_dir: Path | None = None) -> None:
+        """Install this pipeline as a standalone command."""
+        destination = (bin_dir or Path.home() / ".local" / "bin").expanduser()
+        destination.mkdir(parents=True, exist_ok=True)
+        launcher = destination / name
+        pipeline_path = (self.path / self.PIPELINE_FILE).resolve()
+        launcher.write_text(
+            f"#!{sys.executable}\n"
+            "from pathlib import Path\n"
+            "from collectra.main import main\n"
+            f"main(pipeline_path=Path({str(pipeline_path)!r}), program_name={name!r})\n"
+        )
+        launcher.chmod(
+            launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+        )
+        print(f"Installed {name!r} at {launcher}")
+
+    @group(name="task")
+    def cli_tasks(self) -> dict[str, Task]:
+        """Operate on one of the tasks in this pipeline."""
+        self._ensure_workflow_connected()
+        return {
+            node.name: node.get_task() for node in self.node_manager.get_task_nodes()
+        }
 
     def task(self, task_name: str) -> dict:
         """Get a task from the workflow by name.
@@ -811,6 +885,13 @@ class Collectra:
         Returns:
             Training metrics (DetMetrics or ClassifyMetrics), or None.
         """
+        from ..tasks.machine_learning.detr import ObjectDetectionDETR
+        from ..tasks.machine_learning.rfdetr import ObjectDetectionRFDETR
+        from ..tasks.machine_learning.yolo import (
+            ImageClassifierYOLO,
+            ObjectDetectionYOLO,
+        )
+
         self._ensure_workflow_connected()
         task = self._get_ml_task(task_name)
         task_node = self.node_manager.resolve_node(task_name)
@@ -907,6 +988,8 @@ class Collectra:
 
     def _get_ml_task(self, task_name: str) -> MachineLearningTask:
         """Get and validate machine learning task."""
+        from ..tasks.machine_learning.base import MachineLearningTask
+
         task_node = self.node_manager.resolve_node(task_name)
         if not isinstance(task_node, TaskNode):
             raise TypeError(f"Task {task_name} not found in workflow")
@@ -1151,6 +1234,7 @@ class Collectra:
     def _process_task_node(self, task: Task, data: dict, relations: dict):
         """Process a task node by adding it to the graph and tracking IO."""
         task_key = task.name
+        task.pipeline = self
         relations[task_key] = {
             "input": self._get_io_list(data.get("input", [])),
             "output": self._get_io_list(data.get("output", [])),

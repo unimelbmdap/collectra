@@ -1,15 +1,13 @@
+from __future__ import annotations
+
 import shutil
 import tempfile
 from collections import Counter
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.table import Table
-from torchvision.ops import batched_nms
-from ultralytics.engine.results import Results
-from ultralytics.models import YOLO
-from ultralytics.utils import ThreadingLocked
-from ultralytics.utils.metrics import ClassifyMetrics, DetMetrics
 
 from collectra.types.images import Image, ImageCrop
 from collectra.types.texts import Text
@@ -17,6 +15,12 @@ from collectra.utils import change_dir
 
 from ...logger import get_logger
 from .base import MachineLearningTask
+from .locking import threading_locked
+
+if TYPE_CHECKING:
+    from ultralytics.engine.results import Results
+    from ultralytics.models import YOLO
+    from ultralytics.utils.metrics import ClassifyMetrics, DetMetrics
 
 logger = get_logger(__name__)
 
@@ -61,6 +65,8 @@ class ObjectDetectionYOLO(MachineLearningTask):
 
     def _init_model(self) -> None:
         """Ensure that the YOLO model is loaded before performing any operations."""
+        from ultralytics.models import YOLO
+
         self._load()
         if not isinstance(self.model, YOLO):
             raise ValueError("Model must be a YOLO instance")
@@ -78,13 +84,15 @@ class ObjectDetectionYOLO(MachineLearningTask):
         Args:
             model (str | Path): The path to the model file or the model itself.
         """
+        from ultralytics.models import YOLO
+
         if self.model and isinstance(self.model, (str, Path)):
             self.original_model_path = self.model
             self.model = YOLO(Path(self.model))
             return
         logger.warning("Model is already loaded or invalid model path provided.")
 
-    @ThreadingLocked()
+    @threading_locked()
     def run(self, *args: Image, **kwargs) -> list[Image]:
         """Run object detection inference on the provided Image.
 
@@ -107,6 +115,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
             raise TypeError("Input must be an instance of Image.")
         image: Image = args[0]
         self._init_model()
+        from torchvision.ops import batched_nms
 
         if isinstance(image, ImageCrop):
             with tempfile.TemporaryDirectory() as temp_dir:
@@ -169,6 +178,8 @@ class ObjectDetectionYOLO(MachineLearningTask):
     def train(
         self, *images: ImageCrop, **kwargs
     ) -> DetMetrics | ClassifyMetrics | None:
+        from ultralytics.models import YOLO
+
         if "model" in kwargs:
             self.model = kwargs["model"]
         self._init_model()
@@ -201,6 +212,8 @@ class ObjectDetectionYOLO(MachineLearningTask):
         kwargs: dict,
         fold_count: int | None = None,
     ) -> DetMetrics | ClassifyMetrics:
+        from ultralytics.models import YOLO
+
         if not isinstance(self.model, YOLO):
             raise ValueError("Expected model to be a YOLO instance for training.")
         kwargs["config_file"] = self._prepare_yolo_config(
@@ -404,7 +417,7 @@ class ObjectDetectionYOLO(MachineLearningTask):
 
 class ImageClassifierYOLO(ObjectDetectionYOLO):
 
-    @ThreadingLocked()
+    @threading_locked()
     def run(self, *args: Image, **kwargs) -> Text:
         """Run image classification inference on the provided Image.
 
@@ -440,6 +453,8 @@ class ImageClassifierYOLO(ObjectDetectionYOLO):
         return Text(name=self.get_output_name(), data=predicted_class)
 
     def train(self, *images: Image, **kwargs) -> ClassifyMetrics | None:
+        from ultralytics.models import YOLO
+
         if "model" in kwargs:
             self.model = kwargs["model"]
         self._init_model()
@@ -475,6 +490,8 @@ class ImageClassifierYOLO(ObjectDetectionYOLO):
         kwargs: dict,
         fold_count: int | None = None,
     ) -> ClassifyMetrics:
+        from ultralytics.models import YOLO
+
         if not isinstance(self.model, YOLO):
             raise ValueError("Expected model to be a YOLO instance for training.")
         kwargs["config_file"] = self._prepare_yolo_config(log, classes, train, val)

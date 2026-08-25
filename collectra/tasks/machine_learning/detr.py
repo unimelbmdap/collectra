@@ -1,16 +1,21 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.table import Table
-from torch import nn
-from ultralytics.utils import ThreadingLocked
 
 from collectra.types.images import Image, ImageCrop
 from collectra.utils import change_dir
 
 from ...logger import get_logger
 from .base import MachineLearningTask
+from .locking import threading_locked
+
+if TYPE_CHECKING:
+    from torch import nn
 
 logger = get_logger(__name__)
 
@@ -53,6 +58,8 @@ class ObjectDetectionDETR(MachineLearningTask):
         )
 
     def _init_model(self) -> None:
+        from torch import nn
+
         self._load()
         if not isinstance(self.model, nn.Module):
             raise ValueError("Model must be a torch.nn.Module instance")
@@ -120,6 +127,8 @@ class ObjectDetectionDETR(MachineLearningTask):
         self.model = model
 
     def _load(self) -> None:
+        from torch import nn
+
         if isinstance(self.model, nn.Module):
             if self._device is None:
                 self._device = self._select_device()
@@ -150,7 +159,7 @@ class ObjectDetectionDETR(MachineLearningTask):
         # Treat as Hugging Face model id if local file path does not exist.
         self._load_model_from_hf(model_value)
 
-    @ThreadingLocked()
+    @threading_locked()
     def run(self, *args: Image) -> list[Image]:
         import torch
 
@@ -161,6 +170,8 @@ class ObjectDetectionDETR(MachineLearningTask):
 
         image = args[0]
         self._init_model()
+        from torch import nn
+
         if not isinstance(self.model, nn.Module) or self._processor is None:
             raise ValueError("DETR model is not initialised properly.")
 
@@ -450,6 +461,8 @@ class ObjectDetectionDETR(MachineLearningTask):
 
         id2label = {idx: name for idx, name in enumerate(classes)}
         label2id = {name: idx for idx, name in enumerate(classes)}
+
+        from torch import nn
 
         if isinstance(self.model, nn.Module):
             model = self.model
