@@ -2,7 +2,7 @@ import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
-from collectra import Collectra
+from collectra import Collectra, Task, TaskNode
 
 
 def build_pipeline(pipeline: dict) -> Collectra:
@@ -29,6 +29,31 @@ def test_pipeline_init(pipeline, debug):
         ), "Pipeline data should be a non-empty dictionary"
     except Exception as e:
         debug(e)
+
+
+def test_run_task_reports_rich_progress(tmp_path, monkeypatch):
+    pipeline = Collectra("progress", "collectra", "1", path=tmp_path)
+    task = Task("line_reader")
+    task.prepare_inputs = lambda parents: [["first"], ["second"], ["third"]]
+    task_node = TaskNode("line_reader", task)
+    monkeypatch.setattr(
+        pipeline.node_manager, "get_parents_artefact", lambda node: []
+    )
+    monkeypatch.setattr(pipeline, "_execute_entries", lambda entry, task: [])
+    progress_call = {}
+
+    def fake_track(iterable, *, total, description):
+        progress_call.update(total=total, description=description)
+        yield from iterable
+
+    monkeypatch.setattr("collectra.pipelines.base.track", fake_track)
+
+    pipeline._run_task(task_node)
+
+    assert progress_call == {
+        "total": 3,
+        "description": "Running line_reader",
+    }
 
 
 def test_pipeline_init_nodes(pipeline, debug, tmpdir):

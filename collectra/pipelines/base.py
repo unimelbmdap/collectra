@@ -31,6 +31,7 @@ from pathlib import Path
 import graphviz
 import networkx as nx
 import yaml
+from rich.progress import track
 
 from collectra.utils import change_dir, load_class_from_string, remove_exif, write_yaml
 from collectra.cli import command, group
@@ -878,7 +879,11 @@ class Collectra:
             logger.warning("No input data found for task %s, skipping.", task.name)
             return results
         with change_dir(self.path):
-            for entry in entries:
+            for entry in track(
+                entries,
+                total=len(entries),
+                description=f"Running {task.name}",
+            ):
                 if not isinstance(entry, list):
                     entry = list(entry)
                 entry_result = self._execute_entries(entry, task)

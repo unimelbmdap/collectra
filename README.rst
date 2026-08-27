@@ -154,6 +154,7 @@ Collectra provides several built-in task types:
 - **OCRSuraya**: Character recognition using Surya models
 - **LineDetectorSurya**: Line detection in documents
 - **LineDetectorRLSA**: Deterministic printed-text line detection
+- **ConcatenateText**: Join all text artefacts from an input node
 - **LLMCanonicaliser**: Entity canonicalization using LLMs
 
 Data Types

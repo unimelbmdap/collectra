@@ -34,6 +34,8 @@ class Task(BaseEntity, Generic[T]):
         context (TaskContext): Runtime context for task execution.
     """
 
+    collective: bool = False
+
     def __init__(self, name: str, **kwargs) -> None:
         super().__init__(name)
         self.pipeline: Collectra | None = None
@@ -58,6 +60,12 @@ class Task(BaseEntity, Generic[T]):
         for parent in parents:
             if parent.name in input_dict:
                 input_dict[parent.name].extend(parent.items.values())
+
+        if self.collective:
+            collective_entries = [
+                item for values in input_dict.values() for item in values
+            ]
+            return [collective_entries] if collective_entries else []
 
         # Filter out empty inputs (READY but no items)
         non_empty_dict = {k: v for k, v in input_dict.items() if v}

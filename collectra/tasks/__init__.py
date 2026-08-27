@@ -22,6 +22,7 @@ _EXPORTS = {
     "OCRSuraya": "collectra.tasks.ocr",
     "LineDetectorSurya": "collectra.tasks.ocr",
     "LineDetectorRLSA": "collectra.tasks.line_detection",
+    "ConcatenateText": "collectra.tasks.text",
 }
 
 __all__ = sorted(_EXPORTS)
