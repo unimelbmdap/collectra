@@ -1,6 +1,4 @@
-__all__ = ["SuryaOCR", "SuryaLineDetector"]
-
-from dataclasses import dataclass, field
+__all__ = ["OCRSuraya", "LineDetectorSurya"]
 
 from dotenv import load_dotenv
 
@@ -11,18 +9,17 @@ from collectra.types.texts import Text
 load_dotenv()
 
 
-@dataclass
-class SuryaOCR(Task):
-    name: str
-    # recognition_predictor:"RecognitionPredictor" = field(init=False)
-    # detection_predictor:"DetectionPredictor" = field(init=False)
+class OCRSuraya(Task):
+    def __init__(self, name: str, **kwargs) -> None:
+        """Initialize the task without loading Surya model weights."""
+        super().__init__(name, **kwargs)
+        self.detection_predictor = None
+        self.recognition_predictor = None
 
-    def __post_init__(self):
-        """Initialize the LLM instance and message templates after object creation.
-
-        Loads the specified LLM model using the llmloader library and sets up
-        the initial system message for the conversation context.
-        """
+    def _init_predictors(self) -> None:
+        """Load Surya predictors on first use."""
+        if self.detection_predictor is not None and self.recognition_predictor is not None:
+            return
         from surya.detection import DetectionPredictor
         from surya.foundation import FoundationPredictor
         from surya.recognition import RecognitionPredictor
@@ -47,38 +44,45 @@ class SuryaOCR(Task):
         """
         return Text
 
-    def run(self, **kwargs):
-        for key, value in kwargs.items():
-            if not isinstance(value, Image):
-                raise TypeError(f"value must be Image, got {type(value)}")
-            image = value.pil()
+    def run(self, *images: Image) -> list[Text]:
+        """Recognize text in each image and return Text artefacts."""
+        self._init_predictors()
+        results: list[Text] = []
+        for image in images:
+            if not isinstance(image, Image):
+                raise TypeError(f"image must be Image, got {type(image)}")
             predictions = self.recognition_predictor(
-                [image], det_predictor=self.detection_predictor
+                [image.pil()], det_predictor=self.detection_predictor
             )
-        lines = [line.text for line in predictions[0].text_lines]
-        text = str("\n".join(lines))
-        for output_key in self.output.keys():
-            if key in output_key:
-                self.output[output_key] = text
+            text = "\n".join(line.text for line in predictions[0].text_lines)
+            results.append(Text(name=self.get_output_name(), data=text))
+        return results
 
 
-@dataclass
-class SuryaLineDetector(Task):
-    name: str
-    merge_horizontal: bool = False
-    min_height: int = 0
-    # detection_predictor:"DetectionPredictor" = field(init=False)
+class LineDetectorSurya(Task):
+    def __init__(
+        self,
+        name: str,
+        merge_horizontal: bool = False,
+        min_height: int = 0,
+        **kwargs,
+    ) -> None:
+        """Initialize the task without loading Surya model weights."""
+        super().__init__(
+            name,
+            merge_horizontal=merge_horizontal,
+            min_height=min_height or 0,
+            **kwargs,
+        )
+        self.detection_predictor = None
 
-    def __post_init__(self):
-        """Initialize the LLM instance and message templates after object creation.
-
-        Loads the specified LLM model using the llmloader library and sets up
-        the initial system message for the conversation context.
-        """
+    def _init_predictor(self) -> None:
+        """Load the Surya detection predictor on first use."""
+        if self.detection_predictor is not None:
+            return
         from surya.detection import DetectionPredictor
 
         self.detection_predictor = DetectionPredictor()
-        self.min_height = self.min_height or 0
 
     def input_type(self) -> type | tuple:
         """Define the expected input types for this LLM task.
@@ -96,30 +100,15 @@ class SuryaLineDetector(Task):
         """
         return ImageCrop
 
-    # def run(self, image:Image) -> list[ImageCrop]:
-    def run(self, **kwargs) -> list[ImageCrop]:
-        results = None
-        for key, image in kwargs.items():
-            # Hack until Task just takes a single input
-            if isinstance(image, list):
-                for individual_image in image:
-                    self.run(**{key: individual_image})
-                return
-
+    def run(self, *images: Image) -> list[ImageCrop]:
+        """Detect text lines and return their image crops."""
+        self._init_predictor()
+        results: list[ImageCrop] = []
+        for image in images:
             if not isinstance(image, Image):
-                raise TypeError(f"Image {key} is of class {type(image)}")
+                raise TypeError(f"image must be Image, got {type(image)}")
             pil_image = image.pil()
             predictions = self.detection_predictor([pil_image])
-
-            for output_key in self.output.keys():
-                if key in output_key:
-                    results = self.output.get(output_key, [])
-                    break
-
-            if results is None:
-                results = []
-            if results is None:
-                raise ValueError("results must not be None")
 
             # Sort bounding boxes vertically
             bounding_boxes = sorted(
@@ -158,5 +147,4 @@ class SuryaLineDetector(Task):
                     )
                     results.append(crop)
 
-            for output_key in self.output.keys():
-                self.output[output_key] = results
+        return results

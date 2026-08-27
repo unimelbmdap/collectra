@@ -19,8 +19,9 @@ _EXPORTS = {
     "IRNResolver": "collectra.tasks.irn_resolvers",
     "normalise_column_name": "collectra.tasks.irn_resolvers",
     "render_card": "collectra.tasks.irn_resolvers",
-    "SuryaOCR": "collectra.tasks.ocr",
-    "SuryaLineDetector": "collectra.tasks.ocr",
+    "OCRSuraya": "collectra.tasks.ocr",
+    "LineDetectorSurya": "collectra.tasks.ocr",
+    "LineDetectorRLSA": "collectra.tasks.line_detection",
 }
 
 __all__ = sorted(_EXPORTS)

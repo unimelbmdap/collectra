@@ -151,8 +151,9 @@ Collectra provides several built-in task types:
 - **LLM**: Large Language Model inference with multimodal support
 - **ObjectDetectionYOLO**: YOLO-based object detection
 - **ImageOrienter**: EfficientNet-based image orientation detection
-- **SuryaOCR**: Character recognition using Surya models
-- **SuryaLineDetector**: Line detection in documents
+- **OCRSuraya**: Character recognition using Surya models
+- **LineDetectorSurya**: Line detection in documents
+- **LineDetectorRLSA**: Deterministic printed-text line detection
 - **LLMCanonicaliser**: Entity canonicalization using LLMs
 
 Data Types
@@ -256,4 +257,3 @@ For more information contact: `<james.quang@unimelb.edu.au>`_
 Created using `torchapp <https://github.com/rbturnbull/torchapp>`_.
 
 .. end-credits
-
