@@ -82,6 +82,7 @@ def test_classifier_train_forwards_regularization_options(monkeypatch):
 
     task.train(
         [],
+        learning_rate=0.002,
         weight_decay=0.001,
         dropout=0.2,
         erasing=0.1,
@@ -98,6 +99,7 @@ def test_classifier_train_forwards_regularization_options(monkeypatch):
     assert {
         name: captured[name]
         for name in (
+            "learning_rate",
             "weight_decay",
             "dropout",
             "erasing",
@@ -111,6 +113,7 @@ def test_classifier_train_forwards_regularization_options(monkeypatch):
             "freeze",
         )
     } == {
+        "learning_rate": 0.002,
         "weight_decay": 0.001,
         "dropout": 0.2,
         "erasing": 0.1,
@@ -133,6 +136,7 @@ def test_classifier_prepare_params_forwards_regularization_options():
         config_file="dataset",
         project="project",
         base_folder=None,
+        learning_rate=0.002,
         weight_decay=0.001,
         dropout=0.2,
         erasing=0.1,
@@ -146,6 +150,7 @@ def test_classifier_prepare_params_forwards_regularization_options():
         freeze=8,
     )
 
+    assert params["lr0"] == 0.002
     assert params["weight_decay"] == 0.001
     assert params["dropout"] == 0.2
     assert params["erasing"] == 0.1
@@ -162,6 +167,7 @@ def test_classifier_prepare_params_forwards_regularization_options():
         log="run", config_file="dataset", project="project", base_folder=None
     )
     assert params["epochs"] == 100
+    assert params["lr0"] == 0.01
     assert "freeze" not in params
 
 
