@@ -16,6 +16,7 @@ _EXPORTS = {
     "YOLOTask": "collectra.tasks.machine_learning.yolo",
     "ObjectDetectionYOLO": "collectra.tasks.object_detection.yolo",
     "ImageClassifierYOLO": "collectra.tasks.image_classifier.yolo",
+    "ImageClassifierTorchvision": "collectra.tasks.image_classifier.torchvision",
     "ObjectDetectionDETR": "collectra.tasks.object_detection.detr",
     "DetectionTrainResult": "collectra.tasks.object_detection.detr",
     "ObjectDetectionRFDETR": "collectra.tasks.object_detection.rfdetr",

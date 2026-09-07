@@ -22,6 +22,7 @@ Builds pipelines to extract data from collection images.
    quickstart
    api
    cli
+   torchvision_classifier
    credits
 
 Indices and tables
