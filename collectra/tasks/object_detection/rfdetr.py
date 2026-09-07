@@ -26,6 +26,16 @@ logger = get_logger(__name__)
 
 __all__ = ["ObjectDetectionRFDETR"]
 
+_MODEL_VARIANTS = {
+    "base": "RFDETRBase",
+    "nano": "RFDETRNano",
+    "small": "RFDETRSmall",
+    "medium": "RFDETRMedium",
+    "large": "RFDETRLarge",
+    "xlarge": "RFDETRXLarge",
+    "2xlarge": "RFDETR2XLarge",
+}
+
 
 def __getattr__(name: str):
     """Expose patchable backend classes without importing them during CLI help."""
@@ -33,7 +43,7 @@ def __getattr__(name: str):
         from rfdetr.detr import RFDETR
 
         return RFDETR
-    if name in {"RFDETRBase", "RFDETRMedium", "RFDETRLarge"}:
+    if name in _MODEL_VARIANTS.values():
         import rfdetr
 
         return getattr(rfdetr, name)
@@ -45,18 +55,14 @@ def _backend_class(name: str):
 
 
 def load_rfdetr_model(model_path: str | Path) -> RFDETR:
-    model_classes = [
-        _backend_class("RFDETRBase"),
-        _backend_class("RFDETRMedium"),
-        _backend_class("RFDETRLarge"),
-    ]
     errors = []
-    for model_class in model_classes:
+    for class_name in _MODEL_VARIANTS.values():
         try:
+            model_class = _backend_class(class_name)
             model = model_class(pretrain_weights=str(model_path))
             return model
         except Exception as e:
-            errors.append((model_class.__name__, str(e)))
+            errors.append((class_name, str(e)))
 
     logger.error("Failed to load RF-DETR model from %s. Errors: %s", model_path, errors)
 
@@ -91,7 +97,7 @@ class ObjectDetectionRFDETR(Task):
     def _init_model(self) -> None:
         self._load()
 
-        if not isinstance(self.model, _backend_class("RFDETRBase")):
+        if not isinstance(self.model, _backend_class("RFDETR")):
             raise ValueError("Model must be an RFDETR instance")
 
     def _reload(self) -> None:
@@ -118,17 +124,26 @@ class ObjectDetectionRFDETR(Task):
                 return
 
     def _load(self) -> None:
-        model_class = _backend_class("RFDETRBase")
-
-        if isinstance(self.model, model_class):
+        if isinstance(self.model, _backend_class("RFDETR")):
             return
 
         self._device = self._select_device()
 
-        if self.model is None or (
-            isinstance(self.model, str) and self.model == "default"
-        ):
-            self.model = model_class()
+        variant = "base" if self.model is None else None
+        if isinstance(self.model, str):
+            name = self.model.lower()
+            if name == "default":
+                variant = "base"
+            elif name in _MODEL_VARIANTS:
+                variant = name
+            else:
+                variant = next(
+                    (key for key, value in _MODEL_VARIANTS.items() if value.lower() == name),
+                    None,
+                )
+        if variant is not None:
+            self.model = _backend_class(_MODEL_VARIANTS[variant])()
+            self.original_model_path = None
             from rfdetr.assets.coco_classes import COCO_CLASSES
 
             self._categories = list(COCO_CLASSES)
@@ -136,13 +151,15 @@ class ObjectDetectionRFDETR(Task):
 
         if not isinstance(self.model, (str, Path)):
             raise ValueError(
-                "Model must be None, 'default', a checkpoint path, or an RFDETR instance"
+                "Model must be None, 'default', a model variant name, "
+                "a checkpoint path, or an RFDETR instance"
             )
 
         checkpoint_path = Path(str(self.model))
         if checkpoint_path.exists() and checkpoint_path.is_file():
             self.original_model_path = checkpoint_path
             self.model = load_rfdetr_model(self.original_model_path)
+            self._categories = []
             self._load_categories_from_json(checkpoint_path)
             candidates = self._classes_sidecar_candidates(checkpoint_path)
             if not any(c.exists() for c in candidates):
@@ -157,7 +174,8 @@ class ObjectDetectionRFDETR(Task):
 
         raise ValueError(
             f"Model path does not exist: {checkpoint_path}. "
-            "RF-DETR requires None/'default' for pretrained or a valid checkpoint path."
+            "RF-DETR requires a valid checkpoint path, None/'default', "
+            f"or a model variant: {', '.join(_MODEL_VARIANTS)}."
         )
 
     @threading_locked()
@@ -521,8 +539,14 @@ class ObjectDetectionRFDETR(Task):
         lr_vit_layer_decay: float = 0.8,
         lr_component_decay: float = 0.7,
         warmup_epochs: float = 0.0,
+        model: str = "",
     ):
-        """Train this RF-DETR object detector."""
+        """Train this RF-DETR object detector.
+
+        Use --model with a checkpoint path or base, nano, small, medium, large,
+        xlarge, or 2xlarge. XLarge and 2XLarge require rfdetr[plus].
+        'default' selects Base; omitting --model keeps the configured model.
+        """
         return run_training_command(
             self,
             inputs,
@@ -557,10 +581,11 @@ class ObjectDetectionRFDETR(Task):
             lr_vit_layer_decay=lr_vit_layer_decay,
             lr_component_decay=lr_component_decay,
             warmup_epochs=warmup_epochs,
+            model=model,
         )
 
     def _train(self, *images: ImageCrop, **kwargs) -> DetectionTrainResult:
-        if "model" in kwargs:
+        if kwargs.get("model"):
             self.model = kwargs["model"]
 
         self._init_model()
