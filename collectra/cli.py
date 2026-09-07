@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 import inspect
-from dataclasses import field, fields, make_dataclass
-from typing import Annotated, Any, Callable, Mapping, get_type_hints
+from dataclasses import field, fields, make_dataclass, replace
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    Mapping,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 import cappa
 
@@ -65,12 +73,29 @@ def _callable_schema(name: str, func: Callable[..., Any]) -> type:
         elif parameter.default is inspect.Parameter.empty:
             schema_fields.append((parameter.name, annotation))
         else:
-            if annotation is bool:
+            base_type = annotation
+            metadata = []
+            if get_origin(annotation) is Annotated:
+                base_type, *metadata = get_args(annotation)
+            if base_type is bool:
                 cli_name = parameter.name.replace("_", "-")
                 long = f"--{cli_name}/--no-{cli_name}"
             else:
                 long = True
-            option = Annotated[annotation, cappa.Arg(long=long)]
+            if any(isinstance(item, cappa.Arg) for item in metadata):
+                metadata = [
+                    (
+                        replace(item, long=long)
+                        if isinstance(item, cappa.Arg)
+                        and not item.long
+                        and not item.short
+                        else item
+                    )
+                    for item in metadata
+                ]
+            else:
+                metadata.append(cappa.Arg(long=long))
+            option = Annotated[(base_type, *metadata)]
             schema_fields.append((parameter.name, option, parameter.default))
 
     return make_dataclass(f"{name.title().replace('-', '')}Arguments", schema_fields)

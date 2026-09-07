@@ -76,6 +76,44 @@ def help_for(app, argv, capsys) -> str:
     return capsys.readouterr().out
 
 
+def test_rfdetr_training_help_and_annotated_options(capsys, monkeypatch):
+    from collectra import ObjectDetectionRFDETR
+
+    captured = {}
+    monkeypatch.setattr(
+        "collectra.tasks.object_detection.rfdetr.run_training_command",
+        lambda *args, **kwargs: captured.update(kwargs),
+    )
+    app = RuntimeApplication({"detector": ObjectDetectionRFDETR("detector")})
+    help_text = help_for(app, ["task", "detector", "train", "--help"], capsys)
+    normalized_help = " ".join(help_text.split())
+    assert "Checkpoint path or pretrained variant" in normalized_help
+    assert "rfdetr[plus]" in normalized_help
+    assert "Number of training epochs" in normalized_help
+    assert "--no-use-ema" in normalized_help
+
+    invoke(
+        app,
+        [
+            "task",
+            "detector",
+            "train",
+            "data",
+            "--model",
+            "small",
+            "--epochs",
+            "3",
+            "--no-use-ema",
+            "--early-stopping",
+        ],
+        name="collectra",
+    )
+    assert captured["model"] == "small"
+    assert captured["epochs"] == 3
+    assert captured["use_ema"] is False
+    assert captured["early_stopping"] is True
+
+
 def test_dynamic_recursive_help(capsys):
     calls = []
     app = RuntimeApplication(

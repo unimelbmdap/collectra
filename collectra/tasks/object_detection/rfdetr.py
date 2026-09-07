@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Annotated, TYPE_CHECKING
+
+from cappa import Arg
 
 from collectra.cli import command
 from collectra.types.images import Image, ImageCrop
@@ -138,7 +140,11 @@ class ObjectDetectionRFDETR(Task):
                 variant = name
             else:
                 variant = next(
-                    (key for key, value in _MODEL_VARIANTS.items() if value.lower() == name),
+                    (
+                        key
+                        for key, value in _MODEL_VARIANTS.items()
+                        if value.lower() == name
+                    ),
                     None,
                 )
         if variant is not None:
@@ -510,43 +516,146 @@ class ObjectDetectionRFDETR(Task):
     @command
     def train(
         self,
-        inputs: list[str],
-        output: Path | None = None,
-        keep_log: bool = True,
-        validation: str = "",
-        exclude: str = "",
-        epochs: int = 1,
-        batch: int = 4,
-        grad_accum_steps: int = 4,
-        learning_rate: float = 1e-4,
-        wandb: bool = True,
-        early_stopping: bool = False,
-        weight_decay: float = 1e-4,
-        drop_path: float = 0.0,
-        augmentation: str = "default",
-        augmentation_backend: str = "cpu",
-        multi_scale: bool = True,
-        expanded_scales: bool = True,
-        do_random_resize_via_padding: bool = False,
-        use_ema: bool = True,
-        ema_decay: float = 0.993,
-        ema_tau: int = 100,
-        ema_update_interval: int = 1,
-        early_stopping_patience: int = 10,
-        early_stopping_min_delta: float = 0.001,
-        early_stopping_use_ema: bool = False,
-        lr_encoder: float = 1.5e-4,
-        lr_vit_layer_decay: float = 0.8,
-        lr_component_decay: float = 0.7,
-        warmup_epochs: float = 0.0,
-        model: str = "",
+        inputs: Annotated[
+            list[str],
+            Arg(
+                help="Pipeline data files or directories containing training annotations."
+            ),
+        ],
+        output: Annotated[
+            Path | None,
+            Arg(help="Directory for training logs, dataset files, and checkpoints."),
+        ] = None,
+        keep_log: Annotated[
+            bool,
+            Arg(
+                help="Keep the training directory after saving the model to the pipeline."
+            ),
+        ] = True,
+        validation: Annotated[
+            str,
+            Arg(help="Partition value identifying validation examples."),
+        ] = "",
+        exclude: Annotated[
+            str,
+            Arg(help="Partition value identifying examples to exclude from training."),
+        ] = "",
+        epochs: Annotated[
+            int,
+            Arg(help="Number of training epochs."),
+        ] = 1,
+        batch: Annotated[
+            int,
+            Arg(help="Number of images per device in each training batch."),
+        ] = 4,
+        grad_accum_steps: Annotated[
+            int,
+            Arg(
+                help="Accumulate gradients over this many batches before an optimizer step."
+            ),
+        ] = 4,
+        learning_rate: Annotated[
+            float,
+            Arg(help="Learning rate for training."),
+        ] = 1e-4,
+        wandb: Annotated[
+            bool,
+            Arg(help="Log training metrics to Weights & Biases."),
+        ] = True,
+        early_stopping: Annotated[
+            bool,
+            Arg(help="Stop training when validation performance stops improving."),
+        ] = False,
+        weight_decay: Annotated[
+            float,
+            Arg(help="Weight decay used for regularization."),
+        ] = 1e-4,
+        drop_path: Annotated[
+            float,
+            Arg(help="Stochastic depth drop probability used for regularization."),
+        ] = 0.0,
+        augmentation: Annotated[
+            str,
+            Arg(
+                help="Augmentation preset: default, none, conservative, aggressive, aerial, or industrial."
+            ),
+        ] = "default",
+        augmentation_backend: Annotated[
+            str,
+            Arg(help="Augmentation execution backend: cpu, auto, or gpu."),
+        ] = "cpu",
+        multi_scale: Annotated[
+            bool,
+            Arg(help="Train with multiple image resolutions."),
+        ] = True,
+        expanded_scales: Annotated[
+            bool,
+            Arg(help="Use an expanded range of resolutions for multi-scale training."),
+        ] = True,
+        do_random_resize_via_padding: Annotated[
+            bool,
+            Arg(help="Use padding for random image resizing."),
+        ] = False,
+        use_ema: Annotated[
+            bool,
+            Arg(help="Maintain an exponential moving average (EMA) of model weights."),
+        ] = True,
+        ema_decay: Annotated[
+            float,
+            Arg(
+                help="Decay factor for the exponential moving average of model weights."
+            ),
+        ] = 0.993,
+        ema_tau: Annotated[
+            int,
+            Arg(help="Time constant controlling the warmup of EMA decay."),
+        ] = 100,
+        ema_update_interval: Annotated[
+            int,
+            Arg(help="Number of optimizer steps between EMA updates."),
+        ] = 1,
+        early_stopping_patience: Annotated[
+            int,
+            Arg(
+                help="Number of validation checks without sufficient improvement before stopping."
+            ),
+        ] = 10,
+        early_stopping_min_delta: Annotated[
+            float,
+            Arg(help="Minimum improvement required to reset early-stopping patience."),
+        ] = 0.001,
+        early_stopping_use_ema: Annotated[
+            bool,
+            Arg(help="Use EMA model metrics for early stopping."),
+        ] = False,
+        lr_encoder: Annotated[
+            float,
+            Arg(help="Learning rate for the image encoder."),
+        ] = 1.5e-4,
+        lr_vit_layer_decay: Annotated[
+            float,
+            Arg(
+                help="Layer-wise learning-rate decay factor for the vision transformer."
+            ),
+        ] = 0.8,
+        lr_component_decay: Annotated[
+            float,
+            Arg(help="Learning-rate decay factor for encoder components."),
+        ] = 0.7,
+        warmup_epochs: Annotated[
+            float,
+            Arg(
+                help="Number of epochs for learning-rate warmup; fractional values are allowed."
+            ),
+        ] = 0.0,
+        model: Annotated[
+            str,
+            Arg(
+                help="Checkpoint path or pretrained variant: nano, small, base, medium, large, xlarge, or 2xlarge (full RFDETR class names also accepted). XL variants require rfdetr[plus]. 'default' selects Base; omit to keep the configured model."
+            ),
+        ] = "",
     ):
-        """Train this RF-DETR object detector.
-
-        Use --model with a checkpoint path or base, nano, small, medium, large,
-        xlarge, or 2xlarge. XLarge and 2XLarge require rfdetr[plus].
-        'default' selects Base; omitting --model keeps the configured model.
-        """
+        """Train this RF-DETR object detector."""
         return run_training_command(
             self,
             inputs,
