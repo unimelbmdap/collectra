@@ -291,6 +291,10 @@ class ImageClassifierTorchvision(TorchClassifierTask):
         workers: Annotated[
             int, Arg(help="Number of data-loading worker processes.")
         ] = 0,
+        wandb: Annotated[
+            bool,
+            Arg(help="Log training metrics to Weights & Biases."),
+        ] = False,
         device: Annotated[
             str,
             Arg(
@@ -327,6 +331,7 @@ class ImageClassifierTorchvision(TorchClassifierTask):
             fliplr=fliplr,
             flipud=flipud,
             workers=workers,
+            wandb=wandb,
             device=device,
             seed=seed,
         )

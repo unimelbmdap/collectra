@@ -244,40 +244,65 @@ class TorchClassifierTask(Task):
         (weights_dir / "classes.json").write_text(
             json.dumps({"classes": classes}, indent=2)
         )
-        history, best_loss, best_metrics, stale = [], math.inf, {}, 0
-        for epoch in range(1, epochs + 1):
-            self.model.train(
-                not freeze
-            )  # Frozen BatchNorm statistics must remain frozen too.
-            train_metrics = self._epoch(train_loader, optimizer)
-            self.model.eval()
-            with torch.inference_mode():
-                val_metrics = (
-                    self._epoch(val_loader) if val_loader is not None else None
+        wandb_run = None
+        if bool(kwargs.get("wandb", True)):
+            try:
+                import wandb
+
+                wandb_config = {
+                    key: str(value) if isinstance(value, Path) else value
+                    for key, value in kwargs.items()
+                }
+                wandb_config["classes"] = classes
+                wandb_run = wandb.init(
+                    project=str(kwargs.get("project", "collectra-classifier")),
+                    name=log.name,
+                    dir=str(kwargs["base_folder"]),
+                    config=wandb_config,
+                    reinit=True,
                 )
-            metrics = {
-                "epoch": epoch,
-                **{f"train_{k}": v for k, v in train_metrics.items()},
-            }
-            metrics.update({f"val_{k}": v for k, v in (val_metrics or {}).items()})
-            history.append(metrics)
-            score = val_metrics["loss"] if val_metrics else train_metrics["loss"]
-            if not math.isfinite(score):
-                raise ValueError("Training produced a non-finite loss")
-            checkpoint = self._checkpoint(epoch, metrics)
-            torch.save(checkpoint, weights_dir / "last.pt")
-            if score < best_loss:
-                best_loss, best_metrics, stale = score, dict(metrics), 0
-                torch.save(checkpoint, weights_dir / "best.pt")
-            else:
-                stale += 1
-            logger.info("Epoch %d/%d: %s", epoch, epochs, metrics)
-            with (log / "history.csv").open("w", newline="") as stream:
-                writer = csv.DictWriter(stream, fieldnames=list(metrics))
-                writer.writeheader()
-                writer.writerows(history)
-            if val_loader is not None and patience and stale >= patience:
-                break
+            except Exception as error:
+                logger.warning("W&B init skipped: %s", error)
+        history, best_loss, best_metrics, stale = [], math.inf, {}, 0
+        try:
+            for epoch in range(1, epochs + 1):
+                self.model.train(
+                    not freeze
+                )  # Frozen BatchNorm statistics must remain frozen too.
+                train_metrics = self._epoch(train_loader, optimizer)
+                self.model.eval()
+                with torch.inference_mode():
+                    val_metrics = (
+                        self._epoch(val_loader) if val_loader is not None else None
+                    )
+                metrics = {
+                    "epoch": epoch,
+                    **{f"train_{k}": v for k, v in train_metrics.items()},
+                }
+                metrics.update({f"val_{k}": v for k, v in (val_metrics or {}).items()})
+                history.append(metrics)
+                score = val_metrics["loss"] if val_metrics else train_metrics["loss"]
+                if not math.isfinite(score):
+                    raise ValueError("Training produced a non-finite loss")
+                checkpoint = self._checkpoint(epoch, metrics)
+                torch.save(checkpoint, weights_dir / "last.pt")
+                if score < best_loss:
+                    best_loss, best_metrics, stale = score, dict(metrics), 0
+                    torch.save(checkpoint, weights_dir / "best.pt")
+                else:
+                    stale += 1
+                if wandb_run is not None:
+                    wandb_run.log(metrics)
+                logger.info("Epoch %d/%d: %s", epoch, epochs, metrics)
+                with (log / "history.csv").open("w", newline="") as stream:
+                    writer = csv.DictWriter(stream, fieldnames=list(metrics))
+                    writer.writeheader()
+                    writer.writerows(history)
+                if val_loader is not None and patience and stale >= patience:
+                    break
+        finally:
+            if wandb_run is not None:
+                wandb_run.finish()
         self.original_model_path = weights_dir / "best.pt"
         self._reload()
         best_metrics.update(classes=classes, epochs_completed=len(history))
