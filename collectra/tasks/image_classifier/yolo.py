@@ -3,7 +3,9 @@ from __future__ import annotations
 import shutil
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Annotated, TYPE_CHECKING
+
+from cappa import Arg
 
 from PIL import Image as PillowImage
 
@@ -126,29 +128,112 @@ class ImageClassifierYOLO(YOLOTask):
     @command
     def train(
         self,
-        inputs: list[str],
-        model: str = "",
-        output: Path | None = None,
-        keep_log: bool = True,
-        validation: str = "",
-        exclude: str = "",
-        epochs: int = 100,
-        batch: int = 16,
-        imgsz: int = 1280,
-        early_stop: int = 50,
-        min_size: int = 0,
-        learning_rate: float = 0.01,
-        weight_decay: float = 0.0005,
-        dropout: float = 0.0,
-        erasing: float = 0.4,
-        auto_augment: str = "randaugment",
-        fliplr: float = 0.5,
-        flipud: float = 0.0,
-        hsv_h: float = 0.015,
-        hsv_s: float = 0.7,
-        hsv_v: float = 0.4,
-        cls_pw: float = 0.0,
-        freeze: int | None = None,
+        inputs: Annotated[
+            list[str],
+            Arg(
+                help="Pipeline data files or directories containing image classification labels."
+            ),
+        ],
+        model: Annotated[
+            str,
+            Arg(
+                help="YOLO classification weights name or checkpoint path (for example yolo26n-cls.pt), or a model YAML file. Omit to keep the configured model."
+            ),
+        ] = "",
+        output: Annotated[
+            Path | None,
+            Arg(help="Directory for training logs, dataset files, and checkpoints."),
+        ] = None,
+        keep_log: Annotated[
+            bool,
+            Arg(
+                help="Keep the training directory after saving the model to the pipeline."
+            ),
+        ] = True,
+        validation: Annotated[
+            str,
+            Arg(help="Partition value identifying validation examples."),
+        ] = "",
+        exclude: Annotated[
+            str,
+            Arg(help="Partition value identifying examples to exclude from training."),
+        ] = "",
+        epochs: Annotated[
+            int,
+            Arg(help="Number of training epochs."),
+        ] = 100,
+        batch: Annotated[
+            int,
+            Arg(help="Training batch size."),
+        ] = 16,
+        imgsz: Annotated[
+            int,
+            Arg(help="Target training image size in pixels."),
+        ] = 1280,
+        early_stop: Annotated[
+            int,
+            Arg(
+                help="Stop after this many epochs without validation improvement; 0 disables early stopping."
+            ),
+        ] = 50,
+        min_size: Annotated[
+            int,
+            Arg(
+                help="Skip images or crops with either dimension below this many pixels; 0 disables the size threshold."
+            ),
+        ] = 0,
+        learning_rate: Annotated[
+            float,
+            Arg(help="Initial learning rate."),
+        ] = 0.01,
+        weight_decay: Annotated[
+            float,
+            Arg(help="Weight decay used for regularization."),
+        ] = 0.0005,
+        dropout: Annotated[
+            float,
+            Arg(help="Dropout probability for the classification head."),
+        ] = 0.0,
+        erasing: Annotated[
+            float,
+            Arg(help="Probability of random erasing augmentation."),
+        ] = 0.4,
+        auto_augment: Annotated[
+            str,
+            Arg(
+                help="Automatic augmentation policy: randaugment, autoaugment, or augmix."
+            ),
+        ] = "randaugment",
+        fliplr: Annotated[
+            float,
+            Arg(help="Probability of horizontally flipping an image."),
+        ] = 0.5,
+        flipud: Annotated[
+            float,
+            Arg(help="Probability of vertically flipping an image."),
+        ] = 0.0,
+        hsv_h: Annotated[
+            float,
+            Arg(help="Hue augmentation amount as a fraction."),
+        ] = 0.015,
+        hsv_s: Annotated[
+            float,
+            Arg(help="Saturation augmentation amount as a fraction."),
+        ] = 0.7,
+        hsv_v: Annotated[
+            float,
+            Arg(help="Brightness augmentation amount as a fraction."),
+        ] = 0.4,
+        cls_pw: Annotated[
+            float,
+            Arg(
+                help="Class-imbalance weighting power; 0 disables weighting, 1 uses inverse class frequency."
+            ),
+        ] = 0.0,
+        freeze: Annotated[
+            int | None,
+            Arg(help="Freeze the first N model layers during training."),
+        ] = None,
     ):
         """Train this YOLO image classifier."""
         return run_training_command(
