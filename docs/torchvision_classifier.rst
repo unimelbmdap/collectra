@@ -42,6 +42,8 @@ Inception and GoogLeNet heads are disabled. Training and inference use the chose
 weights' resize, crop, interpolation, and normalization settings. Training adds
 horizontal flips with probability ``--fliplr`` (default 0.5); use ``--fliplr 0``
 when flipping is inappropriate for the images.
+``--flipud`` similarly controls vertical flips during training (default 0.0).
+Neither flip augmentation is applied during validation or inference.
 
 By default all model parameters are fine-tuned using AdamW. ``--freeze-backbone``
 trains only the final projection and freezes the rest of the model, including

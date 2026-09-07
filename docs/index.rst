@@ -23,6 +23,7 @@ Builds pipelines to extract data from collection images.
    api
    cli
    torchvision_classifier
+   huggingface_classifier
    credits
 
 Indices and tables

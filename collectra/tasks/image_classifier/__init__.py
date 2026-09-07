@@ -2,5 +2,10 @@
 
 from .yolo import ImageClassifierYOLO
 from .torchvision import ImageClassifierTorchvision
+from .huggingface import ImageClassifierHuggingFace
 
-__all__ = ["ImageClassifierYOLO", "ImageClassifierTorchvision"]
+__all__ = [
+    "ImageClassifierYOLO",
+    "ImageClassifierTorchvision",
+    "ImageClassifierHuggingFace",
+]
