@@ -4,7 +4,9 @@ import shutil
 import tempfile
 from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Annotated, TYPE_CHECKING
+
+from cappa import Arg
 
 from collectra.cli import command
 from collectra.types.images import Image, ImageCrop
@@ -146,67 +148,282 @@ class ObjectDetectionYOLO(YOLOTask):
     @command
     def train(
         self,
-        inputs: list[str],
-        model: str = "",
-        output: Path | None = None,
-        keep_log: bool = True,
-        validation: str = "",
-        exclude: str = "",
-        epochs: int = 100,
-        batch: int = 16,
-        imgsz: int = 640,
-        early_stop: int = 50,
-        preview: bool = False,
-        workers: int = 8,
-        pretrained: bool = True,
-        optimizer: str = "auto",
-        seed: int = 0,
-        deterministic: bool = True,
-        single_cls: bool = False,
-        rect: bool = False,
-        cos_lr: bool = False,
-        close_mosaic: int = 10,
-        amp: bool = True,
-        fraction: float = 1.0,
-        freeze: int | None = None,
-        multi_scale: float = 0.0,
-        lr0: float = 0.01,
-        lrf: float = 0.01,
-        momentum: float = 0.937,
-        weight_decay: float = 0.0005,
-        warmup_epochs: float = 3.0,
-        warmup_momentum: float = 0.8,
-        warmup_bias_lr: float = 0.1,
-        box: float = 7.5,
-        cls: float = 0.5,
-        cls_pw: float = 0.0,
-        dfl: float = 1.5,
-        nbs: int = 64,
-        hsv_h: float = 0.015,
-        hsv_s: float = 0.7,
-        hsv_v: float = 0.4,
-        degrees: float = 0.0,
-        translate: float = 0.1,
-        scale: float = 0.5,
-        shear: float = 0.0,
-        perspective: float = 0.0,
-        flipud: float = 0.0,
-        fliplr: float = 0.5,
-        bgr: float = 0.0,
-        mosaic: float = 1.0,
-        mixup: float = 0.0,
-        cutmix: float = 0.0,
-        time: float = 0.0,
-        save: bool = True,
-        save_period: int = -1,
-        cache: str = "",
-        device: str = "",
-        verbose: bool = True,
-        resume: bool = False,
-        compile: str = "",
-        distill_model: str = "",
-        dis: float = 6.0,
-        plots: bool = True,
+        inputs: Annotated[
+            list[str],
+            Arg(
+                help="Pipeline data files or directories containing training annotations."
+            ),
+        ],
+        model: Annotated[
+            str,
+            Arg(
+                help="YOLO weights name or checkpoint path (for example yolo26n.pt), or a model YAML file. Omit to keep the configured model."
+            ),
+        ] = "",
+        output: Annotated[
+            Path | None,
+            Arg(help="Directory for training logs, dataset files, and checkpoints."),
+        ] = None,
+        keep_log: Annotated[
+            bool,
+            Arg(
+                help="Keep the training directory after saving the model to the pipeline."
+            ),
+        ] = True,
+        validation: Annotated[
+            str,
+            Arg(help="Partition value identifying validation examples."),
+        ] = "",
+        exclude: Annotated[
+            str,
+            Arg(help="Partition value identifying examples to exclude from training."),
+        ] = "",
+        epochs: Annotated[
+            int,
+            Arg(help="Number of training epochs."),
+        ] = 100,
+        batch: Annotated[
+            int,
+            Arg(help="Training batch size."),
+        ] = 16,
+        imgsz: Annotated[
+            int,
+            Arg(help="Target training image size in pixels."),
+        ] = 640,
+        early_stop: Annotated[
+            int,
+            Arg(
+                help="Stop after this many epochs without validation improvement; 0 disables early stopping."
+            ),
+        ] = 50,
+        preview: Annotated[
+            bool,
+            Arg(
+                help="Preview the prepared training images and annotations before training."
+            ),
+        ] = False,
+        workers: Annotated[
+            int,
+            Arg(help="Number of data-loading workers per distributed process."),
+        ] = 8,
+        pretrained: Annotated[
+            bool,
+            Arg(help="Use pretrained weights when supported by the selected model."),
+        ] = True,
+        optimizer: Annotated[
+            str,
+            Arg(
+                help="Optimizer: auto, SGD, MuSGD, Adam, Adamax, AdamW, NAdam, RAdam, or RMSProp."
+            ),
+        ] = "auto",
+        seed: Annotated[
+            int,
+            Arg(help="Random seed for training."),
+        ] = 0,
+        deterministic: Annotated[
+            bool,
+            Arg(
+                help="Use deterministic operations for reproducibility; may reduce speed."
+            ),
+        ] = True,
+        single_cls: Annotated[
+            bool,
+            Arg(help="Treat all object classes as one class."),
+        ] = False,
+        rect: Annotated[
+            bool,
+            Arg(help="Use rectangular training batches to reduce padding."),
+        ] = False,
+        cos_lr: Annotated[
+            bool,
+            Arg(help="Use a cosine learning-rate schedule."),
+        ] = False,
+        close_mosaic: Annotated[
+            int,
+            Arg(
+                help="Disable mosaic augmentation for the final N epochs; 0 keeps it enabled."
+            ),
+        ] = 10,
+        amp: Annotated[
+            bool,
+            Arg(help="Enable automatic mixed precision training."),
+        ] = True,
+        fraction: Annotated[
+            float,
+            Arg(help="Fraction of the training dataset to use; 1.0 uses all examples."),
+        ] = 1.0,
+        freeze: Annotated[
+            int | None,
+            Arg(help="Freeze the first N model layers during training."),
+        ] = None,
+        multi_scale: Annotated[
+            float,
+            Arg(
+                help="Vary image size by this fraction of imgsz; 0 disables multi-scale training."
+            ),
+        ] = 0.0,
+        lr0: Annotated[
+            float,
+            Arg(help="Initial learning rate."),
+        ] = 0.01,
+        lrf: Annotated[
+            float,
+            Arg(help="Final learning-rate multiplier; final rate is lr0 times lrf."),
+        ] = 0.01,
+        momentum: Annotated[
+            float,
+            Arg(help="SGD momentum or the first Adam beta coefficient."),
+        ] = 0.937,
+        weight_decay: Annotated[
+            float,
+            Arg(help="Weight decay used for regularization."),
+        ] = 0.0005,
+        warmup_epochs: Annotated[
+            float,
+            Arg(
+                help="Number of learning-rate warmup epochs; fractional values are allowed."
+            ),
+        ] = 3.0,
+        warmup_momentum: Annotated[
+            float,
+            Arg(help="Initial momentum during warmup."),
+        ] = 0.8,
+        warmup_bias_lr: Annotated[
+            float,
+            Arg(help="Initial learning rate for bias parameters during warmup."),
+        ] = 0.1,
+        box: Annotated[
+            float,
+            Arg(help="Weight applied to bounding-box loss."),
+        ] = 7.5,
+        cls: Annotated[
+            float,
+            Arg(help="Weight applied to classification loss."),
+        ] = 0.5,
+        cls_pw: Annotated[
+            float,
+            Arg(
+                help="Class-imbalance weighting power; 0 disables weighting, 1 uses inverse class frequency."
+            ),
+        ] = 0.0,
+        dfl: Annotated[
+            float,
+            Arg(help="Weight applied to distribution focal loss."),
+        ] = 1.5,
+        nbs: Annotated[
+            int,
+            Arg(help="Nominal batch size used for loss normalization."),
+        ] = 64,
+        hsv_h: Annotated[
+            float,
+            Arg(help="Hue augmentation amount as a fraction."),
+        ] = 0.015,
+        hsv_s: Annotated[
+            float,
+            Arg(help="Saturation augmentation amount as a fraction."),
+        ] = 0.7,
+        hsv_v: Annotated[
+            float,
+            Arg(help="Brightness augmentation amount as a fraction."),
+        ] = 0.4,
+        degrees: Annotated[
+            float,
+            Arg(help="Maximum random rotation in either direction, in degrees."),
+        ] = 0.0,
+        translate: Annotated[
+            float,
+            Arg(help="Maximum random translation as a fraction of image size."),
+        ] = 0.1,
+        scale: Annotated[
+            float,
+            Arg(help="Random scale variation around 1.0."),
+        ] = 0.5,
+        shear: Annotated[
+            float,
+            Arg(help="Maximum random shear in either direction, in degrees."),
+        ] = 0.0,
+        perspective: Annotated[
+            float,
+            Arg(help="Strength of random perspective augmentation."),
+        ] = 0.0,
+        flipud: Annotated[
+            float,
+            Arg(help="Probability of vertically flipping an image."),
+        ] = 0.0,
+        fliplr: Annotated[
+            float,
+            Arg(help="Probability of horizontally flipping an image."),
+        ] = 0.5,
+        bgr: Annotated[
+            float,
+            Arg(help="Probability of swapping RGB and BGR color channels."),
+        ] = 0.0,
+        mosaic: Annotated[
+            float,
+            Arg(help="Probability of mosaic augmentation."),
+        ] = 1.0,
+        mixup: Annotated[
+            float,
+            Arg(help="Probability of MixUp augmentation."),
+        ] = 0.0,
+        cutmix: Annotated[
+            float,
+            Arg(help="Probability of CutMix augmentation."),
+        ] = 0.0,
+        time: Annotated[
+            float,
+            Arg(
+                help="Training time limit in hours; a positive value overrides epochs, 0 leaves it unset."
+            ),
+        ] = 0.0,
+        save: Annotated[
+            bool,
+            Arg(help="Save training checkpoints."),
+        ] = True,
+        save_period: Annotated[
+            int,
+            Arg(
+                help="Save an additional checkpoint every N epochs; -1 disables periodic saves."
+            ),
+        ] = -1,
+        cache: Annotated[
+            str,
+            Arg(help="Cache images in ram or on disk; omit to leave caching disabled."),
+        ] = "",
+        device: Annotated[
+            str,
+            Arg(
+                help="Training device, such as cpu, mps, 0, or 0,1; omit for automatic selection."
+            ),
+        ] = "",
+        verbose: Annotated[
+            bool,
+            Arg(help="Print detailed training logs."),
+        ] = True,
+        resume: Annotated[
+            bool,
+            Arg(help="Resume training from the selected checkpoint."),
+        ] = False,
+        compile: Annotated[
+            str,
+            Arg(
+                help="Torch compilation mode: default, reduce-overhead, or max-autotune-no-cudagraphs; omit to disable."
+            ),
+        ] = "",
+        distill_model: Annotated[
+            str,
+            Arg(
+                help="Teacher model checkpoint for knowledge distillation; omit to disable."
+            ),
+        ] = "",
+        dis: Annotated[
+            float,
+            Arg(help="Weight applied to knowledge-distillation loss."),
+        ] = 6.0,
+        plots: Annotated[
+            bool,
+            Arg(help="Save training and validation plots and images."),
+        ] = True,
     ):
         """Train this YOLO object detector."""
         return run_training_command(
