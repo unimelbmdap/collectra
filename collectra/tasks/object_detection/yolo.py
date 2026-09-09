@@ -9,7 +9,7 @@ from typing import Annotated, TYPE_CHECKING
 from cappa import Arg
 
 from collectra.cli import command
-from collectra.types.images import Image, ImageCrop
+from collectra.types.images import Image, ImageCrop, image_channel_count
 from collectra.types.texts import Text
 from collectra.utils import change_dir
 
@@ -580,6 +580,32 @@ class ObjectDetectionYOLO(YOLOTask):
         val: list[str] | Path,
     ) -> Path:
 
+        # Inspect exactly the prepared files referenced by the generated manifests.
+        # The dataset, not the selected checkpoint, determines the model input size.
+        train = [Path(path).name for path in train]
+        val = [Path(path).name for path in val]
+        detected = {}
+        for name in dict.fromkeys([*train, *val]):
+            path = log / name
+            try:
+                detected[name] = image_channel_count(path)
+            except Exception as error:
+                raise ValueError(
+                    f"Cannot determine input channels for {path}: {error}"
+                ) from error
+        if not detected:
+            raise ValueError(
+                "Cannot infer input channels: no prepared training or validation images"
+            )
+        if len(set(detected.values())) != 1:
+            details = ", ".join(
+                f"{name}: {count} channels" for name, count in detected.items()
+            )
+            raise ValueError(
+                f"Inconsistent input channel counts in prepared dataset: {details}"
+            )
+        channels = next(iter(detected.values()))
+
         metadata = {
             "classes": classes,
             "train": train,
@@ -604,6 +630,7 @@ class ObjectDetectionYOLO(YOLOTask):
 
         config = (
             f"train: {train_txt}\nval: {val_txt}\nnc: {num_classes}\nnames: {names}\n"
+            f"channels: {channels}\n"
         )
         config_file = log / "config.yml"
         Path(config_file).write_text(config)

@@ -34,11 +34,55 @@ from collectra.cli import command
 from .base import Artefact, ArtefactCommands, ArtefactNode
 
 
+def _tiff_dimensions(path: str | Path) -> tuple[int, int, int]:
+    """Return width, height, channels from TIFF headers, without decoding pixels.
+
+    C/S denote channels/samples; I/Q denotes an otherwise unlabelled page stack.
+    Non-singleton time/depth axes and multiple image series are ambiguous for a
+    2D detector and must be exported as separate images first.
+    """
+    from tifffile import TiffFile
+
+    with TiffFile(path) as tiff:
+        if len(tiff.series) != 1:
+            raise ValueError(f"TIFF {path} contains multiple image series")
+        series = tiff.series[0]
+        shape, axes = series.shape, series.axes
+    if len(axes) != len(shape) or axes.count("Y") != 1 or axes.count("X") != 1:
+        raise ValueError(
+            f"Cannot identify TIFF spatial axes for {path}: shape={shape}, axes={axes!r}"
+        )
+    extra = [
+        (axis, size)
+        for axis, size in zip(axes, shape)
+        if axis not in "YX" and size != 1
+    ]
+    if len(extra) > 1 or (extra and extra[0][0] not in "CSIQ"):
+        raise ValueError(
+            f"Ambiguous TIFF channel axes for {path}: shape={shape}, axes={axes!r}; expected a 2D image with one channel/sample axis"
+        )
+    channels = extra[0][1] if extra else 1
+    return shape[axes.index("X")], shape[axes.index("Y")], channels
+
+
+def image_channel_count(path: str | Path) -> int:
+    """Inspect image metadata for its channel count; never convert image pixels."""
+    if Path(path).suffix.lower() in {".tif", ".tiff"}:
+        return _tiff_dimensions(path)[2]
+    with ImagePil.open(path) as image:
+        if image.mode == "P":
+            return 4 if "transparency" in image.info else 3
+        return len(image.getbands())
+
+
 @lru_cache(maxsize=4096)
 def _image_metadata(
     path: str, modified_ns: int, file_size: int
 ) -> tuple[int, int, str | None]:
     """Read image dimensions and format once per file version."""
+    if Path(path).suffix.lower() in {".tif", ".tiff"}:
+        width, height, _ = _tiff_dimensions(path)
+        return width, height, "TIFF"
     with ImagePil.open(path) as image:
         width, height = image.size
         return width, height, image.format
@@ -171,7 +215,7 @@ class Image(Artefact):
 
     @staticmethod
     def image_types() -> list[str]:
-        return [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp", ".tif"]
+        return [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp"]
 
     @property
     def width(self) -> int | float:
@@ -242,8 +286,7 @@ class Image(Artefact):
         Returns:
             bool: True if the file extension indicates a supported image format.
         """
-        image_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp"}
-        return path.suffix.lower() in image_extensions
+        return path.suffix.lower() in Image.image_types()
 
     def _load_buffer(self, img: ImagePil.Image) -> bytes:
         buffer = io.BytesIO()
