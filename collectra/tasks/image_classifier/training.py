@@ -96,7 +96,7 @@ class TorchClassifierTask(Task):
         self._load()
 
     def _prepare_assets(self, classes, log, validation, exclude, *images, min_size=0):
-        """Materialize oriented RGB images and crops in train/<class> and val/<class>."""
+        """Materialize labelled images and crops in train/<class> and val/<class>."""
         if min_size < 0:
             raise ValueError("min_size cannot be negative")
         for name in classes:
@@ -129,19 +129,9 @@ class TorchClassifierTask(Task):
                 if right <= left or bottom <= top:
                     logger.warning("Skipping empty classifier crop %s", image.id)
                     continue
-            with target.pil() as pixels:
-                if min(pixels.size) < max(1, min_size):
-                    logger.warning(
-                        "Skipping classifier image %s below minimum size %d",
-                        image.id,
-                        min_size,
-                    )
-                    continue
-                split = (
-                    "val" if validation and image.partition == validation else "train"
-                )
-                destination = log / split / image.name / f"{index:08d}.png"
-                pixels.convert("RGB").save(destination)
+            split = "val" if validation and image.partition == validation else "train"
+            destination = log / split / image.name / f"{index:08d}"
+            if self._export_image(target, destination, min_size):
                 counts[split][image.name] += 1
         print_distribution_table(
             "Class Distribution", classes, counts["train"], counts["val"]
@@ -151,10 +141,31 @@ class TorchClassifierTask(Task):
             raise ValueError(f"No training images for classes: {', '.join(missing)}")
         return train_dir, val_dir
 
+    def _export_image(self, target, destination, min_size):
+        with target.pil() as pixels:
+            if min(pixels.size) < max(1, min_size):
+                logger.warning(
+                    "Skipping classifier image %s below minimum size %d",
+                    target.id,
+                    min_size,
+                )
+                return False
+            pixels.convert("RGB").save(destination.with_suffix(".png"))
+        return True
+
+    def _make_datasets(self, train_dir, val_dir, augmentation):
+        from torchvision.datasets import ImageFolder
+
+        return (
+            ImageFolder(
+                train_dir, transform=self._transforms(training=True, **augmentation)
+            ),
+            ImageFolder(val_dir, transform=self._transforms(), allow_empty=True),
+        )
+
     def _train(self, *images: Image, **kwargs) -> ClassificationTrainResult:
         import torch
         from torch.utils.data import DataLoader
-        from torchvision.datasets import ImageFolder
 
         epochs, batch = int(kwargs.get("epochs", 10)), int(kwargs.get("batch", 16))
         workers, patience = int(kwargs.get("workers", 0)), int(
@@ -209,10 +220,7 @@ class TorchClassifierTask(Task):
         )
         freeze = kwargs.get("freeze_backbone", False)
         self._prepare_training_model(classes, kwargs.get("pretrained", True), freeze)
-        train_data = ImageFolder(
-            train_dir, transform=self._transforms(training=True, **augmentation)
-        )
-        val_data = ImageFolder(val_dir, transform=self._transforms(), allow_empty=True)
+        train_data, val_data = self._make_datasets(train_dir, val_dir, augmentation)
         train_loader = DataLoader(
             train_data, batch_size=batch, shuffle=True, num_workers=workers
         )

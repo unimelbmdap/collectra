@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
@@ -9,7 +10,12 @@ from cappa import Arg
 
 from collectra.cli import command
 from collectra.logger import get_logger
-from collectra.types.images import Image, ImageCrop
+from collectra.types.images import (
+    Image,
+    ImageCrop,
+    image_channel_count,
+    read_tiff_channels,
+)
 from collectra.types.links import Link
 from collectra.utils import threading_locked
 from ..machine_learning.training import run_training_command
@@ -21,6 +27,61 @@ from .training import (
 
 __all__ = ["ImageClassifierTorchvision"]
 logger = get_logger(__name__)
+
+
+def _tiff_tensor(pixels):
+    """Convert HWC TIFF samples to float32 CHW, preserving every channel."""
+    import numpy as np
+    import torch
+
+    values = pixels.astype(np.float32)
+    if np.issubdtype(pixels.dtype, np.unsignedinteger):
+        values /= np.iinfo(pixels.dtype).max
+    return torch.from_numpy(np.ascontiguousarray(values.transpose(2, 0, 1)))
+
+
+def _load_classifier_image(path):
+    """ImageFolder loader that bypasses Pillow for TIFF images."""
+    from torchvision.datasets.folder import pil_loader
+
+    if Path(path).suffix.lower() in {".tif", ".tiff"}:
+        return _tiff_tensor(read_tiff_channels(path))
+    return pil_loader(path)
+
+
+def _target_tiff_pixels(image):
+    import numpy as np
+
+    target = image.resolve() if type(image) is Link else image
+    pixels = read_tiff_channels(target.get_path())
+    if isinstance(target, ImageCrop):
+        left, top, right, bottom = target.coordinates()
+        if right <= left or bottom <= top:
+            raise ValueError(f"ImageCrop {target.id!r} produces an empty pixel crop")
+        pixels = pixels[top:bottom, left:right, :]
+    return np.rot90(pixels, k=target.orientation.to_degree() // 90, axes=(0, 1))
+
+
+@dataclass
+class _NormalizeClassifierPixels:
+    mean: list[float]
+    std: list[float]
+
+    def __call__(self, pixels):
+        import torch
+        from torchvision.transforms import functional as F
+
+        if not isinstance(pixels, torch.Tensor):
+            pixels = F.to_tensor(pixels)
+        channels = pixels.shape[0]
+        if len(self.mean) == len(self.std) == 3 and channels != 3:
+            # RGB statistics have no defined meaning for spectral bands.
+            return pixels
+        if len(self.mean) != len(self.std) or len(self.mean) not in (1, channels):
+            raise ValueError(
+                f"Normalization statistics do not match {channels} image channels"
+            )
+        return F.normalize(pixels, self.mean, self.std)
 
 
 def _replace_head(model, num_classes: int):
@@ -109,8 +170,66 @@ class ImageClassifierTorchvision(TorchClassifierTask):
             steps.append(T.RandomHorizontalFlip(fliplr))
         if training and flipud:
             steps.append(T.RandomVerticalFlip(flipud))
-        steps.extend([T.ToTensor(), T.Normalize(config["mean"], config["std"])])
+        steps.append(_NormalizeClassifierPixels(config["mean"], config["std"]))
         return T.Compose(steps)
+
+    def _export_image(self, target, destination, min_size):
+        if target.get_path().suffix.lower() not in {".tif", ".tiff"}:
+            return super()._export_image(target, destination, min_size)
+        import numpy as np
+        import tifffile
+
+        pixels = _target_tiff_pixels(target)
+        if min(pixels.shape[:2]) < max(1, min_size):
+            logger.warning(
+                "Skipping classifier image %s below minimum size %d",
+                target.id,
+                min_size,
+            )
+            return False
+        tifffile.imwrite(
+            destination.with_suffix(".tif"),
+            np.ascontiguousarray(pixels.transpose(2, 0, 1)),
+            photometric="minisblack",
+            metadata={"axes": "CYX"},
+        )
+        return True
+
+    def _make_datasets(self, train_dir, val_dir, augmentation):
+        from torchvision.datasets import ImageFolder
+
+        train = ImageFolder(train_dir, loader=_load_classifier_image)
+        val = ImageFolder(val_dir, loader=_load_classifier_image, allow_empty=True)
+        detected = {
+            path: (
+                image_channel_count(path)
+                if Path(path).suffix.lower() in {".tif", ".tiff"}
+                else 3
+            )
+            for path, _ in [*train.samples, *val.samples]
+        }
+        if len(set(detected.values())) != 1:
+            details = ", ".join(
+                f"{path}: {count} channels" for path, count in detected.items()
+            )
+            raise ValueError(
+                f"Inconsistent input channel counts in classifier dataset: {details}"
+            )
+        channels = next(iter(detected.values()))
+        self._preprocessing["channels"] = channels
+        if (
+            channels != 3
+            and len(self._preprocessing["mean"]) == len(self._preprocessing["std"]) == 3
+        ):
+            logger.info(
+                "Using identity normalization for %d channels; RGB statistics do not apply",
+                channels,
+            )
+            self._preprocessing["mean"] = [0.0] * channels
+            self._preprocessing["std"] = [1.0] * channels
+        train.transform = self._transforms(training=True, **augmentation)
+        val.transform = self._transforms()
+        return train, val
 
     def _load(self, *, pretrained: bool = True) -> None:
         import torch
@@ -199,10 +318,16 @@ class ImageClassifierTorchvision(TorchClassifierTask):
         self._load()
         self.model.to(self._device).eval()
         image = args[0]
-        with image.pil() as pixels:
-            batch = (
-                self._transforms()(pixels.convert("RGB")).unsqueeze(0).to(self._device)
-            )
+        if image.get_path().suffix.lower() in {".tif", ".tiff"}:
+            pixels = _tiff_tensor(_target_tiff_pixels(image))
+            batch = self._transforms()(pixels).unsqueeze(0).to(self._device)
+        else:
+            with image.pil() as pixels:
+                batch = (
+                    self._transforms()(pixels.convert("RGB"))
+                    .unsqueeze(0)
+                    .to(self._device)
+                )
         with torch.inference_mode():
             class_index = self.model(batch).argmax(dim=1).item()
         class_name = self._categories[class_index]

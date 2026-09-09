@@ -75,6 +75,20 @@ def image_channel_count(path: str | Path) -> int:
         return len(image.getbands())
 
 
+def read_tiff_channels(path: str | Path):
+    """Decode a TIFF into HWC order using the same axis rules as metadata inspection."""
+    from tifffile import TiffFile
+
+    width, height, channels = _tiff_dimensions(path)
+    with TiffFile(path) as tiff:
+        series = tiff.series[0]
+        axes = series.axes
+        pixels = series.asarray()
+    spatial = [axes.index("Y"), axes.index("X")]
+    order = spatial + [index for index in range(pixels.ndim) if index not in spatial]
+    return pixels.transpose(order).reshape(height, width, channels)
+
+
 @lru_cache(maxsize=4096)
 def _image_metadata(
     path: str, modified_ns: int, file_size: int

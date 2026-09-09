@@ -56,8 +56,10 @@ Exported images and results
 
 The output directory contains:
 
-* ``train/<class>/*.png`` and ``val/<class>/*.png``: extracted RGB images, with crop
-  boundaries and orientation applied. Filenames are unique within the export.
+* ``train/<class>`` and ``val/<class>``: extracted images, with crop boundaries and
+  orientation applied. TIFF inputs are exported as TIFFs preserving every channel
+  and their original dtype; other inputs retain the existing RGB PNG export.
+  Filenames are unique within the export.
 * ``weights/best.pt``: the checkpoint with the lowest validation loss (or training
   loss when validation is not requested).
 * ``weights/last.pt``: the last completed epoch's checkpoint.
@@ -91,3 +93,29 @@ optimizer state of a previous run.
 Bare external state dictionaries are not sufficient on their own: they do not
 identify the architecture, class labels, and preprocessing. The loader reports
 an error for checkpoints missing this metadata.
+
+Multichannel TIFF data
+---------------------
+
+TIFF images with more than three channels bypass Pillow throughout export,
+training, validation, and inference. TIFF spatial and channel axes are interpreted
+from metadata, including channel-first, channel-last, and unlabelled page-stack
+layouts. Crops and orientation affect only the spatial axes. Exported TIFFs use
+``CYX`` axes and preserve the source dtype and pixel values.
+
+The dataset loader produces float32 ``(C, H, W)`` tensors. Unsigned integer values
+are scaled by their dtype maximum (255 for uint8, 65535 for uint16); floating-point
+and signed integer values are cast to float32 without rescaling. Resizing, center
+cropping, and optional flips preserve all channels.
+
+RGB mean/std statistics are not repeated across spectral bands. When a model's
+preprocessing contains three-channel statistics but the dataset has a different
+channel count, training uses identity normalization and records the channel count
+and normalization in the checkpoint. Matching per-channel statistics, or one
+shared mean/std value, are applied when present in the preprocessing configuration.
+Ordinary RGB inputs retain their existing preprocessing.
+
+All exported training and validation images must have the same channel count.
+Mixed counts produce an error listing the affected filenames and counts.
+The model and its checkpoint reconstruction must already support the input channel
+count; this data-handling support does not adapt model input layers.
