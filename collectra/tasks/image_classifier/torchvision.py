@@ -421,8 +421,11 @@ class ImageClassifierTorchvision(TorchClassifierTask):
             ),
         ] = 0.5,
         workers: Annotated[
-            int, Arg(help="Number of data-loading worker processes.")
-        ] = 0,
+            int,
+            Arg(
+                help="Number of data-loading worker processes (default 8, capped by available CPUs)."
+            ),
+        ] = 8,
         wandb: Annotated[
             bool,
             Arg(help="Log training metrics to Weights & Biases."),

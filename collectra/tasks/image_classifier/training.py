@@ -3,6 +3,7 @@
 import csv
 import json
 import math
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -226,7 +227,7 @@ class TorchClassifierTask(Task):
         from torch.utils.data import DataLoader
 
         epochs, batch = int(kwargs.get("epochs", 10)), int(kwargs.get("batch", 16))
-        workers, patience = int(kwargs.get("workers", 0)), int(
+        workers, patience = int(kwargs.get("workers", 8)), int(
             kwargs.get("early_stop", 10)
         )
         fliplr = float(kwargs.get("fliplr", 0.5))
@@ -248,6 +249,14 @@ class TorchClassifierTask(Task):
             )
         if "log" not in kwargs or "base_folder" not in kwargs:
             raise ValueError("Training requires log and base_folder directories")
+        available_workers = max(1, os.cpu_count() or 1)
+        if workers > 0 and workers > available_workers:
+            logger.info(
+                "Capping workers from %d to available CPU count %d",
+                workers,
+                available_workers,
+            )
+            workers = available_workers
         torch.manual_seed(int(kwargs.get("seed", 0)))
         self._device = self._select_device(kwargs.get("device", ""))
         if kwargs.get("model"):
