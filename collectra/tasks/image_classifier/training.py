@@ -107,7 +107,15 @@ class TorchClassifierTask(Task):
         self._load()
 
     def _prepare_assets(
-        self, classes, log, validation, exclude, *images, min_size=0, workers=0
+        self,
+        classes,
+        log,
+        validation,
+        exclude,
+        *images,
+        min_size=0,
+        workers=0,
+        use_existing=False,
     ):
         """Materialize labelled images and crops in train/<class> and val/<class>."""
         if min_size < 0:
@@ -116,6 +124,30 @@ class TorchClassifierTask(Task):
             if not name or name in {".", ".."} or "/" in name or "\\" in name:
                 raise ValueError(f"Class name must be a directory name: {name!r}")
         train_dir, val_dir = log / "train", log / "val"
+        if use_existing and train_dir.exists() and val_dir.exists():
+            logger.info(
+                "Reusing existing classifier assets in %s and %s",
+                train_dir,
+                val_dir,
+            )
+            counts = {split: {name: 0 for name in classes} for split in ("train", "val")}
+            for split, directory in (("train", train_dir), ("val", val_dir)):
+                for name in classes:
+                    class_dir = directory / name
+                    if class_dir.exists():
+                        counts[split][name] = sum(
+                            1 for path in class_dir.iterdir() if path.is_file()
+                        )
+            print_distribution_table(
+                "Class Distribution", classes, counts["train"], counts["val"]
+            )
+            missing = [name for name in classes if not counts["train"][name]]
+            if missing:
+                raise ValueError(
+                    "No training images for classes in existing dataset: "
+                    f"{', '.join(missing)}"
+                )
+            return train_dir, val_dir
         for directory in (train_dir, val_dir):
             if directory.exists() and any(directory.iterdir()):
                 raise ValueError(
@@ -285,6 +317,7 @@ class TorchClassifierTask(Task):
             *images,
             min_size=kwargs.get("min_size", 0),
             workers=workers,
+            use_existing=bool(kwargs.get("use_existing", False)),
         )
         freeze = kwargs.get("freeze_backbone", False)
         self._prepare_training_model(classes, kwargs.get("pretrained", True), freeze)

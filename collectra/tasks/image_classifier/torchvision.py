@@ -367,6 +367,12 @@ class ImageClassifierTorchvision(TorchClassifierTask):
                 help="Directory for extracted train/val images, metrics, and checkpoints."
             ),
         ] = None,
+        use_existing: Annotated[
+            bool,
+            Arg(
+                help="Reuse an existing output train/ and val/ dataset if present; skip image export."
+            ),
+        ] = False,
         keep_log: Annotated[
             bool,
             Arg(
@@ -451,6 +457,7 @@ class ImageClassifierTorchvision(TorchClassifierTask):
             self._train,
             keep_log=keep_log,
             output=output,
+            use_existing=use_existing,
             validation=validation,
             exclude=exclude,
             prepare_inputs=self.prepare_training_inputs,
