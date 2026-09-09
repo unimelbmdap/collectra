@@ -49,11 +49,11 @@ def _load_classifier_image(path):
     return pil_loader(path)
 
 
-def _target_tiff_pixels(image):
+def _target_tiff_pixels(image, *, tiff_maxworkers: int | None = None):
     import numpy as np
 
     target = image.resolve() if type(image) is Link else image
-    pixels = read_tiff_channels(target.get_path())
+    pixels = read_tiff_channels(target.get_path(), maxworkers=tiff_maxworkers)
     if isinstance(target, ImageCrop):
         left, top, right, bottom = target.coordinates()
         if right <= left or bottom <= top:
@@ -173,13 +173,20 @@ class ImageClassifierTorchvision(TorchClassifierTask):
         steps.append(_NormalizeClassifierPixels(config["mean"], config["std"]))
         return T.Compose(steps)
 
-    def _export_image(self, target, destination, min_size):
+    def _export_image(
+        self, target, destination, min_size, tiff_maxworkers: int | None = None
+    ):
         if target.get_path().suffix.lower() not in {".tif", ".tiff"}:
-            return super()._export_image(target, destination, min_size)
+            return super()._export_image(
+                target,
+                destination,
+                min_size,
+                tiff_maxworkers=tiff_maxworkers,
+            )
         import numpy as np
         import tifffile
 
-        pixels = _target_tiff_pixels(target)
+        pixels = _target_tiff_pixels(target, tiff_maxworkers=tiff_maxworkers)
         if min(pixels.shape[:2]) < max(1, min_size):
             logger.warning(
                 "Skipping classifier image %s below minimum size %d",

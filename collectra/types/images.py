@@ -75,7 +75,7 @@ def image_channel_count(path: str | Path) -> int:
         return len(image.getbands())
 
 
-def read_tiff_channels(path: str | Path):
+def read_tiff_channels(path: str | Path, maxworkers: int | None = None):
     """Decode a TIFF into HWC order using the same axis rules as metadata inspection."""
     from tifffile import TiffFile
 
@@ -83,7 +83,14 @@ def read_tiff_channels(path: str | Path):
     with TiffFile(path) as tiff:
         series = tiff.series[0]
         axes = series.axes
-        pixels = series.asarray()
+        if maxworkers is None:
+            pixels = series.asarray()
+        else:
+            try:
+                pixels = series.asarray(maxworkers=maxworkers)
+            except TypeError:
+                # Older tifffile versions may not expose maxworkers.
+                pixels = series.asarray()
     spatial = [axes.index("Y"), axes.index("X")]
     order = spatial + [index for index in range(pixels.ndim) if index not in spatial]
     return pixels.transpose(order).reshape(height, width, channels)

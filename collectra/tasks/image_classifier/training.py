@@ -146,10 +146,17 @@ class TorchClassifierTask(Task):
             destination = log / split / image.name / f"{index:08d}"
             jobs.append((image.id, image.name, split, target, destination))
 
-        def export_job(target, destination):
-            return self._export_image(target, destination, min_size)
-
         export_workers = max(0, int(workers))
+        tiff_decode_workers = 1 if export_workers > 1 else None
+
+        def export_job(target, destination):
+            return self._export_image(
+                target,
+                destination,
+                min_size,
+                tiff_maxworkers=tiff_decode_workers,
+            )
+
         with Progress(
             SpinnerColumn(),
             TextColumn("{task.description}"),
@@ -190,7 +197,9 @@ class TorchClassifierTask(Task):
             raise ValueError(f"No training images for classes: {', '.join(missing)}")
         return train_dir, val_dir
 
-    def _export_image(self, target, destination, min_size):
+    def _export_image(
+        self, target, destination, min_size, tiff_maxworkers: int | None = None
+    ):
         with target.pil() as pixels:
             if min(pixels.size) < max(1, min_size):
                 logger.warning(
