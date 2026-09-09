@@ -5,6 +5,15 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 
 from collectra.logger import get_logger
 from ..base import Task
@@ -112,27 +121,44 @@ class TorchClassifierTask(Task):
         for directory in (train_dir, val_dir):
             for name in classes:
                 (directory / name).mkdir(parents=True, exist_ok=True)
-        for index, image in enumerate(images):
-            if exclude and image.partition == exclude:
-                continue
-            if image.name not in classes:
-                raise ValueError(
-                    f"Training label {image.name!r} is not a configured class"
-                )
-            target = image.resolve() if type(image) is Link else image
-            if not isinstance(target, Image):
-                raise TypeError(
-                    f"Classifier input {image.id!r} does not resolve to an Image"
-                )
-            if isinstance(target, ImageCrop):
-                left, top, right, bottom = target.coordinates()
-                if right <= left or bottom <= top:
-                    logger.warning("Skipping empty classifier crop %s", image.id)
-                    continue
-            split = "val" if validation and image.partition == validation else "train"
-            destination = log / split / image.name / f"{index:08d}"
-            if self._export_image(target, destination, min_size):
-                counts[split][image.name] += 1
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TextColumn("•"),
+            TimeElapsedColumn(),
+            TextColumn("•"),
+            TimeRemainingColumn(),
+        ) as progress:
+            task_id = progress.add_task(
+                "Exporting classifier assets...", total=len(images)
+            )
+            for index, image in enumerate(images):
+                progress.update(task_id, description=f"Exporting {image.id}")
+                try:
+                    if exclude and image.partition == exclude:
+                        continue
+                    if image.name not in classes:
+                        raise ValueError(
+                            f"Training label {image.name!r} is not a configured class"
+                        )
+                    target = image.resolve() if type(image) is Link else image
+                    if not isinstance(target, Image):
+                        raise TypeError(
+                            f"Classifier input {image.id!r} does not resolve to an Image"
+                        )
+                    if isinstance(target, ImageCrop):
+                        left, top, right, bottom = target.coordinates()
+                        if right <= left or bottom <= top:
+                            logger.warning("Skipping empty classifier crop %s", image.id)
+                            continue
+                    split = "val" if validation and image.partition == validation else "train"
+                    destination = log / split / image.name / f"{index:08d}"
+                    if self._export_image(target, destination, min_size):
+                        counts[split][image.name] += 1
+                finally:
+                    progress.advance(task_id)
         print_distribution_table(
             "Class Distribution", classes, counts["train"], counts["val"]
         )
