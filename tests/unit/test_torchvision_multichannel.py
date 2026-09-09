@@ -6,7 +6,10 @@ import tifffile
 from PIL import Image as PILImage
 
 from collectra import Image, ImageClassifierTorchvision, Link, Orientation
-from collectra.tasks.image_classifier.torchvision import _load_classifier_image
+from collectra.tasks.image_classifier.torchvision import (
+    _adapt_rgb_input_channels,
+    _load_classifier_image,
+)
 from collectra.types.images import read_tiff_channels
 
 
@@ -81,7 +84,7 @@ def test_spatial_transforms_and_channel_statistics():
     task = ImageClassifierTorchvision("classifier")
     task._preprocessing = preprocessing(4)
     pixels = torch.arange(75 * 4 * 4, dtype=torch.float32).reshape(75, 4, 4)
-    # RGB statistics must not be repeated across unrelated spectral bands.
+    # 3-length mean/std cannot normalize a 75-channel tensor directly.
     assert torch.equal(task._transforms()(pixels), pixels)
     assert torch.equal(
         task._transforms(training=True, fliplr=1, flipud=1)(pixels), pixels.flip(-1, -2)
@@ -119,19 +122,19 @@ def test_training_and_inference_keep_75_channels(tmp_path, monkeypatch):
     class ReadyModel(torch.nn.Module):
         def __init__(self):
             super().__init__()
-            self.conv = torch.nn.Conv2d(75, 4, 1)
+            self.conv1 = torch.nn.Conv2d(75, 4, 1)
             self.fc = torch.nn.Linear(4, 2)
 
         def forward(self, pixels):
             assert pixels.shape[1] == 75
-            return self.fc(self.conv(pixels).mean(dim=(2, 3)))
+            return self.fc(self.conv1(pixels).mean(dim=(2, 3)))
 
     # Simulate the user's separately adapted model factory, including checkpoint reload.
     monkeypatch.setattr(models, "get_model", lambda *args, **kwargs: ReadyModel())
     task = ImageClassifierTorchvision(
         "classifier", model=ReadyModel(), output=["Pollen", "Spore"]
     )
-    task._architecture = "ready-model"
+    task._architecture = "resnet18"
     task._categories = ["Pollen", "Spore"]
     task._preprocessing = preprocessing(8)
     images = []
@@ -157,8 +160,8 @@ def test_training_and_inference_keep_75_channels(tmp_path, monkeypatch):
         wandb=False,
     )
     assert task._preprocessing["channels"] == 75
-    assert task._preprocessing["mean"] == [0.0] * 75
-    assert task._preprocessing["std"] == [1.0] * 75
+    assert task._preprocessing["mean"] == preprocessing()["mean"] * 25
+    assert task._preprocessing["std"] == preprocessing()["std"] * 25
     checkpoint = result.save_dir / "weights" / "best.pt"
     reloaded = ImageClassifierTorchvision(
         "classifier", model=checkpoint, output=["Pollen", "Spore"], device="cpu"
@@ -170,7 +173,7 @@ def test_training_and_inference_keep_75_channels(tmp_path, monkeypatch):
     assert type(prediction) is Link
     assert prediction.target is images[0]
     assert prediction.name in ["Pollen", "Spore"]
-    assert reloaded.model.conv.in_channels == 75
+    assert reloaded.model.conv1.in_channels == 75
 
 
 def test_rgb_loader_and_transforms_preserve_existing_behavior(tmp_path):
@@ -191,3 +194,203 @@ def test_rgb_loader_and_transforms_preserve_existing_behavior(tmp_path):
         ]
     )(pixels)
     assert torch.equal(task._transforms()(pixels), expected)
+
+
+@pytest.mark.parametrize("channels,num_views", [(15, 5), (75, 25)])
+def test_multiview_rgb_statistics_repeat_in_order(tmp_path, channels, num_views):
+    for split in ("train", "val"):
+        directory = tmp_path / split / "Pollen"
+        directory.mkdir(parents=True)
+        tifffile.imwrite(
+            directory / "sample.tif",
+            np.zeros((channels, 4, 4), dtype="uint8"),
+            photometric="minisblack",
+            metadata={"axes": "CYX"},
+        )
+    task = ImageClassifierTorchvision("classifier")
+    task._preprocessing = preprocessing(4)
+    base_mean = list(task._preprocessing["mean"])
+    base_std = list(task._preprocessing["std"])
+    task._make_datasets(tmp_path / "train", tmp_path / "val", {})
+    assert task._input_channels == channels
+    assert task._preprocessing["mean"] == base_mean * num_views
+    assert task._preprocessing["std"] == base_std * num_views
+
+
+def test_non_divisible_channel_count_uses_identity_normalization(tmp_path):
+    for split in ("train", "val"):
+        directory = tmp_path / split / "Pollen"
+        directory.mkdir(parents=True)
+        tifffile.imwrite(
+            directory / "sample.tif",
+            np.zeros((10, 4, 4), dtype="uint8"),
+            photometric="minisblack",
+            metadata={"axes": "CYX"},
+        )
+    task = ImageClassifierTorchvision("classifier")
+    task._preprocessing = preprocessing(4)
+    task._make_datasets(tmp_path / "train", tmp_path / "val", {})
+    assert task._input_channels == 10
+    assert task._preprocessing["mean"] == [0.0] * 10
+    assert task._preprocessing["std"] == [1.0] * 10
+
+
+def test_adapt_rgb_input_channels_repeats_and_scales_weights():
+    import torch
+
+    class TinyResNet(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 2, 1, bias=True)
+
+    model = TinyResNet()
+    with torch.no_grad():
+        model.conv1.weight.copy_(torch.arange(6, dtype=torch.float32).reshape(2, 3, 1, 1))
+        model.conv1.bias.copy_(torch.tensor([1.0, -1.0]))
+    original = model.conv1.weight.detach().clone()
+    _adapt_rgb_input_channels(model, 15)
+    assert model.conv1.in_channels == 15
+    expected = original.repeat(1, 5, 1, 1) / 5
+    assert torch.equal(model.conv1.weight, expected)
+    assert torch.equal(model.conv1.bias, torch.tensor([1.0, -1.0]))
+
+
+def test_checkpoint_load_restores_input_channels(tmp_path, monkeypatch):
+    import torch
+    from torchvision import models
+
+    class TinyResNet(torch.nn.Module):
+        def __init__(self, in_channels=3):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(in_channels, 4, 1)
+            self.pool = torch.nn.AdaptiveAvgPool2d(1)
+            self.fc = torch.nn.Linear(4, 2)
+
+        def forward(self, pixels):
+            return self.fc(self.pool(self.conv1(pixels)).flatten(1))
+
+    checkpoint_model = TinyResNet(3)
+    _adapt_rgb_input_channels(checkpoint_model, 15)
+    checkpoint = {
+        "architecture": "resnet18",
+        "model_kwargs": {},
+        "classes": ["Pollen", "Spore"],
+        "preprocessing": preprocessing(4),
+        "state_dict": checkpoint_model.state_dict(),
+        "input_channels": 15,
+    }
+    path = tmp_path / "multichannel.pt"
+    torch.save(checkpoint, path)
+    monkeypatch.setattr(models, "get_model", lambda *args, **kwargs: TinyResNet(3))
+    task = ImageClassifierTorchvision("classifier", model=path)
+    task._load()
+    assert task._input_channels == 15
+    assert task.model.conv1.in_channels == 15
+
+
+def test_checkpoint_load_without_input_channels_defaults_to_3(tmp_path, monkeypatch):
+    import torch
+    from torchvision import models
+
+    class TinyResNet(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 4, 1)
+            self.pool = torch.nn.AdaptiveAvgPool2d(1)
+            self.fc = torch.nn.Linear(4, 2)
+
+        def forward(self, pixels):
+            return self.fc(self.pool(self.conv1(pixels)).flatten(1))
+
+    checkpoint_model = TinyResNet()
+    checkpoint = {
+        "architecture": "resnet18",
+        "model_kwargs": {},
+        "classes": ["Pollen", "Spore"],
+        "preprocessing": preprocessing(4),
+        "state_dict": checkpoint_model.state_dict(),
+    }
+    path = tmp_path / "legacy.pt"
+    torch.save(checkpoint, path)
+    monkeypatch.setattr(models, "get_model", lambda *args, **kwargs: TinyResNet())
+    task = ImageClassifierTorchvision("classifier", model=path)
+    task._load()
+    assert task._input_channels == 3
+    assert task.model.conv1.in_channels == 3
+
+
+def test_adapt_rgb_input_channels_requires_conv1():
+    import torch
+
+    class NoConv1(torch.nn.Module):
+        pass
+
+    with pytest.raises(ValueError, match="does not expose a ResNet-style conv1"):
+        _adapt_rgb_input_channels(NoConv1(), 15)
+
+
+def test_adapt_rgb_input_channels_requires_conv1_conv2d():
+    import torch
+
+    class BadConv1(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Linear(3, 4)
+
+    with pytest.raises(ValueError, match="Expected model.conv1 to be Conv2d"):
+        _adapt_rgb_input_channels(BadConv1(), 15)
+
+
+def test_unsupported_architecture_fails_for_multichannel_training(tmp_path):
+    import torch
+
+    class TinyResNet(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 4, 1)
+            self.fc = torch.nn.Linear(4, 2)
+
+    task = ImageClassifierTorchvision("classifier", model=TinyResNet())
+    task._architecture = "efficientnet_b0"
+    task._input_channels = 15
+    task._categories = ["Pollen", "Spore"]
+    with pytest.raises(
+        ValueError,
+        match="supported only for resnet18, resnet34, and resnet50",
+    ):
+        task._prepare_training_model(["Pollen", "Spore"], pretrained=False, freeze=False)
+
+
+def test_unsupported_architecture_fails_for_multichannel_checkpoint_load(
+    tmp_path, monkeypatch
+):
+    import torch
+    from torchvision import models
+
+    class TinyResNet(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 4, 1)
+            self.pool = torch.nn.AdaptiveAvgPool2d(1)
+            self.fc = torch.nn.Linear(4, 2)
+
+        def forward(self, pixels):
+            return self.fc(self.pool(self.conv1(pixels)).flatten(1))
+
+    checkpoint = {
+        "architecture": "efficientnet_b0",
+        "model_kwargs": {},
+        "classes": ["Pollen", "Spore"],
+        "preprocessing": preprocessing(4),
+        "state_dict": TinyResNet().state_dict(),
+        "input_channels": 15,
+    }
+    path = tmp_path / "unsupported.pt"
+    torch.save(checkpoint, path)
+    monkeypatch.setattr(models, "get_model", lambda *args, **kwargs: TinyResNet())
+    task = ImageClassifierTorchvision("classifier", model=path)
+    with pytest.raises(
+        ValueError,
+        match="supported only for resnet18, resnet34, and resnet50",
+    ):
+        task._load()

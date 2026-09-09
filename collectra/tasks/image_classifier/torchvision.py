@@ -139,6 +139,19 @@ def _disable_auxiliary_heads(model) -> None:
             setattr(model, name, None)
 
 
+def _ensure_supported_multichannel_architecture(
+    architecture: str, input_channels: int
+) -> None:
+    if input_channels == 3:
+        return
+    supported = {"resnet18", "resnet34", "resnet50"}
+    if architecture not in supported:
+        raise ValueError(
+            f"{input_channels}-channel input adaptation is currently supported only for "
+            "resnet18, resnet34, and resnet50"
+        )
+
+
 class ImageClassifierTorchvision(TorchClassifierTask):
     """Train torchvision classifiers and return predicted class Links."""
 
@@ -152,6 +165,7 @@ class ImageClassifierTorchvision(TorchClassifierTask):
         self._model_kwargs: dict = {}
         self._preprocessing: dict = {}
         self._device = "cpu"
+        self._input_channels = 3
 
     def _transforms(
         self, *, training: bool = False, fliplr: float = 0.0, flipud: float = 0.0
@@ -224,16 +238,27 @@ class ImageClassifierTorchvision(TorchClassifierTask):
             )
         channels = next(iter(detected.values()))
         self._preprocessing["channels"] = channels
+        self._input_channels = channels
         if (
             channels != 3
             and len(self._preprocessing["mean"]) == len(self._preprocessing["std"]) == 3
         ):
-            logger.info(
-                "Using identity normalization for %d channels; RGB statistics do not apply",
-                channels,
-            )
-            self._preprocessing["mean"] = [0.0] * channels
-            self._preprocessing["std"] = [1.0] * channels
+            if channels % 3 == 0:
+                num_views = channels // 3
+                logger.info(
+                    "Detected %d RGB views (%d channels); repeating pretrained RGB normalization",
+                    num_views,
+                    channels,
+                )
+                self._preprocessing["mean"] = self._preprocessing["mean"] * num_views
+                self._preprocessing["std"] = self._preprocessing["std"] * num_views
+            else:
+                logger.info(
+                    "Using identity normalization for %d channels; channel count is not divisible by 3",
+                    channels,
+                )
+                self._preprocessing["mean"] = [0.0] * channels
+                self._preprocessing["std"] = [1.0] * channels
         train.transform = self._transforms(training=True, **augmentation)
         val.transform = self._transforms()
         return train, val
@@ -271,6 +296,17 @@ class ImageClassifierTorchvision(TorchClassifierTask):
             model = models.get_model(
                 self._architecture, weights=None, **self._model_kwargs
             )
+            self._input_channels = checkpoint.get("input_channels", 3)
+
+            if self._input_channels != 3:
+                _ensure_supported_multichannel_architecture(
+                    self._architecture, self._input_channels
+                )
+                _adapt_rgb_input_channels(
+                    model,
+                    self._input_channels,
+                )
+
             _disable_auxiliary_heads(model)
             _replace_head(model, len(self._categories))
             model.load_state_dict(checkpoint["state_dict"])
@@ -487,6 +523,7 @@ class ImageClassifierTorchvision(TorchClassifierTask):
             "format_version": 1,
             "architecture": self._architecture,
             "model_kwargs": self._model_kwargs,
+            "input_channels": self._input_channels,
             "classes": self._categories,
             "preprocessing": self._preprocessing,
             "state_dict": {
@@ -501,6 +538,17 @@ class ImageClassifierTorchvision(TorchClassifierTask):
         import torch
 
         self._load(pretrained=pretrained)
+
+        if self._input_channels != 3:
+            _ensure_supported_multichannel_architecture(
+                self._architecture,
+                self._input_channels,
+            )
+            _adapt_rgb_input_channels(
+                self.model,
+                self._input_channels,
+            )
+
         # Retain a fine-tuned head only when its class order still matches exactly.
         if classes != self._categories:
             _replace_head(self.model, len(classes))
@@ -522,3 +570,68 @@ class ImageClassifierTorchvision(TorchClassifierTask):
 
     def _forward(self, pixels):
         return self.model(pixels.to(self._device))
+
+
+def _adapt_rgb_input_channels(model, input_channels: int):
+    import torch
+
+    if not hasattr(model, "conv1"):
+        raise ValueError(
+            f"{type(model).__name__} does not expose a ResNet-style conv1"
+        )
+
+    old_conv = model.conv1
+
+    if not isinstance(old_conv, torch.nn.Conv2d):
+        raise ValueError(
+            f"Expected model.conv1 to be Conv2d, got {type(old_conv).__name__}"
+        )
+
+    if old_conv.in_channels == input_channels:
+        return
+
+    if old_conv.in_channels != 3:
+        raise ValueError(
+            f"Expected source model to have 3 input channels, "
+            f"got {old_conv.in_channels}"
+        )
+
+    if old_conv.groups != 1:
+        raise ValueError(
+            f"Cannot adapt grouped conv1 with groups={old_conv.groups}; expected 1"
+        )
+
+    if input_channels % 3 != 0:
+        raise ValueError(
+            f"Cannot adapt RGB pretrained weights to {input_channels} channels: "
+            "channel count must be divisible by 3."
+        )
+
+    num_views = input_channels // 3
+
+    new_conv = torch.nn.Conv2d(
+        in_channels=input_channels,
+        out_channels=old_conv.out_channels,
+        kernel_size=old_conv.kernel_size,
+        stride=old_conv.stride,
+        padding=old_conv.padding,
+        dilation=old_conv.dilation,
+        groups=old_conv.groups,
+        bias=old_conv.bias is not None,
+        padding_mode=old_conv.padding_mode,
+    ).to(
+        device=old_conv.weight.device,
+        dtype=old_conv.weight.dtype,
+    )
+
+    with torch.no_grad():
+        new_conv.weight.copy_(
+            old_conv.weight.repeat(1, num_views, 1, 1)
+            / num_views
+        )
+
+        if old_conv.bias is not None:
+            new_conv.bias.copy_(old_conv.bias)
+
+    model.conv1 = new_conv
+
