@@ -10,7 +10,7 @@ from cappa import Arg
 from PIL import Image as PillowImage
 
 from collectra.cli import command
-from collectra.types.images import Image, ImageCrop
+from collectra.types.images import Image, ImageCrop, image_channel_count
 from collectra.types.links import Link
 from collectra.utils import change_dir
 
@@ -28,6 +28,36 @@ if TYPE_CHECKING:
 __all__ = ["ImageClassifierYOLO"]
 
 logger = get_logger(__name__)
+
+
+def _classification_channels(*roots):
+    """Inspect every prepared image using metadata, before starting training."""
+    detected = {}
+    for root in roots:
+        if root is None:
+            continue
+        for path in sorted(Path(root).rglob("*")):
+            if path.is_file() and path.suffix.lower() in Image.image_types():
+                try:
+                    detected[path] = image_channel_count(path)
+                except Exception as error:
+                    raise ValueError(
+                        f"Cannot determine channels for {path}: {error}"
+                    ) from error
+    if not detected:
+        raise ValueError("No prepared classification images found")
+    if len(set(detected.values())) != 1:
+        details = ", ".join(
+            f"{path}: {count} channels" for path, count in detected.items()
+        )
+        raise ValueError(
+            f"Inconsistent input channel counts in classifier dataset: {details}"
+        )
+    channels = next(iter(detected.values()))
+    tensor_loader = channels != 3 or any(
+        p.suffix.lower() in {".tif", ".tiff"} for p in detected
+    )
+    return channels, tensor_loader
 
 
 class ImageClassifierYOLO(YOLOTask):
@@ -50,6 +80,32 @@ class ImageClassifierYOLO(YOLOTask):
         image: Image = args[0]
         self._init_model()
 
+        if (
+            getattr(
+                getattr(self.model, "model", None),
+                "collectra_tensor_classification",
+                False,
+            )
+            or image.get_path().suffix.lower() in {".tif", ".tiff"}
+            or image_channel_count(image.get_path()) != 3
+        ):
+            from .yolo_multichannel import classify_multichannel
+
+            predicted_class = classify_multichannel(self.model, image)
+        else:
+            predicted_class = self._predict_rgb(image)
+
+        outputs = self.output if isinstance(self.output, list) else [self.output]
+        if predicted_class not in outputs:
+            raise ValueError(
+                f"Predicted class {predicted_class!r} is not a configured output: "
+                f"{outputs}"
+            )
+        print(f"Classified as: {predicted_class}")
+
+        return Link(name=predicted_class, target=image)
+
+    def _predict_rgb(self, image):
         if isinstance(image, ImageCrop):
             with tempfile.TemporaryDirectory() as temp_dir:
                 img = image.pil()
@@ -63,16 +119,7 @@ class ImageClassifierYOLO(YOLOTask):
             raise ValueError("No classification probabilities returned.")
 
         top1_index = results.probs.top1
-        predicted_class = results.names[top1_index]
-        outputs = self.output if isinstance(self.output, list) else [self.output]
-        if predicted_class not in outputs:
-            raise ValueError(
-                f"Predicted class {predicted_class!r} is not a configured output: "
-                f"{outputs}"
-            )
-        print(f"Classified as: {predicted_class}")
-
-        return Link(name=predicted_class, target=image)
+        return results.names[top1_index]
 
     @command
     def train(
@@ -150,7 +197,7 @@ class ImageClassifierYOLO(YOLOTask):
         auto_augment: Annotated[
             str,
             Arg(
-                help="Automatic augmentation policy: randaugment, autoaugment, or augmix."
+                help="Automatic augmentation policy: randaugment, autoaugment, or augmix. Skipped for TIFF and non-RGB datasets."
             ),
         ] = "randaugment",
         fliplr: Annotated[
@@ -163,15 +210,21 @@ class ImageClassifierYOLO(YOLOTask):
         ] = 0.0,
         hsv_h: Annotated[
             float,
-            Arg(help="Hue augmentation amount as a fraction."),
+            Arg(
+                help="Hue augmentation amount as a fraction; skipped for TIFF and non-RGB datasets."
+            ),
         ] = 0.015,
         hsv_s: Annotated[
             float,
-            Arg(help="Saturation augmentation amount as a fraction."),
+            Arg(
+                help="Saturation augmentation amount as a fraction; skipped for TIFF and non-RGB datasets."
+            ),
         ] = 0.7,
         hsv_v: Annotated[
             float,
-            Arg(help="Brightness augmentation amount as a fraction."),
+            Arg(
+                help="Brightness augmentation amount as a fraction; skipped for TIFF and non-RGB datasets."
+            ),
         ] = 0.4,
         cls_pw: Annotated[
             float,
@@ -261,11 +314,16 @@ class ImageClassifierYOLO(YOLOTask):
 
         if not isinstance(self.model, YOLO):
             raise ValueError("Expected model to be a YOLO instance for training.")
+        _, tensor_loader = _classification_channels(train, val)
         kwargs["config_file"] = self._prepare_yolo_config(log, classes, train, val)
         kwargs["log"] = f"{log.name}"
         if fold_count:
             kwargs["log"] += f"_fold_{fold_count}"
         params = self._prepare_params(**kwargs)
+        if tensor_loader:
+            from .yolo_multichannel import MultichannelClassificationTrainer
+
+            params["trainer"] = MultichannelClassificationTrainer
         with change_dir(kwargs["base_folder"]):
             results = self.model.train(**params)
         if results is None:
@@ -356,7 +414,22 @@ class ImageClassifierYOLO(YOLOTask):
                 continue
 
             if not dst.exists():
-                if isinstance(target, ImageCrop):
+                if isinstance(target, ImageCrop) and src.suffix.lower() in {
+                    ".tif",
+                    ".tiff",
+                }:
+                    import numpy as np
+                    import tifffile
+                    from .torchvision import _target_tiff_pixels
+
+                    pixels = _target_tiff_pixels(target)
+                    tifffile.imwrite(
+                        dst,
+                        np.ascontiguousarray(pixels.transpose(2, 0, 1)),
+                        photometric="minisblack",
+                        metadata={"axes": "CYX"},
+                    )
+                elif isinstance(target, ImageCrop):
                     source_path = src.resolve()
                     if source_path not in source_images:
                         with PillowImage.open(source_path) as source:
