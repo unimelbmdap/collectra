@@ -309,6 +309,12 @@ class TorchClassifierTask(Task):
         if not classes:
             raise ValueError("No classes provided/found for classifier training")
         log = (Path(kwargs["base_folder"]) / kwargs["log"]).resolve()
+        logger.info(
+            "Preparing classifier assets at %s (use_existing=%s, workers=%d)",
+            log,
+            bool(kwargs.get("use_existing", False)),
+            workers,
+        )
         train_dir, val_dir = self._prepare_assets(
             classes,
             log,
@@ -319,12 +325,33 @@ class TorchClassifierTask(Task):
             workers=workers,
             use_existing=bool(kwargs.get("use_existing", False)),
         )
+        logger.info("Asset preparation complete: train=%s val=%s", train_dir, val_dir)
         # Load preprocessing config before dataset construction so channel
         # detection and normalization logic can run on real sample files.
+        logger.info(
+            "Loading model for preprocessing (model=%s, pretrained=%s)",
+            self.model,
+            kwargs.get("pretrained", True),
+        )
         self._load(pretrained=kwargs.get("pretrained", True))
+        logger.info("Building datasets and detecting channel count")
         train_data, val_data = self._make_datasets(train_dir, val_dir, augmentation)
+        logger.info(
+            "Datasets ready: train=%d, val=%d, detected_channels=%s, mean_len=%d, std_len=%d",
+            len(train_data),
+            len(val_data),
+            getattr(self, "_input_channels", "unknown"),
+            len(self._preprocessing.get("mean", [])),
+            len(self._preprocessing.get("std", [])),
+        )
         freeze = kwargs.get("freeze_backbone", False)
+        logger.info("Preparing training model (freeze_backbone=%s)", freeze)
         self._prepare_training_model(classes, kwargs.get("pretrained", True), freeze)
+        if hasattr(self.model, "conv1") and hasattr(self.model.conv1, "in_channels"):
+            logger.info(
+                "Model conv1 channels after preparation: %s",
+                self.model.conv1.in_channels,
+            )
         train_loader = DataLoader(
             train_data, batch_size=batch, shuffle=True, num_workers=workers
         )
@@ -332,6 +359,13 @@ class TorchClassifierTask(Task):
             DataLoader(val_data, batch_size=batch, num_workers=workers)
             if len(val_data)
             else None
+        )
+        logger.info(
+            "DataLoaders ready: train_batches=%d, val_batches=%d, batch=%d, workers=%d",
+            len(train_loader),
+            len(val_loader) if val_loader is not None else 0,
+            batch,
+            workers,
         )
         if val_loader is None and kwargs.get("validation"):
             raise ValueError(
@@ -378,6 +412,7 @@ class TorchClassifierTask(Task):
         history, best_loss, best_metrics, stale = [], math.inf, {}, 0
         try:
             for epoch in range(1, epochs + 1):
+                logger.info("Starting epoch %d/%d", epoch, epochs)
                 self.model.train(
                     not freeze
                 )  # Frozen BatchNorm statistics must remain frozen too.
@@ -426,12 +461,31 @@ class TorchClassifierTask(Task):
         from torch.nn import functional as F
 
         total, correct, correct5, total_loss = 0, 0, 0, 0.0
+        first_batch = True
+        phase = "train" if optimizer is not None else "val"
         for pixels, labels in loader:
+            if first_batch:
+                approximate_mib = pixels.numel() * pixels.element_size() / (1024 * 1024)
+                logger.info(
+                    "%s first batch: pixels_shape=%s, labels_shape=%s, dtype=%s, approx_input_mib=%.1f",
+                    phase,
+                    tuple(pixels.shape),
+                    tuple(labels.shape),
+                    pixels.dtype,
+                    approximate_mib,
+                )
+                first_batch = False
             labels = labels.to(self._device)
             if optimizer is not None:
                 optimizer.zero_grad(set_to_none=True)
-            logits = self._forward(pixels)
-            loss = F.cross_entropy(logits, labels)
+            try:
+                logits = self._forward(pixels)
+                loss = F.cross_entropy(logits, labels)
+            except RuntimeError as error:
+                raise RuntimeError(
+                    f"{phase} step failed for input shape {tuple(pixels.shape)} "
+                    f"on device {self._device}: {error}"
+                ) from error
             if optimizer is not None:
                 loss.backward()
                 optimizer.step()
