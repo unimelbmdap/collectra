@@ -255,6 +255,38 @@ def test_adapt_rgb_input_channels_repeats_and_scales_weights():
     assert torch.equal(model.conv1.bias, torch.tensor([1.0, -1.0]))
 
 
+def test_detected_channels_expand_resnet_conv1_for_training(tmp_path):
+    import torch
+
+    class TinyResNet(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 4, 1)
+            self.pool = torch.nn.AdaptiveAvgPool2d(1)
+            self.fc = torch.nn.Linear(4, 2)
+
+        def forward(self, pixels):
+            return self.fc(self.pool(self.conv1(pixels)).flatten(1))
+
+    for split in ("train", "val"):
+        directory = tmp_path / split / "Pollen"
+        directory.mkdir(parents=True)
+        tifffile.imwrite(
+            directory / "sample.tif",
+            np.zeros((15, 4, 4), dtype="uint8"),
+            photometric="minisblack",
+            metadata={"axes": "CYX"},
+        )
+
+    task = ImageClassifierTorchvision("classifier", model=TinyResNet())
+    task._architecture = "resnet18"
+    task._preprocessing = preprocessing(4)
+    task._make_datasets(tmp_path / "train", tmp_path / "val", {})
+    task._prepare_training_model(["Pollen", "Spore"], pretrained=False, freeze=False)
+    assert task._input_channels == 15
+    assert task.model.conv1.in_channels == 15
+
+
 def test_checkpoint_load_restores_input_channels(tmp_path, monkeypatch):
     import torch
     from torchvision import models
@@ -394,3 +426,69 @@ def test_unsupported_architecture_fails_for_multichannel_checkpoint_load(
         match="supported only for resnet18, resnet34, and resnet50",
     ):
         task._load()
+
+
+def test_train_adapts_resnet_conv1_before_first_forward(tmp_path, monkeypatch):
+    import torch
+    from types import SimpleNamespace
+    from torchvision import models
+    from torchvision.transforms import InterpolationMode
+
+    class TinyResNet(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 4, 1)
+            self.pool = torch.nn.AdaptiveAvgPool2d(1)
+            self.fc = torch.nn.Linear(4, 2)
+
+        def forward(self, pixels):
+            return self.fc(self.pool(self.conv1(pixels)).flatten(1))
+
+    weights = SimpleNamespace(
+        meta={"categories": [str(index) for index in range(1000)]},
+        transforms=lambda: SimpleNamespace(
+            crop_size=[8],
+            resize_size=[8],
+            mean=[0.5, 0.4, 0.3],
+            std=[0.2, 0.2, 0.2],
+            interpolation=InterpolationMode.BILINEAR,
+        ),
+    )
+    monkeypatch.setattr(models, "get_model", lambda *args, **kwargs: TinyResNet())
+    monkeypatch.setattr(
+        models, "get_model_weights", lambda name: SimpleNamespace(DEFAULT=weights)
+    )
+
+    images = []
+    for index, (name, partition) in enumerate(
+        [
+            ("Pollen", "train"),
+            ("Spore", "train"),
+            ("Pollen", "val"),
+            ("Spore", "val"),
+        ]
+    ):
+        path = tmp_path / f"sample-{index}.tif"
+        tifffile.imwrite(
+            path,
+            np.full((15, 8, 8), index + 1, dtype="float32"),
+            photometric="minisblack",
+            metadata={"axes": "CYX"},
+        )
+        images.append(Image(name=name, data=path, partition=partition))
+
+    task = ImageClassifierTorchvision("classifier", model="resnet18")
+    result = task._train(
+        *images,
+        base_folder=tmp_path,
+        log="run",
+        validation="val",
+        epochs=1,
+        batch=2,
+        workers=0,
+        device="cpu",
+        wandb=False,
+    )
+    assert task._input_channels == 15
+    assert task.model.conv1.in_channels == 15
+    assert result.results_dict["classes"] == ["Pollen", "Spore"]

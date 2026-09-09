@@ -319,9 +319,12 @@ class TorchClassifierTask(Task):
             workers=workers,
             use_existing=bool(kwargs.get("use_existing", False)),
         )
+        # Load preprocessing config before dataset construction so channel
+        # detection and normalization logic can run on real sample files.
+        self._load(pretrained=kwargs.get("pretrained", True))
+        train_data, val_data = self._make_datasets(train_dir, val_dir, augmentation)
         freeze = kwargs.get("freeze_backbone", False)
         self._prepare_training_model(classes, kwargs.get("pretrained", True), freeze)
-        train_data, val_data = self._make_datasets(train_dir, val_dir, augmentation)
         train_loader = DataLoader(
             train_data, batch_size=batch, shuffle=True, num_workers=workers
         )
