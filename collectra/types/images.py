@@ -171,7 +171,7 @@ class Image(Artefact):
 
     @staticmethod
     def image_types() -> list[str]:
-        return [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp"]
+        return [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp", ".tif"]
 
     @property
     def width(self) -> int | float:
