@@ -7,6 +7,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+from rich.console import Console
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -77,6 +78,7 @@ def prepare_classification_inputs(
 
 
 logger = get_logger(__name__)
+console = Console()
 
 
 @dataclass
@@ -411,42 +413,71 @@ class TorchClassifierTask(Task):
                 logger.warning("W&B init skipped: %s", error)
         history, best_loss, best_metrics, stale = [], math.inf, {}, 0
         try:
-            for epoch in range(1, epochs + 1):
-                logger.info("Starting epoch %d/%d", epoch, epochs)
-                self.model.train(
-                    not freeze
-                )  # Frozen BatchNorm statistics must remain frozen too.
-                train_metrics = self._epoch(train_loader, optimizer)
-                self.model.eval()
-                with torch.inference_mode():
-                    val_metrics = (
-                        self._epoch(val_loader) if val_loader is not None else None
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("{task.description}"),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TextColumn("•"),
+                TimeElapsedColumn(),
+                TextColumn("•"),
+                TimeRemainingColumn(),
+            ) as progress:
+                epoch_task_id = progress.add_task("Training epochs...", total=epochs)
+                for epoch in range(1, epochs + 1):
+                    progress.update(epoch_task_id, description=f"Training epoch {epoch}/{epochs}")
+                    logger.info("Starting epoch %d/%d", epoch, epochs)
+                    self.model.train(
+                        not freeze
+                    )  # Frozen BatchNorm statistics must remain frozen too.
+                    train_metrics = self._epoch(train_loader, optimizer)
+                    self.model.eval()
+                    with torch.inference_mode():
+                        val_metrics = (
+                            self._epoch(val_loader) if val_loader is not None else None
+                        )
+                    metrics = {
+                        "epoch": epoch,
+                        **{f"train_{k}": v for k, v in train_metrics.items()},
+                    }
+                    metrics.update({f"val_{k}": v for k, v in (val_metrics or {}).items()})
+                    history.append(metrics)
+                    score = val_metrics["loss"] if val_metrics else train_metrics["loss"]
+                    if not math.isfinite(score):
+                        raise ValueError("Training produced a non-finite loss")
+                    checkpoint = self._checkpoint(epoch, metrics)
+                    torch.save(checkpoint, weights_dir / "last.pt")
+                    if score < best_loss:
+                        best_loss, best_metrics, stale = score, dict(metrics), 0
+                        torch.save(checkpoint, weights_dir / "best.pt")
+                    else:
+                        stale += 1
+                    if wandb_run is not None:
+                        wandb_run.log(metrics)
+                    logger.info("Epoch %d/%d: %s", epoch, epochs, metrics)
+                    metrics_line = (
+                        f"Epoch {epoch}/{epochs} "
+                        f"train_loss={metrics['train_loss']:.4f} "
+                        f"train_acc={metrics['train_accuracy']:.4f} "
+                        f"train_top5={metrics['train_top5_accuracy']:.4f}"
                     )
-                metrics = {
-                    "epoch": epoch,
-                    **{f"train_{k}": v for k, v in train_metrics.items()},
-                }
-                metrics.update({f"val_{k}": v for k, v in (val_metrics or {}).items()})
-                history.append(metrics)
-                score = val_metrics["loss"] if val_metrics else train_metrics["loss"]
-                if not math.isfinite(score):
-                    raise ValueError("Training produced a non-finite loss")
-                checkpoint = self._checkpoint(epoch, metrics)
-                torch.save(checkpoint, weights_dir / "last.pt")
-                if score < best_loss:
-                    best_loss, best_metrics, stale = score, dict(metrics), 0
-                    torch.save(checkpoint, weights_dir / "best.pt")
-                else:
-                    stale += 1
-                if wandb_run is not None:
-                    wandb_run.log(metrics)
-                logger.info("Epoch %d/%d: %s", epoch, epochs, metrics)
-                with (log / "history.csv").open("w", newline="") as stream:
-                    writer = csv.DictWriter(stream, fieldnames=list(metrics))
-                    writer.writeheader()
-                    writer.writerows(history)
-                if val_loader is not None and patience and stale >= patience:
-                    break
+                    if val_metrics is not None:
+                        metrics_line += (
+                            f" val_loss={metrics['val_loss']:.4f} "
+                            f"val_acc={metrics['val_accuracy']:.4f} "
+                            f"val_top5={metrics['val_top5_accuracy']:.4f}"
+                        )
+                    console.print(metrics_line)
+                    with (log / "history.csv").open("w", newline="") as stream:
+                        writer = csv.DictWriter(stream, fieldnames=list(metrics))
+                        writer.writeheader()
+                        writer.writerows(history)
+                    progress.advance(epoch_task_id)
+                    if val_loader is not None and patience and stale >= patience:
+                        console.print(
+                            f"Early stopping at epoch {epoch}: no val-loss improvement in {patience} epoch(s)."
+                        )
+                        break
         finally:
             if wandb_run is not None:
                 wandb_run.finish()
