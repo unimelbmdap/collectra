@@ -272,6 +272,11 @@ class ObjectDetectionRFDETR(Task):
             ),
             "early_stopping_use_ema": bool(kwargs.get("early_stopping_use_ema", False)),
         }
+
+        resolution = kwargs.get("resolution")
+        if resolution is not None:
+            params["resolution"] = int(resolution)
+
         augmentation = kwargs.get("augmentation", "default").lower()
         if augmentation != "default":
             preset_names = {
@@ -654,6 +659,10 @@ class ObjectDetectionRFDETR(Task):
                 help="Checkpoint path or pretrained variant: nano, small, base, medium, large, xlarge, or 2xlarge (full RFDETR class names also accepted). XL variants require rfdetr[plus]. 'default' selects Base; omit to keep the configured model."
             ),
         ] = "",
+        resolution: Annotated[
+            float | None,
+            Arg(help="Change default resolution. Valid options will depend on the model type."),
+        ] = None,
     ):
         """Train this RF-DETR object detector."""
         return run_training_command(
@@ -691,6 +700,7 @@ class ObjectDetectionRFDETR(Task):
             lr_component_decay=lr_component_decay,
             warmup_epochs=warmup_epochs,
             model=model,
+            resolution=resolution,
         )
 
     def _train(self, *images: ImageCrop, **kwargs) -> DetectionTrainResult:
