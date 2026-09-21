@@ -18,7 +18,7 @@ import webview
 import yaml
 from rich import print
 
-from collectra_gui.data_display import CollectraGraph, NodeDisplayValue
+from .data_display import CollectraGraph, NodeDisplayValue
 
 app = typer.Typer()
 
