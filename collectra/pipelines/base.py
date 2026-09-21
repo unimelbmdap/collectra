@@ -140,6 +140,13 @@ class Collectra:
             render=render,
         )
 
+    @command(name="gui")
+    def launch_gui(self, debug: bool = False) -> None:
+        """Open this pipeline in the GUI, optionally enabling developer tools."""
+        from collectra.gui.backend import start
+
+        start(workflow=str(self.path.resolve()), ext=self.ext, debug=debug)
+
     @command(name="install")
     def cli_install(self, name: str, bin_dir: Path | None = None) -> None:
         """Install this pipeline as a standalone command."""

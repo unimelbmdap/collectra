@@ -458,3 +458,33 @@ def test_concrete_model_tasks_own_typed_train_commands(capsys):
     assert "--model-name" in detector_help
     assert "--output" in detector_help
     assert "--weight-decay" in detector_help
+
+
+@pytest.mark.parametrize("debug", [False, True])
+def test_pipeline_gui_opens_selected_workflow(tmp_path, monkeypatch, debug):
+    from unittest.mock import MagicMock
+
+    from collectra.gui import backend
+
+    pipeline_dir = tmp_path / "example.collectra"
+    pipeline_dir.mkdir()
+    (pipeline_dir / "pipeline.yaml").write_text(
+        "collectra_pipeline_metadata:\n"
+        "  name: example\n"
+        "  ext: example\n"
+        "  version: '1.0'\n"
+    )
+    create_window = MagicMock()
+    start_webview = MagicMock()
+    monkeypatch.setattr(backend.webview, "create_window", create_window)
+    monkeypatch.setattr(backend.webview, "start", start_webview)
+
+    main(["--pipeline", str(pipeline_dir), "gui", *(["--debug"] if debug else [])])
+
+    create_window.assert_called_once()
+    api = create_window.call_args.kwargs["js_api"]
+    assert api._workflow_dir == pipeline_dir.resolve()
+    assert api._extension == "example"
+    assert api.get_pipeline_yaml()["success"] is True
+    start_webview.assert_called_once()
+    assert start_webview.call_args.kwargs["debug"] is debug
