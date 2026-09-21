@@ -16,7 +16,7 @@ function isImageCropType(type) {
 // own further descendants (so a downstream re-crop doesn't leak into an
 // ancestor's options).
 //
-// pipeline.yaml always puts a task node (detect/ocr/...) between two data
+// The pipeline graph always puts a task node (detect/ocr/...) between two data
 // nodes, so a literal one-hop check would only ever find the task, never
 // the crop it produces. isTaskNode(label) says which nodes are those
 // transparent processing steps — the walk passes through them but stops

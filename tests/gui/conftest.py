@@ -264,22 +264,12 @@ def temp_parent_folder_with_subfolders(tmp_path, sample_yaml_data):
 
 
 @pytest.fixture
-def backend_with_extension():
+def backend_with_extension(tmp_path):
     """Pre-configured GUIBackend with extension set."""
     from collectra.gui.backend import GUIBackend
+    from collectra.pipelines.base import Collectra
 
-    # Bypass _identify_extension by creating instance with minimal setup
-    backend = object.__new__(GUIBackend)
-    backend._graph = None
-    backend._yaml_path = None
-    backend._window = None
-    backend._workflow_dir = None
-    backend._collectra_folders = []
-    backend._parent_folder = None
-    backend._global_labels = set()
-    backend._global_label_counts = {}
-    backend._extension = "collectra"
-    return backend
+    return GUIBackend(Collectra("test", "collectra", "1.0", path=tmp_path))
 
 
 @pytest.fixture
@@ -412,49 +402,23 @@ def temp_grapto_folder_with_png(tmp_path, sample_yaml_data):
 
 
 @pytest.fixture
-def backend_with_grapto_extension():
+def backend_with_grapto_extension(tmp_path):
     """Pre-configured GUIBackend with grapto extension set."""
     from collectra.gui.backend import GUIBackend
+    from collectra.pipelines.base import Collectra
 
-    backend = object.__new__(GUIBackend)
-    backend._graph = None
-    backend._yaml_path = None
-    backend._window = None
-    backend._collectra_folders = []
-    backend._parent_folder = None
-    backend._global_labels = set()
-    backend._global_label_counts = {}
-    backend._extension = "grapto"
-    return backend
+    return GUIBackend(Collectra("test", "grapto", "1.0", path=tmp_path))
 
 
 @pytest.fixture
 def temp_project_with_collectra(tmp_path):
-    """Project root holding a .collectra folder with pipeline.yaml, a PNG logo, and a CSS theme.
-
-    The collectra_pipeline_metadata block always carries the same five keys
-    (name, ext, version, logo, theme); only the values differ per project.
-    """
-    import yaml
+    """Project root holding a .collectra folder with a PNG logo and CSS theme."""
 
     collectra = tmp_path / "proj.collectra"
     collectra.mkdir()
 
     # Arbitrary, deliberately non-"Grapto" sample values — proves the readers are
     # generic: they pull whatever the metadata holds, not any hardcoded project name.
-    pipeline = {
-        "collectra_pipeline_metadata": {
-            "name": "ExampleProj",
-            "ext": "demo",
-            "version": "1.0",
-            "logo": "BrandMark.png",
-            "theme": "Palette.css",
-        },
-        "page_node": {"type": "collectra.Image", "output": "img_001"},
-    }
-    with open(collectra / "pipeline.yaml", "w") as f:
-        yaml.dump(pipeline, f)
-
     # Minimal 1x1 PNG
     png_data = (
         b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"

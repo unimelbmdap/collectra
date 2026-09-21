@@ -1427,7 +1427,6 @@
         rel="stylesheet"
         href="annotorious-openseadragon.css">
         <!-- DAG dependencies -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
@@ -1937,7 +1936,7 @@
             modal.classList.remove('visible');
         }
 
-        // A pipeline label's type. pipeline.yaml doesn't type its image/crop
+        // A pipeline label's type. The workflow graph doesn't type its image/crop
         // nodes (they're bare input/output refs), so this is really the
         // results.yaml type for this page's instance; node.detail is a
         // fallback for the typed task nodes.
@@ -1948,7 +1947,7 @@
             return (node && node.detail) || '';
         }
 
-        // pipeline.yaml's own node-kind classification (see parsePipelineYaml) —
+        // the live pipeline graph's own node-kind classification —
         // 'llm'/'detector'/'processor' are processing steps, transparent to
         // imageCropDescendantLabels' walk; anything else is a data node.
         function isDagTaskNode(label) {
@@ -2558,7 +2557,7 @@
                         // page's file-backed markdown/tei node (Page035_markdown,
                         // Page327_markdown, ...) alongside the real pipeline root —
                         // roots()[0] would arbitrarily pick whichever is declared
-                        // first in pipeline.yaml, which is confusing, not "the top
+                        // first in the pipeline, which is confusing, not "the top
                         // of the pipeline". Prefer a genuine, non-page-specific root.
                         const genericRoot = roots.filter(n => !PAGE_NODE_RE.test(n.id()))[0];
                         nextNodeId = (genericRoot || roots[0])?.id();
@@ -3714,10 +3713,9 @@
 
         // ── PIPELINE DAG ─────────────────────────────────────────────────────
 
-        const SKIP_KEYS = new Set(['collectra_pipeline_metadata']);
 
         let cy = null;
-        let lastDagNodes = []; // cached from the last parsePipelineYaml()
+        let lastDagNodes = []; // cached from the live pipeline graph
         let lastDagEdges = [];
 
         function liveDagInstances() {
@@ -3726,7 +3724,7 @@
         let pageNodeTypes = new Map(); // label (DAG node id) -> real type, for the currently loaded page
         // label (DAG node id) -> real results.yaml id(s), for the currently
         // loaded page. Always an array — a detector-type node declares one
-        // output label in pipeline.yaml but can produce any number of real
+        // output label in the pipeline but can produce any number of real
         // instances per page (e.g. multiple detected objects), all sharing
         // that label.
         let pageNodeIds = new Map();
@@ -4120,95 +4118,21 @@
             }
         }
 
-        function parsePipelineYaml(yamlText) {
-            const doc = jsyaml.load(yamlText);
-            const meta = (doc && doc.collectra_pipeline_metadata) || {};
-            const ext  = (meta.ext || '').trim();
-            const nodes = [];
-            const edges = [];
-            const nodeIds = new Set();
-            const implicitIds = new Set();
-
-            for (const [key, val] of Object.entries(doc)) {
-                if (SKIP_KEYS.has(key)) continue;
-                if (typeof val === 'string' || typeof val === 'number') continue;
-                if (val && typeof val === 'object') nodeIds.add(key);
-            }
-
-            for (const [key, val] of Object.entries(doc)) {
-                if (!val || typeof val !== 'object') continue;
-                const inputs  = Array.isArray(val.input)  ? val.input  : val.input  ? [val.input]  : [];
-                const outputs = Array.isArray(val.output) ? val.output : val.output ? [val.output] : [];
-                [...inputs, ...outputs].forEach(ref => {
-                    if (!nodeIds.has(ref)) implicitIds.add(ref);
-                });
-            }
-
-            for (const [key, val] of Object.entries(doc)) {
-                if (SKIP_KEYS.has(key)) continue;
-                if (typeof val === 'string' || typeof val === 'number') continue;
-                if (!val || typeof val !== 'object') continue;
-
-                const detail = val.type || '';
-
-                // Tasks consume an input; data nodes (Text/Image/ImageCrop) don't.
-                // Splitting on input presence (rather than matching the type
-                // string) correctly classifies tasks like ImageClassifierYOLO
-                // and ImageOrienter, whose names both contain "Image".
-                const hasInput = val.input !== undefined && val.input !== null;
-                let nodeType;
-                if (!hasInput) {
-                    nodeType = 'data';
-                } else if (val.type && val.type.includes('LLM')) {
-                    nodeType = 'llm';
-                } else if (val.type && (val.type.includes('ObjectDetection') || val.type.includes('ImageClassifier'))) {
-                    nodeType = 'detector';
-                } else {
-                    nodeType = 'processor';
-                }
-
-                const inputs  = Array.isArray(val.input)  ? val.input  : val.input  ? [val.input]  : [];
-                const outputs = Array.isArray(val.output) ? val.output : val.output ? [val.output] : [];
-                nodes.push({ id: key, label: key, nodeType, detail, inputs, outputs, params: val.params || {} });
-
-                for (const inp of inputs) {
-                    if (nodeIds.has(inp) || implicitIds.has(inp)) edges.push({ source: inp, target: key });
-                }
-                for (const out of outputs) {
-                    if (nodeIds.has(out) || implicitIds.has(out)) edges.push({ source: key, target: out });
-                }
-            }
-
-            implicitIds.forEach(id => {
-                nodes.push({ id, label: id, nodeType: 'implicit', detail: '', inputs: [], outputs: [], params: {} });
-            });
-
-            const edgeSet = new Set();
-            const dedupedEdges = edges.filter(e => {
-                const k = `${e.source}→${e.target}`;
-                if (edgeSet.has(k)) return false;
-                edgeSet.add(k);
-                return true;
-            });
-
-            return { nodes, edges: dedupedEdges, ext };
-        }
-
         async function loadAndRenderDag() {
             if (!apiReady) return;
             const placeholder = document.getElementById('dagPlaceholder');
             const cyDiv = document.getElementById('cy');
             try {
-                const result = await window.pywebview.api.get_pipeline_yaml();
+                const result = await window.pywebview.api.get_pipeline_graph();
                 if (!result.success) {
-                    placeholder.textContent = result.error || 'No pipeline.yaml found.';
+                    placeholder.textContent = result.error || 'Pipeline graph unavailable.';
                     placeholder.style.display = 'block';
                     if (cyDiv) cyDiv.style.display = 'none';
                     return;
                 }
-                const { nodes, edges, ext } = parsePipelineYaml(result.yaml_text);
+                const { nodes, edges, ext } = result;
                 if (!ext) {
-                    placeholder.textContent = 'No pipeline extension defined in pipeline.yaml.';
+                    placeholder.textContent = 'No pipeline extension defined.';
                     placeholder.style.display = 'block';
                     if (cyDiv) cyDiv.style.display = 'none';
                     return;
@@ -4351,7 +4275,7 @@
             instance.on('mouseover', 'node', function(evt) { showDagTooltip(evt, evt.target.data(), tooltipEl, containerEl); });
             instance.on('mouseout',  'node', function()    { hideDagTooltip(tooltipEl); });
             instance.on('mousemove', 'node', function(evt) { moveDagTooltip(evt, tooltipEl, containerEl); });
-            // A DAG node is a pipeline.yaml label, which can have zero, one,
+            // A DAG node is a pipeline label, which can have zero, one,
             // or several real per-page instances (results.yaml) behind it —
             // resolveDagClickTarget picks the one real id when there's
             // exactly one; a label with several is ambiguous on a plain
@@ -5227,7 +5151,7 @@
             // in this page's results.yaml, so its presence is a reliable
             // "this is genuine page data" signal — unlike the DAG's own
             // structural nodeType, which labels any node only ever referenced
-            // as another task's `output:` (never its own top-level pipeline.yaml
+            // as another task's output (never its own top-level pipeline
             // key) as 'implicit' even when it's a perfectly real, editable
             // field, like a canonicaliser's collectra.Text output.
             const isDataNode = pageNodeTypes.has(label);

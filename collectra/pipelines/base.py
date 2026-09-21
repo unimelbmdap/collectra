@@ -76,7 +76,13 @@ class Collectra:
     COLOR_FONT = "black"
 
     def __init__(
-        self, name: str, ext: str, version: str, path: str | Path = "", **kwargs
+        self,
+        name: str,
+        ext: str,
+        version: str,
+        path: str | Path = "",
+        pipeline_metadata: dict | None = None,
+        **kwargs,
     ):
         """Initialize the Collectra workflow.
 
@@ -90,6 +96,12 @@ class Collectra:
         self.name: str = name
         self.ext: str = ext
         self.version: str = version
+        self.pipeline_metadata = {
+            **(pipeline_metadata or {}),
+            "name": name,
+            "ext": ext,
+            "version": version,
+        }
         self.node_manager: NodeGraphManager = NodeGraphManager()
         self.path: Path = Path.cwd() / name if not path else Path(path)
         self.data: dict = kwargs
@@ -111,6 +123,7 @@ class Collectra:
             initials["ext"],
             initials["version"],
             path=config_path.parent,
+            pipeline_metadata=initials,
             **metadata,
         )
 
@@ -145,7 +158,8 @@ class Collectra:
         """Open this pipeline in the GUI, optionally enabling developer tools."""
         from collectra.gui.backend import start
 
-        start(workflow=str(self.path.resolve()), ext=self.ext, debug=debug)
+        self._ensure_workflow_connected()
+        start(pipeline=self, debug=debug)
 
     @command(name="install")
     def cli_install(self, name: str, bin_dir: Path | None = None) -> None:
@@ -962,13 +976,50 @@ class Collectra:
             Dictionary containing pipeline name, extension, and version
             under the PIPELINE_METADATA_KEY.
         """
-        return {
-            self.PIPELINE_METADATA_KEY: {
-                "name": self.name,
-                "ext": self.ext,
-                "version": self.version,
-            }
-        }
+        return {self.PIPELINE_METADATA_KEY: self.pipeline_metadata.copy()}
+
+    def gui_graph(self) -> dict:
+        """Return the live workflow graph in the shape expected by the GUI."""
+        self._ensure_workflow_connected()
+        nodes = []
+        for name in self.node_manager.get_node_names():
+            node = self.node_manager.resolve_node(name)
+            inputs = list(self.node_manager.flow.predecessors(name))
+            outputs = list(self.node_manager.flow.successors(name))
+            params = {}
+
+            if isinstance(node, TaskNode):
+                task = node.get_task()
+                detail = task.get_class_path()
+                params = getattr(task, "params", {})
+                if "LLM" in detail:
+                    node_type = "llm"
+                elif "ObjectDetection" in detail or "ImageClassifier" in detail:
+                    node_type = "detector"
+                else:
+                    node_type = "processor"
+            else:
+                type_names = sorted(type_.get_class_path() for type_ in node.types)
+                detail = ", ".join(type_names)
+                node_type = "data" if node.items else "implicit"
+
+            nodes.append(
+                {
+                    "id": name,
+                    "label": name,
+                    "nodeType": node_type,
+                    "detail": detail,
+                    "inputs": inputs,
+                    "outputs": outputs,
+                    "params": params,
+                }
+            )
+
+        edges = [
+            {"source": source, "target": target}
+            for source, target in self.node_manager.flow.edges
+        ]
+        return {"nodes": nodes, "edges": edges, "ext": self.ext}
 
     def save(self, task_name: str | None = None):
         """Save the workflow configuration to pipeline.yaml."""

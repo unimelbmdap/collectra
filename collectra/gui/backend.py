@@ -11,16 +11,15 @@ import base64
 import enum
 import platform
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING
 
-import typer
 import webview
 import yaml
-from rich import print
 
 from .data_display import CollectraGraph, NodeDisplayValue
 
-app = typer.Typer()
+if TYPE_CHECKING:
+    from collectra.pipelines.base import Collectra
 
 
 class ImageFormat(enum.Enum):
@@ -42,13 +41,14 @@ class GUIBackend:
         window.pywebview.api.methodName(args)
     """
 
-    def __init__(self, workflow: str = "", extension: str = ""):
+    def __init__(self, pipeline: "Collectra"):
         """
         Initialize the API instance.
 
         Sets up the annotation graph, YAML path, and window reference.
         All values are initially None until load_yaml() is called.
         """
+        self._pipeline = pipeline
         self._graph: CollectraGraph | None = None
         self._yaml_path: str | None = None
         self._window = None
@@ -56,22 +56,11 @@ class GUIBackend:
         self._parent_folder: str | None = None
         self._global_labels: set[str] = set()
         self._global_label_counts: dict[str, int] = {}  # {label: total_count}
-        self._extension = self._identify_extension(workflow, extension)
-        self._workflow_dir: Path | None = Path(workflow) if workflow else None
 
-    def _identify_extension(self, workflow: str, extension: str) -> str:
-        workflow_path = Path(workflow)
-        if workflow_path.is_dir() and (workflow_path / "pipeline.yaml").is_file():
-            with open(workflow_path / "pipeline.yaml", "r") as f:
-                config = yaml.safe_load(f)
-            ext = config.get("collectra_pipeline_metadata", {}).get("ext", "")
-            if ext:
-                return ext
-        if extension:
-            return extension
-        raise ValueError(
-            "Either a valid workflow directory or file extension must be provided."
-        )
+    @property
+    def _extension(self) -> str:
+        """Use the extension owned by the live pipeline."""
+        return self._pipeline.ext
 
     def set_window(self, window):
         """Store the window reference for use in dialogs."""
@@ -121,7 +110,9 @@ class GUIBackend:
             return {"success": False, "error": "Window not initialized"}
 
         try:
-            result = self._window.create_file_dialog(dialog_type=webview.FileDialog.FOLDER)
+            result = self._window.create_file_dialog(
+                dialog_type=webview.FileDialog.FOLDER
+            )
 
             if not result or len(result) == 0:
                 return {"success": False, "error": "No folder selected"}
@@ -174,7 +165,9 @@ class GUIBackend:
             return {"success": False, "error": "Window not initialized"}
 
         try:
-            result = self._window.create_file_dialog(dialog_type=webview.FileDialog.FOLDER)
+            result = self._window.create_file_dialog(
+                dialog_type=webview.FileDialog.FOLDER
+            )
 
             if not result or len(result) == 0:
                 return {"success": False, "error": "No folder selected"}
@@ -184,21 +177,6 @@ class GUIBackend:
 
         except Exception as e:
             return {"success": False, "error": str(e)}
-
-    def _detect_ext_near(self, path: Path) -> str:
-        """Search path and its parents for a *.collectra folder and read ext from its pipeline.yaml."""
-        for search_dir in [path, path.parent, path.parent.parent]:
-            if not search_dir.is_dir():
-                continue
-            for entry in search_dir.iterdir():
-                if entry.suffix == ".collectra" and (entry / "pipeline.yaml").exists():
-                    with open(entry / "pipeline.yaml", "r") as f:
-                        config = yaml.safe_load(f)
-                    ext = config.get("collectra_pipeline_metadata", {}).get("ext", "")
-                    if ext:
-                        self._workflow_dir = entry
-                        return ext
-        return ""
 
     def select_collectra_path(self) -> dict:
         """
@@ -212,7 +190,9 @@ class GUIBackend:
             return {"success": False, "error": "Window not initialized"}
 
         try:
-            result = self._window.create_file_dialog(dialog_type=webview.FileDialog.FOLDER)
+            result = self._window.create_file_dialog(
+                dialog_type=webview.FileDialog.FOLDER
+            )
 
             if not result or len(result) == 0:
                 return {"success": False, "error": "No folder selected"}
@@ -224,11 +204,6 @@ class GUIBackend:
             # lookups (get_logo, get_theme_css) can silently keep matching a
             # file from whatever project was open before this new selection.
             self._yaml_path = None
-
-            # Detect extension from the nearest *.collectra/pipeline.yaml
-            detected_ext = self._detect_ext_near(selected_path)
-            if detected_ext:
-                self._extension = detected_ext
 
             if selected_path.suffix == f".{self._extension}":
                 scan_result = self._scan_collectra_folder(selected_path)
@@ -344,15 +319,15 @@ class GUIBackend:
 
         `results.yaml` indexes each node by an internal id (a label plus a
         generated suffix for anything not an original source node), but the
-        DAG built from pipeline.yaml uses the plain label as its node id.
+        The pipeline DAG uses the plain label as its node id.
         Correlating against the DAG must go through `label`, not `id`.
 
         The frontend greys out and disables every DAG node whose id is NOT in
         active_ids, can use node_types[label] to show the node's real type,
         and node_ids[label] to show the real results.yaml id(s) — a list,
         not a single value, since a detector-type node (e.g.
-        collectra.ObjectDetectionYOLO) declares one output label in
-        pipeline.yaml but can produce any number of real instances per page
+        collectra.ObjectDetectionYOLO) declares one output label in the
+        pipeline but can produce any number of real instances per page
         (one per detected object), all sharing that same label.
         """
         if not self._collectra_folders:
@@ -689,7 +664,7 @@ class GUIBackend:
         for node_id in self._graph.nodes:
             node = self._graph.get_node(node_id)
             if node and node.label == label:
-                suffix = node_id[len(label):]
+                suffix = node_id[len(label) :]
                 if suffix.isdigit():
                     existing_numbers.add(int(suffix))
         n = 1
@@ -915,13 +890,14 @@ class GUIBackend:
     def _collectra_dirs(self) -> list[Path]:
         """Return all .collectra directories to search, in priority order.
 
-        Search order: workflow_dir → root itself → root's children → root's parent's children.
+        Search order: pipeline path → root itself → root's children → root's parent's children.
         The parent search lets the user open a book sub-folder (e.g. Livy-Books21-25/)
         while the .collectra lives as a sibling inside the project root (LivyProject/).
         """
         dirs: list[Path] = []
-        if self._workflow_dir and self._workflow_dir.is_dir():
-            dirs.append(self._workflow_dir)
+        pipeline_path = self._pipeline.path
+        if pipeline_path.is_dir():
+            dirs.append(pipeline_path)
         roots: list[Path] = []
         if self._parent_folder:
             roots.append(Path(self._parent_folder))
@@ -939,45 +915,29 @@ class GUIBackend:
                 return
             try:
                 for entry in directory.iterdir():
-                    if entry.is_dir() and entry.suffix == ".collectra" and entry not in seen:
+                    if (
+                        entry.is_dir()
+                        and entry.suffix == ".collectra"
+                        and entry not in seen
+                    ):
                         dirs.append(entry)
                         seen.add(entry)
             except (PermissionError, OSError):
                 pass
 
         for root in roots:
-            _scan(root)           # look inside the selected folder
-            _scan(root.parent)    # look inside the parent (sibling .collectra case)
+            _scan(root)  # look inside the selected folder
+            _scan(root.parent)  # look inside the parent (sibling .collectra case)
 
         return dirs
 
-    def _read_pipeline_metadata(self) -> dict:
-        """Return the collectra_pipeline_metadata block from pipeline.yaml, or {} if absent."""
-        for directory in self._collectra_dirs():
-            try:
-                matches = list(directory.rglob("pipeline.yaml"))
-            except (PermissionError, OSError):
-                continue
-            if matches:
-                try:
-                    with open(matches[0], "r") as f:
-                        data = yaml.safe_load(f) or {}
-                    return data.get("collectra_pipeline_metadata", {}) or {}
-                except Exception:
-                    return {}
-        return {}
+    def _pipeline_metadata(self) -> dict:
+        """Return metadata retained by the live pipeline object."""
+        return self._pipeline.pipeline_metadata.copy()
 
-    def get_pipeline_yaml(self) -> dict:
-        """Read pipeline.yaml from the root of the .collectra directory."""
-        for directory in self._collectra_dirs():
-            pipeline_path = directory / "pipeline.yaml"
-            if pipeline_path.is_file():
-                try:
-                    with open(pipeline_path, "r") as f:
-                        return {"success": True, "yaml_text": f.read()}
-                except Exception as e:
-                    return {"success": False, "error": str(e)}
-        return {"success": False, "error": "No pipeline.yaml found"}
+    def get_pipeline_graph(self) -> dict:
+        """Return the graph already constructed by the live pipeline."""
+        return {"success": True, **self._pipeline.gui_graph()}
 
     def get_theme_css(self) -> dict:
         """Load the CSS theme named in pipeline metadata, anywhere in the .collectra tree.
@@ -985,7 +945,7 @@ class GUIBackend:
         Falls back to a file literally named theme.css, then any CSS file, when no
         named file is found.
         """
-        named = self._read_pipeline_metadata().get("theme", "")
+        named = self._pipeline_metadata().get("theme", "")
         for directory in self._collectra_dirs():
             # 1. Exact name from metadata
             if named:
@@ -996,13 +956,19 @@ class GUIBackend:
                 if hits:
                     try:
                         with open(hits[0], "r") as f:
-                            return {"success": True, "css": f.read(), "path": str(hits[0])}
+                            return {
+                                "success": True,
+                                "css": f.read(),
+                                "path": str(hits[0]),
+                            }
                     except Exception as e:
                         return {"success": False, "error": str(e)}
 
             # 2. Fallback: prefer a file named theme.css, else any CSS file
             try:
-                css_files = [f for f in directory.iterdir() if f.suffix == ".css" and f.is_file()]
+                css_files = [
+                    f for f in directory.iterdir() if f.suffix == ".css" and f.is_file()
+                ]
             except (PermissionError, OSError):
                 continue
             preferred = next((f for f in css_files if f.stem == "theme"), None)
@@ -1047,7 +1013,7 @@ class GUIBackend:
         callers rely on this always succeeding so a project with no logo doesn't
         keep showing whichever project's logo loaded previously.
         """
-        named = self._read_pipeline_metadata().get("logo", "")
+        named = self._pipeline_metadata().get("logo", "")
         image_exts = {f".{e.lower()}" for e in ImageFormat.__members__} | {".svg"}
         for directory in self._collectra_dirs():
             # 1. Exact name from metadata
@@ -1077,13 +1043,16 @@ class GUIBackend:
 
         return {"success": False, "error": "No logo file found"}
 
+
 def _disable_macos_tabbing() -> None:
     """Disable macOS Window Tab Bar for the pywebview window."""
     import platform
+
     if platform.system() != "Darwin":
         return
     try:
         from AppKit import NSApplication
+
         for win in NSApplication.sharedApplication().windows():
             win.setTabbingMode_(2)  # NSWindowTabbingModeDisallowed = 2
     except Exception:
@@ -1103,33 +1072,26 @@ def get_resource_path(relative_path: str) -> str:
     return str(base_path / relative_path)
 
 
-@app.command()
 def start(
-    workflow: Annotated[
-        str, typer.Option("--workflow", "-w", help="Specify the workflow to use")
-    ] = "",
-    ext: Annotated[
-        str,
-        typer.Option("--extension", "-e", help="Specify the file extension to filter"),
-    ] = "",
+    pipeline: "Collectra",
     debug: bool = False,
 ):
     """
     Create and start the pywebview window with the API.
 
     Args:
+        pipeline: The live pipeline whose graph the GUI displays.
         debug: Enable developer tools
     """
-    if not (workflow or ext):
-        print(
-            "[red]Error:[/red] --workflow or --extension arguments are required to start the GUI."
-        )
-        raise typer.Exit(code=1)
-    api = GUIBackend(workflow=workflow, extension=ext)
+    api = GUIBackend(pipeline)
     html_path = get_resource_path("index.html")
     window = webview.create_window(
-        title="Collectra Viewer", url=html_path, js_api=api, width=1200, height=800,
-        min_size=(800, 600)
+        title="Collectra Viewer",
+        url=html_path,
+        js_api=api,
+        width=1200,
+        height=800,
+        min_size=(800, 600),
     )
 
     def on_started():
@@ -1138,7 +1100,3 @@ def start(
 
     webview.start(func=on_started, debug=debug)
     return window
-
-
-if __name__ == "__main__":
-    app()

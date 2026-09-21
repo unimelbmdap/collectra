@@ -1,4 +1,4 @@
-// Resolves a DAG node's pipeline.yaml label to its real per-page instance
+// Resolves a pipeline DAG label to its real per-page instance
 // id(s) via pageNodeIds (label -> real ids). Idempotent on an already-real
 // id: pageNodeIds is keyed by label, so it just won't match and passes
 // through unchanged.

@@ -12,6 +12,7 @@ Tests cover:
 
 import base64
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -31,6 +32,27 @@ class TestApiInit:
         mock_window = MagicMock()
         backend_with_extension.set_window(mock_window)
         assert backend_with_extension._window is mock_window
+
+    def test_pipeline_graph_comes_from_live_pipeline(self):
+        pipeline_path = (
+            Path(__file__).parents[1] / "data" / "collectrapipeline" / "pipeline.yaml"
+        )
+        from collectra.pipelines.base import Collectra
+
+        pipeline = Collectra.from_file(pipeline_path)
+        backend = GUIBackend(pipeline)
+
+        result = backend.get_pipeline_graph()
+
+        assert backend._pipeline is pipeline
+        assert result["success"] is True
+        assert {node["id"] for node in result["nodes"]} == set(
+            pipeline.node_manager.get_node_names()
+        )
+        assert {(edge["source"], edge["target"]) for edge in result["edges"]} == set(
+            pipeline.node_manager.flow.edges
+        )
+        assert result["ext"] == pipeline.ext
 
 
 class TestApiLoadYaml:
@@ -88,7 +110,9 @@ class TestApiGetDisplayValue:
         assert result["value"] is None
         assert "not found" in result["reason"]
 
-    def test_resolves_dag_label_to_real_node(self, backend_with_extension, temp_yaml_file):
+    def test_resolves_dag_label_to_real_node(
+        self, backend_with_extension, temp_yaml_file
+    ):
         # The DAG only ever knows the label ("text_label"), never the real
         # internal id ("text_001") — this must still find the node's real value.
         backend_with_extension.load_yaml(str(temp_yaml_file))
@@ -145,7 +169,9 @@ class TestApiGetNodeInfo:
         assert result["success"] is False
         assert "not found" in result["error"]
 
-    def test_resolves_dag_label_to_real_node(self, backend_with_extension, temp_yaml_file):
+    def test_resolves_dag_label_to_real_node(
+        self, backend_with_extension, temp_yaml_file
+    ):
         backend_with_extension.load_yaml(str(temp_yaml_file))
         result = backend_with_extension.get_node_info("crop_label")
 
@@ -264,10 +290,14 @@ class TestApiUpdateNodeData:
         assert result["success"] is False
         assert "error" in result
 
-    def test_resolves_dag_label_to_real_node(self, backend_with_extension, temp_yaml_file):
+    def test_resolves_dag_label_to_real_node(
+        self, backend_with_extension, temp_yaml_file
+    ):
         backend_with_extension.load_yaml(str(temp_yaml_file))
 
-        result = backend_with_extension.update_node_data("text_label", "Edited via label")
+        result = backend_with_extension.update_node_data(
+            "text_label", "Edited via label"
+        )
 
         assert result["success"] is not False
         assert backend_with_extension._graph.get_data("text_001") == "Edited via label"
@@ -305,7 +335,9 @@ class TestApiUpdateNodeCoordinates:
         assert result["success"] is False
         assert "error" in result
 
-    def test_resolves_dag_label_to_real_node(self, backend_with_extension, temp_yaml_file):
+    def test_resolves_dag_label_to_real_node(
+        self, backend_with_extension, temp_yaml_file
+    ):
         backend_with_extension.load_yaml(str(temp_yaml_file))
         new_region = {
             "x_center": 0.1,
@@ -314,7 +346,9 @@ class TestApiUpdateNodeCoordinates:
             "height_relative": 0.4,
         }
 
-        result = backend_with_extension.update_node_coordinates("crop_label", new_region)
+        result = backend_with_extension.update_node_coordinates(
+            "crop_label", new_region
+        )
 
         assert result["success"] is True
         assert backend_with_extension._graph.get_crop_region("crop_001") == new_region
@@ -707,7 +741,9 @@ class TestApiDeleteAnnotation:
         assert result["success"] is False
         assert "error" in result
 
-    def test_resolves_dag_label_to_real_node(self, backend_with_extension, temp_yaml_file):
+    def test_resolves_dag_label_to_real_node(
+        self, backend_with_extension, temp_yaml_file
+    ):
         backend_with_extension.load_yaml(str(temp_yaml_file))
 
         result = backend_with_extension.delete_annotation("crop_label")
@@ -739,7 +775,9 @@ class TestApiRenameAnnotation:
         node = backend_with_extension._graph.get_node("crop_001")
         assert node.name == "My Box"
 
-    def test_rename_does_not_change_label_or_id(self, backend_with_extension, temp_yaml_file):
+    def test_rename_does_not_change_label_or_id(
+        self, backend_with_extension, temp_yaml_file
+    ):
         backend_with_extension.load_yaml(str(temp_yaml_file))
 
         backend_with_extension.rename_annotation("crop_001", "My Box")
@@ -756,7 +794,9 @@ class TestApiRenameAnnotation:
         assert result["success"] is False
         assert "error" in result
 
-    def test_resolves_dag_label_to_real_node(self, backend_with_extension, temp_yaml_file):
+    def test_resolves_dag_label_to_real_node(
+        self, backend_with_extension, temp_yaml_file
+    ):
         backend_with_extension.load_yaml(str(temp_yaml_file))
 
         result = backend_with_extension.rename_annotation("crop_label", "My Box")
@@ -765,20 +805,28 @@ class TestApiRenameAnnotation:
         node = backend_with_extension._graph.get_node("crop_001")
         assert node.name == "My Box"
 
-    def test_rename_updates_label_when_provided(self, backend_with_extension, temp_yaml_file):
+    def test_rename_updates_label_when_provided(
+        self, backend_with_extension, temp_yaml_file
+    ):
         backend_with_extension.load_yaml(str(temp_yaml_file))
 
-        result = backend_with_extension.rename_annotation("crop_001", "My Box", label="new_label")
+        result = backend_with_extension.rename_annotation(
+            "crop_001", "My Box", label="new_label"
+        )
 
         assert result["success"] is True
         node = backend_with_extension._graph.get_node("crop_001")
         assert node.label == "new_label"
         assert node.name == "My Box"
 
-    def test_rename_updates_id_when_new_id_provided(self, backend_with_extension, temp_yaml_file):
+    def test_rename_updates_id_when_new_id_provided(
+        self, backend_with_extension, temp_yaml_file
+    ):
         backend_with_extension.load_yaml(str(temp_yaml_file))
 
-        result = backend_with_extension.rename_annotation("crop_001", "My Box", new_id="crop_999")
+        result = backend_with_extension.rename_annotation(
+            "crop_001", "My Box", new_id="crop_999"
+        )
 
         assert result["success"] is True
         assert "crop_001" not in backend_with_extension._graph.nodes
@@ -786,17 +834,23 @@ class TestApiRenameAnnotation:
         assert node.id == "crop_999"
         assert node.name == "My Box"
 
-    def test_rename_id_collision_returns_error(self, backend_with_extension, temp_yaml_file):
+    def test_rename_id_collision_returns_error(
+        self, backend_with_extension, temp_yaml_file
+    ):
         backend_with_extension.load_yaml(str(temp_yaml_file))
 
-        result = backend_with_extension.rename_annotation("crop_001", "My Box", new_id="text_001")
+        result = backend_with_extension.rename_annotation(
+            "crop_001", "My Box", new_id="text_001"
+        )
 
         assert result["success"] is False
         assert "error" in result
         # Nothing should have been changed by the failed attempt
         assert "crop_001" in backend_with_extension._graph.nodes
 
-    def test_rename_updates_label_and_id_together(self, backend_with_extension, temp_yaml_file):
+    def test_rename_updates_label_and_id_together(
+        self, backend_with_extension, temp_yaml_file
+    ):
         backend_with_extension.load_yaml(str(temp_yaml_file))
 
         result = backend_with_extension.rename_annotation(
@@ -1261,7 +1315,7 @@ class TestSelectCollectraPathResetsStaleYamlPath:
     previously-viewed page in a DIFFERENT project.
 
     _collectra_dirs() searches near _yaml_path (in addition to _parent_folder
-    and _workflow_dir) so that opening a page's own results.yaml still finds
+    and the pipeline path) so that opening a page's own results.yaml still finds
     its sibling .collectra folder. But if _yaml_path is never cleared when the
     user picks a brand new top-level project, that stale path keeps pointing
     _collectra_dirs() at the OLD project too — so get_logo()/get_theme_css()
@@ -1273,8 +1327,6 @@ class TestSelectCollectraPathResetsStaleYamlPath:
     def test_switching_project_clears_stale_yaml_path(
         self, backend_with_extension, tmp_path
     ):
-        import yaml
-
         # Project A: has a page whose results.yaml gets "opened" (setting
         # _yaml_path), and its own .collectra folder has a real logo.
         project_a = tmp_path / "ProjectA"
@@ -1286,16 +1338,19 @@ class TestSelectCollectraPathResetsStaleYamlPath:
         )
         a_page = project_a / "page000.demo"
         a_page.mkdir()
-        (a_page / "results.yaml").write_text("field:\n  type: collectra.Text\n  id: field\n")
+        (a_page / "results.yaml").write_text(
+            "field:\n  type: collectra.Text\n  id: field\n"
+        )
 
         # Project B: a totally separate project with no logo of its own.
         project_b = tmp_path / "ProjectB"
         project_b.mkdir()
-        b_collectra = project_b / "B.collectra"
-        b_collectra.mkdir()
-        with open(b_collectra / "pipeline.yaml", "w") as f:
-            yaml.dump({"collectra_pipeline_metadata": {"ext": "demob"}}, f)
-        (project_b / "page000.demob").mkdir()
+        b_page = project_b / "page000.collectra"
+        b_page.mkdir()
+        (b_page / "results.yaml").write_text(
+            "field:\n  type: collectra.Text\n  id: field\n"
+        )
+        (b_page / "image.png").write_bytes(b"PNG")
 
         backend = backend_with_extension
         mock_window = MagicMock()
@@ -1307,7 +1362,7 @@ class TestSelectCollectraPathResetsStaleYamlPath:
         assert backend._yaml_path is not None
 
         # Now switch to Project B entirely via the normal folder-select flow.
-        mock_window.create_file_dialog.return_value = [str(project_b)]
+        mock_window.create_file_dialog.return_value = [str(b_page)]
         result = backend.select_collectra_path()
 
         assert result["success"] is True
@@ -1564,9 +1619,7 @@ class TestApiCreateAnnotationImageExtension:
 
         # Find the newly created annotation
         new_crops = [
-            n
-            for n in backend_with_extension._graph.nodes
-            if n.startswith("test_label")
+            n for n in backend_with_extension._graph.nodes if n.startswith("test_label")
         ]
         assert len(new_crops) == 1
 
@@ -1596,9 +1649,7 @@ class TestApiCreateAnnotationImageExtension:
         )
 
         new_crops = [
-            n
-            for n in backend_with_extension._graph.nodes
-            if n.startswith("test_label")
+            n for n in backend_with_extension._graph.nodes if n.startswith("test_label")
         ]
         assert len(new_crops) == 1
 
@@ -1628,9 +1679,7 @@ class TestApiCreateAnnotationImageExtension:
         )
 
         new_crops = [
-            n
-            for n in backend_with_extension._graph.nodes
-            if n.startswith("test_label")
+            n for n in backend_with_extension._graph.nodes if n.startswith("test_label")
         ]
         assert len(new_crops) == 1
 
@@ -1660,9 +1709,7 @@ class TestApiCreateAnnotationImageExtension:
         )
 
         new_crops = [
-            n
-            for n in backend_with_extension._graph.nodes
-            if n.startswith("test_label")
+            n for n in backend_with_extension._graph.nodes if n.startswith("test_label")
         ]
         new_crop_id = new_crops[0]
         data_field = backend_with_extension._graph.get_data(new_crop_id)
@@ -1777,9 +1824,7 @@ class TestImageExtensionValidation:
         )
 
         new_crops = [
-            n
-            for n in backend_with_extension._graph.nodes
-            if n.startswith("test_label")
+            n for n in backend_with_extension._graph.nodes if n.startswith("test_label")
         ]
         new_crop_id = new_crops[0]
         data_field = backend_with_extension._graph.get_data(new_crop_id)
@@ -1812,9 +1857,7 @@ class TestImageExtensionValidation:
         )
 
         new_crops = [
-            n
-            for n in backend_with_extension._graph.nodes
-            if n.startswith("test_label")
+            n for n in backend_with_extension._graph.nodes if n.startswith("test_label")
         ]
         new_crop_id = new_crops[0]
         data_field = backend_with_extension._graph.get_data(new_crop_id)
@@ -1826,60 +1869,63 @@ class TestImageExtensionValidation:
         ), f"Data field should have single extension, but found {dot_count} dots: {data_field}"
 
 
-class TestReadPipelineMetadata:
-    """Tests for GUIBackend._read_pipeline_metadata."""
+class TestPipelineMetadata:
+    """Tests for metadata supplied by the live pipeline."""
 
-    def test_returns_metadata_block(self, backend_with_extension, temp_project_with_collectra):
+    def test_returns_metadata_block(
+        self, backend_with_extension, temp_project_with_collectra
+    ):
         backend = backend_with_extension
-        backend._workflow_dir = None
         backend._parent_folder = str(temp_project_with_collectra)
-        meta = backend._read_pipeline_metadata()
+        backend._pipeline.pipeline_metadata.update(
+            logo="BrandMark.png", theme="Palette.css", ext="demo"
+        )
+        meta = backend._pipeline_metadata()
         assert meta["logo"] == "BrandMark.png"
         assert meta["theme"] == "Palette.css"
         assert meta["ext"] == "demo"
 
-    def test_returns_empty_when_no_pipeline(self, backend_with_extension, tmp_path):
-        backend = backend_with_extension
-        backend._workflow_dir = None
-        backend._parent_folder = str(tmp_path)
-        assert backend._read_pipeline_metadata() == {}
+    def test_returns_core_pipeline_metadata(self, backend_with_extension):
+        assert backend_with_extension._pipeline_metadata() == {
+            "name": "test",
+            "ext": "collectra",
+            "version": "1.0",
+        }
 
 
 class TestGetLogo:
     """Tests for GUIBackend.get_logo (PNG + SVG, name-from-metadata)."""
 
-    def test_loads_png_named_in_metadata(self, backend_with_extension, temp_project_with_collectra):
+    def test_loads_png_named_in_metadata(
+        self, backend_with_extension, temp_project_with_collectra
+    ):
         backend = backend_with_extension
-        backend._workflow_dir = None
         backend._parent_folder = str(temp_project_with_collectra)
+        backend._pipeline.pipeline_metadata["logo"] = "BrandMark.png"
         result = backend.get_logo()
         assert result["success"] is True
         assert result["data"].startswith("data:image/png;base64,")
 
     def test_loads_svg_by_glob_fallback(self, backend_with_extension, tmp_path):
         # .collectra folder with an SVG but no metadata logo name
-        import yaml
-
         collectra = tmp_path / "proj.collectra"
         collectra.mkdir()
-        with open(collectra / "pipeline.yaml", "w") as f:
-            yaml.dump({"collectra_pipeline_metadata": {"ext": "demo"}}, f)
         (collectra / "brand-logo.svg").write_text(
             '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
         )
         backend = backend_with_extension
-        backend._workflow_dir = None
         backend._parent_folder = str(tmp_path)
         result = backend.get_logo()
         assert result["success"] is True
         assert result["data"].startswith("data:image/svg+xml;base64,")
 
-    def test_falls_back_to_bundled_default_when_no_logo(self, backend_with_extension, tmp_path):
+    def test_falls_back_to_bundled_default_when_no_logo(
+        self, backend_with_extension, tmp_path
+    ):
         # A project with no logo anywhere must still succeed with Collectra's
         # own bundled logo — otherwise the frontend's <img> keeps showing
         # whichever project's logo loaded last, rather than resetting.
         backend = backend_with_extension
-        backend._workflow_dir = None
         backend._parent_folder = str(tmp_path)
         result = backend.get_logo()
         assert result["success"] is True
@@ -1889,10 +1935,12 @@ class TestGetLogo:
 class TestGetThemeCss:
     """Tests for GUIBackend.get_theme_css name-from-metadata preference."""
 
-    def test_loads_theme_named_in_metadata(self, backend_with_extension, temp_project_with_collectra):
+    def test_loads_theme_named_in_metadata(
+        self, backend_with_extension, temp_project_with_collectra
+    ):
         backend = backend_with_extension
-        backend._workflow_dir = None
         backend._parent_folder = str(temp_project_with_collectra)
+        backend._pipeline.pipeline_metadata["theme"] = "Palette.css"
         result = backend.get_theme_css()
         assert result["success"] is True
         assert result["path"].endswith("Palette.css")
@@ -1904,21 +1952,14 @@ class TestGetThemeCss:
         # Folder has BOTH a decoy theme.css and the file actually named in metadata.
         # A selection that just grabs whatever is named "theme.css" would return the
         # decoy; the metadata name must win.
-        import yaml
-
         collectra = tmp_path / "proj.collectra"
         collectra.mkdir()
-        with open(collectra / "pipeline.yaml", "w") as f:
-            yaml.dump(
-                {"collectra_pipeline_metadata": {"ext": "demo", "theme": "grapto.css"}},
-                f,
-            )
         (collectra / "theme.css").write_text("/* decoy */ body { color: red; }")
         (collectra / "grapto.css").write_text("/* correct */ body { color: blue; }")
 
         backend = backend_with_extension
-        backend._workflow_dir = None
         backend._parent_folder = str(tmp_path)
+        backend._pipeline.pipeline_metadata["theme"] = "grapto.css"
         result = backend.get_theme_css()
 
         assert result["success"] is True
@@ -1929,7 +1970,9 @@ class TestGetThemeCss:
 class TestGetActiveNodeIds:
     """Tests for GUIBackend.get_active_node_ids."""
 
-    def test_returns_node_ids_for_page(self, backend_with_extension, temp_parent_folder_with_subfolders):
+    def test_returns_node_ids_for_page(
+        self, backend_with_extension, temp_parent_folder_with_subfolders
+    ):
         backend = backend_with_extension
         backend._scan_parent_folder(temp_parent_folder_with_subfolders)
         assert len(backend._collectra_folders) > 0
@@ -1949,7 +1992,10 @@ class TestGetActiveNodeIds:
         assert result["node_ids"]["image_label"] == ["img_001"]
 
     def test_groups_multiple_real_ids_under_one_label(
-        self, backend_with_extension, temp_parent_folder_with_subfolders, sample_yaml_data
+        self,
+        backend_with_extension,
+        temp_parent_folder_with_subfolders,
+        sample_yaml_data,
     ):
         # A detector node (e.g. collectra.ObjectDetectionYOLO) declares one
         # output label in pipeline.yaml but can produce any number of real
@@ -1971,9 +2017,14 @@ class TestGetActiveNodeIds:
         result = backend.get_active_node_ids(0)
 
         assert result["success"] is True
-        assert set(result["node_ids"]["crop_label"]) == {"crop_label-aaa", "crop_label-bbb"}
+        assert set(result["node_ids"]["crop_label"]) == {
+            "crop_label-aaa",
+            "crop_label-bbb",
+        }
 
-    def test_invalid_index_returns_error(self, backend_with_extension, temp_parent_folder_with_subfolders):
+    def test_invalid_index_returns_error(
+        self, backend_with_extension, temp_parent_folder_with_subfolders
+    ):
         backend = backend_with_extension
         backend._scan_parent_folder(temp_parent_folder_with_subfolders)
         result = backend.get_active_node_ids(999)
@@ -2010,7 +2061,9 @@ class TestUpdatePageText:
     def test_overwrites_existing_file(self, backend_with_extension, temp_yaml_file):
         backend = backend_with_extension
         backend._yaml_path = str(temp_yaml_file)
-        (temp_yaml_file.parent / "markdown.md").write_text("old content", encoding="utf-8")
+        (temp_yaml_file.parent / "markdown.md").write_text(
+            "old content", encoding="utf-8"
+        )
 
         result = backend.update_page_text("markdown", "new content")
 
@@ -2018,7 +2071,9 @@ class TestUpdatePageText:
         written = (temp_yaml_file.parent / "markdown.md").read_text(encoding="utf-8")
         assert written == "new content"
 
-    def test_returns_error_for_unknown_kind(self, backend_with_extension, temp_yaml_file):
+    def test_returns_error_for_unknown_kind(
+        self, backend_with_extension, temp_yaml_file
+    ):
         backend = backend_with_extension
         backend._yaml_path = str(temp_yaml_file)
 

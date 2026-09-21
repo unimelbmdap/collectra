@@ -473,6 +473,7 @@ def test_pipeline_gui_opens_selected_workflow(tmp_path, monkeypatch, debug):
         "  name: example\n"
         "  ext: example\n"
         "  version: '1.0'\n"
+        "  theme: custom.css\n"
     )
     create_window = MagicMock()
     start_webview = MagicMock()
@@ -483,8 +484,14 @@ def test_pipeline_gui_opens_selected_workflow(tmp_path, monkeypatch, debug):
 
     create_window.assert_called_once()
     api = create_window.call_args.kwargs["js_api"]
-    assert api._workflow_dir == pipeline_dir.resolve()
+    assert api._pipeline.path == pipeline_dir.resolve()
     assert api._extension == "example"
-    assert api.get_pipeline_yaml()["success"] is True
+    assert api._pipeline.pipeline_metadata["theme"] == "custom.css"
+    assert api.get_pipeline_graph() == {
+        "success": True,
+        "nodes": [],
+        "edges": [],
+        "ext": "example",
+    }
     start_webview.assert_called_once()
     assert start_webview.call_args.kwargs["debug"] is debug
