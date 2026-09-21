@@ -1,52 +1,57 @@
-[tool.poetry]
+[project]
 name = "Collectra"
 version = "0.1.0"
 description = "Builds pipelines to extract data from collection images."
-authors = ["Robert Turnbull <robert.turnbull@unimelb.edu.au>", "James Quang <james.quang@unimelb.edu.au>"]
+authors = [
+    {name = "Robert Turnbull", email = "robert.turnbull@unimelb.edu.au"},
+    {name = "James Quang", email = "james.quang@unimelb.edu.au"},
+]
 license = "Apache-2.0"
 readme = "README.rst"
-repository = "https://github.com/unimelbmdap/collectra/"
-documentation = "https://unimelbmdap.github.io/collectra"
-homepage = "https://github.com/unimelbmdap/collectra/"
 keywords = ["deep learning", "command-line interface"]
 # For classifiers see https://pypi.org/classifiers/
 classifiers = [
-    "License :: OSI Approved :: Apache Software License",
     "Intended Audience :: Science/Research",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence"
 ]
 
-[tool.poetry.dependencies]
-python = ">=3.10,<3.15"
-typer = ">=0.16.0"
-ultralytics = ">=8.3.166"
-pydot = ">=4.0.1"
-graphviz = ">=0.21"
-wandb = ">=0.21.1"
-jinja2 = ">=3.1.6"
-markdown = ">=3.9"
-pytz = ">=2025.2"
-langchain-chroma = ">=1.0.0"
-langchain = ">=1.1.0"
-pandas = ">=2.3.3"
-h5py = ">=3.15.1"
-editdistance = ">=0.6.0"
-ensemble-boxes = ">=1.0.9"
-llmloader = {git = "https://github.com/rbturnbull/llmloader.git"}
-drawyolo = {git = "https://github.com/jamestq/drawyolo.git"}
-iterative-stratification = ">=0.1.9"
-plotly = ">=5.0.0"
-transformers = ">=4.46.0"
-timm = ">=1.0.9"
-rfdetr = {extras = ["metrics", "train", "loggers"], version = ">=1.6.5.post0"}
-supervision = ">=0.18.0"
-tifffile = ">=2024.8.30"
-onnxruntime = "=1.23.2"
-torch = "=2.9.0"
-torchvision = "=0.24.0"
-cappa = ">=0.32.2"
-opencv-python-headless = ">=4.8.0"
+requires-python = ">=3.10,<3.15"
+dependencies = [
+    "typer (>=0.16.0)",
+    "ultralytics (>=8.3.166)",
+    "pydot (>=4.0.1)",
+    "graphviz (>=0.21)",
+    "wandb (>=0.21.1)",
+    "jinja2 (>=3.1.6)",
+    "markdown (>=3.9)",
+    "pytz (>=2025.2)",
+    "langchain-chroma (>=1.0.0)",
+    "langchain (>=1.1.0)",
+    "pandas (>=2.3.3)",
+    "h5py (>=3.15.1)",
+    "editdistance (>=0.6.0)",
+    "ensemble-boxes (>=1.0.9)",
+    "llmloader @ git+https://github.com/rbturnbull/llmloader.git",
+    "drawyolo @ git+https://github.com/jamestq/drawyolo.git",
+    "iterative-stratification (>=0.1.9)",
+    "plotly (>=5.0.0)",
+    "transformers (>=4.46.0)",
+    "timm (>=1.0.9)",
+    "rfdetr[metrics,train,loggers] (>=1.6.5.post0)",
+    "supervision (>=0.18.0)",
+    "tifffile (>=2024.8.30)",
+    "onnxruntime (==1.23.2)",
+    "torch (==2.9.0)",
+    "torchvision (==0.24.0)",
+    "cappa (>=0.32.2)",
+    "opencv-python-headless (>=4.8.0)",
+]
+
+[project.urls]
+repository = "https://github.com/unimelbmdap/collectra/"
+documentation = "https://unimelbmdap.github.io/collectra"
+homepage = "https://github.com/unimelbmdap/collectra/"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=6.2.5"
@@ -84,9 +89,9 @@ filterwarnings = [
 ]
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core>=2.2.0"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.poetry.scripts]
+[project.scripts]
 collectra = "collectra.main:main"
 utils = "utils.main:app"
