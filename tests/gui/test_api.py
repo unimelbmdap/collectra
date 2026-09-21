@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from collectra.commons.files import CollectraFile
 from collectra.gui.backend import GUIBackend, get_resource_path
 
 
@@ -65,6 +66,15 @@ class TestApiLoadYaml:
         assert result["path"] == str(temp_yaml_file)
         assert backend_with_extension._graph is not None
         assert backend_with_extension._yaml_path == str(temp_yaml_file)
+        assert isinstance(backend_with_extension._collectra_file, CollectraFile)
+        assert (
+            backend_with_extension._collectra_file.collectra_file_path
+            == temp_yaml_file.parent
+        )
+        assert (
+            backend_with_extension._graph.metadata
+            is backend_with_extension._collectra_file.collectra_results_metadata
+        )
 
     def test_load_nonexistent_file(self, backend_with_extension):
         result = backend_with_extension.load_yaml("/nonexistent/path.yaml")
@@ -935,7 +945,7 @@ class TestApiSelectFolder:
 
         assert result["success"] is False
 
-    def test_finds_yaml_and_image_files(
+    def test_finds_results_and_image_files(
         self, backend_with_extension, temp_folder_with_files
     ):
         mock_window = MagicMock()
@@ -946,10 +956,21 @@ class TestApiSelectFolder:
 
         assert result["success"] is True
         assert result["folder_path"] == str(temp_folder_with_files)
-        assert result["yaml_path"] is not None
-        assert result["yaml_path"].endswith(".yaml")
+        assert result["yaml_path"].endswith("results.yaml")
         assert result["image_path"] is not None
         assert result["image_path"].endswith(".png")
+
+    def test_rejects_non_results_yaml(self, backend_with_extension, tmp_path):
+        (tmp_path / "other.yaml").write_text("data: value\n")
+        (tmp_path / "image.png").write_bytes(b"PNG")
+        window = MagicMock()
+        window.create_file_dialog.return_value = [str(tmp_path)]
+        backend_with_extension.set_window(window)
+
+        result = backend_with_extension.select_folder()
+
+        assert result["success"] is False
+        assert "results.yaml" in result["error"]
 
     def test_handles_dialog_exception(self, backend_with_extension):
         mock_window = MagicMock()
@@ -1001,8 +1022,8 @@ class TestGetResourcePath:
                 sys._MEIPASS = original_meipass
 
 
-class TestApiSaveToYaml:
-    """Tests for GUIBackend._save_to_yaml private method."""
+class TestApiSaveCollectraFile:
+    """Tests for GUIBackend._save_collectra_file."""
 
     def test_save_preserves_data(self, backend_with_extension, temp_yaml_file):
         import yaml
@@ -1011,7 +1032,7 @@ class TestApiSaveToYaml:
 
         # Modify data
         backend_with_extension._graph.set_data("text_001", "Modified text")
-        backend_with_extension._save_to_yaml()
+        backend_with_extension._save_collectra_file()
 
         # Reload and verify
         with open(temp_yaml_file, "r") as f:
@@ -1026,18 +1047,28 @@ class TestApiSaveToYaml:
         assert text_node is not None
         assert text_node["data"] == "Modified text"
 
+    def test_save_uses_shared_collectra_writer(
+        self, backend_with_extension, temp_yaml_file
+    ):
+        backend_with_extension.load_yaml(str(temp_yaml_file))
+
+        with patch.object(CollectraFile, "save", autospec=True) as save:
+            backend_with_extension._save_collectra_file()
+
+        save.assert_called_once_with(backend_with_extension._collectra_file)
+
     def test_save_raises_when_no_yaml_loaded(self, backend_with_extension):
         backend_with_extension._graph = MagicMock()  # Set graph but no yaml_path
 
-        with pytest.raises(ValueError, match="No YAML file loaded"):
-            backend_with_extension._save_to_yaml()
+        with pytest.raises(ValueError, match="No Collectra file loaded"):
+            backend_with_extension._save_collectra_file()
 
     def test_save_raises_when_no_graph(self, backend_with_extension, temp_yaml_file):
-        backend_with_extension._yaml_path = str(temp_yaml_file)
+        backend_with_extension._collectra_file = MagicMock()
         # No graph set
 
-        with pytest.raises(ValueError, match="No YAML file loaded"):
-            backend_with_extension._save_to_yaml()
+        with pytest.raises(ValueError, match="No Collectra file loaded"):
+            backend_with_extension._save_collectra_file()
 
 
 class TestApiIntegration:
@@ -1463,9 +1494,13 @@ class TestGUIBackendGetAvailableLabels:
     ):
         import yaml
 
-        # Create two YAML files with different labels
-        yaml1 = tmp_path / "file1.yaml"
-        yaml2 = tmp_path / "file2.yaml"
+        # Create two Collectra files with different labels
+        file1 = tmp_path / "file1.collectra"
+        file2 = tmp_path / "file2.collectra"
+        file1.mkdir()
+        file2.mkdir()
+        yaml1 = file1 / "results.yaml"
+        yaml2 = file2 / "results.yaml"
 
         with open(yaml1, "w") as f:
             yaml.dump(sample_yaml_data, f)
@@ -1498,7 +1533,9 @@ class TestGUIBackendGetLabelStatistics:
     ):
         import yaml
 
-        yaml_file = tmp_path / "multi.yaml"
+        collectra_file = tmp_path / "multi.collectra"
+        collectra_file.mkdir()
+        yaml_file = collectra_file / "results.yaml"
         with open(yaml_file, "w") as f:
             yaml.dump(multi_label_yaml_data, f)
 

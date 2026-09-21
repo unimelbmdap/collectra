@@ -289,8 +289,8 @@ class TestCollectraFileSave:
             content = yaml.safe_load(f)
         assert "collectra_results_metadata" in content
 
-    def test_save_cleans_up_on_asset_not_found(self, tmp_path):
-        """If an asset file does not exist, save should clean up the collectra dir and raise."""
+    def test_save_preserves_existing_directory_on_asset_error(self, tmp_path):
+        """A failed update must not delete an existing Collectra directory."""
         collectra_dir = tmp_path / "output" / "photo.arb"
         collectra_dir.mkdir(parents=True)
 
@@ -304,7 +304,21 @@ class TestCollectraFileSave:
         with pytest.raises(RuntimeError, match="Failed to save"):
             cf.save()
 
-        assert not collectra_dir.exists()
+        assert collectra_dir.exists()
+
+    def test_save_cleans_up_new_directory_on_asset_error(self, tmp_path):
+        source = tmp_path / "missing.jpg"
+        collectra_file = CollectraFile.from_file(
+            file=source,
+            label="image",
+            ext="arb",
+            output=tmp_path / "output",
+        )
+
+        with pytest.raises(RuntimeError, match="Failed to save"):
+            collectra_file.save()
+
+        assert not collectra_file.collectra_file_path.exists()
 
     def test_save_no_assets(self, tmp_path):
         """save with no assets should still write results.yaml."""

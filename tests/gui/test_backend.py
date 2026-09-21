@@ -575,15 +575,15 @@ class TestNodeNormalization:
 
 
 class TestMetadataDefaults:
-    """Tests for Metadata class defaults."""
+    """Tests for shared Collectra results metadata defaults."""
 
     def test_metadata_has_correct_defaults(self):
         """Metadata class has correct default values."""
-        from collectra.gui.data_display import Metadata
+        from collectra.commons.files import CollectraResultsMetadata
 
-        meta = Metadata()
-        assert meta.version == "1.0.0"
-        assert meta.workflow == "collectra_gui"
+        meta = CollectraResultsMetadata()
+        assert meta.version is None
+        assert meta.workflow is None
 
 
 class TestCollectraGraphGetUniqueLabels:

@@ -125,10 +125,12 @@ def empty_graph():
 
 @pytest.fixture
 def temp_yaml_file(tmp_path, sample_yaml_data):
-    """Create a temporary YAML file for file I/O tests."""
+    """Create a temporary Collectra file for file I/O tests."""
     import yaml
 
-    yaml_file = tmp_path / "test_results.yaml"
+    collectra_file = tmp_path / "test.collectra"
+    collectra_file.mkdir()
+    yaml_file = collectra_file / "results.yaml"
     with open(yaml_file, "w") as f:
         yaml.dump(sample_yaml_data, f)
     return yaml_file

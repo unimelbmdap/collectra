@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import webview
-import yaml
 
+from collectra.commons.files import CollectraFile
 from .data_display import CollectraGraph, NodeDisplayValue
 
 if TYPE_CHECKING:
@@ -49,6 +49,7 @@ class GUIBackend:
         All values are initially None until load_yaml() is called.
         """
         self._pipeline = pipeline
+        self._collectra_file: CollectraFile | None = None
         self._graph: CollectraGraph | None = None
         self._yaml_path: str | None = None
         self._window = None
@@ -76,7 +77,7 @@ class GUIBackend:
         Returns:
             dict with yaml_path and image_path if both found, None otherwise
         """
-        yaml_path = None
+        results_path = folder_path / "results.yaml"
         image_path = None
         image_extensions = [f".{ext.lower()}" for ext in ImageFormat.__members__.keys()]
 
@@ -84,19 +85,16 @@ class GUIBackend:
             if not filename.is_file():
                 continue
 
-            if filename.suffix in [".yaml", ".yml"] and yaml_path is None:
-                yaml_path = filename
-
             if filename.suffix.lower() in image_extensions and image_path is None:
                 image_path = filename
 
-            if yaml_path and image_path:
+            if image_path:
                 break
 
-        if yaml_path is None or image_path is None:
+        if not results_path.is_file() or image_path is None:
             return None
 
-        return {"yaml_path": str(yaml_path), "image_path": str(image_path)}
+        return {"yaml_path": str(results_path), "image_path": str(image_path)}
 
     def select_folder(self) -> dict:
         """
@@ -119,36 +117,17 @@ class GUIBackend:
 
             folder_path = Path(result[0])
 
-            yaml_path = None
-            image_path = None
-            image_extensions = [
-                f".{ext.lower()}" for ext in ImageFormat.__members__.keys()
-            ]
-
-            for filename in folder_path.iterdir():
-
-                if not filename.is_file():
-                    continue
-
-                if filename.suffix in [".yaml", ".yml"] and yaml_path is None:
-                    yaml_path = filename
-
-                if filename.suffix in image_extensions and image_path is None:
-                    image_path = filename
-
-                if yaml_path and image_path:
-                    break
-
-            if yaml_path is None:
-                return {"success": False, "error": "No YAML file found in folder"}
-            if image_path is None:
-                return {"success": False, "error": "No image file found in folder"}
+            scan_result = self._scan_collectra_folder(folder_path)
+            if scan_result is None:
+                return {
+                    "success": False,
+                    "error": "No results.yaml or image file found in folder",
+                }
 
             return {
                 "success": True,
                 "folder_path": str(folder_path),
-                "yaml_path": str(yaml_path),
-                "image_path": str(image_path),
+                **scan_result,
             }
 
         except Exception as e:
@@ -204,6 +183,8 @@ class GUIBackend:
             # lookups (get_logo, get_theme_css) can silently keep matching a
             # file from whatever project was open before this new selection.
             self._yaml_path = None
+            self._collectra_file = None
+            self._graph = None
 
             if selected_path.suffix == f".{self._extension}":
                 scan_result = self._scan_collectra_folder(selected_path)
@@ -260,9 +241,8 @@ class GUIBackend:
         self._global_label_counts = {}
         for folder in self._collectra_folders:
             try:
-                with open(folder["yaml_path"], "r") as f:
-                    yaml_data = yaml.safe_load(f)
-                temp_graph = CollectraGraph.from_yaml_data(yaml_data)
+                collectra_file = CollectraFile.from_data(Path(folder["path"]))
+                temp_graph = CollectraGraph.from_collectra_file(collectra_file)
                 label_counts = temp_graph.count_nodes_by_label(
                     type_filter="collectra.ImageCrop"
                 )
@@ -337,9 +317,8 @@ class GUIBackend:
 
         folder = self._collectra_folders[page_index]
         try:
-            with open(folder["yaml_path"], "r") as f:
-                yaml_data = yaml.safe_load(f) or {}
-            graph = CollectraGraph.from_yaml_data(yaml_data)
+            collectra_file = CollectraFile.from_data(Path(folder["path"]))
+            graph = CollectraGraph.from_collectra_file(collectra_file)
             node_types: dict[str, str] = {}
             node_ids: dict[str, list[str]] = {}
             for node_id in graph.nodes:
@@ -391,16 +370,20 @@ class GUIBackend:
             dict with 'success', 'node_count', 'edge_count', or 'error'
         """
         try:
-            with open(path, "r") as f:
-                yaml_data = yaml.safe_load(f)
-
-            self._graph = CollectraGraph.from_yaml_data(yaml_data)
-            self._yaml_path = path
+            collectra_path = Path(path)
+            directory = (
+                collectra_path if collectra_path.is_dir() else collectra_path.parent
+            )
+            collectra_file = CollectraFile.from_data(directory)
+            graph = CollectraGraph.from_collectra_file(collectra_file)
+            self._collectra_file = collectra_file
+            self._graph = graph
+            self._yaml_path = str(self._collectra_file.results_path)
 
             # Accumulate labels from this graph
             self._global_labels.update(self._graph.get_unique_labels())
 
-            return {"success": True, "path": path}
+            return {"success": True, "path": self._yaml_path}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -631,7 +614,7 @@ class GUIBackend:
             # resolve a real, non-empty id (an empty label would never match).
             resolved_id = self._graph.resolve_id(node_id) if node_id else node_id
             self._graph.set_data(resolved_id, new_data, crop_id)
-            self._save_to_yaml()
+            self._save_collectra_file()
             return self.get_all_nodes_for_grid()
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -651,7 +634,7 @@ class GUIBackend:
             if self._graph is None:
                 raise ValueError("No graph loaded. Call load_yaml first.")
             self._graph.set_crop_region(self._graph.resolve_id(node_id), crop_region)
-            self._save_to_yaml()
+            self._save_collectra_file()
             return self.get_all_nodes_for_grid()
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -752,7 +735,7 @@ class GUIBackend:
                     self._global_label_counts.get(label, 0) + 1
                 )
             # Save and return updated grid
-            self._save_to_yaml()
+            self._save_collectra_file()
             result = self.get_all_nodes_for_grid()
             # Include updated global stats in response
             if self._collectra_folders:
@@ -820,7 +803,7 @@ class GUIBackend:
                             del self._global_label_counts[label]
 
             # Save and return updated grid
-            self._save_to_yaml()
+            self._save_collectra_file()
             result = self.get_all_nodes_for_grid()
             # Every id actually removed (the requested one plus every
             # cascaded descendant) — the frontend needs this to close any
@@ -867,25 +850,18 @@ class GUIBackend:
             if label is not None:
                 self._graph.set_label(node_id, label)
             self._graph.set_name(node_id, name)
-            self._save_to_yaml()
+            self._save_collectra_file()
             return self.get_all_nodes_for_grid()
 
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _save_to_yaml(self) -> None:
-        """Save the current graph back to the original YAML file."""
-        if self._yaml_path is None or self._graph is None:
-            raise ValueError("No YAML file loaded to save to.")
-        yaml_data = self._graph.to_yaml_data()
-        with open(self._yaml_path, "w") as f:
-            for key, value in yaml_data.items():
-                yaml.dump(
-                    {key: value if not isinstance(value, list) else value},
-                    f,
-                    sort_keys=False,
-                )
-                f.write("\n")
+    def _save_collectra_file(self) -> None:
+        """Persist GUI edits through the shared Collectra file writer."""
+        if self._collectra_file is None or self._graph is None:
+            raise ValueError("No Collectra file loaded to save to.")
+        self._collectra_file.data = self._graph.to_data()
+        self._collectra_file.save()
 
     def _collectra_dirs(self) -> list[Path]:
         """Return all .collectra directories to search, in priority order.

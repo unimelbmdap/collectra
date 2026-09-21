@@ -8,31 +8,16 @@ for ImageCrop annotations based on the rules:
 
 """
 
+import copy
 import uuid
 from dataclasses import dataclass, field
 
 import networkx as nx
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
+
+from collectra.commons.files import CollectraFile, CollectraResultsMetadata
 
 from .utils import normalise_items
-
-
-class Metadata(BaseModel):
-    """Metadata for collectra results."""
-
-    model_config = ConfigDict(coerce_numbers_to_str=True)
-
-    key: str = "collectra_results_metadata"
-    version: str = "1.0.0"
-    workflow: str = "collectra_gui"
-    timestamp: str = ""
-
-    def model_dump(self, *args, **kwargs) -> dict:
-        data = super().model_dump(*args, **kwargs)
-        key = data.pop("key", None)
-        if key is None:
-            raise ValueError("Metadata key is missing.")
-        return data
 
 
 class CollectraNodeFactory:
@@ -127,7 +112,7 @@ class CollectraGraph:
 
     _graph: nx.DiGraph = field(default_factory=nx.DiGraph)
 
-    metadata: Metadata = field(default_factory=Metadata)
+    metadata: CollectraResultsMetadata = field(default_factory=CollectraResultsMetadata)
 
     # Cached indexes for O(1) lookups
     _children_index: dict[str, list[str]] = field(default_factory=dict, repr=False)
@@ -143,12 +128,25 @@ class CollectraGraph:
     @classmethod
     def from_yaml_data(cls, data: dict) -> "CollectraGraph":
         """Build graph from parsed YAML data."""
-        graph = cls()
+        data = copy.deepcopy(data)
+        metadata = CollectraResultsMetadata(
+            **data.pop("collectra_results_metadata", {})
+        )
+        return cls._from_data(data, metadata)
 
-        metadata = data.pop("collectra_results_metadata", dict())
+    @classmethod
+    def from_collectra_file(cls, collectra_file: CollectraFile) -> "CollectraGraph":
+        """Build a display graph backed by a loaded Collectra file."""
+        return cls._from_data(
+            copy.deepcopy(collectra_file.data),
+            collectra_file.collectra_results_metadata,
+        )
 
-        if metadata:
-            graph.metadata = Metadata(**metadata)
+    @classmethod
+    def _from_data(
+        cls, data: dict, metadata: CollectraResultsMetadata
+    ) -> "CollectraGraph":
+        graph = cls(metadata=metadata)
 
         for label, value in data.items():
             items = normalise_items(value)
@@ -362,6 +360,13 @@ class CollectraGraph:
 
     def to_yaml_data(self) -> dict:
         """Convert graph back to YAML data structure."""
+        return {
+            "collectra_results_metadata": self.metadata.model_dump(),
+            **self.to_data(),
+        }
+
+    def to_data(self) -> dict:
+        """Convert graph nodes to the data held by a CollectraFile."""
         yaml_data: dict = {}
 
         for node_id in self._graph.nodes:
@@ -371,11 +376,7 @@ class CollectraGraph:
             node_data = node.model_dump()
             yaml_data.setdefault(node.label, []).append({**node_data})
 
-        final_data: dict[str, list[dict] | dict] = dict()
-
-        if self.metadata:
-            metadata = self.metadata.model_dump()
-            final_data[self.metadata.key] = metadata
+        final_data: dict[str, list[dict] | dict] = {}
 
         for key, value in yaml_data.items():
             if isinstance(value, list) and len(value) == 1:
