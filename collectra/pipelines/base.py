@@ -431,8 +431,7 @@ class Collectra:
         )
         savef.mkdir(parents=True, exist_ok=True)
 
-        remove_exif(file_path, file_path)
-        shutil.copy(file_path, savef / file_path.name)
+        remove_exif(file_path, savef / file_path.name)
         return savef
 
     def _create_results_file(self, directory: Path, key: str, value: str | Path):
