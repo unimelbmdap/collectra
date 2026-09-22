@@ -4,11 +4,15 @@ from pathlib import Path
 
 import pydantic
 
-from ..utils import write_yaml
 from ..types.base import load_artefact
+from ..utils import write_yaml
 
 
 class CollectraResultsMetadata(pydantic.BaseModel):
+    # Some results.yaml files have an unquoted version (e.g. `version: 1.0`),
+    # which PyYAML parses as a float rather than a str.
+    model_config = pydantic.ConfigDict(coerce_numbers_to_str=True)
+
     workflow: str | None = None
     version: str | None = None
     partition: str | None = None

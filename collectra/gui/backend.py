@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 import webview
 
 from collectra.commons.files import CollectraFile
+
 from .data_display import CollectraGraph, NodeDisplayValue
 
 if TYPE_CHECKING:
@@ -588,7 +589,6 @@ class GUIBackend:
                     "parents": ", ".join(self._graph.parents(node_id)),
                     "children": ", ".join(self._graph.children(node_id)),
                     "locked": node_display_value.locked,
-                    "orientation": self._graph.get_orientation(node_id),
                 }
             )
 
