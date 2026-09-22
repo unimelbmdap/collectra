@@ -118,6 +118,12 @@ class CollectraGraph:
     _children_index: dict[str, list[str]] = field(default_factory=dict, repr=False)
     _parents_index: dict[str, list[str]] = field(default_factory=dict, repr=False)
 
+    # Labels seen in the source YAML, in original order — including ones whose
+    # value was `[]` (a pipeline task ran and found nothing). Those never
+    # become graph nodes, so nothing else remembers they exist; without this,
+    # to_data() silently drops them on every save.
+    _known_labels: list[str] = field(default_factory=list, repr=False)
+
     @property
     def nodes(self) -> list[str]:
         """List of node IDs in the graph."""
@@ -149,6 +155,7 @@ class CollectraGraph:
         graph = cls(metadata=metadata)
 
         for label, value in data.items():
+            graph._known_labels.append(label)
             items = normalise_items(value)
             for item in items:
                 if isinstance(item, dict) and "id" in item:
@@ -215,12 +222,6 @@ class CollectraGraph:
         """Get name field of a node."""
         node = self.get_node(node_id)
         return node.name if node else ""
-
-    def get_orientation(self, node_id: str) -> str:
-        """Get orientation field of a node — see collectra.types.images.Orientation
-        (north/west/south/east) in the collectra package that produces this yaml."""
-        node = self.get_node(node_id)
-        return node.orientation if node else "north"
 
     def get_crop_region(self, node_id: str) -> dict[str, float]:
         """
@@ -376,13 +377,21 @@ class CollectraGraph:
             node_data = node.model_dump()
             yaml_data.setdefault(node.label, []).append({**node_data})
 
+        def _collapse(value: list[dict]) -> list[dict] | dict:
+            return value[0] if len(value) == 1 else value
+
         final_data: dict[str, list[dict] | dict] = {}
 
+        # Known labels first, in original order, so a label with no current
+        # nodes (never had any, or had all of them deleted) round-trips as
+        # `[]` instead of disappearing.
+        for label in self._known_labels:
+            final_data[label] = _collapse(yaml_data.pop(label, []))
+
+        # Anything left is a label created fresh this session (e.g. a new
+        # user-added Text node) that wasn't in the original data.
         for key, value in yaml_data.items():
-            if isinstance(value, list) and len(value) == 1:
-                final_data[key] = value[0]
-            else:
-                final_data[key] = value
+            final_data[key] = _collapse(value)
 
         return final_data
 

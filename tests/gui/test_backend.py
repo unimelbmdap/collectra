@@ -371,6 +371,28 @@ class TestAnnotationGraphToYamlData:
 
         assert result["crop_label"]["name"] == "My Sandglass"
 
+    def test_empty_list_field_preserved_through_roundtrip(self, sample_yaml_data):
+        """A pipeline field where nothing was detected is stored as `label: []` —
+        that's a real record ("this was checked, nothing found"), not an absent
+        key, and must survive a save even though no node ever represents it."""
+        sample_yaml_data["genus_image"] = []
+        graph = CollectraGraph.from_yaml_data(sample_yaml_data)
+
+        result = graph.to_yaml_data()
+
+        assert result["genus_image"] == []
+
+    def test_empty_list_field_still_empty_after_unrelated_edit(self, sample_yaml_data):
+        """The bug this guards: saving after touching an unrelated node used to
+        drop every empty-list field from the file entirely."""
+        sample_yaml_data["genus_image"] = []
+        graph = CollectraGraph.from_yaml_data(sample_yaml_data)
+        graph.set_name("crop_001", "My Sandglass")
+
+        result = graph.to_yaml_data()
+
+        assert result["genus_image"] == []
+
 
 class TestComputeDisplayValue:
     """Tests for compute_display_value function."""

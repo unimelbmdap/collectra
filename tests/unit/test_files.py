@@ -65,6 +65,17 @@ class TestCollectraResultsMetadata:
         assert metadata.partition is None
         assert metadata.timestamp is None
 
+    def test_accepts_numeric_version_from_yaml(self):
+        """Some results.yaml files were written with an unquoted version
+        (e.g. `version: 1.0`), which PyYAML parses as a float, not a str.
+        Loading must not reject that — it should be treated as "1.0"."""
+        metadata = CollectraResultsMetadata(version=1.0)
+        assert metadata.version == "1.0"
+
+    def test_accepts_integer_version_from_yaml(self):
+        metadata = CollectraResultsMetadata(version=2)
+        assert metadata.version == "2"
+
 
 class TestCollectraFileModelDump:
     """Tests for CollectraFile.model_dump flattening behaviour."""
