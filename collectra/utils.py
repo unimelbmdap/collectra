@@ -25,6 +25,7 @@ Functions:
 
 import importlib
 import os
+import shutil
 import zipfile
 from contextlib import contextmanager
 from functools import wraps
@@ -59,7 +60,7 @@ def threading_locked():
 
 def valid_raw_files() -> list[str]:
     """Return a list of valid raw file extensions for processing."""
-    return [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif", ".webp"]
+    return [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".gif", ".webp"]
 
 
 def resolve_files(inputs: list[Path], ext: list[str]) -> list[Path]:
@@ -282,12 +283,20 @@ def remove_exif(image_path: Path, save_path: Path):
     """Remove EXIF data from an image and save the cleaned image.
 
     Opens an image file, removes any embedded EXIF metadata, and saves
-    the cleaned image to the specified path.
+    the cleaned image to the specified path. TIFFs are preserved unchanged:
+    their tags describe scientific channel/page layouts that Pillow cannot
+    safely round-trip.
 
     Args:
         image_path (Path): Path to the original image file.
         save_path (Path): Path to save the image without EXIF data.
     """
+    image_path, save_path = Path(image_path), Path(save_path)
+    if image_path.suffix.lower() in {".tif", ".tiff"}:
+        if image_path.resolve() != save_path.resolve():
+            shutil.copy2(image_path, save_path)
+        return
+
     from PIL import Image as PILImage
 
     with PILImage.open(image_path) as img:

@@ -144,6 +144,9 @@ class Collectra:
 
         setup_logging(verbose=verbose)
         files = resolve_files(inputs, [f".{self.ext}", *valid_raw_files()])
+        if not files:
+            logger.warning("No supported input files found for: %s", ", ".join(inputs))
+            return
         self.run(
             task,
             files=files,
@@ -449,8 +452,7 @@ class Collectra:
         )
         savef.mkdir(parents=True, exist_ok=True)
 
-        remove_exif(file_path, file_path)
-        shutil.copy(file_path, savef / file_path.name)
+        remove_exif(file_path, savef / file_path.name)
         return savef
 
     def _create_results_file(self, directory: Path, key: str, value: str | Path):

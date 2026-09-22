@@ -9,7 +9,12 @@ from typing import Annotated, TYPE_CHECKING
 from cappa import Arg
 
 from collectra.cli import command
-from collectra.types.images import Image, ImageCrop, image_channel_count
+from collectra.types.images import (
+    Image,
+    ImageCrop,
+    image_channel_count,
+    read_tiff_channels,
+)
 from collectra.types.texts import Text
 from collectra.utils import change_dir
 
@@ -61,9 +66,44 @@ class DetectionResult:
 
 class ObjectDetectionYOLO(YOLOTask):
     singletons: bool = False
+    imgsz: int | None = None
+
+    @command(name="run")
+    def cli_run(
+        self,
+        inputs: list[str],
+        output: Path | None = None,
+        verbose: bool = False,
+        usage: bool = False,
+        render: bool = False,
+        model: Annotated[
+            Path | None,
+            Arg(help="Model checkpoint path. Omit to keep the configured model."),
+        ] = None,
+        imgsz: Annotated[
+            int | None,
+            Arg(
+                help="Inference image size in pixels. Omit to keep the model's setting."
+            ),
+        ] = None,
+    ) -> None:
+        """Run this object detector for the supplied input files."""
+        if model is not None:
+            self.model = model
+        if imgsz is not None:
+            self.imgsz = imgsz
+        super().cli_run(
+            inputs, output=output, verbose=verbose, usage=usage, render=render
+        )
 
     @threading_locked()
-    def run(self, *args: Image, **kwargs) -> list[Image]:
+    def run(
+        self,
+        *args: Image,
+        model: str | Path | None = None,
+        imgsz: int | None = None,
+        **kwargs,
+    ) -> list[Image]:
         """Run object detection inference on the provided Image.
 
         This method performs object detection on the provided input image
@@ -74,6 +114,9 @@ class ObjectDetectionYOLO(YOLOTask):
 
         Args:
             input (Image): The input image on which to perform object detection.
+            model: Optional checkpoint path overriding the task's configured model.
+            imgsz: Optional inference image size in pixels. Defaults to the task's
+                configured size, or the model's setting when unset.
 
         Returns:
             list[ImageCrop]: A list of ImageCrop objects representing the detected
@@ -84,17 +127,55 @@ class ObjectDetectionYOLO(YOLOTask):
         if not isinstance(args[0], Image):
             raise TypeError("Input must be an instance of Image.")
         image: Image = args[0]
+        if model is not None:
+            self.model = model
         self._init_model()
         from torchvision.ops import batched_nms
 
-        if isinstance(image, ImageCrop):
+        inference_kwargs = {"iou": 0.7, "conf": 0.25}
+        imgsz = imgsz if imgsz is not None else self.imgsz
+        if imgsz is not None:
+            inference_kwargs["imgsz"] = imgsz
+
+        if image.get_path().suffix.lower() in {".tif", ".tiff"}:
+            import numpy as np
+            import torch
+
+            pixels = read_tiff_channels(image.get_path())
+            if isinstance(image, ImageCrop):
+                left, top, right, bottom = image.coordinates()
+                if right <= left or bottom <= top:
+                    raise ValueError(
+                        f"ImageCrop {image.id!r} produces an empty pixel crop"
+                    )
+                pixels = pixels[top:bottom, left:right, :]
+            pixels = np.rot90(pixels, k=image.orientation.to_degree() // 90)
+            first_conv = next(
+                layer
+                for layer in self.model.model.modules()
+                if isinstance(layer, torch.nn.Conv2d)
+            )
+            if pixels.shape[2] != first_conv.in_channels:
+                raise ValueError(
+                    f"{image.get_path()}: {pixels.shape[2]} image channels, "
+                    f"but the detection model expects {first_conv.in_channels}"
+                )
+            # Ultralytics expects BGR for three-channel arrays, but preserves
+            # channel order for multispectral arrays. Keep its usual resizing,
+            # normalization, and box scaling relative to the original image.
+            if pixels.shape[2] == 3:
+                pixels = pixels[..., ::-1]
+            results: Results = self.model(
+                np.ascontiguousarray(pixels), **inference_kwargs
+            )[0]
+        elif isinstance(image, ImageCrop):
             with tempfile.TemporaryDirectory() as temp_dir:
                 img = image.pil()
                 img_path = Path(temp_dir) / f"{Path(image.get_path()).stem}.png"
                 img.save(img_path, format="PNG")
-                results: Results = (self.model(img_path, iou=0.7, conf=0.25))[0]
+                results: Results = (self.model(img_path, **inference_kwargs))[0]
         else:
-            results: Results = (self.model(image.get_path(), iou=0.7, conf=0.25))[0]
+            results: Results = (self.model(image.get_path(), **inference_kwargs))[0]
 
         if getattr(self.model.model, "end2end", False) and len(results.boxes):
             keep = batched_nms(

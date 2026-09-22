@@ -211,6 +211,35 @@ def test_actual_entry_point_root_help(tmp_path, capsys):
     assert all(name in output for name in ("run", "install", "task", "artefact"))
 
 
+@pytest.mark.parametrize("suffix", [".tif", ".tiff", ".TIF"])
+@pytest.mark.parametrize("directory_input", [False, True])
+def test_pipeline_run_accepts_tiff_inputs(
+    tmp_path, monkeypatch, suffix, directory_input
+):
+    pipeline = Collectra.from_file(write_empty_pipeline(tmp_path))
+    image = tmp_path / f"multiview{suffix}"
+    image.touch()
+    calls = []
+    monkeypatch.setattr(pipeline, "run", lambda *args, **kwargs: calls.append(kwargs))
+
+    pipeline.cli_run([str(tmp_path if directory_input else image)])
+
+    assert calls[0]["files"] == [image]
+
+
+def test_pipeline_run_warns_when_no_inputs_match(tmp_path, monkeypatch, capsys):
+    pipeline = Collectra.from_file(write_empty_pipeline(tmp_path))
+    unsupported = tmp_path / "unsupported.txt"
+    unsupported.touch()
+    calls = []
+    monkeypatch.setattr(pipeline, "run", lambda *args, **kwargs: calls.append(kwargs))
+
+    pipeline.cli_run([str(unsupported)])
+
+    assert calls == []
+    assert "No supported input files found" in capsys.readouterr().out
+
+
 def test_installed_pipeline_launcher_delegates_to_main(tmp_path):
     pipeline_file = write_empty_pipeline(tmp_path)
     pipeline = Collectra.from_file(pipeline_file)
