@@ -9,7 +9,12 @@ from typing import Annotated, TYPE_CHECKING
 from cappa import Arg
 
 from collectra.cli import command
-from collectra.types.images import Image, ImageCrop, image_channel_count
+from collectra.types.images import (
+    Image,
+    ImageCrop,
+    image_channel_count,
+    read_tiff_channels,
+)
 from collectra.types.texts import Text
 from collectra.utils import change_dir
 
@@ -132,7 +137,38 @@ class ObjectDetectionYOLO(YOLOTask):
         if imgsz is not None:
             inference_kwargs["imgsz"] = imgsz
 
-        if isinstance(image, ImageCrop):
+        if image.get_path().suffix.lower() in {".tif", ".tiff"}:
+            import numpy as np
+            import torch
+
+            pixels = read_tiff_channels(image.get_path())
+            if isinstance(image, ImageCrop):
+                left, top, right, bottom = image.coordinates()
+                if right <= left or bottom <= top:
+                    raise ValueError(
+                        f"ImageCrop {image.id!r} produces an empty pixel crop"
+                    )
+                pixels = pixels[top:bottom, left:right, :]
+            pixels = np.rot90(pixels, k=image.orientation.to_degree() // 90)
+            first_conv = next(
+                layer
+                for layer in self.model.model.modules()
+                if isinstance(layer, torch.nn.Conv2d)
+            )
+            if pixels.shape[2] != first_conv.in_channels:
+                raise ValueError(
+                    f"{image.get_path()}: {pixels.shape[2]} image channels, "
+                    f"but the detection model expects {first_conv.in_channels}"
+                )
+            # Ultralytics expects BGR for three-channel arrays, but preserves
+            # channel order for multispectral arrays. Keep its usual resizing,
+            # normalization, and box scaling relative to the original image.
+            if pixels.shape[2] == 3:
+                pixels = pixels[..., ::-1]
+            results: Results = self.model(
+                np.ascontiguousarray(pixels), **inference_kwargs
+            )[0]
+        elif isinstance(image, ImageCrop):
             with tempfile.TemporaryDirectory() as temp_dir:
                 img = image.pil()
                 img_path = Path(temp_dir) / f"{Path(image.get_path()).stem}.png"
