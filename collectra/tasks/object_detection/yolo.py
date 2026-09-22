@@ -62,8 +62,30 @@ class DetectionResult:
 class ObjectDetectionYOLO(YOLOTask):
     singletons: bool = False
 
+    @command(name="run")
+    def cli_run(
+        self,
+        inputs: list[str],
+        output: Path | None = None,
+        verbose: bool = False,
+        usage: bool = False,
+        render: bool = False,
+        model: Annotated[
+            Path | None,
+            Arg(help="Model checkpoint path. Omit to keep the configured model."),
+        ] = None,
+    ) -> None:
+        """Run this object detector for the supplied input files."""
+        if model is not None:
+            self.model = model
+        super().cli_run(
+            inputs, output=output, verbose=verbose, usage=usage, render=render
+        )
+
     @threading_locked()
-    def run(self, *args: Image, **kwargs) -> list[Image]:
+    def run(
+        self, *args: Image, model: str | Path | None = None, **kwargs
+    ) -> list[Image]:
         """Run object detection inference on the provided Image.
 
         This method performs object detection on the provided input image
@@ -74,6 +96,7 @@ class ObjectDetectionYOLO(YOLOTask):
 
         Args:
             input (Image): The input image on which to perform object detection.
+            model: Optional checkpoint path overriding the task's configured model.
 
         Returns:
             list[ImageCrop]: A list of ImageCrop objects representing the detected
@@ -84,6 +107,8 @@ class ObjectDetectionYOLO(YOLOTask):
         if not isinstance(args[0], Image):
             raise TypeError("Input must be an instance of Image.")
         image: Image = args[0]
+        if model is not None:
+            self.model = model
         self._init_model()
         from torchvision.ops import batched_nms
 

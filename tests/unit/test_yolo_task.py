@@ -1,7 +1,11 @@
 import sys
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
+import pytest
+
 from collectra import ImageCrop, ObjectDetectionYOLO
+from collectra.cli import invoke
 
 
 class FakeYOLO:
@@ -73,7 +77,9 @@ class FakeInferenceModel:
         return [SimpleNamespace(boxes=Boxes(), names={0: "human"})]
 
 
-def test_run_yolo(image, monkeypatch):
+@pytest.mark.parametrize("model", [None, "/models/override.pt", Path("override.pt")])
+@pytest.mark.parametrize("cropped", [False, True])
+def test_run_yolo(image, monkeypatch, model, cropped):
     """Exercise YOLO result conversion without importing Ultralytics."""
     fake_torchvision = ModuleType("torchvision")
     fake_ops = ModuleType("torchvision.ops")
@@ -82,11 +88,51 @@ def test_run_yolo(image, monkeypatch):
     monkeypatch.setitem(sys.modules, "torchvision", fake_torchvision)
     monkeypatch.setitem(sys.modules, "torchvision.ops", fake_ops)
 
-    task = ObjectDetectionYOLO(name="label-detector", model=FakeInferenceModel())
-    monkeypatch.setattr(task, "_init_model", lambda: None)
-    detections = task.run(image)
+    loaded_paths = []
 
+    class LoadingModel(FakeInferenceModel):
+        def __init__(self, path):
+            loaded_paths.append(path)
+
+    fake_models = ModuleType("ultralytics.models")
+    fake_models.YOLO = LoadingModel
+    monkeypatch.setitem(sys.modules, "ultralytics.models", fake_models)
+    task = ObjectDetectionYOLO(name="label-detector", model="configured.pt")
+    if cropped:
+        image = image.make_crop(0.5, 0.5, 0.5, 0.5)
+    detections = task.run(image, model=model)
+
+    assert loaded_paths == [Path(model or "configured.pt")]
     assert len(detections) == 1
     assert isinstance(detections[0], ImageCrop)
     assert detections[0].name == "human"
     assert detections[0].confidence == 0.9
+
+
+@pytest.mark.parametrize("model", [None, "/models/override.pt"])
+def test_run_cli_model_override(model):
+    task = ObjectDetectionYOLO("detector", model="configured.pt")
+    calls = []
+    task.pipeline = SimpleNamespace(
+        cli_run=lambda inputs, **kwargs: calls.append((inputs, kwargs, task.model))
+    )
+    argv = ["run", "image.jpg", "--output", "results", "--render"]
+    if model is not None:
+        argv.extend(["--model", model])
+
+    invoke(task, argv)
+
+    assert calls == [
+        (
+            ["image.jpg"],
+            dict(
+                task="detector",
+                output=Path("results"),
+                single=True,
+                verbose=False,
+                usage=False,
+                render=True,
+            ),
+            Path(model) if model is not None else "configured.pt",
+        )
+    ]
