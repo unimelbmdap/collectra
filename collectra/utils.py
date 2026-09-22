@@ -59,7 +59,7 @@ def threading_locked():
 
 def valid_raw_files() -> list[str]:
     """Return a list of valid raw file extensions for processing."""
-    return [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif", ".webp"]
+    return [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".gif", ".webp"]
 
 
 def resolve_files(inputs: list[Path], ext: list[str]) -> list[Path]:

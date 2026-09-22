@@ -79,7 +79,13 @@ class FakeInferenceModel:
 
 @pytest.mark.parametrize("model", [None, "/models/override.pt", Path("override.pt")])
 @pytest.mark.parametrize("cropped", [False, True])
-def test_run_yolo(image, monkeypatch, model, cropped):
+@pytest.mark.parametrize(
+    ("configured_imgsz", "imgsz", "expected_imgsz"),
+    [(None, None, None), (None, 1280, 1280), (960, None, 960), (960, 1280, 1280)],
+)
+def test_run_yolo(
+    image, monkeypatch, model, cropped, configured_imgsz, imgsz, expected_imgsz
+):
     """Exercise YOLO result conversion without importing Ultralytics."""
     fake_torchvision = ModuleType("torchvision")
     fake_ops = ModuleType("torchvision.ops")
@@ -89,19 +95,29 @@ def test_run_yolo(image, monkeypatch, model, cropped):
     monkeypatch.setitem(sys.modules, "torchvision.ops", fake_ops)
 
     loaded_paths = []
+    inference_calls = []
 
     class LoadingModel(FakeInferenceModel):
         def __init__(self, path):
             loaded_paths.append(path)
 
+        def __call__(self, *args, **kwargs):
+            inference_calls.append(kwargs)
+            return super().__call__(*args, **kwargs)
+
     fake_models = ModuleType("ultralytics.models")
     fake_models.YOLO = LoadingModel
     monkeypatch.setitem(sys.modules, "ultralytics.models", fake_models)
     task = ObjectDetectionYOLO(name="label-detector", model="configured.pt")
+    task.imgsz = configured_imgsz
     if cropped:
         image = image.make_crop(0.5, 0.5, 0.5, 0.5)
-    detections = task.run(image, model=model)
+    detections = task.run(image, model=model, imgsz=imgsz)
 
+    expected_kwargs = {"iou": 0.7, "conf": 0.25}
+    if expected_imgsz is not None:
+        expected_kwargs["imgsz"] = expected_imgsz
+    assert inference_calls == [expected_kwargs]
     assert loaded_paths == [Path(model or "configured.pt")]
     assert len(detections) == 1
     assert isinstance(detections[0], ImageCrop)
@@ -110,15 +126,20 @@ def test_run_yolo(image, monkeypatch, model, cropped):
 
 
 @pytest.mark.parametrize("model", [None, "/models/override.pt"])
-def test_run_cli_model_override(model):
+@pytest.mark.parametrize("imgsz", [None, 1280])
+def test_run_cli_model_override(model, imgsz):
     task = ObjectDetectionYOLO("detector", model="configured.pt")
     calls = []
     task.pipeline = SimpleNamespace(
-        cli_run=lambda inputs, **kwargs: calls.append((inputs, kwargs, task.model))
+        cli_run=lambda inputs, **kwargs: calls.append(
+            (inputs, kwargs, task.model, task.imgsz)
+        )
     )
     argv = ["run", "image.jpg", "--output", "results", "--render"]
     if model is not None:
         argv.extend(["--model", model])
+    if imgsz is not None:
+        argv.extend(["--imgsz", str(imgsz)])
 
     invoke(task, argv)
 
@@ -134,5 +155,6 @@ def test_run_cli_model_override(model):
                 render=True,
             ),
             Path(model) if model is not None else "configured.pt",
+            imgsz,
         )
     ]

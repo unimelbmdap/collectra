@@ -131,6 +131,9 @@ class Collectra:
 
         setup_logging(verbose=verbose)
         files = resolve_files(inputs, [f".{self.ext}", *valid_raw_files()])
+        if not files:
+            logger.warning("No supported input files found for: %s", ", ".join(inputs))
+            return
         self.run(
             task,
             files=files,

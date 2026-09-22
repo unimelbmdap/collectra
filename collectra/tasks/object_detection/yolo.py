@@ -61,6 +61,7 @@ class DetectionResult:
 
 class ObjectDetectionYOLO(YOLOTask):
     singletons: bool = False
+    imgsz: int | None = None
 
     @command(name="run")
     def cli_run(
@@ -74,17 +75,29 @@ class ObjectDetectionYOLO(YOLOTask):
             Path | None,
             Arg(help="Model checkpoint path. Omit to keep the configured model."),
         ] = None,
+        imgsz: Annotated[
+            int | None,
+            Arg(
+                help="Inference image size in pixels. Omit to keep the model's setting."
+            ),
+        ] = None,
     ) -> None:
         """Run this object detector for the supplied input files."""
         if model is not None:
             self.model = model
+        if imgsz is not None:
+            self.imgsz = imgsz
         super().cli_run(
             inputs, output=output, verbose=verbose, usage=usage, render=render
         )
 
     @threading_locked()
     def run(
-        self, *args: Image, model: str | Path | None = None, **kwargs
+        self,
+        *args: Image,
+        model: str | Path | None = None,
+        imgsz: int | None = None,
+        **kwargs,
     ) -> list[Image]:
         """Run object detection inference on the provided Image.
 
@@ -97,6 +110,8 @@ class ObjectDetectionYOLO(YOLOTask):
         Args:
             input (Image): The input image on which to perform object detection.
             model: Optional checkpoint path overriding the task's configured model.
+            imgsz: Optional inference image size in pixels. Defaults to the task's
+                configured size, or the model's setting when unset.
 
         Returns:
             list[ImageCrop]: A list of ImageCrop objects representing the detected
@@ -112,14 +127,19 @@ class ObjectDetectionYOLO(YOLOTask):
         self._init_model()
         from torchvision.ops import batched_nms
 
+        inference_kwargs = {"iou": 0.7, "conf": 0.25}
+        imgsz = imgsz if imgsz is not None else self.imgsz
+        if imgsz is not None:
+            inference_kwargs["imgsz"] = imgsz
+
         if isinstance(image, ImageCrop):
             with tempfile.TemporaryDirectory() as temp_dir:
                 img = image.pil()
                 img_path = Path(temp_dir) / f"{Path(image.get_path()).stem}.png"
                 img.save(img_path, format="PNG")
-                results: Results = (self.model(img_path, iou=0.7, conf=0.25))[0]
+                results: Results = (self.model(img_path, **inference_kwargs))[0]
         else:
-            results: Results = (self.model(image.get_path(), iou=0.7, conf=0.25))[0]
+            results: Results = (self.model(image.get_path(), **inference_kwargs))[0]
 
         if getattr(self.model.model, "end2end", False) and len(results.boxes):
             keep = batched_nms(
