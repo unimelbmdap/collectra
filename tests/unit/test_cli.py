@@ -490,7 +490,10 @@ def test_concrete_model_tasks_own_typed_train_commands(capsys):
 
 
 @pytest.mark.parametrize("debug", [False, True])
-def test_pipeline_gui_opens_selected_workflow(tmp_path, monkeypatch, debug):
+@pytest.mark.parametrize("with_inputs", [False, True])
+def test_pipeline_gui_opens_selected_workflow(
+    tmp_path, monkeypatch, debug, with_inputs
+):
     from unittest.mock import MagicMock
 
     from collectra.gui import backend
@@ -509,12 +512,36 @@ def test_pipeline_gui_opens_selected_workflow(tmp_path, monkeypatch, debug):
     monkeypatch.setattr(backend.webview, "create_window", create_window)
     monkeypatch.setattr(backend.webview, "start", start_webview)
 
-    main(["--pipeline", str(pipeline_dir), "gui", *(["--debug"] if debug else [])])
+    inputs = []
+    if with_inputs:
+        for name in ("first.example", "second.example"):
+            folder = tmp_path / name
+            folder.mkdir()
+            (folder / "results.yaml").write_text(
+                "text: {type: collectra.Text, id: text, data: hello}"
+            )
+            inputs.append(str(folder / "results.yaml"))
+    main(
+        [
+            "--pipeline",
+            str(pipeline_dir),
+            "gui",
+            *inputs,
+            *(["--debug"] if debug else []),
+        ]
+    )
 
     create_window.assert_called_once()
     api = create_window.call_args.kwargs["js_api"]
     assert api._pipeline.path == pipeline_dir.resolve()
     assert api._extension == "example"
+    initial = api.get_initial_items()
+    assert initial["provided"] is with_inputs
+    if with_inputs:
+        assert [folder["name"] for folder in initial["folders"]] == [
+            "first.example",
+            "second.example",
+        ]
     assert api._pipeline.pipeline_metadata["theme"] == "custom.css"
     assert api.get_pipeline_graph() == {
         "success": True,

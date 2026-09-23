@@ -42,7 +42,7 @@ class GUIBackend:
         window.pywebview.api.methodName(args)
     """
 
-    def __init__(self, pipeline: "Collectra"):
+    def __init__(self, pipeline: "Collectra", inputs=()):
         """
         Initialize the API instance.
 
@@ -58,6 +58,53 @@ class GUIBackend:
         self._parent_folder: str | None = None
         self._global_labels: set[str] = set()
         self._global_label_counts: dict[str, int] = {}  # {label: total_count}
+        self._initial_items = self._load_input_paths(inputs) if inputs else None
+
+    def get_initial_items(self) -> dict:
+        """Return startup items once the JavaScript bridge is ready."""
+        return self._initial_items or {"success": True, "provided": False}
+
+    def _load_input_paths(self, inputs) -> dict:
+        """Resolve existing results without creating or rewriting any files."""
+        seen = set()
+        for value in inputs:
+            path = Path(value).expanduser().resolve()
+            if not path.exists():
+                raise FileNotFoundError(f"GUI input does not exist: {path}")
+            directory = path.parent if path.is_file() else path
+            if (directory / "results.yaml").is_file():
+                candidates = [directory]
+            elif path.is_dir():
+                candidates = [
+                    child
+                    for child in sorted(path.iterdir())
+                    if child.is_dir() and child.suffix == f".{self._extension}"
+                ]
+            else:
+                raise ValueError(
+                    f"GUI input must belong to a folder containing results.yaml: {path}"
+                )
+            matched = False
+            for candidate in candidates:
+                scan = self._scan_collectra_folder(candidate)
+                if scan is None:
+                    continue
+                matched = True
+                candidate = candidate.resolve()
+                if candidate in seen:
+                    continue
+                seen.add(candidate)
+                self._collectra_folders.append(
+                    {
+                        "name": candidate.name,
+                        "path": str(candidate),
+                        **scan,
+                    }
+                )
+            if not matched:
+                raise ValueError(f"No GUI results found in: {path}")
+        self._parent_folder = str(Path(self._collectra_folders[0]["path"]).parent)
+        return {**self._folder_list_result(), "provided": True, "mode": "parent"}
 
     @property
     def _extension(self) -> str:
@@ -236,6 +283,9 @@ class GUIBackend:
                     }
                 )
 
+        return self._folder_list_result()
+
+    def _folder_list_result(self) -> dict:
         folders = [
             {"name": f["name"], "index": i}
             for i, f in enumerate(self._collectra_folders)
@@ -263,7 +313,7 @@ class GUIBackend:
 
         return {
             "success": True,
-            "parent_path": str(parent_path),
+            "parent_path": self._parent_folder,
             "folders": folders,
             "global_label_counts": self._global_label_counts,
             "global_total": sum(self._global_label_counts.values()),
@@ -367,7 +417,7 @@ class GUIBackend:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _display_context(self):
+    def _display_context(self, rgb_view: int = 0):
         from collectra.display import DisplayContext
 
         if self._graph is None or self._yaml_path is None:
@@ -380,12 +430,12 @@ class GUIBackend:
             for node_id in self._graph.nodes
             if self._graph.get_node(node_id)
         }
-        return DisplayContext(records, Path(self._yaml_path).parent)
+        return DisplayContext(records, Path(self._yaml_path).parent, rgb_view=rgb_view)
 
-    def get_artefact_display(self, node_id: str = "") -> dict:
+    def get_artefact_display(self, node_id: str = "", rgb_view: int = 0) -> dict:
         """Ask the actual artefact class how it should be presented."""
         try:
-            context = self._display_context()
+            context = self._display_context(rgb_view=rgb_view)
             if not node_id:
                 from collectra.types.images import Image, ImageCrop
                 from collectra.utils import load_class_from_string
@@ -1153,6 +1203,7 @@ def get_resource_path(relative_path: str) -> str:
 def start(
     pipeline: "Collectra",
     debug: bool = False,
+    inputs=(),
 ):
     """
     Create and start the pywebview window with the API.
@@ -1160,8 +1211,9 @@ def start(
     Args:
         pipeline: The live pipeline whose graph the GUI displays.
         debug: Enable developer tools
+        inputs: Optional result files/folders to populate the sidebar at startup.
     """
-    api = GUIBackend(pipeline)
+    api = GUIBackend(pipeline, inputs=inputs)
     html_path = get_resource_path("index.html")
     window = webview.create_window(
         title="Collectra Viewer",

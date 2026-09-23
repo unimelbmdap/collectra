@@ -225,3 +225,140 @@ def test_folder_with_text_only_can_be_opened(backend, tmp_path):
     assert backend._scan_collectra_folder(folder)["image_path"] == ""
     assert backend.load_yaml(str(folder))["success"]
     assert view(backend, "text")["text"] == "Hello"
+
+
+@pytest.mark.parametrize("axes", ["CYX", "YXC"])
+@pytest.mark.parametrize("target", ["views", "view-crop", "view-link"])
+def test_rgb_views_preserve_crop_geometry_and_select_triplets(backend, axes, target):
+    import numpy as np
+    import tifffile
+
+    path = Path(backend._yaml_path).parent / "views.tif"
+    bands = np.broadcast_to(np.arange(75, dtype=np.uint8), (10, 20, 75)).copy()
+    tifffile.imwrite(
+        path,
+        bands.transpose(2, 0, 1) if axes == "CYX" else bands,
+        photometric="minisblack",
+        metadata={"axes": axes},
+    )
+    original = path.read_bytes()
+    backend._graph.add_node(
+        dict(label="views", type="collectra.Image", id="views", data=path.name)
+    )
+    backend._graph.add_node(
+        dict(
+            label="view-crop",
+            type="collectra.ImageCrop",
+            id="view-crop",
+            parents="views",
+            data=path.name,
+            x_center=0.5,
+            y_center=0.5,
+            width_relative=0.5,
+            height_relative=0.6,
+            orientation="west",
+        )
+    )
+    backend._graph.add_node(
+        dict(
+            label="view-link",
+            type="collectra.Link",
+            id="view-link",
+            parents="view-crop",
+        )
+    )
+    first = view(backend, target)
+    assert first["rgb_view_count"] == 25
+    assert first["rgb_view_index"] == 0
+    assert pixels(first).getpixel((0, 0)) == (0, 1, 2)
+    for index in (1, 24, 0):
+        result = backend.get_artefact_display(target, index)
+        assert result["success"], result
+        selected = result["view"]
+        assert selected["rgb_view_index"] == index
+        assert selected["annotations"] == first["annotations"]
+        assert pixels(selected).size == ((20, 10) if target == "views" else (6, 10))
+        assert pixels(selected).getpixel((0, 0)) == tuple(
+            range(index * 3, index * 3 + 3)
+        )
+    assert path.read_bytes() == original
+
+
+def test_rgb_page_stack_decodes_only_selected_three_pages(backend, monkeypatch):
+    import numpy as np
+    import tifffile
+
+    path = Path(backend._yaml_path).parent / "stack.tif"
+    tifffile.imwrite(
+        path,
+        np.zeros((75, 10, 20), dtype=np.uint8),
+        photometric="minisblack",
+        metadata={"axes": "CYX"},
+    )
+    backend._graph.add_node(
+        dict(label="stack", type="collectra.Image", id="stack", data=path.name)
+    )
+    decoded = []
+    read = tifffile.TiffPage.asarray
+
+    def capture(page, *args, **kwargs):
+        decoded.append(page.index)
+        return read(page, *args, **kwargs)
+
+    monkeypatch.setattr(tifffile.TiffPage, "asarray", capture)
+    result = backend.get_artefact_display("stack", 24)
+    assert result["success"], result
+    assert decoded == [72, 73, 74]
+
+
+@pytest.mark.parametrize("index", [-1, 25, 0.5, "1", True])
+def test_invalid_rgb_view_returns_error(backend, index):
+    result = backend.get_artefact_display("image", index)
+    assert not result["success"]
+    assert "RGB view" in result["error"]
+
+
+def test_ordinary_image_has_one_view(backend):
+    result = view(backend, "image")
+    assert result["rgb_view_count"] == 1
+    assert result["rgb_view_index"] == 0
+
+
+def test_gui_startup_inputs_preserve_order_and_deduplicate(tmp_path):
+    folders = []
+    for name in ("b.collectra", "a.collectra"):
+        folder = tmp_path / name
+        folder.mkdir()
+        (folder / "results.yaml").write_text(
+            "text: {type: collectra.Text, id: text, data: hello}"
+        )
+        folders.append(folder)
+    api = GUIBackend(
+        SimpleNamespace(ext="collectra"),
+        inputs=[
+            folders[0] / "results.yaml",
+            tmp_path,
+            folders[0],
+            folders[1] / "results.yaml",
+        ],
+    )
+    initial = api.get_initial_items()
+    assert initial["success"] and initial["provided"]
+    assert initial["folders"] == [
+        {"name": "b.collectra", "index": 0},
+        {"name": "a.collectra", "index": 1},
+    ]
+    assert api.load_collectra_folder(0)["folder_path"] == str(folders[0])
+    assert api.load_yaml(api.load_collectra_folder(1)["yaml_path"])["success"]
+    assert api.get_artefact_display("text")["view"]["text"] == "hello"
+
+
+def test_gui_startup_without_inputs_keeps_picker(backend):
+    assert backend.get_initial_items() == {"success": True, "provided": False}
+
+
+def test_gui_startup_reports_invalid_inputs(tmp_path):
+    with pytest.raises(FileNotFoundError, match="GUI input does not exist"):
+        GUIBackend(SimpleNamespace(ext="collectra"), inputs=[tmp_path / "missing"])
+    with pytest.raises(ValueError, match="No GUI results found"):
+        GUIBackend(SimpleNamespace(ext="collectra"), inputs=[tmp_path])
