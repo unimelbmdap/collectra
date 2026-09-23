@@ -136,6 +136,7 @@ class DisplayContext:
                     "type": record["type"],
                     "label": record.get("label", ""),
                     "name": record.get("name", ""),
+                    "confidence": child.confidence,
                     "crop_region": self.region(image, region),
                 }
             )
