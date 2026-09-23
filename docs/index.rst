@@ -22,6 +22,7 @@ Builds pipelines to extract data from collection images.
    quickstart
    api
    cli
+   artefact_display
    yolo_classifier
    torchvision_classifier
    huggingface_classifier

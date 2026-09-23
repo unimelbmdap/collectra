@@ -61,6 +61,9 @@ class Link(Artefact):
     def __call__(self) -> Any:
         return self.resolve()()
 
+    def display(self, context) -> dict:
+        return self.resolve().display(context)
+
     def __getattr__(self, name: str) -> Any:
         # Dataclass initialization probes attributes before ``target`` exists.
         target = self.__dict__.get("target")

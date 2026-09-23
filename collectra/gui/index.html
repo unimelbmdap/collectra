@@ -1435,7 +1435,7 @@
     <link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
     <script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
     <!-- Pure node-click dispatch logic, unit tested in tests-js/ -->
-    <script src="nodeDisplayMode.js"></script>
+    <script src="artefactDisplay.js"></script>
     <!-- Pure collapse/expand state for sidebar, right panel, and DAG toggles, unit tested in tests-js/ -->
     <script src="collapsibleRegion.js"></script>
     <!-- Pure open/closed state for the toolbar's floating popovers, unit tested in tests-js/ -->
@@ -1973,8 +1973,8 @@
             // genuinely has no valid child type — that's not the same as
             // "unknown context", so it must not fall back to the whole pipeline.
             const labels = focused
-                ? imageCropDescendantLabels(focused, adjacency, dagNodeType, isDagTaskNode)
-                : lastDagNodes.map((n) => n.id).filter((id) => isImageCropType(dagNodeType(id)));
+                ? imageCropDescendantLabels(focused, adjacency, id => pageCropLabels.has(id) ? 'collectra.ImageCrop' : dagNodeType(id), isDagTaskNode)
+                : lastDagNodes.map((n) => n.id).filter((id) => pageCropLabels.has(id) || isImageCropType(dagNodeType(id)));
             return { labels, prefill: firstUnusedLabel(labels, pageNodeIds) };
         }
 
@@ -2142,8 +2142,8 @@
                 const cropRegion = calculateCropRegionFromGeometry(geometry, imgWidth, imgHeight);
                 const allAnnotations = targetAnno.getAnnotations();
                 const parentCrop = findParentCrop(controller, geometry, allAnnotations, pendingAnnotation.id);
-                const parentId = parentCrop ? parentCrop.id : "";
-                const result = await window.pywebview.api.create_annotation(cropRegion, label, parentId, imagePath, "", cropId);
+                const parentId = controller?.displayView?.target_id || (parentCrop ? parentCrop.id : "");
+                const result = await window.pywebview.api.create_annotation(cropRegion, label, parentId, imagePath, "", cropId, controller?.displayView?.target_id || "");
                 if (!result.success) {
                     // Keep the popup open so the user can fix the id.
                     errorEl.textContent = result.error || 'Could not create the crop.';
@@ -2314,7 +2314,7 @@
             let infoHtml = `<strong>Path:</strong> ${result.folder_path}<br>`;
 
             if (result.image_path) {
-                await displayImageFromPath(result.image_path);
+                currentImagePath = result.image_path;
             } else {
                 clearImage();
             }
@@ -2468,7 +2468,7 @@
                 let infoHtml = `<strong>Path:</strong> ${result.folder_path}<br>`;
 
                 if (result.image_path) {
-                    await displayImageFromPath(result.image_path);
+                    currentImagePath = result.image_path;
                 }
 
                 if (result.yaml_path) {
@@ -2513,6 +2513,7 @@
                 // rebuilt rows.
                 const activeResult = await window.pywebview.api.get_active_node_ids(index);
                 pageNodeTypes = new Map(Object.entries(activeResult.node_types || {}));
+                pageCropLabels = new Set(activeResult.crop_labels || []);
                 pageNodeIds = new Map(Object.entries(activeResult.node_ids || {}));
                 populateTabs(lastDagNodes);
                 setActive(activeResult.success ? activeResult.active_ids : null);
@@ -3200,39 +3201,28 @@
                 if (this.dagTabEls) this.dagTabEls.contentEl.style.display = 'none';
                 this.syncDagHighlights();
 
-                const detail = cy?.getElementById(resolveDagLabel(nodeId))?.data('detail') || '';
-                const realType = pageNodeTypes.get(resolveDagLabel(nodeId)) || detail;
-                let mode = decideNodeDisplayMode({
-                    nodeId,
-                    realType,
-                    pageViewerActive: !!this.pageViewer,
-                });
-
-                // 'legacyNodeDisplay' + no pageViewer yet == would resolve
-                // to 'imageHighlight' once one exists. Lazy-create here,
-                // not eagerly on page load: contentEl is already visible
-                // at this point (set by showActiveTabContent()), and
-                // OpenSeadragon needs a real container size at init time.
-                if (mode === 'legacyNodeDisplay' && !this.pageViewer && currentImagePath) {
-                    await this.renderPageArtefact(currentImagePath);
-                    mode = decideNodeDisplayMode({
-                        nodeId,
-                        realType,
-                        pageViewerActive: !!this.pageViewer,
-                    });
+                const request = this._displayRequest = {};
+                const result = await window.pywebview.api.get_artefact_display(nodeId);
+                if (this._displayRequest !== request) return;
+                if (!result.success) {
+                    this.clearPageArtefact();
+                    if (this.el.textDisplay) this.el.textDisplay.style.display = 'none';
+                    this.el.contentDiv.style.display = 'block';
+                    this.el.contentDiv.textContent = result.error || 'Unable to display artefact';
+                    return;
                 }
-
-                if (mode === 'fileBackedText') {
-                    await this.renderTextNodeAsPage(nodeId, realType);
-                } else if (mode === 'annotationText' || mode === 'legacyNodeDisplay') {
-                    await this.renderNodeDisplay(nodeId);
-                } else {
-                    this.showPageImage();
-                    this.el.headerId.textContent   = nodeId;
-                    this.el.headerType.textContent = realType;
-                    this.highlightPageBox(nodeId);
-                    this.syncDrawBoxButton();
+                try {
+                    await displayArtefact(this, result);
+                } catch (error) {
+                    if (this._displayRequest !== request) return;
+                    this.clearPageArtefact();
+                    if (this.el.textDisplay) this.el.textDisplay.style.display = 'none';
+                    this.el.contentDiv.style.display = 'block';
+                    this.el.contentDiv.textContent = error.message;
                 }
+                if (this._displayRequest !== request) return;
+                this.el.headerId.textContent = result.id;
+                this.el.headerType.textContent = result.type;
             }
 
             // Marks every node with an open tab in this panel (cy-open),
@@ -3316,6 +3306,7 @@
         }
 
         PanelController.prototype.clearPageArtefact = function() {
+            this.displayView = null;
             this._artefactToken = {}; // invalidate any renderPageArtefact still mid-await for this panel
             if (this.pageAnno)   { try { this.pageAnno.destroy(); }   catch (e) {} this.pageAnno = null; }
             if (this.pageViewer) { try { this.pageViewer.destroy(); } catch (e) {} this.pageViewer = null; }
@@ -3342,7 +3333,7 @@
             // initial load), so drawing isn't blocked speculatively.
             const focused = this.selectedNodeId ? resolveDagLabel(this.selectedNodeId) : null;
             const noValidChildType = !inFullPage && !!focused && cropTypeOptionsForController(this).labels.length === 0;
-            const disabled = inFullPage || noValidChildType;
+            const disabled = inFullPage || noValidChildType || !this.displayView?.can_create_crop;
             const armed = !disabled && !!(this.pageAnno && this.pageAnno.isDrawingEnabled());
             if (noValidChildType && this.pageAnno && this.pageAnno.isDrawingEnabled()) {
                 this.pageAnno.setDrawingEnabled(false);
@@ -3387,13 +3378,15 @@
             if (this.el.headerType) this.el.headerType.textContent = '';
         };
 
-        PanelController.prototype.renderPageArtefact = async function(imagePath) {
+        PanelController.prototype.renderPageArtefact = async function(imagePath, view = null) {
             const display     = this.el.imageDisplay;
             const placeholder = this.el.placeholder;
             const contentDiv  = this.el.contentDiv;
-            if (!display || !apiReady || !imagePath) return;
+            if (!display || !apiReady || (!imagePath && !view)) return;
 
             this.currentImagePath = imagePath;
+            if (this.el.textDisplay) this.el.textDisplay.style.display = 'none';
+            if (this.easyMDE) { this.easyMDE.toTextArea(); this.easyMDE = null; }
             this.clearPageArtefact();
             // Supersede any earlier render still mid-await: each await below bails if
             // a newer call (or a clearPageArtefact) has replaced this token. Without
@@ -3405,14 +3398,22 @@
             display.style.display = 'block';
 
             try {
-                const imgResult = await window.pywebview.api.get_image_base64(imagePath);
+                if (!view) {
+                    const result = await window.pywebview.api.get_artefact_display();
+                    if (!result.success) throw new Error(result.error);
+                    view = result.view;
+                }
+                if (this._artefactToken !== token) return;
+                this.displayView = view;
+                this.currentImagePath = view.image_path;
+                const imgResult = { success: true, data: view.source };
                 if (this._artefactToken !== token) return;
                 if (!imgResult.success) {
                     display.innerHTML = '<div class="image-placeholder">Could not load page image.</div>';
                     return;
                 }
                 display.innerHTML = '';
-                await new Promise((resolve) => {
+                await new Promise((resolve, reject) => {
                     this.pageViewer = OpenSeadragon({
                         element: display,
                         prefixUrl: "https://cdn.jsdelivr.net/npm/openseadragon@5.0/build/openseadragon/images/",
@@ -3421,6 +3422,7 @@
                         gestureSettingsMouse: { clickToZoom: false, dblClickToZoom: false },
                     });
                     this.pageViewer.addHandler('open', resolve);
+                    this.pageViewer.addHandler('open-failed', event => reject(new Error(event.message || 'Image preview failed')));
                 });
                 // A newer render's clearPageArtefact has already torn down the viewer
                 // we just built (it runs before we can resume here) — just stop.
@@ -3508,7 +3510,7 @@
                     const [imgW, imgH] = [this.pageViewer.world._contentSize.x, this.pageViewer.world._contentSize.y];
                     // Stay inside a containing box, not just the image — it's about to become its parent.
                     const parentCrop = findParentCrop(this, annotation.target.selector.geometry, this.pageAnno.getAnnotations(), annotation.id);
-                    const bounds = parentCrop
+                    const bounds = parentCrop && !this.displayView
                         ? parentCrop.target.selector.geometry
                         : { x: 0, y: 0, w: imgW, h: imgH };
                     annotation.target.selector.geometry = clampGeometryToBounds(annotation.target.selector.geometry, bounds);
@@ -3537,7 +3539,7 @@
                         this._pushingClampedUpdate = false;
                         const cropRegion = calculateCropRegionFromGeometry(clamped, imgW, imgH);
                         try {
-                            const result = await window.pywebview.api.update_node_coordinates(updated.id, cropRegion);
+                            const result = await window.pywebview.api.update_node_coordinates(updated.id, cropRegion, this.displayView?.target_id || '');
                             if (result.success) Object.values(panelControllers).forEach((c) => c.refreshPageAnnotations(result.rows));
                             else console.error('Failed to update annotation coordinates:', result.error);
                         } catch (e) {
@@ -3554,6 +3556,7 @@
                 if (this._artefactToken !== token) return;
                 if (rowsResult.success) this.refreshPageAnnotations(rowsResult.rows);
             } catch (e) {
+                if (this._artefactToken === token) display.textContent = e.message;
                 console.error('Error rendering page artefact:', e);
             }
         };
@@ -3561,17 +3564,20 @@
         // Redraws every ImageCrop row as an annotation on this panel's own
         // image — shared by the initial load and every create/update/
         // delete refresh, so they can't drift out of sync with each other.
-        PanelController.prototype.refreshPageAnnotations = function(rows) {
-            if (!this.pageAnno || !this.pageViewer) return;
+        PanelController.prototype.refreshPageAnnotations = async function(rows) {
+            if (!this.pageAnno || !this.pageViewer || !this.displayView) return;
+            const token = this._artefactToken;
+            const result = this.displayView.can_create_crop
+                ? await window.pywebview.api.get_display_annotations(this.displayView.target_id)
+                : {success: true, rows: this.displayView.annotations || []};
+            if (token !== this._artefactToken || !result.success || !this.pageAnno) return;
             const imgW = this.pageViewer.world._contentSize.x;
             const imgH = this.pageViewer.world._contentSize.y;
             this.pageAnno.clearAnnotations();
-            rows
-                .filter(r => (r.type || '').includes('ImageCrop') && r.crop_region)
-                .forEach(r => {
-                    const geom = calculateGeometryFromCropRegion(r.crop_region, imgW, imgH);
-                    if (geom) this.pageAnno.addAnnotation(createAnnotation(geom, r));
-                });
+            result.rows.forEach(r => {
+                const geom = calculateGeometryFromCropRegion(r.crop_region, imgW, imgH);
+                if (geom) this.pageAnno.addAnnotation(createAnnotation(geom, r));
+            });
         };
 
         function calculateGeometryFromCropRegion(cropRegion, imgWidth, imgHeight) {
@@ -3721,6 +3727,7 @@
         function liveDagInstances() {
             return Object.values(panelControllers).map((c) => c.dagCy?.()).filter(Boolean);
         }
+        let pageCropLabels = new Set();
         let pageNodeTypes = new Map(); // label (DAG node id) -> real type, for the currently loaded page
         // label (DAG node id) -> real results.yaml id(s), for the currently
         // loaded page. Always an array — a detector-type node declares one
@@ -3735,6 +3742,7 @@
             if (currentFolderIndex < 0) return;
             const activeResult = await window.pywebview.api.get_active_node_ids(currentFolderIndex);
             pageNodeTypes = new Map(Object.entries(activeResult.node_types || {}));
+                pageCropLabels = new Set(activeResult.crop_labels || []);
             pageNodeIds = new Map(Object.entries(activeResult.node_ids || {}));
             populateTabs(lastDagNodes);
             setActive(activeResult.success ? activeResult.active_ids : null);
@@ -4168,6 +4176,7 @@
             Object.values(panelControllers).forEach((c) => { c.selectedNodeId = null; c.clear(); });
             clearTabs();
             pageNodeTypes = new Map();
+            pageCropLabels = new Set();
             pageNodeIds = new Map();
         }
 
@@ -5014,7 +5023,7 @@
         // definition) — an instance method so each panel shows its own
         // node independently.
 
-        PanelController.prototype.renderTextNodeAsPage = async function(nodeId, detail) {
+        PanelController.prototype.renderTextNodeAsPage = async function(nodeId, detail, view) {
             const { placeholder, imageDisplay, contentDiv, headerId, headerType, textDisplay } = this.el;
             if (!textDisplay) return;
 
@@ -5024,8 +5033,7 @@
             textDisplay.style.display = 'flex';
             textDisplay.innerHTML = '<div class="book-page"><div class="book-page-label">Loading…</div></div>';
 
-            const isTei = nodeId.toLowerCase() === 'tei';
-            const label = isTei ? 'TEI XML' : 'Markdown';
+            const isTei = view.format === 'xml';
             headerId.textContent   = nodeId;
             headerType.textContent = detail;
 
@@ -5048,18 +5056,20 @@
                     // math so wheel-scrolling silently does nothing). "0" lets
                     // the flex layout be the only thing controlling height.
                     minHeight: '0',
-                    toolbar: tei
+                    toolbar: (tei || view?.format === 'plain')
                         ? false
                         : ['bold','italic','|','heading','quote','unordered-list','ordered-list','|','preview','side-by-side','fullscreen'],
                     previewClass: ['editor-preview'],
                     ...(tei ? { previewRender: () => '' } : {}),
+                    readOnly: view ? !view.editable : false,
                 });
-                requestAnimationFrame(() => this.easyMDE.codemirror.refresh());
+                requestAnimationFrame(() => this.easyMDE?.codemirror.refresh());
+                textDisplay.querySelector('.page-text-save').hidden = view ? !view.editable : false;
                 textDisplay.querySelector('.page-text-save').onclick = async () => {
                     const statusEl = textDisplay.querySelector('.page-text-status');
                     statusEl.textContent = 'Saving…';
                     try {
-                        const r = await window.pywebview.api.update_page_text(tei ? 'tei' : 'markdown', this.easyMDE.value());
+                        const r = await window.pywebview.api.update_display_text(nodeId, this.easyMDE.value());
                         if (r && r.success !== false) {
                             flashStatus(statusEl, 'Saved', false);
                         } else {
@@ -5071,31 +5081,13 @@
                 };
             };
 
-            try {
-                const textsResult = await window.pywebview.api.get_page_texts();
-                if (textsResult.success) {
-                    const key   = isTei ? 'tei' : 'markdown';
-                    const found = textsResult[key + '_found'];
-                    const text  = textsResult[key];
-                    if (found && text) {
-                        mountEditor(text, isTei);
-                    } else {
-                        const dv = await window.pywebview.api.get_display_value(nodeId);
-                        if (dv.success && dv.value) {
-                            mountEditor(dv.value, dv.value.trim().startsWith('<'));
-                        } else {
-                            textDisplay.innerHTML = `<div class="book-page"><span class="text-not-found">No ${label.toLowerCase()} found for this page.</span></div>`;
-                        }
-                    }
-                } else {
-                    textDisplay.innerHTML = '<div class="book-page"><span class="text-not-found">Could not load page texts.</span></div>';
-                }
-            } catch (e) {
-                textDisplay.innerHTML = '<div class="book-page"><span class="text-not-found">Error loading text content.</span></div>';
-            }
+            mountEditor(view.text, isTei);
+            if (isTei) this.easyMDE.codemirror.setOption('mode', 'xml');
+            if (view.format === 'plain') this.easyMDE.codemirror.setOption('mode', 'text/plain');
         };
 
         PanelController.prototype.clear = function() {
+            this._displayRequest = {};
             // Deliberately does NOT reset this.selectedNodeId — this is
             // called by clearPageView() on every page switch (sidebar
             // click), and loadCollectraFolder() needs the previous
@@ -5109,148 +5101,6 @@
             this.clearHeader();
             if (panelControllers[focusedPanel] === this) renderLineage(null);
         };
-
-        PanelController.prototype.renderNodeDisplay = async function(nodeId) {
-            if (!cy) return;
-            // nodeId may be a specific real instance id (not just the
-            // label) when opened from an expanded multi-instance Artefacts
-            // row — the DAG only knows labels, so resolve for the lookup;
-            // backend calls further down keep using nodeId as-is so they
-            // fetch that specific instance's data, not just any instance
-            // sharing the label.
-            const node = cy.getElementById(resolveDagLabel(nodeId));
-            if (!node || node.empty()) return;
-            const data = node.data();
-
-            const { placeholder, contentDiv, headerId, headerType, imageDisplay, textDisplay } = this.el;
-
-            // This panel can be reached while the whole-page photo or the
-            // markdown/TEI editor is showing (e.g. clicking a Text field right
-            // after viewing TEI) — hide both so they don't sit underneath/behind
-            // this view. pageViewer itself is only hidden, not destroyed, so
-            // switching back to an image-highlight node doesn't re-init it.
-            if (imageDisplay) imageDisplay.style.display = 'none';
-            if (textDisplay)  { textDisplay.style.display = 'none'; textDisplay.innerHTML = ''; }
-
-            placeholder.style.display = 'none';
-            contentDiv.style.display = 'none';
-            if (this.easyMDE) { try { this.easyMDE.toTextArea(); this.easyMDE = null; } catch (e) {} }
-            contentDiv.innerHTML = '';
-
-            const label = resolveDagLabel(nodeId);
-            const type = pageNodeTypes.get(label) || data.detail || '';
-            headerId.textContent   = nodeId;
-            headerType.textContent = type;
-
-            // Task types can legitimately contain these substrings (e.g.
-            // collectra.ImageOrienter, collectra.ImageClassifierYOLO) without
-            // being a displayable data node — checking the type string alone
-            // would show currentImagePath (the CURRENT PAGE's photo, unrelated
-            // to the clicked task) under that task's own label. pageNodeTypes
-            // only has entries for nodes that actually appear as real outputs
-            // in this page's results.yaml, so its presence is a reliable
-            // "this is genuine page data" signal — unlike the DAG's own
-            // structural nodeType, which labels any node only ever referenced
-            // as another task's output (never its own top-level pipeline
-            // key) as 'implicit' even when it's a perfectly real, editable
-            // field, like a canonicaliser's collectra.Text output.
-            const isDataNode = pageNodeTypes.has(label);
-
-            if (isDataNode && type.includes('ImageCrop') && currentImagePath && apiReady) {
-                try {
-                    const [imgResult, dvResult] = await Promise.all([
-                        window.pywebview.api.get_image_base64(currentImagePath),
-                        window.pywebview.api.get_display_value(nodeId),
-                    ]);
-                    if (imgResult.success && dvResult.success && dvResult.crop_region) {
-                        const croppedSrc = await cropImageToDataURL(imgResult.data, dvResult.crop_region);
-                        contentDiv.innerHTML = `<img class="node-data-image" src="${croppedSrc}">`;
-                    } else {
-                        contentDiv.innerHTML = `<span class="node-content-note">Load a page to view crop.</span>`;
-                    }
-                    contentDiv.style.display = 'flex';
-                } catch (e) {
-                    contentDiv.innerHTML = `<span class="node-content-note">Error loading crop.</span>`;
-                    contentDiv.style.display = 'flex';
-                }
-            } else if (isDataNode && type.includes('Image') && currentImagePath && apiReady) {
-                try {
-                    const imgResult = await window.pywebview.api.get_image_base64(currentImagePath);
-                    if (imgResult.success) {
-                        contentDiv.innerHTML = `<img class="node-data-image" src="${imgResult.data}">`;
-                    } else {
-                        contentDiv.innerHTML = `<span class="node-content-note">Load a page to view image.</span>`;
-                    }
-                    contentDiv.style.display = 'flex';
-                } catch (e) {
-                    contentDiv.innerHTML = `<span class="node-content-note">Error loading image.</span>`;
-                    contentDiv.style.display = 'flex';
-                }
-            } else if (isDataNode && type.includes('Text') && apiReady) {
-                try {
-                    const dvResult = await window.pywebview.api.get_display_value(nodeId);
-                    if (dvResult.success && dvResult.value != null) {
-                        // Classes, not ids — this markup can exist in two
-                        // panels at once.
-                        contentDiv.innerHTML = `
-                            <div style="display:flex;align-items:center;justify-content:flex-end;padding:10px 12px 8px;">
-                                <button class="node-text-save btn btn-sm btn-primary" style="font-size:11px;">Save</button><span class="node-text-status" style="font-size:11px;margin-left:8px;color:var(--app-fg-muted, #586e75);"></span>
-                            </div>
-                            <textarea class="node-text-edit"></textarea>`;
-                        this.easyMDE = new EasyMDE({
-                            element: contentDiv.querySelector('.node-text-edit'),
-                            initialValue: dvResult.value,
-                            spellChecker: false,
-                            autofocus: false,
-                            status: false,
-                            minHeight: '0',
-                            toolbar: false,
-                        });
-                        requestAnimationFrame(() => this.easyMDE.codemirror.refresh());
-                        contentDiv.querySelector('.node-text-save').onclick = async () => {
-                            const statusEl = contentDiv.querySelector('.node-text-status');
-                            const val = this.easyMDE.value();
-                            statusEl.textContent = 'Saving…';
-                            try {
-                                const r = await window.pywebview.api.update_node_data(nodeId, val);
-                                if (r && r.success !== false) {
-                                    flashStatus(statusEl, 'Saved', false);
-                                } else {
-                                    flashStatus(statusEl, 'Error: ' + (r?.error || ''), true);
-                                }
-                            } catch (e) {
-                                flashStatus(statusEl, 'Error: ' + e.message, true);
-                            }
-                        };
-                    } else {
-                        contentDiv.innerHTML = `<span class="node-content-note">No text data for this page.</span>`;
-                    }
-                    contentDiv.style.display = 'flex';
-                } catch (e) {
-                    contentDiv.innerHTML = `<span class="node-content-note">Error loading text.</span>`;
-                    contentDiv.style.display = 'flex';
-                }
-            }
-        };
-
-        function cropImageToDataURL(base64Src, cropRegion) {
-            return new Promise((resolve) => {
-                const img = new Image();
-                img.onload = () => {
-                    const { x_center, y_center, width_relative, height_relative } = cropRegion;
-                    const x = Math.round((x_center - width_relative / 2) * img.width);
-                    const y = Math.round((y_center - height_relative / 2) * img.height);
-                    const w = Math.round(width_relative * img.width);
-                    const h = Math.round(height_relative * img.height);
-                    const canvas = document.createElement('canvas');
-                    canvas.width  = w;
-                    canvas.height = h;
-                    canvas.getContext('2d').drawImage(img, x, y, w, h, 0, 0, w, h);
-                    resolve(canvas.toDataURL());
-                };
-                img.src = base64Src;
-            });
-        }
 
         function renderLineage(nodeId) {
             const parentsList  = document.getElementById('parentsList');

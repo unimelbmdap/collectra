@@ -351,6 +351,13 @@ class Image(Artefact):
         image = ImagePil.open(self.get_path())
         return image.rotate(self.orientation.to_degree(), expand=True)
 
+    def display(self, context) -> dict:
+        return context.image(self)
+
+    def display_bounds(self):
+        """Region in source pixels represented by this image's viewer."""
+        return (0, 0, self.raw_width, self.raw_height)
+
     def _extract(self, path: Path) -> None:
         """Extract the image to a specified path."""
         if path.suffix == "":
@@ -459,6 +466,9 @@ class ImageCrop(Image):
     height_relative: float = field(default=1.0)
     confidence: float | None = field(default=None)
     source_parent: "Image | ImageCrop | None" = field(init=False, default=None)
+
+    def display_bounds(self):
+        return self.coordinates()
 
     def save(self, path: Path | str = None):
         im = self.source_parent.pil() if self.source_parent else self.pil()

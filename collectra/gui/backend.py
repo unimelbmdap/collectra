@@ -17,7 +17,7 @@ import webview
 
 from collectra.commons.files import CollectraFile
 
-from .data_display import CollectraGraph, NodeDisplayValue
+from .data_display import CollectraAnnotationNode, CollectraGraph, NodeDisplayValue
 
 if TYPE_CHECKING:
     from collectra.pipelines.base import Collectra
@@ -76,7 +76,7 @@ class GUIBackend:
             folder_path: Path to the folder to scan
 
         Returns:
-            dict with yaml_path and image_path if both found, None otherwise
+            dict with yaml_path and optional image_path, or None without results
         """
         results_path = folder_path / "results.yaml"
         image_path = None
@@ -92,10 +92,13 @@ class GUIBackend:
             if image_path:
                 break
 
-        if not results_path.is_file() or image_path is None:
+        if not results_path.is_file():
             return None
 
-        return {"yaml_path": str(results_path), "image_path": str(image_path)}
+        return {
+            "yaml_path": str(results_path),
+            "image_path": str(image_path) if image_path else "",
+        }
 
     def select_folder(self) -> dict:
         """
@@ -122,7 +125,7 @@ class GUIBackend:
             if scan_result is None:
                 return {
                     "success": False,
-                    "error": "No results.yaml or image file found in folder",
+                    "error": "No results.yaml found in folder",
                 }
 
             return {
@@ -322,16 +325,20 @@ class GUIBackend:
             graph = CollectraGraph.from_collectra_file(collectra_file)
             node_types: dict[str, str] = {}
             node_ids: dict[str, list[str]] = {}
+            crop_labels = set()
             for node_id in graph.nodes:
                 node = graph.get_node(node_id)
                 if node and node.label:
                     node_types[node.label] = node.type
                     node_ids.setdefault(node.label, []).append(node_id)
+                    if isinstance(node, CollectraAnnotationNode):
+                        crop_labels.add(node.label)
             return {
                 "success": True,
                 "active_ids": list(node_types.keys()),
                 "node_types": node_types,
                 "node_ids": node_ids,
+                "crop_labels": sorted(crop_labels),
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -357,6 +364,79 @@ class GUIBackend:
 
             return {"success": True, "data": f"data:{mime_type};base64,{base64_data}"}
 
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _display_context(self):
+        from collectra.display import DisplayContext
+
+        if self._graph is None or self._yaml_path is None:
+            raise ValueError("No page loaded")
+        records = {
+            node_id: {
+                **self._graph.get_node(node_id).model_dump(),
+                "label": self._graph.get_node(node_id).label,
+            }
+            for node_id in self._graph.nodes
+            if self._graph.get_node(node_id)
+        }
+        return DisplayContext(records, Path(self._yaml_path).parent)
+
+    def get_artefact_display(self, node_id: str = "") -> dict:
+        """Ask the actual artefact class how it should be presented."""
+        try:
+            context = self._display_context()
+            if not node_id:
+                from collectra.types.images import Image, ImageCrop
+                from collectra.utils import load_class_from_string
+
+                for candidate in context.records:
+                    try:
+                        cls = load_class_from_string(context.records[candidate]["type"])
+                    except (ImportError, AttributeError):
+                        continue
+                    if issubclass(cls, Image) and not issubclass(cls, ImageCrop):
+                        node_id = candidate
+                        break
+            node_id = self._graph.resolve_id(node_id)
+            item = context.artefact(node_id)
+            view = item.display(context)
+            return {
+                "success": True,
+                "view": view,
+                "id": node_id,
+                "type": context.records[node_id]["type"],
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def get_display_annotations(self, node_id: str) -> dict:
+        try:
+            context = self._display_context()
+            image = context.artefact(self._graph.resolve_id(node_id))
+            from collectra.types.links import Link
+
+            if type(image) is Link:
+                image = image.resolve()
+            return {"success": True, "rows": context.annotations(image)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def update_display_text(self, node_id: str, content: str) -> dict:
+        try:
+            context = self._display_context()
+            item = context.artefact(self._graph.resolve_id(node_id))
+            view = item.display(context)
+            if view.get("kind") != "text" or not view.get("editable"):
+                raise ValueError("This artefact does not expose editable text")
+            target_id = view["target_id"]
+            path = context.text_path(target_id)
+            if path:
+                path.write_text(content, encoding="utf-8")
+            else:
+                self._graph.set_data(target_id, content)
+                self._save_collectra_file()
+            return {"success": True}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -619,7 +699,9 @@ class GUIBackend:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def update_node_coordinates(self, node_id: str, crop_region: dict) -> dict:
+    def update_node_coordinates(
+        self, node_id: str, crop_region: dict, view_id: str = ""
+    ) -> dict:
         """
         Update the crop region coordinates of a specific node.
 
@@ -633,6 +715,11 @@ class GUIBackend:
         try:
             if self._graph is None:
                 raise ValueError("No graph loaded. Call load_yaml first.")
+            if view_id:
+                context = self._display_context()
+                crop_region = context.region(
+                    context.artefact(view_id), crop_region, inverse=True
+                )
             self._graph.set_crop_region(self._graph.resolve_id(node_id), crop_region)
             self._save_collectra_file()
             return self.get_all_nodes_for_grid()
@@ -669,6 +756,7 @@ class GUIBackend:
         image_path: str = "",
         name: str = "",
         crop_id: str = "",
+        view_id: str = "",
     ) -> dict:
         """
         Create a new ImageCrop annotation with a Text child.
@@ -691,8 +779,14 @@ class GUIBackend:
             }
 
         try:
+            if view_id:
+                context = self._display_context()
+                image = context.artefact(view_id)
+                crop_region = context.region(image, crop_region, inverse=True)
+                image_path = str(image.get_path())
+                parent_id = parent_id or image.id
             # Find root Image node
-            root_image_id = None
+            root_image_id = parent_id if view_id else None
             for node_id in self._graph.nodes:
                 node_type = self._graph.get_type(node_id)
                 if "Image" in node_type and "ImageCrop" not in node_type:
@@ -716,6 +810,14 @@ class GUIBackend:
             if self._yaml_path is None:
                 raise ValueError("YAML path is not set.")
 
+            asset_path = Path(image_path)
+            if view_id:
+                try:
+                    asset_path = asset_path.relative_to(context.directory)
+                except ValueError:
+                    pass
+            else:
+                asset_path = Path(asset_path.name)
             # Create ImageCrop node
             crop_data = {
                 "label": label,
@@ -723,7 +825,7 @@ class GUIBackend:
                 "id": crop_id,
                 "parents": parent_id if parent_id else root_image_id,
                 "orientation": orientation,
-                "data": Path(image_path).name,
+                "data": str(asset_path),
                 "name": name,
                 **crop_region,
             }

@@ -13,7 +13,7 @@ import uuid
 from dataclasses import dataclass, field
 
 import networkx as nx
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from collectra.commons.files import CollectraFile, CollectraResultsMetadata
 
@@ -26,7 +26,14 @@ class CollectraNodeFactory:
     def create_node(data: dict) -> "CollectraNode":
         """Factory method to create appropriate CollectraNode subclass."""
         node_type = data.get("type", "")
-        if "ImageCrop" in node_type:
+        from collectra.utils import load_class_from_string
+        from collectra.types.images import ImageCrop
+
+        try:
+            is_crop = issubclass(load_class_from_string(node_type), ImageCrop)
+        except (ImportError, AttributeError, ValueError):
+            is_crop = "ImageCrop" in node_type
+        if is_crop:
             crop_region = CollectraCropRegion(
                 x_center=data["x_center"],
                 y_center=data["y_center"],
@@ -40,11 +47,13 @@ class CollectraNodeFactory:
 class CollectraNode(BaseModel):
     """Node in the annotation graph."""
 
+    model_config = ConfigDict(extra="allow")
+
     label: str
     type: str
     id: str
     parents: list[str] = []
-    data: str = ""
+    data: object = ""
     embeddings: list[str] = []
     orientation: str = "north"
     name: str = ""  # user-set per-instance name, distinct from label (the category)

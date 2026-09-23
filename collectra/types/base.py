@@ -92,6 +92,14 @@ class Artefact(BaseEntity):
             "Eval method not implemented for base Artefact class."
         )
 
+    def display(self, context) -> dict:
+        """Describe this artefact using the display protocol (see collectra.display).
+
+        Override to return an image, text, or properties view. The context
+        resolves related artefacts and publishes previews without altering data.
+        """
+        return {"kind": "properties", "data": self.serialize()}
+
     def _extract(self, path: Path) -> None:
         raise NotImplementedError(
             "Extract method not implemented for base Artefact class."

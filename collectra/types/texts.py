@@ -51,6 +51,9 @@ class Text(Artefact):
     def __call__(self) -> str | Path:
         return self.data
 
+    def display(self, context) -> dict:
+        return context.text(self)
+
     def evaluate(self, gold: "Text") -> float:
         if not isinstance(gold, Text):
             raise ValueError("Reference data must be an instance of Text.")
