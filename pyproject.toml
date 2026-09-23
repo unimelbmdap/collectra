@@ -45,7 +45,7 @@ dependencies = [
     "torch (==2.9.0)",
     "torchvision (==0.24.0)",
     "cappa (>=0.32.2)",
-    "opencv-python-headless (>=4.8.0)",
+    "opencv-python-headless (>=4.8.0,<5.0.0)",
     "pywebview (>=6.1,<7.0)",
     "rich (>=14.2.0,<15.0.0)",
     "pyyaml (>=6.0.3,<7.0.0)",
@@ -74,6 +74,27 @@ pre-commit = ">=2.15.0"
 sphinx-copybutton = ">=0.4.0"
 black = ">=21.10b0"
 sphinx-click = {git = "https://github.com/rbturnbull/sphinx-click.git"}
+
+# uv-native mirror of the Poetry dev group above — kept in sync manually
+# during the uv trial. Once the team fully switches to uv, the Poetry
+# group above can be deleted and this becomes the only dev dependency list.
+[dependency-groups]
+dev = [
+    "pytest>=6.2.5",
+    "ipython>=8.1.1",
+    "ipykernel>=6.6.1",
+    "coverage>=5.5",
+    "autopep8>=1.5.7",
+    "Sphinx>=5.0.0",
+    "nbsphinx>=0.8.7",
+    "sphinx-rtd-theme>=1.0.0",
+    "sphinx-autobuild>=2021.3.14",
+    "myst-parser>=0.15.2",
+    "pre-commit>=2.15.0",
+    "sphinx-copybutton>=0.4.0",
+    "black>=21.10b0",
+    "sphinx-click @ git+https://github.com/rbturnbull/sphinx-click.git",
+]
 
 [tool.pytest.ini_options]
 minversion = "6.0"
