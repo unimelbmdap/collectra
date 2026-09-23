@@ -140,7 +140,9 @@ class LineDetectorRLSA(Task):
         if lines is None:
             return 0.0
         angles = []
-        for x1, y1, x2, y2 in lines[:, 0]:
+        # reshape, not [:, 0] — cv2.HoughLinesP returns (N, 1, 4) on OpenCV 4.x
+        # but (N, 4) on 5.x; reshape(-1, 4) normalises either into one row per line.
+        for x1, y1, x2, y2 in lines.reshape(-1, 4):
             angle = float(np.degrees(np.arctan2(y2 - y1, x2 - x1)))
             if abs(angle) <= self.max_skew_degrees:
                 angles.append(angle)
