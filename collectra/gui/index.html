@@ -1241,6 +1241,58 @@
             text-align: center;
             padding-top: 30px;
         }
+        .rgb-view-controls {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 8px;
+            padding: 6px 10px;
+            border-radius: 5px;
+            background: var(--app-bg, #002b36);
+            color: var(--app-fg, #93a1a1);
+            box-shadow: 0 1px 5px #0006;
+            font-size: 13px;
+        }
+        .rgb-view-controls button {
+            cursor: pointer;
+            padding: 0;
+            width: 28px;
+            height: 28px;
+            flex: 0 0 28px;
+            font-size: 22px;
+            line-height: 1;
+        }
+        .rgb-view-controls select {
+            flex: none;
+            cursor: pointer;
+            font: inherit;
+            font-variant-numeric: tabular-nums;
+            color: inherit;
+            background: transparent;
+            border: none;
+            padding: 3px;
+        }
+        .rgb-view-controls select option {
+            background: var(--app-bg, #002b36);
+            color: var(--app-fg, #93a1a1);
+        }
+        .rgb-view-controls button:disabled { cursor: default; opacity: 0.5; }
+        .rgb-view-status {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            max-width: 100%;
+            padding: 2px 6px;
+            border-radius: 3px;
+            background: var(--app-bg, #002b36);
+            font-size: 12px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .rgb-view-status:empty { display: none; }
+
         .page-artefact-display {
             position: relative;
             flex: 1;
@@ -1436,6 +1488,7 @@
     <script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
     <!-- Pure node-click dispatch logic, unit tested in tests-js/ -->
     <script src="artefactDisplay.js"></script>
+    <script src="rgbViewControls.js"></script>
     <!-- Pure collapse/expand state for sidebar, right panel, and DAG toggles, unit tested in tests-js/ -->
     <script src="collapsibleRegion.js"></script>
     <!-- Pure open/closed state for the toolbar's floating popovers, unit tested in tests-js/ -->
@@ -3555,6 +3608,31 @@
                 const rowsResult = await window.pywebview.api.get_all_nodes_for_grid();
                 if (this._artefactToken !== token) return;
                 if (rowsResult.success) this.refreshPageAnnotations(rowsResult.rows);
+
+                const viewer = this.pageViewer;
+                mountRgbViewControls({
+                    viewer, view,
+                    isCurrent: () => this._artefactToken === token,
+                    loadView: index => window.pywebview.api.get_artefact_display(view.target_id, index),
+                    applyView: nextView => new Promise((resolve, reject) => {
+                        const bounds = viewer.viewport.getBounds(true);
+                        // Replace the pixels in the existing viewer: keep zoom,
+                        // pan, the annotator, and all child bounding boxes.
+                        viewer.addTiledImage({
+                            tileSource: {type: 'image', url: nextView.source},
+                            index: 0,
+                            replace: true,
+                            success: () => {
+                                if (this._artefactToken === token) {
+                                    viewer.viewport.fitBounds(bounds, true);
+                                    this.displayView = nextView;
+                                }
+                                resolve();
+                            },
+                            error: event => reject(new Error(event.message || 'Could not display RGB view')),
+                        });
+                    }),
+                });
             } catch (e) {
                 if (this._artefactToken === token) display.textContent = e.message;
                 console.error('Error rendering page artefact:', e);
@@ -5235,9 +5313,17 @@
 
         // ── END PIPELINE DAG ─────────────────────────────────────────────────
 
-        window.addEventListener('pywebviewready', function() {
+        window.addEventListener('pywebviewready', async function() {
             apiReady = true;
             document.getElementById('selectCollectraBtn').disabled = false;
+            try {
+                const initial = await window.pywebview.api.get_initial_items();
+                if (initial.success && initial.provided) {
+                    await handleParentFolderResult(initial);
+                }
+            } catch (error) {
+                showResult('loadResult', {error: error.message}, true);
+            }
         });
     </script>
 </body>

@@ -63,6 +63,13 @@ A newly drawn box belongs to the displayed image/crop.
 
 TIFF previews use the TIFF axis-aware reader. For a multispectral TIFF the
 default preview uses its first three bands (or first band if fewer than three).
+When the channel count is divisible by three, Previous/Next buttons at the top
+of OpenSeadragon switch between consecutive RGB triplets. A 75-channel TIFF has
+25 views. Click the view counter to choose any view from its dropdown. The
+caret buttons step backward and forward, and the controls retain their width
+during loading. Switching preserves zoom, pan,
+and child bounding boxes, including when viewing a crop or a Link. TIFFs with
+one channel per page decode only the three pages needed for the chosen view.
 Non-uint8 previews are scaled to 0–255 for display. Override ``display`` to
 choose a different projection. Preview generation never rewrites source data.
 

@@ -157,12 +157,12 @@ class Collectra:
         )
 
     @command(name="gui")
-    def launch_gui(self, debug: bool = False) -> None:
-        """Open this pipeline in the GUI, optionally enabling developer tools."""
+    def launch_gui(self, *inputs: Path, debug: bool = False) -> None:
+        """Open the GUI with optional result folders, results.yaml files, or parent directories."""
         from collectra.gui.backend import start
 
         self._ensure_workflow_connected()
-        start(pipeline=self, debug=debug)
+        start(pipeline=self, debug=debug, inputs=inputs)
 
     @command(name="install")
     def cli_install(self, name: str, bin_dir: Path | None = None) -> None:

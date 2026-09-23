@@ -15,10 +15,13 @@ from collectra.utils import load_class_from_string
 
 
 class DisplayContext:
-    def __init__(self, records: dict, directory: Path):
+    def __init__(self, records: dict, directory: Path, rgb_view: int = 0):
+        if type(rgb_view) is not int or rgb_view < 0:
+            raise ValueError("RGB view index must be a non-negative integer")
         self.records = records
         self.directory = Path(directory).resolve()
         self.instances = {}
+        self.rgb_view = rgb_view
 
     def path(self, value):
         path = Path(value)
@@ -140,16 +143,38 @@ class DisplayContext:
 
     def image(self, item):
         from PIL import Image as PILImage
-        from collectra.types.images import read_tiff_channels
+        from collectra.types.images import image_channel_count, read_tiff_channels
 
         path = item.get_path()
+        view_count = 1
         if path.suffix.lower() in {".tif", ".tiff"}:
             import numpy as np
+            from tifffile import TiffFile
 
-            pixels = read_tiff_channels(path)
-            # Default spectral preview: first RGB triplet, or first gray band.
-            # Subclasses can override display() to choose a different projection.
-            pixels = pixels[..., :3] if pixels.shape[2] >= 3 else pixels[..., 0]
+            channels = image_channel_count(path)
+            # Only complete RGB triplets form multiple views. Other spectral
+            # layouts keep the first-triplet/gray preview and can override display.
+            if channels >= 3 and channels % 3 == 0:
+                view_count = channels // 3
+            if self.rgb_view >= view_count:
+                raise ValueError(f"RGB view index must be less than {view_count}")
+            start = self.rgb_view * 3
+            stop = start + (3 if channels >= 3 else 1)
+            with TiffFile(path) as tiff:
+                series = tiff.series[0]
+                # CYX/QYX stacks store each channel on a separate page. Decode
+                # just this view instead of all 75 channels on every button click.
+                pages = series.pages
+                if len(pages) == channels and all(
+                    pages[i].axes == "YX" for i in range(start, stop)
+                ):
+                    pixels = np.stack(
+                        [pages[i].asarray() for i in range(start, stop)], axis=-1
+                    )
+                else:
+                    pixels = read_tiff_channels(path)[..., start:stop]
+            if pixels.shape[2] == 1:
+                pixels = pixels[..., 0]
             if pixels.dtype != np.uint8:
                 pixels = pixels.astype(float)
                 low, high = np.nanmin(pixels), np.nanmax(pixels)
@@ -158,6 +183,8 @@ class DisplayContext:
                 )
             preview = PILImage.fromarray(pixels)
         else:
+            if self.rgb_view:
+                raise ValueError("This image has only one RGB view")
             with PILImage.open(path) as source:
                 preview = source.convert("RGB")
         preview = preview.crop(item.display_bounds()).rotate(
@@ -170,4 +197,6 @@ class DisplayContext:
             "target_id": item.id,
             "annotations": self.annotations(item),
             "can_create_crop": True,
+            "rgb_view_index": self.rgb_view,
+            "rgb_view_count": view_count,
         }

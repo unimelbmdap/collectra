@@ -91,6 +91,8 @@ def test_train_save_reload_and_native_export(tmp_path, local_model, backend):
         epochs=2,
         batch=2,
         device="cpu",
+        workers=0,
+        wandb=False,
         freeze_backbone=True,
         fliplr=0,
     )
@@ -358,6 +360,8 @@ def test_pipeline_save_and_reload_after_log_cleanup(tmp_path, local_model):
         epochs=1,
         batch=2,
         device="cpu",
+        workers=0,
+        wandb=False,
         keep_log=False,
     )
     assert not result.save_dir.exists()
