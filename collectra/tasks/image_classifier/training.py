@@ -4,6 +4,7 @@ import csv
 import json
 import math
 import os
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -338,13 +339,16 @@ class TorchClassifierTask(Task):
         self._load(pretrained=kwargs.get("pretrained", True))
         logger.info("Building datasets and detecting channel count")
         train_data, val_data = self._make_datasets(train_dir, val_dir, augmentation)
+        # Torchvision stores normalization here; other backends (e.g. Hugging
+        # Face) own their preprocessing elsewhere. Logging must not require it.
+        preprocessing = getattr(self, "_preprocessing", {})
         logger.info(
             "Datasets ready: train=%d, val=%d, detected_channels=%s, mean_len=%d, std_len=%d",
             len(train_data),
             len(val_data),
             getattr(self, "_input_channels", "unknown"),
-            len(self._preprocessing.get("mean", [])),
-            len(self._preprocessing.get("std", [])),
+            len(preprocessing.get("mean", [])),
+            len(preprocessing.get("std", [])),
         )
         freeze = kwargs.get("freeze_backbone", False)
         logger.info("Preparing training model (freeze_backbone=%s)", freeze)
@@ -495,14 +499,20 @@ class TorchClassifierTask(Task):
         first_batch = True
         phase = "train" if optimizer is not None else "val"
         for pixels, labels in loader:
+            # Torchvision batches are tensors; Hugging Face batches are dicts
+            # of processor outputs keyed by model input name.
+            tensors = pixels if isinstance(pixels, Mapping) else {"pixels": pixels}
+            shapes = {name: tuple(tensor.shape) for name, tensor in tensors.items()}
             if first_batch:
-                approximate_mib = pixels.numel() * pixels.element_size() / (1024 * 1024)
+                approximate_mib = sum(
+                    tensor.numel() * tensor.element_size() for tensor in tensors.values()
+                ) / (1024 * 1024)
                 logger.info(
-                    "%s first batch: pixels_shape=%s, labels_shape=%s, dtype=%s, approx_input_mib=%.1f",
+                    "%s first batch: input_shapes=%s, labels_shape=%s, dtypes=%s, approx_input_mib=%.1f",
                     phase,
-                    tuple(pixels.shape),
+                    shapes,
                     tuple(labels.shape),
-                    pixels.dtype,
+                    {name: tensor.dtype for name, tensor in tensors.items()},
                     approximate_mib,
                 )
                 first_batch = False
@@ -514,7 +524,7 @@ class TorchClassifierTask(Task):
                 loss = F.cross_entropy(logits, labels)
             except RuntimeError as error:
                 raise RuntimeError(
-                    f"{phase} step failed for input shape {tuple(pixels.shape)} "
+                    f"{phase} step failed for input shapes {shapes} "
                     f"on device {self._device}: {error}"
                 ) from error
             if optimizer is not None:

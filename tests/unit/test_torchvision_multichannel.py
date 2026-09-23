@@ -157,6 +157,7 @@ def test_training_and_inference_keep_75_channels(tmp_path, monkeypatch):
         epochs=1,
         batch=2,
         device="cpu",
+        workers=0,
         wandb=False,
     )
     assert task._preprocessing["channels"] == 75

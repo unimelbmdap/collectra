@@ -174,6 +174,8 @@ def test_training_checkpoint_reload_and_prediction(
         epochs=2,
         batch=2,
         device="cpu",
+        workers=0,
+        wandb=False,
         fliplr=0,
         freeze_backbone=True,
     )
@@ -217,6 +219,8 @@ def test_checkpoint_retraining_replaces_head_for_new_classes(
         epochs=1,
         batch=2,
         device="cpu",
+        workers=0,
+        wandb=False,
     )
     for sample in samples:
         sample.name = "NewClass"
@@ -229,6 +233,8 @@ def test_checkpoint_retraining_replaces_head_for_new_classes(
         epochs=1,
         batch=2,
         device="cpu",
+        workers=0,
+        wandb=False,
     )
     assert second.results_dict["classes"] == ["NewClass"]
     assert task.model.fc.out_features == 1
@@ -249,6 +255,8 @@ def test_real_resnet_training_roundtrip(tmp_path, torch_backend):
         pretrained=False,
         freeze_backbone=True,
         device="cpu",
+        workers=0,
+        wandb=False,
         fliplr=0,
     )
     assert 0 <= result.results_dict["val_accuracy"] <= 1
@@ -388,6 +396,8 @@ def test_pipeline_training_persists_model_and_link_outputs(tmp_path, tiny_backen
         epochs=1,
         batch=2,
         device="cpu",
+        workers=0,
+        wandb=False,
         keep_log=False,
     )
     assert not result.save_dir.exists()
@@ -433,6 +443,8 @@ def test_best_checkpoint_and_early_stopping(
         early_stop=1,
         batch=2,
         device="cpu",
+        workers=0,
+        wandb=False,
     )
     assert result.results_dict["epoch"] == 1
     assert result.results_dict["epochs_completed"] == 2
@@ -452,6 +464,8 @@ def test_missing_validation_partition_is_reported(tmp_path, tiny_backend):
             validation="typo",
             exclude="excluded",
             device="cpu",
+            workers=0,
+            wandb=False,
         )
 
 
@@ -470,6 +484,8 @@ def test_validation_can_omit_a_training_class(tmp_path, tiny_backend):
         validation="validation",
         exclude="excluded",
         device="cpu",
+        workers=0,
+        wandb=False,
         batch=2,
     )
     assert result.results_dict["classes"] == ["Pollen", "Spore"]
