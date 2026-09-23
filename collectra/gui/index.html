@@ -3538,9 +3538,13 @@
                     const typeName = (body.type || 'collectra.ImageCrop');
                     // A name equal to the id is treated as unset.
                     const displayName = (body.name && body.name !== rawId) ? escapeHtml(body.name) : prettyCropName(rawId);
+                    const confidence = typeof body.confidence === 'number' && Number.isFinite(body.confidence)
+                        ? `<div>Confidence: ${(body.confidence * 100).toFixed(1)}%</div>`
+                        : '';
                     tooltip.innerHTML =
                         `<div class="box-name">${displayName}</div>` +
                         `<div>${typeName}</div>` +
+                        confidence +
                         `<div class="box-id">${rawId}</div>`;
                     tooltip.style.display = 'block';
                     tooltip.style.left = (lastMousePos.x + 14) + 'px';
