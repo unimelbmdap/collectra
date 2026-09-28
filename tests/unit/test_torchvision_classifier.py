@@ -173,6 +173,9 @@ def test_training_checkpoint_reload_and_prediction(
         exclude="excluded",
         epochs=2,
         batch=2,
+        # This tiny dataset does not need worker processes or external logging.
+        workers=0,
+        wandb=False,
         device="cpu",
         fliplr=0,
         freeze_backbone=True,
@@ -216,6 +219,8 @@ def test_checkpoint_retraining_replaces_head_for_new_classes(
         exclude="excluded",
         epochs=1,
         batch=2,
+        workers=0,
+        wandb=False,
         device="cpu",
     )
     for sample in samples:
@@ -228,6 +233,8 @@ def test_checkpoint_retraining_replaces_head_for_new_classes(
         exclude="excluded",
         epochs=1,
         batch=2,
+        workers=0,
+        wandb=False,
         device="cpu",
     )
     assert second.results_dict["classes"] == ["NewClass"]

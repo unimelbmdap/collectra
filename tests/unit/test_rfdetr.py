@@ -50,6 +50,36 @@ def test_train_rfdetr_temp_dir(image, tmp_path, monkeypatch):
     }
 
 
+def test_train_rfdetr_max_items_limits_each_split(image, tmp_path, monkeypatch):
+    task = ObjectDetectionRFDETR(name="label-detector")
+    seen = {}
+    monkeypatch.setattr(task, "_init_model", lambda: None)
+    monkeypatch.setattr(
+        task,
+        "_prepare_assets",
+        lambda *args: ([{"train": i} for i in range(5)], [{"val": i} for i in range(4)]),
+    )
+    monkeypatch.setattr(task, "_check_distribution", lambda *args: None)
+
+    def fake_train_fold(train, validation, classes, log, kwargs):
+        seen.update(train=train, validation=validation)
+        return DetectionTrainResult(log, {"status": "completed"})
+
+    monkeypatch.setattr(task, "_train_fold", fake_train_fold)
+    task._train(
+        one_crop(image),
+        log="run",
+        base_folder=tmp_path,
+        classes=["human"],
+        max_items=2,
+    )
+
+    assert seen == {
+        "train": [{"train": 0}, {"train": 1}],
+        "validation": [{"val": 0}, {"val": 1}],
+    }
+
+
 class FakeRFDETRModel:
     def predict(self, image, threshold, **kwargs):
         return SimpleNamespace(

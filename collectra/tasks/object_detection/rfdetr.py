@@ -743,6 +743,12 @@ class ObjectDetectionRFDETR(Task):
             float | None,
             Arg(help="Change default resolution. Valid options will depend on the model type."),
         ] = None,
+        max_items: Annotated[
+            int,
+            Arg(
+                help="Use at most this many images in each of the training and validation sets (0 uses all); for quick tests."
+            ),
+        ] = 0,
     ):
         """Train this RF-DETR object detector."""
         return run_training_command(
@@ -781,6 +787,7 @@ class ObjectDetectionRFDETR(Task):
             warmup_epochs=warmup_epochs,
             model=model,
             resolution=resolution,
+            max_items=max_items,
         )
 
     def _train(self, *images: ImageCrop, **kwargs) -> DetectionTrainResult:
@@ -818,6 +825,14 @@ class ObjectDetectionRFDETR(Task):
             exclude,
             *images,
         )
+        max_items = int(kwargs.get("max_items", 0) or 0)
+        if max_items > 0:
+            train_samples = train_samples[:max_items]
+            val_samples = val_samples[:max_items]
+            print(
+                f"Limiting to {len(train_samples)} training and "
+                f"{len(val_samples)} validation images (max_items={max_items})"
+            )
         self._check_distribution(classes, train_samples, val_samples)
 
         with change_dir(kwargs["base_folder"]):
