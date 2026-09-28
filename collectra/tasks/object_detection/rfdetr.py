@@ -8,7 +8,7 @@ from typing import Annotated, TYPE_CHECKING
 from cappa import Arg
 
 from collectra.cli import command
-from collectra.types.images import Image, ImageCrop
+from collectra.types.images import Image, ImageCrop, image_channel_count, image_size
 from collectra.utils import change_dir
 
 from ...logger import get_logger
@@ -401,13 +401,12 @@ class ObjectDetectionRFDETR(Task):
         classes: list[str],
         dataset_dir: Path,
     ) -> Path:
-        from PIL import Image as PILImage
-
         categories = [
             {"id": idx, "name": name, "supercategory": "object"}
             for idx, name in enumerate(classes)
         ]
 
+        channel_counts: dict[str, int] = {}
         for split_name, samples in [("train", train_samples), ("valid", val_samples)]:
             split_dir = dataset_dir / split_name
             split_dir.mkdir(parents=True, exist_ok=True)
@@ -422,8 +421,8 @@ class ObjectDetectionRFDETR(Task):
                 dest_path = split_dir / dest_name
                 shutil.copy2(src_path, dest_path)
 
-                with PILImage.open(dest_path) as pil_img:
-                    w, h = pil_img.size
+                w, h = image_size(dest_path)
+                channel_counts[str(src_path)] = image_channel_count(dest_path)
 
                 images_list.append(
                     {
@@ -461,6 +460,18 @@ class ObjectDetectionRFDETR(Task):
             with open(annotations_path, "w") as f:
                 json.dump(coco_json, f, indent=2)
 
+        if len(set(channel_counts.values())) > 1:
+            details = ", ".join(
+                f"{name}: {count} channels" for name, count in channel_counts.items()
+            )
+            raise ValueError(
+                f"Inconsistent input channel counts in prepared dataset: {details}"
+            )
+        if channel_counts:
+            logger.info(
+                "RF-DETR dataset images have %d channels",
+                next(iter(channel_counts.values())),
+            )
         return dataset_dir
 
     def _train_fold(
@@ -483,12 +494,24 @@ class ObjectDetectionRFDETR(Task):
         params_kwargs["log"] = f"{log.name}"
         params_kwargs["output_dir"] = str(weights_dir)
         params = self._prepare_params(**params_kwargs)
+        has_tiffs = any(
+            Path(sample["image_path"]).suffix.lower() in {".tif", ".tiff"}
+            for sample in [*train_samples, *val_samples]
+        )
+        if has_tiffs and params["augmentation_backend"] == "cpu":
+            # "cpu" resolves to Albumentations when it is installed, which
+            # round-trips images through PIL and cannot keep extra channels.
+            logger.info("TIFF inputs: using the torchvision augmentation backend")
+            params["augmentation_backend"] = "torchvision"
+
+        from .rfdetr_data import multichannel_datasets
 
         model = self.model
-        model.train(
-            dataset_dir=str(dataset_dir),
-            **params,
-        )
+        with multichannel_datasets():
+            model.train(
+                dataset_dir=str(dataset_dir),
+                **params,
+            )
 
         self._categories = classes
         self.model = model
