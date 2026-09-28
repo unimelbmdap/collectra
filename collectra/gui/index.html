@@ -2500,6 +2500,7 @@
                     clearPageView();
                     loadCollectraFolder(index);
                 };
+                li.oncontextmenu = (event) => showFolderContextMenu(event, index);
                 listEl.appendChild(li);
             });
 
@@ -4166,6 +4167,37 @@
                     }
                 } catch (e) {
                     console.error('Error deleting annotation:', e);
+                }
+            });
+            document.body.appendChild(menu);
+
+            setTimeout(() => {
+                document.addEventListener('mousedown', onNodeContextMenuOutsideClick, true);
+                document.addEventListener('keydown', onNodeContextMenuEscape, true);
+            }, 0);
+        }
+
+        function showFolderContextMenu(mouseEvent, index) {
+            mouseEvent.preventDefault();
+            closeNodeContextMenu();
+
+            const folder = sidebarFolders[index];
+            if (!folder) return;
+
+            const menu = document.createElement('div');
+            menu.id = 'nodeContextMenu';
+            menu.className = 'node-context-menu';
+            menu.style.left = mouseEvent.clientX + 'px';
+            menu.style.top = mouseEvent.clientY + 'px';
+            menu.innerHTML =
+                '<div class="node-context-menu-item" data-action="reveal">Reveal in Finder</div>';
+            menu.querySelector('[data-action="reveal"]').addEventListener('click', async () => {
+                closeNodeContextMenu();
+                try {
+                    const result = await window.pywebview.api.reveal_in_folder(folder.yaml_path);
+                    if (!result.success) console.error('Failed to reveal folder:', result.error);
+                } catch (e) {
+                    console.error('Error revealing folder:', e);
                 }
             });
             document.body.appendChild(menu);

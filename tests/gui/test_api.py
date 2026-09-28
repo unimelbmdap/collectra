@@ -917,6 +917,62 @@ class TestApiGetImageBase64:
         assert "error" in result
 
 
+class TestApiRevealInFolder:
+    """Tests for GUIBackend.reveal_in_folder method."""
+
+    def test_returns_error_for_nonexistent_path(self, backend_with_extension):
+        with patch("subprocess.run") as mock_run:
+            result = backend_with_extension.reveal_in_folder("/nonexistent/folder")
+
+        assert result["success"] is False
+        assert "error" in result
+        mock_run.assert_not_called()
+
+    def test_calls_open_dash_r_on_macos(self, backend_with_extension, tmp_path):
+        """`open -R` reveals + selects the results.yaml file within its
+        specimen folder — the actual "Reveal in Finder" behavior — rather
+        than opening the specimen folder's own contents."""
+        yaml_path = tmp_path / "results.yaml"
+        yaml_path.touch()
+        with (
+            patch("platform.system", return_value="Darwin"),
+            patch("subprocess.run") as mock_run,
+        ):
+            result = backend_with_extension.reveal_in_folder(str(yaml_path))
+
+        assert result["success"] is True
+        mock_run.assert_called_once_with(["open", "-R", str(yaml_path)])
+
+    def test_calls_explorer_select_on_windows(self, backend_with_extension, tmp_path):
+        """Explorer's equivalent of reveal+select is a single combined
+        `/select,<path>` argument, not two separate ones."""
+        yaml_path = tmp_path / "results.yaml"
+        yaml_path.touch()
+        with (
+            patch("platform.system", return_value="Windows"),
+            patch("subprocess.run") as mock_run,
+        ):
+            result = backend_with_extension.reveal_in_folder(str(yaml_path))
+
+        assert result["success"] is True
+        mock_run.assert_called_once_with(["explorer", f"/select,{yaml_path}"])
+
+    def test_calls_xdg_open_on_parent_on_linux(self, backend_with_extension, tmp_path):
+        """No universal reveal+select convention across Linux desktop
+        environments — opening the specimen folder (the file's parent) is
+        the closest approximation available via a single xdg-open call."""
+        yaml_path = tmp_path / "results.yaml"
+        yaml_path.touch()
+        with (
+            patch("platform.system", return_value="Linux"),
+            patch("subprocess.run") as mock_run,
+        ):
+            result = backend_with_extension.reveal_in_folder(str(yaml_path))
+
+        assert result["success"] is True
+        mock_run.assert_called_once_with(["xdg-open", str(yaml_path.parent)])
+
+
 class TestApiSelectFolder:
     """Tests for GUIBackend.select_folder method."""
 
@@ -1323,6 +1379,8 @@ class TestGUIBackendSelectParentFolder:
         for folder in result["folders"]:
             assert "name" in folder
             assert "index" in folder
+            assert "path" in folder
+            assert "yaml_path" in folder
             assert folder["name"].endswith(".collectra")
 
     def test_computes_global_label_statistics(

@@ -115,6 +115,42 @@ class GUIBackend:
         """Store the window reference for use in dialogs."""
         self._window = window
 
+    def reveal_in_folder(self, path: str) -> dict:
+        """Reveal a file in the OS file manager, selected within its folder.
+
+        Args:
+            path: Absolute path to reveal (e.g. a specimen's results.yaml
+                file, selected within its .grapto folder).
+
+        Returns:
+            dict with 'success' or 'error'
+        """
+        import subprocess
+
+        target = Path(path)
+        if not target.exists():
+            return {"success": False, "error": f"Path not found: {path}"}
+
+        system = platform.system()
+        if system == "Darwin":
+            # -R reveals + selects the item in its *parent's* Finder window —
+            # actual "Reveal in Finder" behavior — not the folder's own contents.
+            command = ["open", "-R", str(target)]
+        elif system == "Windows":
+            # Explorer's reveal+select is one combined `/select,<path>` argument.
+            command = ["explorer", f"/select,{target}"]
+        else:
+            # No universal reveal+select convention across Linux desktop
+            # environments — opening the parent folder is the closest
+            # approximation available via a single xdg-open call.
+            command = ["xdg-open", str(target.parent)]
+
+        try:
+            subprocess.run(command)
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def _scan_collectra_folder(self, folder_path: Path) -> dict | None:
         """
         Scan a folder for YAML and image files.
@@ -287,7 +323,12 @@ class GUIBackend:
 
     def _folder_list_result(self) -> dict:
         folders = [
-            {"name": f["name"], "index": i}
+            {
+                "name": f["name"],
+                "path": f["path"],
+                "yaml_path": f["yaml_path"],
+                "index": i,
+            }
             for i, f in enumerate(self._collectra_folders)
         ]
 

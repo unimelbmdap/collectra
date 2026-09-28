@@ -344,10 +344,8 @@ def test_gui_startup_inputs_preserve_order_and_deduplicate(tmp_path):
     )
     initial = api.get_initial_items()
     assert initial["success"] and initial["provided"]
-    assert initial["folders"] == [
-        {"name": "b.collectra", "index": 0},
-        {"name": "a.collectra", "index": 1},
-    ]
+    assert [f["name"] for f in initial["folders"]] == ["b.collectra", "a.collectra"]
+    assert [f["index"] for f in initial["folders"]] == [0, 1]
     assert api.load_collectra_folder(0)["folder_path"] == str(folders[0])
     assert api.load_yaml(api.load_collectra_folder(1)["yaml_path"])["success"]
     assert api.get_artefact_display("text")["view"]["text"] == "hello"
