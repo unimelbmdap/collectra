@@ -572,6 +572,18 @@
         .modal-popup .result {
             max-height: 360px;
         }
+        .folder-search-input {
+            margin: 8px 12px 0;
+            padding: 6px 10px;
+            border: 1px solid var(--app-border, #2a2a2a);
+            border-radius: 0.25rem;
+            font-size: 0.9rem;
+            background: var(--app-bg, #000);
+            color: var(--app-fg, #cccccc);
+        }
+        .sidebar.collapsed .folder-search-input {
+            display: none;
+        }
         .sidebar-list {
             flex: 1;
             overflow-y: auto;
@@ -1499,6 +1511,10 @@
     <!-- Pure crop-type option logic for the create-box modal, unit tested in tests-js/ -->
     <script src="cropTypeOptions.js"></script>
     <script src="splitLayout.js"></script>
+    <!-- Pure substring-match predicate for the sidebar's page search box, unit tested in tests-js/ -->
+    <script src="folderSearch.js"></script>
+    <!-- Pure decision logic for what runs once the pywebview API is ready, unit tested in tests-js/ -->
+    <script src="startupActions.js"></script>
 </head>
 <body>
     <div class="titlebar-strip pywebview-drag-region"></div>
@@ -1521,6 +1537,7 @@
                 </div>
                 <input type="hidden" id="yamlPath" value="">
             </div>
+            <input type="search" id="folderSearchInput" class="folder-search-input" placeholder="Search pages…" oninput="handleFolderSearchInput()" aria-label="Search pages">
             <ul id="folderList" class="sidebar-list"></ul>
             <div class="sidebar-resize-handle" id="sidebarResizeHandle"></div>
             <button class="panel-collapse-toggle sidebar-collapse-toggle" id="sidebarCollapseToggle" onclick="toggleSidebarCollapse()" aria-label="Collapse sidebar">
@@ -2463,7 +2480,11 @@
             }
         }
 
+        let sidebarFolders = []; // cached for re-filtering on search input, indices match _collectra_folders
+
         function populateSidebar(folders) {
+            sidebarFolders = folders;
+            document.getElementById('folderSearchInput').value = ''; // new project load — old query shouldn't carry over
             const listEl = document.getElementById('folderList');
             listEl.innerHTML = '';
 
@@ -2480,6 +2501,17 @@
                     loadCollectraFolder(index);
                 };
                 listEl.appendChild(li);
+            });
+
+            handleFolderSearchInput(); // re-apply any query already typed before this (re)population
+        }
+
+        function handleFolderSearchInput() {
+            const query = document.getElementById('folderSearchInput').value;
+            const visible = new Set(visibleFolderIndices(sidebarFolders, query));
+            const listEl = document.getElementById('folderList');
+            listEl.querySelectorAll('.sidebar-item').forEach((li) => {
+                li.hidden = !visible.has(Number(li.dataset.index));
             });
         }
 
@@ -5320,9 +5352,13 @@
         window.addEventListener('pywebviewready', async function() {
             apiReady = true;
             document.getElementById('selectCollectraBtn').disabled = false;
+            // Outside the try below on purpose: theme/logo only need the live
+            // pipeline object, never a selected folder, so they must load even
+            // if get_initial_items() itself throws — see startupActions().
+            await loadWorkflowAssets();
             try {
                 const initial = await window.pywebview.api.get_initial_items();
-                if (initial.success && initial.provided) {
+                if (startupActions(initial).handleParentFolderResult) {
                     await handleParentFolderResult(initial);
                 }
             } catch (error) {
