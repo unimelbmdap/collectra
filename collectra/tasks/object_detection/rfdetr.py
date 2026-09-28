@@ -554,6 +554,10 @@ class ObjectDetectionRFDETR(Task):
             Path(sample["image_path"]).suffix.lower() in {".tif", ".tiff"}
             for sample in [*train_samples, *val_samples]
         )
+        if has_tiffs:
+            from .rfdetr_channels import require_multichannel_rfdetr
+
+            require_multichannel_rfdetr()
         if has_tiffs and params["augmentation_backend"] == "cpu":
             # "cpu" resolves to Albumentations when it is installed, which
             # round-trips images through PIL and cannot keep extra channels.

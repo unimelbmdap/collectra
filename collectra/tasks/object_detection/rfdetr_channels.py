@@ -26,17 +26,35 @@ from .rfdetr_data import channel_stats
 PROJECTION_KEY = "backbone.0.encoder.encoder.embeddings.patch_embeddings.projection.weight"
 
 
+MIN_RFDETR_VERSION = (1, 10, 1)
+
+
+def require_multichannel_rfdetr() -> None:
+    """Fail clearly on rfdetr releases whose data pipeline is PIL/RGB-only."""
+    from importlib.metadata import version
+
+    installed = version("rfdetr")
+    parts = tuple(int(p) for p in installed.split(".")[:3] if p.isdigit())
+    if parts < MIN_RFDETR_VERSION:
+        required = ".".join(map(str, MIN_RFDETR_VERSION))
+        raise RuntimeError(
+            f"Training RF-DETR on TIFF inputs requires rfdetr>={required}, "
+            f"but rfdetr {installed} is installed. Upgrade it, "
+            f"e.g. `pip install 'rfdetr[metrics,train,loggers]>={required}'`."
+        )
+
+
 def _patch_embeddings(nn_model):
     return nn_model.backbone[0].encoder.encoder.embeddings.patch_embeddings
 
 
 def checkpoint_channels(path) -> int:
     """Input channels of a checkpoint's patch projection (3 if it cannot be read)."""
-    from rfdetr.utilities.io import _safe_torch_load
-
     if path is None or not os.path.isfile(str(path)):
         return 3
-    checkpoint = _safe_torch_load(str(path))
+    # RF-DETR checkpoints store their args as Python objects, as RF-DETR's
+    # own loader assumes when it reads the same file.
+    checkpoint = torch.load(str(path), map_location="cpu", weights_only=False)
     state = checkpoint.get("model")
     if state is None:
         state = {

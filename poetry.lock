@@ -3727,6 +3727,114 @@ files = [
 ]
 
 [[package]]
+name = "kornia"
+version = "0.8.2"
+description = "Open Source Differentiable Computer Vision Library for PyTorch"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+markers = "python_version == \"3.10\""
+files = [
+    {file = "kornia-0.8.2-py2.py3-none-any.whl", hash = "sha256:32dfe77c9c74a87a2de49395aa3c2c376a1b63c27611a298b394d02d13905819"},
+    {file = "kornia-0.8.2.tar.gz", hash = "sha256:5411b2ce0dd909d1608016308cd68faeef90f88c47f47e8ecd40553fd4d8b937"},
+]
+
+[package.dependencies]
+kornia_rs = ">=0.1.9"
+packaging = "*"
+torch = ">=2.0.0"
+
+[package.extras]
+dev = ["accelerate", "coverage", "diffusers", "ivy (>=1.0.0.0)", "mypy", "numpy (<3)", "onnx", "onnxruntime", "pillow", "pre-commit (>=2)", "pytest (==8.3.5)", "pytest-cov", "pytest-timeout", "requests", "setuptools (>=61.2)", "transformers (<4.57)", "types-requests"]
+docs = ["PyYAML (>=5.1)", "furo", "ivy (>=1.0.0.0)", "kornia_moons", "matplotlib", "onnx", "onnxruntime", "opencv-python", "sphinx", "sphinx-autodoc-defaultargs", "sphinx-autodoc-typehints", "sphinx-copybutton (>=0.3)", "sphinx-design", "sphinx-notfound-page", "sphinxcontrib-bibtex", "sphinxcontrib-gtagjs", "sphinxcontrib-youtube"]
+x = ["accelerate", "onnxruntime-gpu (>=1.16) ; sys_platform != \"darwin\""]
+
+[[package]]
+name = "kornia"
+version = "0.8.3"
+description = "Open Source Differentiable Computer Vision Library for PyTorch"
+optional = false
+python-versions = ">=3.11"
+groups = ["main"]
+markers = "python_version >= \"3.11\""
+files = [
+    {file = "kornia-0.8.3-py3-none-any.whl", hash = "sha256:0b15f5d359aeafd7ff54ea631ed1943a3eb295c4a6dae3f745ddeada25e33289"},
+    {file = "kornia-0.8.3.tar.gz", hash = "sha256:c06887374eaf39fb614a77ca054383e6cc2092cb7225e45437111b4984d0f866"},
+]
+
+[package.dependencies]
+kornia-rs = ">=0.1.9"
+packaging = "*"
+torch = ">=2.0.0"
+
+[package.extras]
+dev = ["coverage", "diffusers", "ivy (>=1.0.0.0)", "numpy (<3)", "onnx", "onnxruntime", "onnxscript", "pillow", "pre-commit", "pytest", "pytest-cov", "pytest-timeout", "requests", "ruff", "setuptools", "transformers (<5.6)"]
+docs = ["furo", "ivy (>=1.0.0.0)", "kornia-moons", "matplotlib", "onnx", "onnxruntime", "opencv-python", "pyyaml (>=5.1)", "sphinx", "sphinx-autodoc-defaultargs", "sphinx-autodoc-typehints", "sphinx-copybutton (>=0.3)", "sphinx-design", "sphinx-notfound-page", "sphinxcontrib-bibtex", "sphinxcontrib-gtagjs", "sphinxcontrib-youtube"]
+
+[[package]]
+name = "kornia-rs"
+version = "0.2.0"
+description = "Low level implementations for computer vision in Rust"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "kornia_rs-0.2.0-cp310-cp310-macosx_10_12_x86_64.whl", hash = "sha256:e00a4cfc81dbf8244705905340fc4160c6a3c64c570e9cf594892386c8dc9f86"},
+    {file = "kornia_rs-0.2.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:5861641c607cbe406a0066757e09e4fc05ab757f7505fa115229488c67bd9f94"},
+    {file = "kornia_rs-0.2.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:0c226a5dd07f0c4618713104867a2b0356ca15e131ad347462294b30965a4d49"},
+    {file = "kornia_rs-0.2.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ebbf3563956f6e5e14b5afc90d1bb045119aa6b8ca2e272fde1e6e214405598d"},
+    {file = "kornia_rs-0.2.0-cp310-cp310-win_amd64.whl", hash = "sha256:49b65eb09ebd3d4138dab967ff6ba9f34e97242ec5b84b3ebe5b866258a216a1"},
+    {file = "kornia_rs-0.2.0-cp311-cp311-macosx_10_12_x86_64.whl", hash = "sha256:c9f2b6a358253ad36d6daeee752d09dcd6cf53a098bb09be442e97b3bbbbc132"},
+    {file = "kornia_rs-0.2.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:291abe5874d8b746cee439d93b94be6a95313b9301c4bd0a51de25124f17b5a4"},
+    {file = "kornia_rs-0.2.0-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:b0cf5ba74439c4bacc2136cb6811dbd0fec6d951ae04df4936ca91af95c4f588"},
+    {file = "kornia_rs-0.2.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:82833277685b31e9ae1a2e9ecd00a28646463a05c0ea8b72e3ddb329699f8d16"},
+    {file = "kornia_rs-0.2.0-cp311-cp311-win_amd64.whl", hash = "sha256:f85141d602f4e27cb07e2adaa03827a6533a45ea70956e6688073544018887bb"},
+    {file = "kornia_rs-0.2.0-cp311-cp311-win_arm64.whl", hash = "sha256:2f3e8478f9c7a913974cf5096c9f2f89083165f5ba914cf9db71ba272ea30cb8"},
+    {file = "kornia_rs-0.2.0-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:b32aaae48c6893e50dd4dbcc10b5e4a77c6df39971d202e035b0f52aed3b1b94"},
+    {file = "kornia_rs-0.2.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:0e17d8c61836e67c9b5d3ca3227a68c06e52c72e737637795177bb0ca4c33031"},
+    {file = "kornia_rs-0.2.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:a180fff70120c4558355e52eec7ea40e00a556f0d6bb760e0f511c937847cdf9"},
+    {file = "kornia_rs-0.2.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a5ccc43e7b54a845c4250dee107b62d221b4a76f6812a8041196784f4add342a"},
+    {file = "kornia_rs-0.2.0-cp312-cp312-win_amd64.whl", hash = "sha256:1a222a68555d1b974f0a96694ed2d3965d0e084860da1ba2d7fcffc541bd9b36"},
+    {file = "kornia_rs-0.2.0-cp312-cp312-win_arm64.whl", hash = "sha256:d77c5e5d789b2bfc3c51b0cd66bf4854705636a1d30fe84b95eb424b5b7eb941"},
+    {file = "kornia_rs-0.2.0-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:ef04e0c95dec1f4367ced2197c6884848d4c0fec18fbc4e03426520f50c08843"},
+    {file = "kornia_rs-0.2.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:712a76c0e163c86f646188c4aa3ded6079894a4a570ee8847627a500e1353a7e"},
+    {file = "kornia_rs-0.2.0-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:7ea1a91d30abf6b057b75be8816f635f82eec60c23e1e766ba044f242f5a91de"},
+    {file = "kornia_rs-0.2.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f8b71a0c0bc54ba7fc76f184d66a8f600c19754495313d245e8b28e847ef902e"},
+    {file = "kornia_rs-0.2.0-cp313-cp313-win_amd64.whl", hash = "sha256:568dcbe7f4a352d73ed628383a085e772cd7576f6740eed0b75b15a815b19b73"},
+    {file = "kornia_rs-0.2.0-cp313-cp313-win_arm64.whl", hash = "sha256:fa77412c0167bf75e06b7f6bbd764618f99d6be2e2391f6d41ca116e4d382b09"},
+    {file = "kornia_rs-0.2.0-cp313-cp313t-macosx_10_12_x86_64.whl", hash = "sha256:b1f1483adfa5fb415ecb0318a42e26e91b7e269bcaae983a7587ebfb89a65e8e"},
+    {file = "kornia_rs-0.2.0-cp313-cp313t-macosx_11_0_arm64.whl", hash = "sha256:9b10498e5661f222c334f659f8db4606ec5d6eb0343710ebda67b9e49914566a"},
+    {file = "kornia_rs-0.2.0-cp313-cp313t-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:17ff32b28f440f86b4e33a41629c4c186d48fe36c293816fae9389de5eed6f6c"},
+    {file = "kornia_rs-0.2.0-cp313-cp313t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0f851abc425eab7745b75ed890f8215af1105adbaf709713027898e19e20bf32"},
+    {file = "kornia_rs-0.2.0-cp313-cp313t-win_amd64.whl", hash = "sha256:98d0f6a17d114304755dd922d0fbf5e917db59a2602dbc1aad63c1ae051ce7b1"},
+    {file = "kornia_rs-0.2.0-cp314-cp314-macosx_10_12_x86_64.whl", hash = "sha256:e7bc5a25f3cdedc1496d3a709efa9f088287e63a628d10ff683be8bc5e99e683"},
+    {file = "kornia_rs-0.2.0-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:4bbbdf91d3428a9e67e79edf4ac1841c86a0f5f33f7e805910924219c9a89c0c"},
+    {file = "kornia_rs-0.2.0-cp314-cp314-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e310bbd431a8d6df14800a3afb9fa593d475970339b472311d26ad2e5fb40d26"},
+    {file = "kornia_rs-0.2.0-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:504f383d0da23056f0ef8f2a10022ca573e8dfb1f9a887a7dce7b20dc873df06"},
+    {file = "kornia_rs-0.2.0-cp314-cp314-win_amd64.whl", hash = "sha256:5d93fea9f284fe1349edd99c3f36804200e8d039296330b205cdf1c7670b1984"},
+    {file = "kornia_rs-0.2.0-cp314-cp314-win_arm64.whl", hash = "sha256:1efa260d5aa243fd4e3b689e26dbea9bd7da6c4a22e8bff948e505d41e1d4a4f"},
+    {file = "kornia_rs-0.2.0-cp314-cp314t-macosx_10_12_x86_64.whl", hash = "sha256:b8778c29eeedfc0a265751b7afd05577be53eb1ad0b3ff8bb509c02753b15f5e"},
+    {file = "kornia_rs-0.2.0-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:9b8c54cbef4e38dc01595192fb3c76dcd35448884301a71d7a9d51042223f824"},
+    {file = "kornia_rs-0.2.0-cp314-cp314t-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e25656994be2b574d9f42e5728113a0e85f68e0390a97a1defeaa7fe2cc265ce"},
+    {file = "kornia_rs-0.2.0-cp314-cp314t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:137e65aa359183c3a4794a20f44f3bce61cdb65c49ab04f282bb090aa8de1176"},
+    {file = "kornia_rs-0.2.0-cp314-cp314t-win_amd64.whl", hash = "sha256:617c04eebe311ddd9ffa5c4fc17ba3acf8a9a1228c38b2346e54fd7753c9f358"},
+    {file = "kornia_rs-0.2.0-cp38-cp38-macosx_10_12_x86_64.whl", hash = "sha256:c3999f92248b0d04efdcd38130c8782a912c2286d2929c93765db1483661861d"},
+    {file = "kornia_rs-0.2.0-cp38-cp38-macosx_11_0_arm64.whl", hash = "sha256:0e390f20c940c239fb96ac4ad170a2dbcf7c8e6cb5be74b5c0c01de5c813463d"},
+    {file = "kornia_rs-0.2.0-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:46df82415a84acab6ece01c7794cbfc36bb9a73af084fb95f9f8339933eee784"},
+    {file = "kornia_rs-0.2.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:3ae952e8a6d7f63f3de263447f38cfb9bcf42a8fa3d57877180ce02d8be45422"},
+    {file = "kornia_rs-0.2.0-cp38-cp38-win_amd64.whl", hash = "sha256:00facfd3a9f1a1beb09355cfec0c5d2103cf678405394a829dda2cf8f846fbc4"},
+    {file = "kornia_rs-0.2.0-cp39-cp39-macosx_10_12_x86_64.whl", hash = "sha256:f43953e0dc687e71de118e5ededb2739c83a261a67791e65de268bb6ca2a1d52"},
+    {file = "kornia_rs-0.2.0-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:45ef703c7b7d55392f08aa94a803abf16f9503405be462f4b7d8ba7217351bec"},
+    {file = "kornia_rs-0.2.0-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:11ecbb2171a9344c86b2c00e584402cb5e23e32f2b858d5c540493193682b93e"},
+    {file = "kornia_rs-0.2.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5d5c7b8ca6ef465adb2a0f96166acc0dcae333f7adf559d914755d76163dbaf6"},
+    {file = "kornia_rs-0.2.0-cp39-cp39-win_amd64.whl", hash = "sha256:bb287f5d40fda830fdcd86daaacb2c4a84e8e595fd8179ad9ac0ff99f0f17aae"},
+]
+
+[package.extras]
+cuda = ["nvidia-cuda-nvrtc-cu12 ; platform_system == \"Linux\""]
+dev = ["numpy", "pytest", "pytest-run-parallel", "torch"]
+
+[[package]]
 name = "kubernetes"
 version = "36.0.2"
 description = "Kubernetes python client"
@@ -8398,36 +8506,22 @@ files = [
 requests = ">=2.0.1,<3.0.0"
 
 [[package]]
-name = "rf100vl"
-version = "1.1.2"
-description = "RF100-VL Dataset Interface"
-optional = false
-python-versions = ">=3.9"
-groups = ["main"]
-files = [
-    {file = "rf100vl-1.1.2-py3-none-any.whl", hash = "sha256:bb6a7f14c2aab5c3bba5773d0658ca00f8b12665d2daafd801a6b0fc58dc0bdd"},
-    {file = "rf100vl-1.1.2.tar.gz", hash = "sha256:a541b1b4b7c8b6fae174d23d3c6e533a55f97e9bee1cba0866c3708da3a9444d"},
-]
-
-[package.dependencies]
-roboflow = "*"
-
-[[package]]
 name = "rfdetr"
-version = "1.8.1"
+version = "1.10.1"
 description = "RF-DETR"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "rfdetr-1.8.1-py3-none-any.whl", hash = "sha256:996beec07f78d7006b8c73cd6fe6c5b904d29e5c994b7a085fab8dd2eb6b4d23"},
-    {file = "rfdetr-1.8.1.tar.gz", hash = "sha256:83a65ace15926ffc02e5fbac8406f871bff2de3f2fb8e479234602a9b41c85bb"},
+    {file = "rfdetr-1.10.1-py3-none-any.whl", hash = "sha256:96fa7a8ecbcaeea5f5150ff0b503699d2d4d75a32a87eeabfc0ab90485076a52"},
+    {file = "rfdetr-1.10.1.tar.gz", hash = "sha256:90632c4c528c254216c8cd2f8141bd93f88c6c4948adaaa621e464cfcf805c3a"},
 ]
 
 [package.dependencies]
-albumentations = {version = ">=1.4.24,<3.0.0", optional = true, markers = "extra == \"train\""}
+albumentations = {version = ">=1.4.24,<3.0.0", optional = true, markers = "extra == \"augment\""}
 clearml = {version = "*", optional = true, markers = "extra == \"loggers\""}
 faster-coco-eval = {version = ">=1.7.2", optional = true, markers = "extra == \"train\""}
+kornia = {version = ">=0.7,<1", optional = true, markers = "extra == \"augment\""}
 mlflow = {version = "*", optional = true, markers = "extra == \"loggers\""}
 numpy = "*"
 peft = {version = "*", optional = true, markers = "extra == \"train\""}
@@ -8437,29 +8531,33 @@ pydantic = ">=2.0,<3"
 pyDeprecate = ">=0.9,<0.10"
 pytorch_lightning = {version = ">=2.6,<2.6.2 || >2.6.2,<2.6.3 || >2.6.3,<3", optional = true, markers = "extra == \"train\""}
 requests = "*"
-rf100vl = {version = "*", optional = true, markers = "extra == \"train\""}
 roboflow = {version = "*", optional = true, markers = "extra == \"train\""}
 scipy = {version = "*", optional = true, markers = "extra == \"train\""}
 supervision = ">=0.29.0"
 tensorboard = {version = ">=2.13.0", optional = true, markers = "extra == \"loggers\""}
 torch = ">=2.2.0"
-torchmetrics = {version = ">=1.2", extras = ["detection"], optional = true, markers = "extra == \"train\""}
+torch-hungarian = {version = "0.1.0rc0", optional = true, markers = "extra == \"train\""}
+torchmetrics = {version = ">=1.8.2,<1.9.0", extras = ["detection"], optional = true, markers = "extra == \"train\""}
 torchvision = ">=0.17.0"
 tqdm = "*"
 transformers = ">=5.1.0,<6.0.0"
 wandb = {version = "*", optional = true, markers = "extra == \"loggers\""}
 
 [package.extras]
+augment = ["albumentations (>=1.4.24,<3.0.0)", "kornia (>=0.7,<1)"]
 cli = ["jsonargparse[signatures] (>=4.27.7)"]
-kornia = ["kornia (>=0.7,<1)"]
+coreml = ["coremltools (>=8.0,<10.0)", "torch (<2.12)"]
+executorch = ["executorch (>=1.3,<2.0) ; python_version < \"3.14\""]
 loggers = ["clearml", "mlflow", "protobuf (>=3.20.0)", "tensorboard (>=2.13.0)", "wandb"]
 lora = ["peft"]
-onnx = ["onnx (>=1.16.0,<2.0)", "onnx_graphsurgeon", "onnxruntime", "onnxsim (<0.6.0)", "polygraphy"]
+onnx = ["onnx (>=1.16.0,<2.0)", "onnx_graphsurgeon", "onnxruntime (<1.24) ; python_version < \"3.11\"", "onnxruntime ; python_version >= \"3.11\"", "onnxsim (>=0.7.0)", "polygraphy"]
 plus = ["rfdetr_plus (>=1.0.1,<2.0.0)"]
-tflite = ["flatbuffers (>=23.5.26)", "onnx (>=1.20.0,<2.0)", "onnx2tf (>=2.4.0,<3.0.0)", "tensorflow (>=2.16.0)", "tf-keras (>=2.16.0)"]
-train = ["albumentations (>=1.4.24,<3.0.0)", "faster-coco-eval (>=1.7.2)", "peft", "pycocotools", "pytorch_lightning (>=2.6,!=2.6.2,!=2.6.3,<3)", "rf100vl", "roboflow", "scipy", "torchmetrics[detection] (>=1.2)"]
-trt = ["onnxruntime-gpu", "polygraphy", "pycuda", "tensorrt (>=8.6.1)"]
+tensorrt = ["onnxruntime-gpu", "polygraphy", "tensorrt (>=8.6.1)"]
+tensorrt-bench = ["pycuda (>=2024.1)"]
+tflite = ["flatbuffers (>=23.5.26) ; python_version == \"3.12\"", "onnx (>=1.20.0,<2.0) ; python_version == \"3.12\"", "onnx2tf (>=2.4.0,<3.0.0) ; python_version == \"3.12\"", "onnx_graphsurgeon ; python_version == \"3.12\"", "onnxsim (>=0.7.0) ; python_version == \"3.12\"", "polygraphy ; python_version == \"3.12\"", "tensorflow (>=2.16.0) ; python_version == \"3.12\"", "tf-keras (>=2.16.0) ; python_version == \"3.12\""]
+train = ["faster-coco-eval (>=1.7.2)", "peft", "pycocotools", "pytorch_lightning (>=2.6,!=2.6.2,!=2.6.3,<3)", "roboflow", "scipy", "torch-hungarian (==0.1.0rc0)", "torchmetrics[detection] (>=1.8.2,<1.9.0)"]
 visual = ["matplotlib", "pandas", "seaborn"]
+xla = ["torch (==2.9.*) ; sys_platform == \"linux\"", "torch_xla (==2.9.*) ; sys_platform == \"linux\""]
 
 [[package]]
 name = "rich"
@@ -10459,19 +10557,36 @@ optree = ["optree (>=0.13.0)"]
 pyyaml = ["pyyaml"]
 
 [[package]]
-name = "torchmetrics"
-version = "1.9.0"
-description = "PyTorch native Metrics"
+name = "torch-hungarian"
+version = "0.1.0rc0"
+description = "Batched linear assignment with PyTorch and CUDA."
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "torchmetrics-1.9.0-py3-none-any.whl", hash = "sha256:bfdcbff3dd1d96b3374bb2496eb39f23c4b28b8a845b6a18c313688e0d2d9ca1"},
-    {file = "torchmetrics-1.9.0.tar.gz", hash = "sha256:a488609948600df52d3db4fcdab02e62aab2a85ef34da67037dc3e65b8512faa"},
+    {file = "torch_hungarian-0.1.0rc0-py3-none-any.whl", hash = "sha256:1823ae4d37c870b49e1a0fa460dc9a39649f015210cf5bdb7299507d82cccdeb"},
+    {file = "torch_hungarian-0.1.0rc0.tar.gz", hash = "sha256:091e9648936d3611beb50df02376f07a3b45c4a6f681786c027ab6a18cd579ed"},
 ]
 
 [package.dependencies]
-lightning-utilities = ">=0.15.3"
+scipy = ">=1.6.0"
+torch = ">=1.12.0"
+triton = {version = "*", markers = "platform_system == \"Linux\""}
+
+[[package]]
+name = "torchmetrics"
+version = "1.8.2"
+description = "PyTorch native Metrics"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "torchmetrics-1.8.2-py3-none-any.whl", hash = "sha256:08382fd96b923e39e904c4d570f3d49e2cc71ccabd2a94e0f895d1f0dac86242"},
+    {file = "torchmetrics-1.8.2.tar.gz", hash = "sha256:cf64a901036bf107f17a524009eea7781c9c5315d130713aeca5747a686fe7a5"},
+]
+
+[package.dependencies]
+lightning-utilities = ">=0.8.0"
 numpy = ">1.20.0"
 packaging = ">17.1"
 pycocotools = {version = ">2.0.0", optional = true, markers = "extra == \"detection\""}
@@ -10479,11 +10594,11 @@ torch = ">=2.0.0"
 torchvision = {version = ">=0.15.1", optional = true, markers = "extra == \"detection\""}
 
 [package.extras]
-all = ["SciencePlots (>=2.0.0)", "einops (>=0.7.0)", "einops (>=0.7.0)", "gammatone (>=1.0.0)", "ipadic (>=1.0.0)", "librosa (>=0.10.0)", "matplotlib (>=3.6.0)", "mecab-python3 (>=1.0.6)", "mypy (==1.17.1)", "nltk (>3.8.1)", "onnxruntime (>=1.12.0)", "pesq (>=0.0.4)", "piq (<=0.8.0)", "pycocotools (>2.0.0)", "pystoi (>=0.4.0)", "regex (>=2021.9.24)", "requests (>=2.22.0)", "scipy (>1.0.0)", "sentencepiece (>=0.2.0)", "timm (>=0.9.0)", "torch (==2.8.0)", "torch-fidelity (<=0.4.0)", "torch_linear_assignment (>=0.0.2)", "torchaudio (>=2.0.1)", "torchvision (>=0.15.1)", "torchvision (>=0.15.1)", "tqdm (<4.68.0)", "transformers (>=4.43.0)", "transformers (>=4.43.0)", "types-PyYAML", "types-emoji", "types-protobuf", "types-requests", "types-setuptools", "types-six", "types-tabulate", "vmaf-torch (>=1.1.0)"]
-audio = ["gammatone (>=1.0.0)", "librosa (>=0.10.0)", "onnxruntime (>=1.12.0)", "pesq (>=0.0.4)", "pystoi (>=0.4.0)", "requests (>=2.22.0)", "torchaudio (>=2.0.1)"]
+all = ["SciencePlots (>=2.0.0)", "einops (>=0.7.0)", "einops (>=0.7.0)", "gammatone (>=1.0.0)", "ipadic (>=1.0.0)", "librosa (>=0.10.0)", "matplotlib (>=3.6.0)", "mecab-python3 (>=1.0.6)", "mypy (==1.17.1)", "nltk (>3.8.1)", "onnxruntime (>=1.12.0)", "pesq (>=0.0.4)", "piq (<=0.8.0)", "pycocotools (>2.0.0)", "pystoi (>=0.4.0)", "regex (>=2021.9.24)", "requests (>=2.19.0)", "scipy (>1.0.0)", "sentencepiece (>=0.2.0)", "timm (>=0.9.0)", "torch (==2.8.0)", "torch-fidelity (<=0.4.0)", "torch_linear_assignment (>=0.0.2)", "torchaudio (>=2.0.1)", "torchvision (>=0.15.1)", "torchvision (>=0.15.1)", "tqdm (<4.68.0)", "transformers (>=4.43.0)", "transformers (>=4.43.0)", "types-PyYAML", "types-emoji", "types-protobuf", "types-requests", "types-setuptools", "types-six", "types-tabulate", "vmaf-torch (>=1.1.0)"]
+audio = ["gammatone (>=1.0.0)", "librosa (>=0.10.0)", "onnxruntime (>=1.12.0)", "pesq (>=0.0.4)", "pystoi (>=0.4.0)", "requests (>=2.19.0)", "torchaudio (>=2.0.1)"]
 clustering = ["torch_linear_assignment (>=0.0.2)"]
 detection = ["pycocotools (>2.0.0)", "torchvision (>=0.15.1)"]
-dev = ["PyTDC (==0.4.1) ; platform_system == \"Windows\" and python_version < \"3.12\"", "SciencePlots (>=2.0.0)", "aeon (>=1.0.0) ; python_version > \"3.10\"", "bert_score (==0.3.13)", "dists-pytorch (==0.1)", "dython (==0.7.9)", "einops (>=0.7.0)", "einops (>=0.7.0)", "fairlearn", "fast-bss-eval (>=0.1.0)", "faster-coco-eval (>=1.6.3)", "gammatone (>=1.0.0)", "huggingface-hub (<0.35)", "ipadic (>=1.0.0)", "jiwer (>=2.3.0)", "kornia (>=0.6.7)", "librosa (>=0.10.0)", "lpips (<=0.1.4)", "matplotlib (>=3.6.0)", "mecab-ko (>=1.0.0,<1.1.0) ; python_version < \"3.12\"", "mecab-ko-dic (>=1.0.0) ; python_version < \"3.12\"", "mecab-python3 (>=1.0.6)", "mir-eval (>=0.6)", "monai (==1.4.0)", "mypy (==1.17.1)", "netcal (>1.0.0)", "nltk (>3.8.1)", "numpy (<2.4.0)", "onnxruntime (>=1.12.0)", "pandas (>1.4.0)", "permetrics (==2.0.0)", "pesq (>=0.0.4)", "piq (<=0.8.0)", "properscoring (==0.1)", "pycocotools (>2.0.0)", "pystoi (>=0.4.0)", "pytorch-msssim (==1.0.0)", "regex (>=2021.9.24)", "requests (>=2.22.0)", "rouge-score (>0.1.0)", "sacrebleu (>=2.3.0)", "scikit-image (>=0.19.0)", "scipy (>1.0.0)", "scipy (>1.0.0)", "sentencepiece (>=0.2.0)", "setuptools (<82.0.0)", "sewar (>=0.4.4)", "statsmodels (>0.13.5)", "timm (>=0.9.0)", "torch (==2.8.0)", "torch-fidelity (<=0.4.0)", "torch_complex (<0.5.0)", "torch_linear_assignment (>=0.0.2)", "torchaudio (>=2.0.1)", "torchvision (>=0.15.1)", "torchvision (>=0.15.1)", "tqdm (<4.68.0)", "transformers (>=4.43.0)", "transformers (>=4.43.0)", "types-PyYAML", "types-emoji", "types-protobuf", "types-requests", "types-setuptools", "types-six", "types-tabulate", "vmaf-torch (>=1.1.0)"]
+dev = ["PyTDC (==0.4.1) ; python_version < \"3.10\" or platform_system == \"Windows\" and python_version < \"3.12\"", "SciencePlots (>=2.0.0)", "aeon (>=1.0.0) ; python_version > \"3.10\"", "bert_score (==0.3.13)", "dists-pytorch (==0.1)", "dython (==0.7.9)", "einops (>=0.7.0)", "einops (>=0.7.0)", "fairlearn", "fast-bss-eval (>=0.1.0)", "faster-coco-eval (>=1.6.3)", "gammatone (>=1.0.0)", "huggingface-hub (<0.35)", "ipadic (>=1.0.0)", "jiwer (>=2.3.0)", "kornia (>=0.6.7)", "librosa (>=0.10.0)", "lpips (<=0.1.4)", "matplotlib (>=3.6.0)", "mecab-ko (>=1.0.0,<1.1.0) ; python_version < \"3.12\"", "mecab-ko-dic (>=1.0.0) ; python_version < \"3.12\"", "mecab-python3 (>=1.0.6)", "mir-eval (>=0.6)", "monai (==1.4.0)", "mypy (==1.17.1)", "netcal (>1.0.0)", "nltk (>3.8.1)", "numpy (<2.4.0)", "onnxruntime (>=1.12.0)", "pandas (>1.4.0)", "permetrics (==2.0.0)", "pesq (>=0.0.4)", "piq (<=0.8.0)", "properscoring (==0.1)", "pycocotools (>2.0.0)", "pystoi (>=0.4.0)", "pytorch-msssim (==1.0.0)", "regex (>=2021.9.24)", "requests (>=2.19.0)", "rouge-score (>0.1.0)", "sacrebleu (>=2.3.0)", "scikit-image (>=0.19.0)", "scipy (>1.0.0)", "scipy (>1.0.0)", "sentencepiece (>=0.2.0)", "sewar (>=0.4.4)", "statsmodels (>0.13.5)", "timm (>=0.9.0)", "torch (==2.8.0)", "torch-fidelity (<=0.4.0)", "torch_complex (<0.5.0)", "torch_linear_assignment (>=0.0.2)", "torchaudio (>=2.0.1)", "torchvision (>=0.15.1)", "torchvision (>=0.15.1)", "tqdm (<4.68.0)", "transformers (>=4.43.0)", "transformers (>=4.43.0)", "types-PyYAML", "types-emoji", "types-protobuf", "types-requests", "types-setuptools", "types-six", "types-tabulate", "vmaf-torch (>=1.1.0)"]
 image = ["scipy (>1.0.0)", "torch-fidelity (<=0.4.0)", "torchvision (>=0.15.1)"]
 multimodal = ["einops (>=0.7.0)", "piq (<=0.8.0)", "timm (>=0.9.0)", "transformers (>=4.43.0)"]
 text = ["ipadic (>=1.0.0)", "mecab-python3 (>=1.0.6)", "nltk (>3.8.1)", "regex (>=2021.9.24)", "sentencepiece (>=0.2.0)", "tqdm (<4.68.0)", "transformers (>=4.43.0)"]
@@ -10656,7 +10771,7 @@ description = "A language and compiler for custom Deep Learning operations"
 optional = false
 python-versions = "<3.15,>=3.10"
 groups = ["main"]
-markers = "platform_system == \"Linux\" and platform_machine == \"x86_64\""
+markers = "platform_system == \"Linux\""
 files = [
     {file = "triton-3.5.0-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:6f90de6a6566bb619b4c0adc9855729e1b1b5e26533fca1bf6206e96b6d277a3"},
     {file = "triton-3.5.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d5d3b3d480debf24eaa739623c9a42446b0b77f95593d30eb1f64cd2278cc1f0"},
@@ -11814,4 +11929,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.15"
-content-hash = "1fa1e4a2777c8307bcfaea5ff6c082eaed957a5f296030082743bf0cb77ca903"
+content-hash = "692b1b051428bd4182cc10fc396509fecf68925fe41277283795c50c369534e0"
