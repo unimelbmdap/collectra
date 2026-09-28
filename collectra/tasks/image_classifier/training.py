@@ -450,8 +450,10 @@ class TorchClassifierTask(Task):
                     if score < best_loss:
                         best_loss, best_metrics, stale = score, dict(metrics), 0
                         torch.save(checkpoint, weights_dir / "best.pt")
+                        best_print = "best"
                     else:
                         stale += 1
+                        best_print = ""
                     if wandb_run is not None:
                         wandb_run.log(metrics)
                     logger.info("Epoch %d/%d: %s", epoch, epochs, metrics)
@@ -467,7 +469,7 @@ class TorchClassifierTask(Task):
                             f"val_acc={metrics['val_accuracy']:.4f} "
                             f"val_top5={metrics['val_top5_accuracy']:.4f}"
                         )
-                    console.print(metrics_line)
+                    console.print(metrics_line , best_print )
                     with (log / "history.csv").open("w", newline="") as stream:
                         writer = csv.DictWriter(stream, fieldnames=list(metrics))
                         writer.writeheader()
@@ -490,8 +492,15 @@ class TorchClassifierTask(Task):
     def _epoch(self, loader, optimizer=None) -> dict:
         import torch
         from torch.nn import functional as F
+        # KT addition
+        from sklearn.metrics import precision_score, recall_score, f1_score
+        # end KT addition
 
         total, correct, correct5, total_loss = 0, 0, 0, 0.0
+        # KT addition
+        all_preds = []
+        all_labels = []
+        # end KT addition
         first_batch = True
         phase = "train" if optimizer is not None else "val"
         for pixels, labels in loader:
@@ -532,8 +541,37 @@ class TorchClassifierTask(Task):
                 .sum()
                 .item()
             )
+            # KT addition
+            preds = logits.argmax(1)
+            all_preds.extend(preds.cpu().tolist())
+            all_labels.extend(labels.cpu().tolist())
+            precision = precision_score(
+                all_labels,
+                all_preds,
+                average="macro",
+                zero_division=0,
+            )
+            recall = recall_score(
+                all_labels,
+                all_preds,
+                average="macro",
+                zero_division=0,
+            )
+            f1 = f1_score(
+                all_labels,
+                all_preds,
+                average="macro",
+                zero_division=0,
+            )
+            # end KT addition    
+                        
         return {
             "loss": total_loss / total,
             "accuracy": correct / total,
             "top5_accuracy": correct5 / total,
+            # KT addition
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            # end KT addition
         }
