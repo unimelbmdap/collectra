@@ -235,7 +235,8 @@ def test_non_divisible_channel_count_uses_identity_normalization(tmp_path):
     assert task._preprocessing["std"] == [1.0] * 10
 
 
-def test_adapt_rgb_input_channels_repeats_and_scales_weights():
+@pytest.mark.parametrize("architecture", ["resnet", "convnext"])
+def test_adapt_rgb_input_channels_repeats_and_scales_weights(architecture):
     import torch
 
     class TinyResNet(torch.nn.Module):
@@ -244,15 +245,24 @@ def test_adapt_rgb_input_channels_repeats_and_scales_weights():
             self.conv1 = torch.nn.Conv2d(3, 2, 1, bias=True)
 
     model = TinyResNet()
+    layer_path = "conv1"
+    if architecture == "convnext":
+        model.features = torch.nn.Sequential(torch.nn.Sequential(model.conv1))
+        del model.conv1
+        layer_path = "features.0.0"
+    conv = model.get_submodule(layer_path)
     with torch.no_grad():
-        model.conv1.weight.copy_(torch.arange(6, dtype=torch.float32).reshape(2, 3, 1, 1))
-        model.conv1.bias.copy_(torch.tensor([1.0, -1.0]))
-    original = model.conv1.weight.detach().clone()
+        conv.weight.copy_(torch.arange(6, dtype=torch.float32).reshape(2, 3, 1, 1))
+        conv.bias.copy_(torch.tensor([1.0, -1.0]))
+    original = conv.weight.detach().clone()
     _adapt_rgb_input_channels(model, 15)
-    assert model.conv1.in_channels == 15
+    adapted = model.get_submodule(layer_path)
+    assert adapted.in_channels == 15
     expected = original.repeat(1, 5, 1, 1) / 5
-    assert torch.equal(model.conv1.weight, expected)
-    assert torch.equal(model.conv1.bias, torch.tensor([1.0, -1.0]))
+    assert torch.equal(adapted.weight, expected)
+    assert torch.equal(adapted.bias, torch.tensor([1.0, -1.0]))
+    rgb = torch.rand(1, 3, 4, 4)
+    torch.testing.assert_close(adapted(rgb.repeat(1, 5, 1, 1)), conv(rgb))
 
 
 def test_detected_channels_expand_resnet_conv1_for_training(tmp_path):
@@ -351,13 +361,13 @@ def test_checkpoint_load_without_input_channels_defaults_to_3(tmp_path, monkeypa
     assert task.model.conv1.in_channels == 3
 
 
-def test_adapt_rgb_input_channels_requires_conv1():
+def test_adapt_rgb_input_channels_requires_supported_input_layer():
     import torch
 
     class NoConv1(torch.nn.Module):
         pass
 
-    with pytest.raises(ValueError, match="does not expose a ResNet-style conv1"):
+    with pytest.raises(ValueError, match="Could not find first Conv2d"):
         _adapt_rgb_input_channels(NoConv1(), 15)
 
 
@@ -369,7 +379,7 @@ def test_adapt_rgb_input_channels_requires_conv1_conv2d():
             super().__init__()
             self.conv1 = torch.nn.Linear(3, 4)
 
-    with pytest.raises(ValueError, match="Expected model.conv1 to be Conv2d"):
+    with pytest.raises(ValueError, match="Expected first layer to be Conv2d, got Linear"):
         _adapt_rgb_input_channels(BadConv1(), 15)
 
 
@@ -388,7 +398,7 @@ def test_unsupported_architecture_fails_for_multichannel_training(tmp_path):
     task._categories = ["Pollen", "Spore"]
     with pytest.raises(
         ValueError,
-        match="supported only for resnet18, resnet34, and resnet50",
+        match="15-channel input adaptation is currently supported only for",
     ):
         task._prepare_training_model(["Pollen", "Spore"], pretrained=False, freeze=False)
 
@@ -423,7 +433,7 @@ def test_unsupported_architecture_fails_for_multichannel_checkpoint_load(
     task = ImageClassifierTorchvision("classifier", model=path)
     with pytest.raises(
         ValueError,
-        match="supported only for resnet18, resnet34, and resnet50",
+        match="15-channel input adaptation is currently supported only for",
     ):
         task._load()
 

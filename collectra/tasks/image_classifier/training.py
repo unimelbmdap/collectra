@@ -339,12 +339,10 @@ class TorchClassifierTask(Task):
         logger.info("Building datasets and detecting channel count")
         train_data, val_data = self._make_datasets(train_dir, val_dir, augmentation)
         logger.info(
-            "Datasets ready: train=%d, val=%d, detected_channels=%s, mean_len=%d, std_len=%d",
+            "Datasets ready: train=%d, val=%d, detected_channels=%s",
             len(train_data),
             len(val_data),
             getattr(self, "_input_channels", "unknown"),
-            len(self._preprocessing.get("mean", [])),
-            len(self._preprocessing.get("std", [])),
         )
         freeze = kwargs.get("freeze_backbone", False)
         logger.info("Preparing training model (freeze_backbone=%s)", freeze)
@@ -504,14 +502,20 @@ class TorchClassifierTask(Task):
         first_batch = True
         phase = "train" if optimizer is not None else "val"
         for pixels, labels in loader:
+            # Transformers processors return named tensors; torchvision returns
+            # a single tensor. Diagnostics must support both backend contracts.
+            tensors = pixels if isinstance(pixels, dict) else {"pixels": pixels}
+            input_shapes = {name: tuple(value.shape) for name, value in tensors.items()}
             if first_batch:
-                approximate_mib = pixels.numel() * pixels.element_size() / (1024 * 1024)
+                approximate_mib = sum(
+                    value.numel() * value.element_size() for value in tensors.values()
+                ) / (1024 * 1024)
                 logger.info(
                     "%s first batch: pixels_shape=%s, labels_shape=%s, dtype=%s, approx_input_mib=%.1f",
                     phase,
-                    tuple(pixels.shape),
+                    input_shapes,
                     tuple(labels.shape),
-                    pixels.dtype,
+                    {name: value.dtype for name, value in tensors.items()},
                     approximate_mib,
                 )
                 first_batch = False
@@ -523,7 +527,7 @@ class TorchClassifierTask(Task):
                 loss = F.cross_entropy(logits, labels)
             except RuntimeError as error:
                 raise RuntimeError(
-                    f"{phase} step failed for input shape {tuple(pixels.shape)} "
+                    f"{phase} step failed for input shapes {input_shapes} "
                     f"on device {self._device}: {error}"
                 ) from error
             if optimizer is not None:

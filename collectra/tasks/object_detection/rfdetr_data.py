@@ -30,12 +30,24 @@ IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
 def channel_stats(channels: int) -> tuple[tuple[float, ...], tuple[float, ...]]:
-    """ImageNet statistics for the first three channels; their average for any others."""
-    extra_mean = sum(IMAGENET_MEAN) / 3
-    extra_std = sum(IMAGENET_STD) / 3
-    mean = IMAGENET_MEAN[:channels] + (extra_mean,) * max(0, channels - 3)
-    std = IMAGENET_STD[:channels] + (extra_std,) * max(0, channels - 3)
+    """ImageNet statistics cycled across channels, matching ``RFDETR.predict``."""
+    mean = tuple(IMAGENET_MEAN[i % 3] for i in range(channels))
+    std = tuple(IMAGENET_STD[i % 3] for i in range(channels))
     return mean, std
+
+
+def scale_tiff_pixels(pixels: np.ndarray, keep_uint8: bool = False) -> np.ndarray:
+    """Scale integer pixels to [0, 1] float32 as ``ToDtype(scale=True)`` would.
+
+    torch lacks CPU kernels (e.g. flip) for uint16/uint32, so wider integer
+    types are scaled here rather than in the transform pipeline. Float
+    pixels are assumed to be in [0, 1] already.
+    """
+    if pixels.dtype == np.uint8 and keep_uint8:
+        return pixels
+    if np.issubdtype(pixels.dtype, np.integer):
+        return pixels.astype(np.float32) / np.iinfo(pixels.dtype).max
+    return pixels.astype(np.float32)
 
 
 class ChannelNormalize(Normalize):
@@ -69,13 +81,7 @@ class MultiChannelCocoDetection(CocoDetection):
         if path.suffix.lower() not in TIFF_SUFFIXES:
             return super().__getitem__(idx)
 
-        pixels = read_tiff_channels(path)
-        # torch lacks CPU kernels (e.g. flip) for uint16/uint32, so scale integer
-        # types other than uint8 to [0, 1] floats here, as ToDtype(scale=True) would.
-        if np.issubdtype(pixels.dtype, np.integer) and pixels.dtype != np.uint8:
-            pixels = pixels.astype(np.float32) / np.iinfo(pixels.dtype).max
-        elif pixels.dtype != np.uint8:
-            pixels = pixels.astype(np.float32)
+        pixels = scale_tiff_pixels(read_tiff_channels(path), keep_uint8=True)
         img = tv_tensors.Image(torch.from_numpy(pixels.transpose(2, 0, 1).copy()))
         height, width = pixels.shape[:2]
         target = {"image_id": image_id, "annotations": self._load_target(image_id)}

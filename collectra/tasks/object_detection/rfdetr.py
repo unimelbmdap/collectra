@@ -8,7 +8,13 @@ from typing import Annotated, TYPE_CHECKING
 from cappa import Arg
 
 from collectra.cli import command
-from collectra.types.images import Image, ImageCrop, image_channel_count, image_size
+from collectra.types.images import (
+    Image,
+    ImageCrop,
+    image_channel_count,
+    image_size,
+    read_tiff_channels,
+)
 from collectra.utils import change_dir
 
 from ...logger import get_logger
@@ -57,11 +63,31 @@ def _backend_class(name: str):
 
 
 def load_rfdetr_model(model_path: str | Path) -> RFDETR:
+    from .rfdetr_channels import multichannel_checkpoints, sync_channels
+
     errors = []
+    try:
+        # Resolves the model size from checkpoint metadata. The loader widens
+        # the input layer to the stored channel count; num_channels=3 stops
+        # RF-DETR from widening it a second time.
+        with multichannel_checkpoints():
+            model = _backend_class("RFDETR").from_checkpoint(
+                str(model_path), num_channels=3
+            )
+        if isinstance(model, _backend_class("RFDETR")):
+            sync_channels(model)
+            return model
+    except Exception as e:
+        errors.append(("RFDETR.from_checkpoint", str(e)))
+
+    # Fallback for checkpoints without metadata. RF-DETR loads non-strictly, so
+    # a smaller variant can "load" a larger checkpoint while dropping weights.
     for class_name in _MODEL_VARIANTS.values():
         try:
             model_class = _backend_class(class_name)
-            model = model_class(pretrain_weights=str(model_path))
+            with multichannel_checkpoints():
+                model = model_class(pretrain_weights=str(model_path))
+            sync_channels(model)
             return model
         except Exception as e:
             errors.append((class_name, str(e)))
@@ -184,6 +210,30 @@ class ObjectDetectionRFDETR(Task):
             f"or a model variant: {', '.join(_MODEL_VARIANTS)}."
         )
 
+    def _tiff_tensor(self, image: Image):
+        """Read every channel of a TIFF image as a CHW float tensor in [0, 1]."""
+        import numpy as np
+        import torch
+
+        from .rfdetr_data import scale_tiff_pixels
+
+        pixels = read_tiff_channels(image.get_path())
+        if isinstance(image, ImageCrop):
+            left, top, right, bottom = image.coordinates()
+            if right <= left or bottom <= top:
+                raise ValueError(f"ImageCrop {image.id!r} produces an empty pixel crop")
+            pixels = pixels[top:bottom, left:right, :]
+        pixels = np.rot90(pixels, k=image.orientation.to_degree() // 90)
+
+        expected = self.model.model_config.num_channels
+        if pixels.shape[2] != expected:
+            raise ValueError(
+                f"{image.get_path()}: {pixels.shape[2]} image channels, "
+                f"but the detection model expects {expected}"
+            )
+        pixels = scale_tiff_pixels(pixels)
+        return torch.from_numpy(np.ascontiguousarray(pixels.transpose(2, 0, 1)))
+
     @threading_locked()
     def run(self, *args: Image) -> list[Image]:
         if len(args) != 1:
@@ -195,10 +245,16 @@ class ObjectDetectionRFDETR(Task):
         self._init_model()
 
         threshold = float(getattr(self, "threshold", 0.5))
-        pil_image = image.pil().convert("RGB")
-        width, height = pil_image.size
+        if image.get_path().suffix.lower() in {".tif", ".tiff"}:
+            model_input = self._tiff_tensor(image)
+            height, width = model_input.shape[1:]
+        else:
+            model_input = image.pil().convert("RGB")
+            width, height = model_input.size
 
-        detections = self.model.predict(pil_image, threshold=threshold)
+        detections = self.model.predict(
+            model_input, threshold=threshold, include_source_image=False
+        )
 
         results: list[Image] = []
         for i in range(len(detections.xyxy)):
@@ -504,10 +560,11 @@ class ObjectDetectionRFDETR(Task):
             logger.info("TIFF inputs: using the torchvision augmentation backend")
             params["augmentation_backend"] = "torchvision"
 
+        from .rfdetr_channels import multichannel_checkpoints
         from .rfdetr_data import multichannel_datasets
 
         model = self.model
-        with multichannel_datasets():
+        with multichannel_datasets(), multichannel_checkpoints():
             model.train(
                 dataset_dir=str(dataset_dir),
                 **params,
