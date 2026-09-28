@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+import yaml
 from rich.console import Console
 from rich.table import Table
 
@@ -112,16 +113,57 @@ def _training_files(task, inputs: list[str]) -> list[Path]:
     return files
 
 
+def _file_partition(item_file: Path) -> str:
+    result_file = item_file / "results.yaml"
+    if not result_file.exists():
+        return ""
+    with open(result_file, "r") as f:
+        file_data = yaml.safe_load(f) or {}
+    metadata = file_data.get("collectra_results_metadata") or {}
+    return metadata.get("partition") or ""
+
+
+def _limit_training_files(
+    files: list[Path], max_items: int, validation: str = "", exclude: str = ""
+) -> list[Path]:
+    """Keep the first ``max_items`` training and ``max_items`` validation files.
+
+    Only the partition metadata is read, and reading stops once both
+    quotas are filled, so large datasets are not loaded for quick tests.
+    """
+    selected = []
+    counts = {"train": 0, "validation": 0}
+    for item_file in sorted(files):
+        partition = _file_partition(item_file)
+        if exclude and partition == exclude:
+            continue
+        split = "validation" if validation and partition == validation else "train"
+        if counts[split] < max_items:
+            selected.append(item_file)
+            counts[split] += 1
+        if counts["train"] >= max_items and (
+            not validation or counts["validation"] >= max_items
+        ):
+            break
+    logger.info(
+        "max_items=%d: using %d training and %d validation files",
+        max_items,
+        counts["train"],
+        counts["validation"],
+    )
+    return selected
+
+
 def _prepare_data(
     task,
-    inputs: list[str],
+    files: list[Path],
     nodes: list[ArtefactNode],
     *,
     include_unlabelled: bool = False,
 ):
     processed = []
     input_maps = {}
-    for item_file in _training_files(task, inputs):
+    for item_file in files:
         input_maps[item_file.name] = ArtefactNode.batch_process(
             item_file,
             nodes,
@@ -171,13 +213,22 @@ def train_from_files(
     parents = pipeline.node_manager.get_ancestor_artefacts(task_node)
     kwargs["classes"] = kwargs.get("classes", [child.name for child in children])
     kwargs = pipeline._merge_task_params(task.name, kwargs)
+    files = _training_files(task, inputs)
+    max_items = int(kwargs.get("max_items", 0) or 0)
+    if max_items > 0:
+        files = _limit_training_files(
+            files,
+            max_items,
+            validation=kwargs.get("validation", ""),
+            exclude=kwargs.get("exclude", ""),
+        )
     processed_inputs, input_maps = _prepare_data(
         task,
-        inputs,
+        files,
         children,
         include_unlabelled=include_unlabelled,
     )
-    processed_parents, parent_input_maps = _prepare_data(task, inputs, parents)
+    processed_parents, parent_input_maps = _prepare_data(task, files, parents)
     if prepare_inputs is not None:
         processed_inputs = prepare_inputs(
             processed_inputs,

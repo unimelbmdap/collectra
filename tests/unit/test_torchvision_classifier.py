@@ -253,6 +253,8 @@ def test_real_resnet_training_roundtrip(tmp_path, torch_backend):
         exclude="excluded",
         epochs=1,
         batch=2,
+        workers=0,
+        wandb=False,
         pretrained=False,
         freeze_backbone=True,
         device="cpu",
@@ -394,6 +396,8 @@ def test_pipeline_training_persists_model_and_link_outputs(tmp_path, tiny_backen
         validation="validation",
         epochs=1,
         batch=2,
+        workers=0,
+        wandb=False,
         device="cpu",
         keep_log=False,
     )
@@ -439,6 +443,8 @@ def test_best_checkpoint_and_early_stopping(
         epochs=5,
         early_stop=1,
         batch=2,
+        workers=0,
+        wandb=False,
         device="cpu",
     )
     assert result.results_dict["epoch"] == 1
@@ -458,6 +464,8 @@ def test_missing_validation_partition_is_reported(tmp_path, tiny_backend):
             epochs=1,
             validation="typo",
             exclude="excluded",
+            workers=0,
+            wandb=False,
             device="cpu",
         )
 
@@ -478,6 +486,8 @@ def test_validation_can_omit_a_training_class(tmp_path, tiny_backend):
         exclude="excluded",
         device="cpu",
         batch=2,
+        workers=0,
+        wandb=False,
     )
     assert result.results_dict["classes"] == ["Pollen", "Spore"]
     assert "val_loss" in result.results_dict
