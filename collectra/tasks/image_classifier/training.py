@@ -391,7 +391,7 @@ class TorchClassifierTask(Task):
             json.dumps({"classes": classes}, indent=2)
         )
         wandb_run = None
-        if bool(kwargs.get("wandb", True)):
+        if bool(kwargs.get("wandb", False)):
             try:
                 import wandb
 

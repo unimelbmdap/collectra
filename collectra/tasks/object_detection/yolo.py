@@ -505,6 +505,9 @@ class ObjectDetectionYOLO(YOLOTask):
             bool,
             Arg(help="Save training and validation plots and images."),
         ] = True,
+        wandb: Annotated[
+            bool, Arg(help="Log training metrics to Weights & Biases.")
+        ] = False,
     ):
         """Train this YOLO object detector."""
         return run_training_command(
@@ -573,6 +576,7 @@ class ObjectDetectionYOLO(YOLOTask):
             distill_model=distill_model,
             dis=dis,
             plots=plots,
+            wandb=wandb,
         )
 
     def _train(
@@ -628,7 +632,10 @@ class ObjectDetectionYOLO(YOLOTask):
         params = self._prepare_params(**kwargs)
         if kwargs.get("preview", False):
             self._preview_assets(log, classes)
-        with change_dir(kwargs["base_folder"]):
+        with (
+            change_dir(kwargs["base_folder"]),
+            self._wandb_logging(kwargs.get("wandb", False)),
+        ):
             results: DetMetrics | None = self.model.train(**params)
         if results is None:
             raise Exception("[red]Training failed, no results returned.[/red]")

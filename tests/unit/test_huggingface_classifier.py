@@ -104,6 +104,9 @@ def test_train_save_reload_and_native_export(tmp_path, local_model, backend):
         exclude="excluded",
         epochs=2,
         batch=2,
+        # Worker startup costs more than processing this tiny dataset.
+        workers=0,
+        wandb=False,
         device="cpu",
         freeze_backbone=True,
         fliplr=0,
@@ -371,6 +374,8 @@ def test_pipeline_save_and_reload_after_log_cleanup(tmp_path, local_model):
         validation="validation",
         epochs=1,
         batch=2,
+        workers=0,
+        wandb=False,
         device="cpu",
         keep_log=False,
     )

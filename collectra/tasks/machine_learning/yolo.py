@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+import importlib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -24,6 +26,41 @@ class YOLOTask(Task):
 
     def __init__(self, name: str, model: str | Path | YOLO = "", **kwargs) -> None:
         super().__init__(name, model=model, **kwargs)
+
+    @contextmanager
+    def _wandb_logging(self, enabled: bool = False):
+        """Select Ultralytics' native W&B integration for this training run."""
+        from ultralytics import settings
+
+        previous = settings["wandb"]
+        module_name = "ultralytics.utils.callbacks.wb"
+        callbacks = getattr(self.model, "callbacks", {})
+
+        def remove_wandb_callbacks():
+            # Reused models can retain callbacks from an earlier enabled run.
+            for handlers in callbacks.values():
+                handlers[:] = [
+                    handler
+                    for handler in handlers
+                    if getattr(handler, "__module__", None) != module_name
+                ]
+
+        integration = None
+        try:
+            if previous != enabled:
+                settings.update({"wandb": enabled})
+            # The native integration checks settings at import time. Reload it
+            # so enabling/disabling logging also works on subsequent runs.
+            integration = importlib.import_module(module_name)
+            importlib.reload(integration)
+            remove_wandb_callbacks()
+            yield
+        finally:
+            remove_wandb_callbacks()
+            if settings["wandb"] != previous:
+                settings.update({"wandb": previous})
+            if integration is not None:
+                importlib.reload(integration)
 
     def _init_model(self) -> None:
         """Load and validate the configured YOLO model."""

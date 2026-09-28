@@ -387,6 +387,9 @@ class ImageClassifierHuggingFace(TorchClassifierTask):
         seed: Annotated[
             int, Arg(help="Random seed for model initialization and data loading.")
         ] = 0,
+        wandb: Annotated[
+            bool, Arg(help="Log training metrics to Weights & Biases.")
+        ] = False,
     ):
         """Fine-tune a Hugging Face image classifier using its saved image processor."""
         result = run_training_command(
@@ -411,6 +414,7 @@ class ImageClassifierHuggingFace(TorchClassifierTask):
             workers=workers,
             device=device,
             seed=seed,
+            wandb=wandb,
         )
         if self.pipeline is not None:
             saved_model = self.pipeline.data[self.name]["model"]

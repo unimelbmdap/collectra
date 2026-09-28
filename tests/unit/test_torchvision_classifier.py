@@ -491,3 +491,33 @@ def test_validation_can_omit_a_training_class(tmp_path, tiny_backend):
     )
     assert result.results_dict["classes"] == ["Pollen", "Spore"]
     assert "val_loss" in result.results_dict
+
+
+@pytest.mark.parametrize("enabled", [None, False, True])
+def test_wandb_logging_requires_opt_in(tmp_path, tiny_backend, monkeypatch, enabled):
+    # Test lifecycle wiring without importing the W&B SDK or creating a run.
+    started, metrics, finished = [], [], []
+    run = SimpleNamespace(log=metrics.append, finish=lambda: finished.append(True))
+
+    def init(**kwargs):
+        started.append(kwargs)
+        return run
+
+    monkeypatch.setitem(sys.modules, "wandb", SimpleNamespace(init=init))
+    task = ImageClassifierTorchvision("classifier")
+    options = {} if enabled is None else {"wandb": enabled}
+    task._train(
+        *make_inputs(tmp_path),
+        base_folder=tmp_path,
+        log="run",
+        epochs=1,
+        batch=2,
+        workers=0,
+        device="cpu",
+        **options,
+    )
+    expected = 1 if enabled else 0
+    assert len(started) == len(metrics) == len(finished) == expected
+    if enabled:
+        assert started[0]["name"] == "run"
+        assert "train_loss" in metrics[0]

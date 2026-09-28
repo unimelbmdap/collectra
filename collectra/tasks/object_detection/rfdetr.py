@@ -318,7 +318,7 @@ class ObjectDetectionRFDETR(Task):
             "ema_tau": int(kwargs.get("ema_tau", 100)),
             "ema_update_interval": int(kwargs.get("ema_update_interval", 1)),
             "output_dir": str(kwargs["output_dir"]),
-            "wandb": bool(kwargs.get("wandb", True)),
+            "wandb": bool(kwargs.get("wandb", False)),
             "project": kwargs.get("project", "runs/rfdetr"),
             "run": kwargs.get("log", "rfdetr-run"),
             "early_stopping": bool(kwargs.get("early_stopping", False)),
@@ -650,7 +650,7 @@ class ObjectDetectionRFDETR(Task):
         wandb: Annotated[
             bool,
             Arg(help="Log training metrics to Weights & Biases."),
-        ] = True,
+        ] = False,
         early_stopping: Annotated[
             bool,
             Arg(help="Stop training when validation performance stops improving."),
