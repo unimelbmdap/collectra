@@ -204,3 +204,6 @@ cliprototype-cappa.py
 cliprototype.py
 evaluate.sh
 valentin.sh
+docs/old_readme.rst
+pyproject-cappa.toml
+adapt-rfdetr.py

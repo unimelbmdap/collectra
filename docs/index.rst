@@ -16,16 +16,16 @@ Welcome to Collectra's documentation!
 Builds pipelines to extract data from collection images.
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Contents:
+   :maxdepth: 3
+   :caption: Documentation
 
    quickstart
+   design_principles
+   tasks/index
+   artefacts/index
+   gui
    api
    cli
-   artefact_display
-   yolo_classifier
-   torchvision_classifier
-   huggingface_classifier
    credits
 
 Indices and tables

@@ -1,5 +1,37 @@
-YOLO image classification
-=========================
+ImageClassifierYOLO
+===================
+
+Uses an Ultralytics classification model to predict a class for an image or
+crop, returning a Link to that input.
+
+.. code-block:: yaml
+
+    classify:
+      type: collectra.ImageClassifierYOLO
+      model: models/specimens-cls.pt
+      input: image
+      output: [Pollen, Spore]
+
+Commands
+--------
+
+* ``run INPUTS...``: classify inputs with the configured model and the
+  :doc:`shared run options <tasks/index>`.
+* ``train INPUTS...``: train from labelled result directories. Options include
+  ``--model``, ``--imgsz``, ``--epochs``, ``--batch``, regularization,
+  and augmentation.
+
+.. code-block:: bash
+
+    collectra --pipeline pipeline.yaml task classify run images --output results
+    collectra --pipeline pipeline.yaml task classify train training-data --validation validation --epochs 20
+    collectra --pipeline pipeline.yaml task classify run --help
+    collectra --pipeline pipeline.yaml task classify train --help
+
+Use a classification checkpoint with the appropriate output labels.
+
+Multichannel TIFFs
+------------------
 
 ``ImageClassifierYOLO`` supports multichannel TIFFs during training and inference,
 including cropped images. No channel option is needed: Collectra inspects every

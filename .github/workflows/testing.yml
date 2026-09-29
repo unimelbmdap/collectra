@@ -10,9 +10,9 @@ jobs:
       fail-fast: false
       matrix:
         # 3.10 dropped — pyproject.toml requires-python is ">=3.11,<3.14"
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Remove unused packages
       run: |
         sudo rm -rf /usr/share/dotnet
@@ -22,7 +22,7 @@ jobs:
       run: |
           df -h
     - name: Install uv
-      uses: astral-sh/setup-uv@v3
+      uses: astral-sh/setup-uv@v10
       with:
         enable-cache: true
     - name: Setup Graphviz

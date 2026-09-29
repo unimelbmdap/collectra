@@ -1,5 +1,5 @@
-Hugging Face image classification
-================================
+ImageClassifierHuggingFace
+==========================
 
 ``ImageClassifierHuggingFace`` fine-tunes Transformers image classifiers from
 labelled Collectra images or crops. It uses ``AutoImageProcessor`` and
@@ -22,8 +22,23 @@ Train from annotated Collectra data directories::
         --model google/vit-base-patch16-224-in21k --validation validation \
         --epochs 20 --batch 16 --output ./classifier-training
 
+Commands
+--------
+
+* ``run INPUTS...``: classify images or crops using the configured model and
+  the :doc:`shared run options <tasks/index>`.
+* ``train INPUTS...``: fine-tune on labelled result directories using the
+  saved model's image processor. Add ``--wandb`` to enable logging; it is
+  off by default.
+
+.. code-block:: bash
+
+    collectra --pipeline pipeline.yaml task specimen_classifier run images --output results
+    collectra --pipeline pipeline.yaml task specimen_classifier run --help
+    collectra --pipeline pipeline.yaml task specimen_classifier train --help
+
 Model loading and classification labels
---------------------------------------
+----------------------------------------------
 
 ``--model`` accepts:
 

@@ -1,5 +1,5 @@
-Torchvision image classification
-================================
+ImageClassifierTorchvision
+==========================
 
 ``ImageClassifierTorchvision`` trains an image classifier from labelled images or
 crops and returns a ``Link`` from the predicted class to the input image.
@@ -23,6 +23,21 @@ images; validation may omit individual classes. If ``--validation`` is omitted,
 all non-excluded images are training examples, checkpoint selection uses training
 loss, and early stopping is disabled. A specified validation partition with no
 usable images is an error.
+
+Commands
+--------
+
+* ``run INPUTS...``: classify images or crops using the configured model and
+  the :doc:`shared run options <tasks/index>`.
+* ``train INPUTS...``: train on labelled Collectra result directories using
+  the options described below. Add ``--wandb`` to enable logging; it is off
+  by default.
+
+.. code-block:: bash
+
+    collectra --pipeline pipeline.yaml task specimen_classifier run images --output results
+    collectra --pipeline pipeline.yaml task specimen_classifier run --help
+    collectra --pipeline pipeline.yaml task specimen_classifier train --help
 
 Models and preprocessing
 ------------------------
@@ -95,7 +110,7 @@ identify the architecture, class labels, and preprocessing. The loader reports
 an error for checkpoints missing this metadata.
 
 Multichannel TIFF data
----------------------
+----------------------------
 
 TIFF images with more than three channels bypass Pillow throughout export,
 training, validation, and inference. TIFF spatial and channel axes are interpreted
