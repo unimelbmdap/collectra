@@ -1014,7 +1014,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cappa", specifier = ">=0.32.2" },
-    { name = "drawyolo", marker = "extra == 'yolo'", git = "https://github.com/jamestq/drawyolo.git" },
+    { name = "drawyolo", marker = "extra == 'yolo'", specifier = ">=0.1.3" },
     { name = "editdistance", specifier = ">=0.6.0" },
     { name = "ensemble-boxes", specifier = ">=1.0.9" },
     { name = "graphviz", specifier = ">=0.21" },
@@ -1023,7 +1023,7 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "langchain", specifier = ">=1.1.0" },
     { name = "langchain-chroma", specifier = ">=1.0.0" },
-    { name = "llmloader", git = "https://github.com/rbturnbull/llmloader.git" },
+    { name = "llmloader", specifier = ">=0.1.10" },
     { name = "markdown", specifier = ">=3.9" },
     { name = "networkx", specifier = ">=3.6.1" },
     { name = "onnxruntime", marker = "python_full_version < '3.14'", specifier = "==1.23.2" },
@@ -1505,13 +1505,17 @@ wheels = [
 
 [[package]]
 name = "drawyolo"
-version = "0.1.2"
-source = { git = "https://github.com/jamestq/drawyolo.git#fe7462b8ae185cd2bd6480c05046cba95d4a1477" }
+version = "0.1.3"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "opencv-python" },
     { name = "rich" },
     { name = "typer" },
     { name = "ultralytics" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/00/be/533337e2dd042018966d6a4b6a0783eeb1459f798e64179369ebe24320e8/drawyolo-0.1.3.tar.gz", hash = "sha256:9e46332cba6b8534059be3f9b58e2af0bd300571ef1ea6781cd448af7d4036b2", size = 8412, upload-time = "2025-05-21T06:49:09.971Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/ae/de95816adec792270a9696070b4ddb2b583fd21272312d9359ae3704182a/drawyolo-0.1.3-py3-none-any.whl", hash = "sha256:b84715551373be7dfdb4f4dcc96f7e18841987381ceb81ef3f227ef296b93450", size = 9511, upload-time = "2025-05-21T06:49:08.909Z" },
 ]
 
 [[package]]
@@ -3137,8 +3141,8 @@ wheels = [
 
 [[package]]
 name = "llmloader"
-version = "0.1.9"
-source = { git = "https://github.com/rbturnbull/llmloader.git#e2a252af6a1f8176a59da090928c8bbf9b5679c4" }
+version = "0.1.10"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "langchain" },
     { name = "langchain-anthropic" },
@@ -3149,6 +3153,10 @@ dependencies = [
     { name = "langchain-openai" },
     { name = "langchain-xai" },
     { name = "typer" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/82/67/cbd4a9d0a22d36b1f229e9b3c2ed468ee892ebdf99af6d5e1cfe9b064548/llmloader-0.1.10.tar.gz", hash = "sha256:2ff6f4f0913bf04a200d5100b0f0aa43b752204ab8d4925ecf2ac0f0ca11d690", size = 9947, upload-time = "2026-09-29T01:43:36.007Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c2/fc/9c1c88adde75fc33e9f301b3c732b89bafa980fb0233b38d0bc12f775ed9/llmloader-0.1.10-py3-none-any.whl", hash = "sha256:c6eeeb2ea1c2c431b058e705eb11068ac6d3be4f2a3fec57255c35c0e30e8fcb", size = 13876, upload-time = "2026-09-29T01:43:37.092Z" },
 ]
 
 [[package]]
