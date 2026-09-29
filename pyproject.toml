@@ -40,7 +40,7 @@ dependencies = [
     "rfdetr[train,loggers] (>=1.6.5.post0)",
     "supervision (>=0.18.0)",
     "tifffile (>=2024.8.30)",
-    "onnxruntime (==1.23.2)",
+    "onnxruntime (==1.30.0)",
     "torch (==2.9.0)",
     "torchvision (==0.24.0)",
     "cappa (>=0.32.2)",
