@@ -29,6 +29,15 @@ An installed pipeline command offers the same interface::
 
     my-pipeline gui results
 
+Sidebar and folder actions
+---------------------------
+
+When multiple results are open, the sidebar lists each result folder. Use the
+search box above the list to filter folders by name.
+
+Right-click a folder to reveal its ``results.yaml`` in the OS file manager
+(Finder on macOS, Explorer on Windows), selected within its result folder.
+
 Inspect and edit artefacts
 --------------------------
 
