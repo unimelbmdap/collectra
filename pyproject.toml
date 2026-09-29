@@ -40,7 +40,9 @@ dependencies = [
     "rfdetr[train,loggers] (>=1.6.5.post0)",
     "supervision (>=0.18.0)",
     "tifffile (>=2024.8.30)",
-    "onnxruntime (==1.23.2)",
+    # 1.24+ drops Intel macOS; only 1.25.1+ has Python 3.14 wheels.
+    "onnxruntime (==1.23.2) ; python_version < '3.14'",
+    "onnxruntime (>=1.25.1) ; python_version >= '3.14'",
     "torch (==2.9.0)",
     "torchvision (==0.24.0)",
     "cappa (>=0.32.2)",
