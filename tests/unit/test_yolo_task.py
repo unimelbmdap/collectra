@@ -1,74 +1,160 @@
+import sys
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 
-from collectra import Image, ImageCrop, ObjectDetectionYOLO
+import pytest
+
+from collectra import ImageCrop, ObjectDetectionYOLO
+from collectra.cli import invoke
 
 
-def test_train_yolo_temp_dir(classes, images, model, train_yolo, debug, tmpdir):
-    """Test training YOLO model with temporary directory for logs and weights.
+class FakeYOLO:
+    model_name = "fake.pt"
 
-    This test verifies that the YOLO training process completes successfully,
-    saves the best model weights, and returns a results dictionary.
 
-    The test results are saved in a temporary directory which is cleaned up after the test.
-    If the test fails, the temporary directory is retained for debugging purposes.
+def install_fake_yolo(monkeypatch):
+    fake_models = ModuleType("ultralytics.models")
+    fake_models.YOLO = FakeYOLO
+    monkeypatch.setitem(sys.modules, "ultralytics.models", fake_models)
 
-    Args:
-        images (tuple): A tuple containing training and validation image paths.
-        classes (list): A list of class names for object detection.
 
-    """
-    try:
-        assert len(images) > 0, "No images provided for training. Check fixture"
-        yolo_task = ObjectDetectionYOLO(name="label-detector", model=model)
-        assert isinstance(yolo_task, ObjectDetectionYOLO)
-        assert isinstance(yolo_task.model, str) or isinstance(
-            yolo_task.model, Path
-        ), "Model should be a string or path initially"
+def test_train_yolo_temp_dir(classes, image, tmp_path, monkeypatch):
+    """Exercise YOLO training orchestration without weights or a backend."""
+    install_fake_yolo(monkeypatch)
+    task = ObjectDetectionYOLO(name="label-detector", model=FakeYOLO())
+    crop = image.make_crop(0.5, 0.5, 0.25, 0.25, name="human")
+    crop.add_source_parent(image)
+    monkeypatch.setattr(task, "_init_model", lambda: None)
+    monkeypatch.setattr(task, "_prepare_assets", lambda *args: (["train"], ["val"]))
 
-        prepared_images = []
-        for img in images:
-            if isinstance(img, ImageCrop) and img.source_parent is None:
-                img.add_source_parent(
-                    Image(
-                        name="specimen_sheet",
-                        data=img.get_path(),
-                        orientation=img.orientation,
-                    )
-                )
-            prepared_images.append(img)
+    def fake_train_fold(train, validation, output_classes, log, kwargs):
+        weights = log / "weights"
+        weights.mkdir(parents=True)
+        (weights / "best.pt").touch()
+        return SimpleNamespace(save_dir=log, results_dict={"mock": True})
 
-        results = train_yolo(
-            yolo_task,
-            *prepared_images,
-            classes=classes,
-            project=f"{yolo_task.name}-test",
+    monkeypatch.setattr(task, "_train_fold", fake_train_fold)
+    result = task._train(
+        crop,
+        classes=classes,
+        log="run",
+        base_folder=tmp_path,
+    )
+
+    assert result.results_dict == {"mock": True}
+    assert (result.save_dir / "weights" / "best.pt").exists()
+
+
+class Scalar:
+    def __init__(self, value):
+        self.value = value
+
+    def int(self):
+        return self
+
+    def item(self):
+        return self.value
+
+
+class Coordinates(list):
+    def clone(self):
+        return self
+
+
+class Boxes:
+    xywhn = Coordinates([[0.5, 0.5, 0.25, 0.25]])
+    cls = [Scalar(0)]
+    conf = [Scalar(0.9)]
+
+    def __len__(self):
+        return 1
+
+
+class FakeInferenceModel:
+    model = SimpleNamespace(end2end=False)
+
+    def __call__(self, *args, **kwargs):
+        return [SimpleNamespace(boxes=Boxes(), names={0: "human"})]
+
+
+@pytest.mark.parametrize("model", [None, "/models/override.pt", Path("override.pt")])
+@pytest.mark.parametrize("cropped", [False, True])
+@pytest.mark.parametrize(
+    ("configured_imgsz", "imgsz", "expected_imgsz"),
+    [(None, None, None), (None, 1280, 1280), (960, None, 960), (960, 1280, 1280)],
+)
+def test_run_yolo(
+    image, monkeypatch, model, cropped, configured_imgsz, imgsz, expected_imgsz
+):
+    """Exercise YOLO result conversion without importing Ultralytics."""
+    fake_torchvision = ModuleType("torchvision")
+    fake_ops = ModuleType("torchvision.ops")
+    fake_ops.batched_nms = lambda *args, **kwargs: []
+    fake_torchvision.ops = fake_ops
+    monkeypatch.setitem(sys.modules, "torchvision", fake_torchvision)
+    monkeypatch.setitem(sys.modules, "torchvision.ops", fake_ops)
+
+    loaded_paths = []
+    inference_calls = []
+
+    class LoadingModel(FakeInferenceModel):
+        def __init__(self, path):
+            loaded_paths.append(path)
+
+        def __call__(self, *args, **kwargs):
+            inference_calls.append(kwargs)
+            return super().__call__(*args, **kwargs)
+
+    fake_models = ModuleType("ultralytics.models")
+    fake_models.YOLO = LoadingModel
+    monkeypatch.setitem(sys.modules, "ultralytics.models", fake_models)
+    task = ObjectDetectionYOLO(name="label-detector", model="configured.pt")
+    task.imgsz = configured_imgsz
+    if cropped:
+        image = image.make_crop(0.5, 0.5, 0.5, 0.5)
+    detections = task.run(image, model=model, imgsz=imgsz)
+
+    expected_kwargs = {"iou": 0.7, "conf": 0.25}
+    if expected_imgsz is not None:
+        expected_kwargs["imgsz"] = expected_imgsz
+    assert inference_calls == [expected_kwargs]
+    assert loaded_paths == [Path(model or "configured.pt")]
+    assert len(detections) == 1
+    assert isinstance(detections[0], ImageCrop)
+    assert detections[0].name == "human"
+    assert detections[0].confidence == 0.9
+
+
+@pytest.mark.parametrize("model", [None, "/models/override.pt"])
+@pytest.mark.parametrize("imgsz", [None, 1280])
+def test_run_cli_model_override(model, imgsz):
+    task = ObjectDetectionYOLO("detector", model="configured.pt")
+    calls = []
+    task.pipeline = SimpleNamespace(
+        cli_run=lambda inputs, **kwargs: calls.append(
+            (inputs, kwargs, task.model, task.imgsz)
         )
-        assert results, "Training failed to return any results"
-        assert results.results_dict is not None, "results_dict should exist"
-        best_model_path = results.save_dir / "weights" / "best.pt"
-        assert best_model_path.exists(), f"best.pt not found in {best_model_path}"
-    except Exception as e:
-        debug(e)
+    )
+    argv = ["run", "image.jpg", "--output", "results", "--render"]
+    if model is not None:
+        argv.extend(["--model", model])
+    if imgsz is not None:
+        argv.extend(["--imgsz", str(imgsz)])
 
+    invoke(task, argv)
 
-def test_run_yolo(image, model, debug):
-    """Test the YOLO object detection model on a single image.
-
-    This test verifies that the YOLO model can process an image and return
-    a list of detected objects as ImageCrop instances.
-
-    Args:
-        image (Path): Path to the image file to be tested.
-        model (str or Path): Path to the YOLO model weights.
-
-    """
-    try:
-        yolo_task = ObjectDetectionYOLO(name="label-detector", model=model)
-        assert isinstance(yolo_task, ObjectDetectionYOLO)
-        detections = yolo_task.run(image)
-        assert isinstance(detections, list), "Detections should be a list"
-        assert all(
-            isinstance(det, ImageCrop) for det in detections
-        ), "All detections should be ImageCrop instances"
-    except Exception as e:
-        debug(e)
+    assert calls == [
+        (
+            ["image.jpg"],
+            dict(
+                task="detector",
+                output=Path("results"),
+                single=True,
+                verbose=False,
+                usage=False,
+                render=True,
+            ),
+            Path(model) if model is not None else "configured.pt",
+            imgsz,
+        )
+    ]

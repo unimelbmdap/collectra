@@ -1,0 +1,57 @@
+/* Collectra Solar — default DAG theme
+   Override by placing a theme.css in your .collectra folder.
+*/
+
+/* DAG node colours (read by getDagColors() via CSS custom properties) */
+#dagContainer {
+    --dag-bg: #000;
+    --dag-edge: #839496;
+    --dag-task-color: #268bd2;   /* Solar blue  — task nodes */
+    --dag-data-color: #2aa198;   /* Solar teal  — artefact (data) nodes */
+}
+
+/* Bootstrap Solar — Collectra orange as primary accent */
+:root {
+    --bs-primary: #f09226;
+    --bs-primary-rgb: 240, 146, 38;
+    --bs-link-color: #f09226;
+    --bs-link-hover-color: #d97f18;
+    /* collectra_gui's own --app-* custom properties — read directly by
+       buttons/dividers/lineage panel instead of the --bs-* ones above,
+       which depend on an unreliable cascade tie-break against the
+       externally-loaded Solar stylesheet. */
+    --app-primary: #f09226;
+    --app-primary-rgb: 240, 146, 38;
+    --app-primary-dark: #d97f18;
+    --app-secondary: #839496;
+    --app-secondary-rgb: 131, 148, 150;
+    --app-primary-fg: #fff;
+    --app-secondary-fg: #fff;
+    --app-surface: #121212;
+    --app-surface-alt: #0f0f0f;
+    --app-divider: rgba(240, 146, 38, 0.084);
+}
+.btn-primary {
+    background-color: #f09226 !important;
+    border-color: #f09226 !important;
+    color: #fff !important;
+}
+.btn-primary:hover {
+    background-color: #d97f18 !important;
+    border-color: #d97f18 !important;
+}
+.badge.bg-primary {
+    background-color: #f09226 !important;
+}
+.text-primary {
+    color: #f09226 !important;
+}
+.border-primary {
+    border-color: #f09226 !important;
+}
+a {
+    color: #f09226;
+}
+a:hover {
+    color: #d97f18;
+}

@@ -94,8 +94,8 @@ def mock_text():
 
 
 @pytest.fixture
-def mock_data_node():
-    """Create a mock DataNode."""
+def mock_artefact_node():
+    """Create a mock ArtefactNode."""
 
     def _create_node(name, ensemble_items=None):
         node = MagicMock()
@@ -114,11 +114,11 @@ def mock_node_manager():
     manager.resolve_node = MagicMock(side_effect=lambda n: MagicMock(name=n))
     manager.reset_all_nodes = MagicMock()
     manager.get_task_nodes = MagicMock(return_value=[])
-    manager.get_data_nodes = MagicMock(return_value=[])
+    manager.get_artefact_nodes = MagicMock(return_value=[])
     manager.get_node_names = MagicMock(return_value=[])
     manager.get_parents = MagicMock(return_value=[])
     manager.get_children = MagicMock(return_value=[])
-    manager.get_children_data = MagicMock(return_value=[])
+    manager.get_children_artefact = MagicMock(return_value=[])
     return manager
 
 

@@ -1,10 +1,13 @@
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import yaml
 from rich import print
+
+from collectra.cli import command
 
 from ..commons import BaseEntity, Node, NodeStatus
 from ..utils import (
@@ -14,16 +17,51 @@ from ..utils import (
     traceback_error,
 )
 
-__all__ = ["Data", "DataNode"]
+__all__ = ["Artefact", "ArtefactNode"]
 
 from ..logger import get_logger
 
 logger = get_logger(__name__)
 
 
-@dataclass
-class Data(BaseEntity):
+class ArtefactCommands:
+    """CLI capabilities for a named pipeline artefact node.
 
+    Concrete artefact classes can return a subclass from ``cli_commands`` to
+    expose commands applying to every matching item in that node.
+    """
+
+    def __init__(self, node: "ArtefactNode", ext: str) -> None:
+        self.node = node
+        self.ext = ext
+
+    @command
+    def evaluate(
+        self,
+        predicted_folder: Path,
+        gold_folder: Path,
+        threshold: float = 0.5,
+        match_by_order: bool = False,
+        output: Path | None = None,
+    ) -> None:
+        """Evaluate this artefact against ground-truth Collectra results."""
+        from collectra.evaluator.base import Evaluator
+
+        report = Evaluator(
+            predicted_folder,
+            gold_folder,
+            ext=self.ext,
+            labels={self.node.name},
+            match_by_order=match_by_order,
+        ).evaluate(threshold=threshold)
+        for table in [*report.aggregate_tables, *report.tables]:
+            print(table)
+        if output is not None:
+            report.save_csv(output)
+
+
+@dataclass
+class Artefact(BaseEntity):
     name: str
     id: str = field(default="")
     parents: list[str] = field(default_factory=list)
@@ -31,8 +69,11 @@ class Data(BaseEntity):
     embeddings: list[str] = field(default_factory=list)
     orientation: str = field(default="north")  # e.g., "landscape" or "portrait"
     ensemble: list[str] = field(default_factory=list)
+    source_file: Path | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
-    def set_parents(self, parents: list["Data"]) -> None:
+    def set_parents(self, parents: list["Artefact"]) -> None:
         self.parents = [parent.id for parent in parents]
 
     def serialize(self) -> dict:
@@ -47,7 +88,32 @@ class Data(BaseEntity):
         return serialized
 
     def evaluate(self, gold) -> float:
-        raise NotImplementedError("Eval method not implemented for base Data class.")
+        raise NotImplementedError(
+            "Eval method not implemented for base Artefact class."
+        )
+
+    def display(self, context) -> dict:
+        """Describe this artefact using the display protocol (see collectra.display).
+
+        Override to return an image, text, or properties view. The context
+        resolves related artefacts and publishes previews without altering data.
+        """
+        return {"kind": "properties", "data": self.serialize()}
+
+    def _extract(self, path: Path) -> None:
+        raise NotImplementedError(
+            "Extract method not implemented for base Artefact class."
+        )
+
+    def extract(self, path: Path | str) -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._extract(path)
+
+    @classmethod
+    def cli_commands(cls, node: "ArtefactNode", ext: str) -> ArtefactCommands:
+        """Return the CLI object representing this artefact type in ``node``."""
+        return ArtefactCommands(node, ext)
 
     def _generate_id(self) -> str:
         # Generate a unique ID based on the name and other attributes
@@ -62,6 +128,7 @@ class Data(BaseEntity):
         attributes = super().attributes_to_ignore()
         attributes.add("name")
         attributes.add("partition")
+        attributes.add("source_file")
         return attributes
 
     @classmethod
@@ -76,10 +143,10 @@ class Data(BaseEntity):
 
 
 @dataclass
-class DataNode(Node):
+class ArtefactNode(Node):
 
-    items: dict[str, Data] = field(default_factory=dict)
-    ensemble_items: dict[str, Data] = field(default_factory=dict)
+    items: dict[str, Artefact] = field(default_factory=dict)
+    ensemble_items: dict[str, Artefact] = field(default_factory=dict)
     types: set[type] = field(default_factory=set)
     skip_type_check: bool = False
     ensemble: bool = False
@@ -88,14 +155,14 @@ class DataNode(Node):
         super().__post_init__()
         self.status = NodeStatus.READY if self.items else NodeStatus.NOT_READY
 
-    def add_item(self, item: Data) -> None:
+    def add_item(self, item: Artefact) -> None:
         try:
             self.items[item.id] = item
             self.status = NodeStatus.READY
         except Exception as e:
-            raise RuntimeError(f"Error adding item to DataNode: {str(e)}")
+            raise RuntimeError(f"Error adding item to ArtefactNode: {str(e)}")
 
-    def get_item(self, item_id: str) -> Data | None:
+    def get_item(self, item_id: str) -> Artefact | None:
         return self.items.get(item_id, None)
 
     def add_type(self, type_: type) -> None:
@@ -112,7 +179,7 @@ class DataNode(Node):
         return f"{self.name}\n{types_str}"
 
     def evaluate(
-        self, gold_items: "DataNode", threshold: float = 0.5
+        self, gold_items: "ArtefactNode", threshold: float = 0.5
     ) -> dict[str, int | float]:
         """
         Evaluate predicted items against gold standard items.
@@ -125,7 +192,7 @@ class DataNode(Node):
         5. Computes aggregate metrics (precision, recall, F1, mean score)
 
         Args:
-            gold_items: DataNode containing ground truth items
+            gold_items: ArtefactNode containing ground truth items
             threshold: Minimum score for a valid match (default 0.5)
                     - For ImageCrop: IoU threshold
                     - For Text: similarity threshold
@@ -344,11 +411,14 @@ class DataNode(Node):
         )
         return metrics
 
-    def _create_instance(self, cls_: type, **item) -> None:
+    def _create_instance(
+        self, cls_: type, *, source_file: Path | None = None, **item
+    ) -> None:
         try:
             instance = cls_(**item)
             if not instance:
                 raise ValueError(f"Failed to load {item} with {cls_}")
+            instance.source_file = source_file
             self.add_item(instance)
         except Exception as e:
             logger.error(
@@ -409,7 +479,11 @@ class DataNode(Node):
                             try:
                                 primitive_type = not isinstance(item, dict) or not (
                                     "type" in item
-                                    and ("path" in item or "data" in item)
+                                    and (
+                                        "path" in item
+                                        or "data" in item
+                                        or item["type"].endswith(".Link")
+                                    )
                                 )
                                 if primitive_type:
                                     raise ValueError(
@@ -423,7 +497,7 @@ class DataNode(Node):
                                         f"{cls_} is not a subclass or not defined in {self.types}"
                                     )
                                 item["name"] = key
-                                if "data" not in item:
+                                if "data" not in item and "path" in item:
                                     item["data"] = item.pop("path")
                                 if "parents" in item and not isinstance(
                                     item["parents"], list
@@ -437,7 +511,9 @@ class DataNode(Node):
                                 if ensemble:
                                     self._create_ensemble_instances(value, cls_, **item)
                                 else:
-                                    self._create_instance(cls_, **item)
+                                    self._create_instance(
+                                        cls_, source_file=value, **item
+                                    )
                             except Exception as e:
                                 if not primitive_type:
                                     logger.error(
@@ -461,11 +537,16 @@ class DataNode(Node):
             self._create_instances(name=key, data=value)
 
     @staticmethod
-    def batch_process(item_file: Path, data_nodes: list["DataNode"]) -> list[Data]:
-        names = [data_node.name for data_node in data_nodes]
+    def batch_process(
+        item_file: Path,
+        artefact_nodes: list["ArtefactNode"],
+        *,
+        include_unlabelled: bool = False,
+    ) -> list[Artefact]:
+        names = [artefact_node.name for artefact_node in artefact_nodes]
         with change_dir(item_file):
             try:
-                data: list[Data] = list()
+                data: list[Artefact] = list()
                 result_file = Path("results.yaml")
                 if not result_file.exists():
                     print(error_msg(f"Invalid file: {Path.cwd()}. Ignoring..."))
@@ -476,10 +557,14 @@ class DataNode(Node):
                         "partition", None
                     )
                 all_names_not_found = all(name not in file_data for name in names)
-                # This is to load empty images without any annotation (for training negative samples).
-                if all_names_not_found:
+                # Object detection can opt into base images with no annotations
+                # as negative samples. Classification must not treat an
+                # unlabelled image as a training example.
+                if all_names_not_found and include_unlabelled:
                     print(
-                        f"[yellow]No matching data found in [blue]{item_file}[/blue] for names: {', '.join(names)}. Ignoring..."
+                        f"[yellow]No matching labels found in [blue]{item_file}[/blue] "
+                        f"for names: {', '.join(names)}. Using its base image as an "
+                        "unlabelled detection sample."
                     )
                     found_base = False
                     for name, values in file_data.items():
@@ -519,37 +604,44 @@ class DataNode(Node):
                                     )
                         if found_base:
                             break
+                elif all_names_not_found:
+                    return data
                 for i, name in enumerate(names):
                     if name not in file_data:
                         continue
                     value = file_data[name]
                     if not value:
                         raise Warning(
-                            f"Data seems to be empty for {name} in {item_file}. Provided: {value}"
+                            f"Artefact seems to be empty for {name} in {item_file}. Provided: {value}"
                         )
                     value = value if isinstance(value, list) else [value]
                     for item in value:
                         if not isinstance(item, dict) or not (
-                            "type" in item and ("data" in item or "path" in item)
+                            "type" in item
+                            and (
+                                "data" in item
+                                or "path" in item
+                                or item["type"].endswith(".Link")
+                            )
                         ):
                             continue
                         cls_ = load_class_from_string(item.pop("type"))
                         match = False
-                        for type_ in data_nodes[i].types:
+                        for type_ in artefact_nodes[i].types:
                             if issubclass(cls_, type_) or cls_ == type_:
                                 match = True
                                 break
                         if not match:
                             continue
                         item["name"] = name
-                        item["data"] = (
-                            item.pop("path") if "path" in item else item["data"]
-                        )
+                        if "path" in item:
+                            item["data"] = item.pop("path")
                         if partition is not None:
                             item["partition"] = partition
                         try:
                             instance = cls_(**item)
                             if instance:
+                                instance.source_file = item_file
                                 data.append(instance)
                         except Exception as e:
                             traceback_error(
@@ -560,3 +652,9 @@ class DataNode(Node):
             except Exception as e:
                 traceback_error(e, verbose=True)
                 return list()
+
+
+def load_artefact(item: dict[str, Any]):
+    artefact_class = load_class_from_string(item.pop("type"))
+
+    return artefact_class(**item)

@@ -65,6 +65,17 @@ class TestCollectraResultsMetadata:
         assert metadata.partition is None
         assert metadata.timestamp is None
 
+    def test_accepts_numeric_version_from_yaml(self):
+        """Some results.yaml files were written with an unquoted version
+        (e.g. `version: 1.0`), which PyYAML parses as a float, not a str.
+        Loading must not reject that — it should be treated as "1.0"."""
+        metadata = CollectraResultsMetadata(version=1.0)
+        assert metadata.version == "1.0"
+
+    def test_accepts_integer_version_from_yaml(self):
+        metadata = CollectraResultsMetadata(version=2)
+        assert metadata.version == "2"
+
 
 class TestCollectraFileModelDump:
     """Tests for CollectraFile.model_dump flattening behaviour."""
@@ -289,8 +300,8 @@ class TestCollectraFileSave:
             content = yaml.safe_load(f)
         assert "collectra_results_metadata" in content
 
-    def test_save_cleans_up_on_asset_not_found(self, tmp_path):
-        """If an asset file does not exist, save should clean up the collectra dir and raise."""
+    def test_save_preserves_existing_directory_on_asset_error(self, tmp_path):
+        """A failed update must not delete an existing Collectra directory."""
         collectra_dir = tmp_path / "output" / "photo.arb"
         collectra_dir.mkdir(parents=True)
 
@@ -304,7 +315,21 @@ class TestCollectraFileSave:
         with pytest.raises(RuntimeError, match="Failed to save"):
             cf.save()
 
-        assert not collectra_dir.exists()
+        assert collectra_dir.exists()
+
+    def test_save_cleans_up_new_directory_on_asset_error(self, tmp_path):
+        source = tmp_path / "missing.jpg"
+        collectra_file = CollectraFile.from_file(
+            file=source,
+            label="image",
+            ext="arb",
+            output=tmp_path / "output",
+        )
+
+        with pytest.raises(RuntimeError, match="Failed to save"):
+            collectra_file.save()
+
+        assert not collectra_file.collectra_file_path.exists()
 
     def test_save_no_assets(self, tmp_path):
         """save with no assets should still write results.yaml."""

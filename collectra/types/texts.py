@@ -5,7 +5,7 @@ from pathlib import Path
 
 from markdown import Markdown as MDown
 
-from .base import Data
+from .base import Artefact
 
 __all__ = ["Text"]
 
@@ -33,7 +33,7 @@ def unmark(text):
 
 
 @dataclass
-class Text(Data):
+class Text(Artefact):
 
     data: str | Path = field(default="")
 
@@ -50,6 +50,9 @@ class Text(Data):
 
     def __call__(self) -> str | Path:
         return self.data
+
+    def display(self, context) -> dict:
+        return context.text(self)
 
     def evaluate(self, gold: "Text") -> float:
         if not isinstance(gold, Text):

@@ -38,15 +38,19 @@ try:  # pragma: no cover - environment guard
 except Exception:  # pragma: no cover - environment guard
     sys.modules["cv2"] = MagicMock()
 
-from collectra.tasks.machine_learning import rfdetr as rfdetr_module  # noqa: E402
-from collectra.tasks.machine_learning.rfdetr import ObjectDetectionRFDETR  # noqa: E402
+from collectra.tasks.object_detection import rfdetr as rfdetr_module  # noqa: E402
+from collectra.tasks.object_detection.rfdetr import ObjectDetectionRFDETR  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-class _FakeRFDETRBase:
+class _FakeRFDETR:
+    """Common parent for the fake model variants."""
+
+
+class _FakeRFDETRBase(_FakeRFDETR):
     """A real (non-mock) class we patch in for ``RFDETRBase``.
 
     Using a real class - rather than a ``MagicMock`` instance - keeps
@@ -85,10 +89,73 @@ def patched_rfdetr_base():
     """
     _FakeRFDETRBase.instances = []
     with patch(
-        "collectra.tasks.machine_learning.rfdetr.RFDETRBase",
+        "collectra.tasks.object_detection.rfdetr.RFDETRBase",
         new=_FakeRFDETRBase,
-    ) as patched:
+    ) as patched, patch.object(rfdetr_module, "RFDETR", _FakeRFDETR):
         yield patched
+
+
+def test_init_model_accepts_other_rfdetr_variants(patched_rfdetr_base):
+    class OtherRFDETR(_FakeRFDETR):
+        pass
+
+    model = OtherRFDETR()
+    task = ObjectDetectionRFDETR(name="rfdetr-other", model=model)
+
+    task._init_model()
+    task._init_model()
+
+    assert task.model is model
+
+
+@pytest.mark.parametrize(
+    "name, class_name",
+    [
+        ("nano", "RFDETRNano"),
+        ("small", "RFDETRSmall"),
+        ("medium", "RFDETRMedium"),
+        ("large", "RFDETRLarge"),
+        ("base", "RFDETRBase"),
+        ("default", "RFDETRBase"),
+        ("RFDETRSmall", "RFDETRSmall"),
+        ("xlarge", "RFDETRXLarge"),
+        ("2xlarge", "RFDETR2XLarge"),
+    ],
+)
+def test_load_named_variant(name, class_name, monkeypatch):
+    model = _FakeRFDETR()
+    constructor = MagicMock(return_value=model)
+    monkeypatch.setattr(
+        rfdetr_module,
+        "_backend_class",
+        lambda name: _FakeRFDETR if name == "RFDETR" else (
+            constructor if name == class_name else pytest.fail(f"Unexpected model: {name}")
+        ),
+    )
+    task = ObjectDetectionRFDETR(name="detector", model=name)
+    task.original_model_path = Path("previous.pt")
+    monkeypatch.setattr(task, "_select_device", lambda: "cpu")
+
+    task._init_model()
+
+    assert task.model is model
+    assert task.original_model_path is None
+    constructor.assert_called_once_with()
+
+
+@pytest.mark.parametrize("class_name", ["RFDETRNano", "RFDETRSmall"])
+def test_load_checkpoint_tries_smaller_variants(class_name, monkeypatch, fake_checkpoint):
+    model = _FakeRFDETR()
+    constructor = MagicMock(return_value=model)
+    incompatible = MagicMock(side_effect=ValueError("incompatible checkpoint"))
+    monkeypatch.setattr(
+        rfdetr_module,
+        "_backend_class",
+        lambda name: constructor if name == class_name else incompatible,
+    )
+
+    assert rfdetr_module.load_rfdetr_model(fake_checkpoint) is model
+    constructor.assert_called_once_with(pretrain_weights=str(fake_checkpoint))
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +240,7 @@ def test_train_raises_for_nonexistent_model_path(
     # Spy on the dataset writer to confirm we error out *before* it runs.
     with patch.object(ObjectDetectionRFDETR, "_write_coco_dataset") as write_mock:
         with pytest.raises(ValueError):
-            task.train(
+            task._train(
                 log="run",
                 base_folder=tmp_path,
                 classes=["a"],
@@ -206,7 +273,7 @@ def test_train_raises_when_load_returns_non_rfdetrbase(
     ):
         with patch.object(ObjectDetectionRFDETR, "_write_coco_dataset") as write_mock:
             with pytest.raises(ValueError):
-                task.train(
+                task._train(
                     log="run",
                     base_folder=tmp_path,
                     classes=["a"],

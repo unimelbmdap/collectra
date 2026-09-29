@@ -1,28 +1,37 @@
-from pathlib import Path
+from __future__ import annotations
 
-from torchvision.models import EfficientNet
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from collectra.types.images import Image, ImageCrop, Orientation
 
-from .base import MachineLearningTask
+from ..base import Task
+
+if TYPE_CHECKING:
+    from torchvision.models import EfficientNet
 
 __all__ = ["ImageOrienter"]
 
 
-class ImageOrienter(MachineLearningTask):
+class ImageOrienter(Task):
 
     model: str | Path | EfficientNet
 
     def __init__(self, name, model: str | Path | EfficientNet, **kwargs):
-        super().__init__(name, model, **kwargs)
-        self._init_model()
-        import torchvision.transforms as transforms
+        super().__init__(name, model=model, **kwargs)
+        self.transforms = None
 
-        IMAGE_SIZE = 384
+    def _init_model(self):
+        """Initialisation code here is emulated from https://github.com/duartebarbosadev/deep-image-orientation-detection"""
+        import torch
+        import torchvision.transforms as transforms
+        from torchvision.models import EfficientNet
+
+        image_size = 384
         self.transforms = transforms.Compose(
             [
-                transforms.Resize((IMAGE_SIZE + 32, IMAGE_SIZE + 32)),
-                transforms.CenterCrop(IMAGE_SIZE),
+                transforms.Resize((image_size + 32, image_size + 32)),
+                transforms.CenterCrop(image_size),
                 transforms.ToTensor(),
                 transforms.Normalize(
                     mean=[0.485, 0.456, 0.406],
@@ -30,13 +39,6 @@ class ImageOrienter(MachineLearningTask):
                 ),
             ]
         )
-
-    def train(self, **kwargs):
-        raise NotImplementedError("Training not implemented for ImageOrienter.")
-
-    def _init_model(self):
-        """Initialisation code here is emulated from https://github.com/duartebarbosadev/deep-image-orientation-detection"""
-        import torch
 
         device = torch.device(
             "mps"
@@ -82,11 +84,12 @@ class ImageOrienter(MachineLearningTask):
         return background
 
     def run(self, *args: Image) -> Image:
-
         import torch
+        from torchvision.models import EfficientNet
 
         if len(args) != 1:
             raise ValueError("This task only supports a single Image input.")
+        self._init_model()
         img = args[0]
         image = self._processed_image(img)
         input_tensor = self.transforms(image).unsqueeze(0).to(self.device)

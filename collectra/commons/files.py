@@ -4,10 +4,15 @@ from pathlib import Path
 
 import pydantic
 
+from ..types.base import load_artefact
 from ..utils import write_yaml
 
 
 class CollectraResultsMetadata(pydantic.BaseModel):
+    # Some results.yaml files have an unquoted version (e.g. `version: 1.0`),
+    # which PyYAML parses as a float rather than a str.
+    model_config = pydantic.ConfigDict(coerce_numbers_to_str=True)
+
     workflow: str | None = None
     version: str | None = None
     partition: str | None = None
@@ -30,6 +35,19 @@ class CollectraFile(pydantic.BaseModel):
     collectra_results_metadata: CollectraResultsMetadata
     data: dict
     assets: dict[str, Path] = dict()
+    cleanup_on_save_failure: bool = False
+
+    def __getitem__(self, key):
+        item = self.data[key]
+        return item
+
+    def __contains__(self, key):
+        return key in self.data
+
+    @property
+    def results_path(self) -> Path:
+        """Return the canonical results file for this Collectra directory."""
+        return self.collectra_file_path / "results.yaml"
 
     def model_dump(self, *args, **kwargs) -> dict:
         data = super().model_dump(*args, **kwargs)
@@ -44,19 +62,25 @@ class CollectraFile(pydantic.BaseModel):
             )
         data.pop("data")
         data.pop("assets")
+        data.pop("cleanup_on_save_failure")
         data.pop("collectra_file_path")
         return data
 
     @classmethod
-    def from_data(cls, collectra_file_path: Path):
+    def from_data(cls, collectra_file_path: Path | str):
         import yaml
 
+        collectra_file_path = Path(collectra_file_path)
         results_yaml = collectra_file_path / "results.yaml"
         if not results_yaml.exists():
             raise FileNotFoundError(f"results.yaml not found in {collectra_file_path}")
         with open(results_yaml, "r") as f:
-            data = yaml.safe_load(f)
-        metadata = CollectraResultsMetadata(**data.pop("collectra_results_metadata"))
+            data = yaml.safe_load(f) or {}
+        if not isinstance(data, dict):
+            raise ValueError(f"Invalid results data in {results_yaml}")
+        metadata = CollectraResultsMetadata(
+            **data.pop("collectra_results_metadata", {})
+        )
         return cls(
             collectra_file_path=collectra_file_path,
             collectra_results_metadata=metadata,
@@ -77,7 +101,8 @@ class CollectraFile(pydantic.BaseModel):
         collectra_file_path = file.with_suffix(f".{ext}")
         if output:
             collectra_file_path = output / collectra_file_path.name
-        if collectra_file_path.exists() and not force:
+        directory_existed = collectra_file_path.exists()
+        if directory_existed and not force:
             raise FileExistsError(
                 f"File {collectra_file_path} already exists. To overwrite, use -f or --force option."
             )
@@ -97,6 +122,7 @@ class CollectraFile(pydantic.BaseModel):
             collectra_results_metadata=metadata,
             data=new_data,
             assets={file.name: Path(file)},
+            cleanup_on_save_failure=not directory_existed,
         )
 
     def save(self):
@@ -111,7 +137,9 @@ class CollectraFile(pydantic.BaseModel):
                 if not asset_path.exists():
                     raise FileNotFoundError(f"Asset file {asset_path} not found.")
                 shutil.copy(asset_path, collectra_file_path / asset_name)
-            write_yaml(data, collectra_file_path / "results.yaml")
+            write_yaml(data, self.results_path)
+            self.cleanup_on_save_failure = False
         except Exception as e:
-            shutil.rmtree(collectra_file_path, ignore_errors=True)
+            if self.cleanup_on_save_failure:
+                shutil.rmtree(collectra_file_path, ignore_errors=True)
             raise RuntimeError(f"Failed to save Collectra file: {e}")

@@ -24,11 +24,128 @@ import io
 import shutil
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import lru_cache
 from pathlib import Path
 
 from PIL import Image as ImagePil
 
-from .base import Data
+from collectra.cli import command
+
+from .base import Artefact, ArtefactCommands, ArtefactNode
+
+
+def _tiff_dimensions(path: str | Path) -> tuple[int, int, int]:
+    """Return width, height, channels from TIFF headers, without decoding pixels.
+
+    C/S denote channels/samples; I/Q denotes an otherwise unlabelled page stack.
+    Non-singleton time/depth axes and multiple image series are ambiguous for a
+    2D detector and must be exported as separate images first.
+    """
+    from tifffile import TiffFile
+
+    with TiffFile(path) as tiff:
+        if len(tiff.series) != 1:
+            raise ValueError(f"TIFF {path} contains multiple image series")
+        series = tiff.series[0]
+        shape, axes = series.shape, series.axes
+    if len(axes) != len(shape) or axes.count("Y") != 1 or axes.count("X") != 1:
+        raise ValueError(
+            f"Cannot identify TIFF spatial axes for {path}: shape={shape}, axes={axes!r}"
+        )
+    extra = [
+        (axis, size)
+        for axis, size in zip(axes, shape)
+        if axis not in "YX" and size != 1
+    ]
+    if len(extra) > 1 or (extra and extra[0][0] not in "CSIQ"):
+        raise ValueError(
+            f"Ambiguous TIFF channel axes for {path}: shape={shape}, axes={axes!r}; expected a 2D image with one channel/sample axis"
+        )
+    channels = extra[0][1] if extra else 1
+    return shape[axes.index("X")], shape[axes.index("Y")], channels
+
+
+def image_channel_count(path: str | Path) -> int:
+    """Inspect image metadata for its channel count; never convert image pixels."""
+    if Path(path).suffix.lower() in {".tif", ".tiff"}:
+        return _tiff_dimensions(path)[2]
+    with ImagePil.open(path) as image:
+        if image.mode == "P":
+            return 4 if "transparency" in image.info else 3
+        return len(image.getbands())
+
+
+def image_size(path: str | Path) -> tuple[int, int]:
+    """Return ``(width, height)`` from image metadata; supports multi-channel TIFFs."""
+    if Path(path).suffix.lower() in {".tif", ".tiff"}:
+        return _tiff_dimensions(path)[:2]
+    with ImagePil.open(path) as image:
+        return image.size
+
+
+def read_tiff_channels(path: str | Path, maxworkers: int | None = None):
+    """Decode a TIFF into HWC order using the same axis rules as metadata inspection."""
+    from tifffile import TiffFile
+
+    width, height, channels = _tiff_dimensions(path)
+    with TiffFile(path) as tiff:
+        series = tiff.series[0]
+        axes = series.axes
+        if maxworkers is None:
+            pixels = series.asarray()
+        else:
+            try:
+                pixels = series.asarray(maxworkers=maxworkers)
+            except TypeError:
+                # Older tifffile versions may not expose maxworkers.
+                pixels = series.asarray()
+    spatial = [axes.index("Y"), axes.index("X")]
+    order = spatial + [index for index in range(pixels.ndim) if index not in spatial]
+    return pixels.transpose(order).reshape(height, width, channels)
+
+
+@lru_cache(maxsize=4096)
+def _image_metadata(
+    path: str, modified_ns: int, file_size: int
+) -> tuple[int, int, str | None]:
+    """Read image dimensions and format once per file version."""
+    if Path(path).suffix.lower() in {".tif", ".tiff"}:
+        width, height, _ = _tiff_dimensions(path)
+        return width, height, "TIFF"
+    with ImagePil.open(path) as image:
+        width, height = image.size
+        return width, height, image.format
+
+
+class ImageArtefactCommands(ArtefactCommands):
+    """Commands applying to image artefacts stored in a pipeline node."""
+
+    @command
+    def extract(
+        self,
+        *inputs: str,
+        output: Path = Path("extracted"),
+    ) -> None:
+        """Extract this artefact from Collectra result folders."""
+        output = output.expanduser().resolve()
+        output.mkdir(parents=True, exist_ok=True)
+
+        sources: list[tuple[str, dict[str, Artefact]]] = []
+        if self.node.items:
+            sources.append(("configured", self.node.items))
+
+        for input_path in inputs:
+            path = Path(input_path).expanduser().resolve()
+            loaded = ArtefactNode(self.node.name, types=set(self.node.types))
+            loaded.process(self.node.name, path)
+            sources.append((path.stem, loaded.items))
+
+        for source_name, items in sources:
+            destination = output / source_name if len(sources) > 1 else output
+            destination.mkdir(parents=True, exist_ok=True)
+            for item in items.values():
+                if isinstance(item, Image):
+                    item.extract(destination / f"{item.id}.jpg")
 
 
 class Orientation(Enum):
@@ -78,7 +195,7 @@ class Orientation(Enum):
 
 
 @dataclass
-class Image(Data):
+class Image(Artefact):
     """Base class for handling image data and metadata in Collectra workflows.
 
     Provides core functionality for loading, encoding, and managing image files
@@ -98,6 +215,11 @@ class Image(Data):
     ext: str | None = field(default="")  # Image format (e.g., PNG, JPEG)
     embeddings: str | list[str] = field(default_factory=list)  # Optional embedding data
     orientation: Orientation = field(default=Orientation.NORTH)  # Image orientation
+
+    @classmethod
+    def cli_commands(cls, node: ArtefactNode, ext: str) -> ImageArtefactCommands:
+        """Expose image operations for a named pipeline artefact node."""
+        return ImageArtefactCommands(node, ext)
 
     def attributes_to_ignore(self):
         attributes = super().attributes_to_ignore()
@@ -122,7 +244,7 @@ class Image(Data):
 
     @staticmethod
     def image_types() -> list[str]:
-        return [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp"]
+        return [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp"]
 
     @property
     def width(self) -> int | float:
@@ -161,9 +283,10 @@ class Image(Data):
             self.embeddings = [self.embeddings]
         if isinstance(self.orientation, str):
             self.orientation = Orientation.from_string(self.orientation)
-        with ImagePil.open(self.data) as imf:
-            self.raw_width, self.raw_height = imf.size
-            self.ext = imf.format
+        stat = self.data.stat()
+        self.raw_width, self.raw_height, self.ext = _image_metadata(
+            str(self.data.resolve()), stat.st_mtime_ns, stat.st_size
+        )
 
     def __call__(self) -> str:
         return str(self.get_path())
@@ -177,7 +300,7 @@ class Image(Data):
         if not isinstance(self.data, Path):
             if not isinstance(self.data, Image):
                 raise Exception(
-                    "This appear to be not an Image object. Data path is only available for Image object."
+                    "This appear to be not an Image object. Artefact path is only available for Image object."
                 )
             raise Exception("Image data is not a valid Path object.")
         return self.data
@@ -192,8 +315,7 @@ class Image(Data):
         Returns:
             bool: True if the file extension indicates a supported image format.
         """
-        image_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp"}
-        return path.suffix.lower() in image_extensions
+        return path.suffix.lower() in Image.image_types()
 
     def _load_buffer(self, img: ImagePil.Image) -> bytes:
         buffer = io.BytesIO()
@@ -237,6 +359,19 @@ class Image(Data):
         image = ImagePil.open(self.get_path())
         return image.rotate(self.orientation.to_degree(), expand=True)
 
+    def display(self, context) -> dict:
+        return context.image(self)
+
+    def display_bounds(self):
+        """Region in source pixels represented by this image's viewer."""
+        return (0, 0, self.raw_width, self.raw_height)
+
+    def _extract(self, path: Path) -> None:
+        """Extract the image to a specified path."""
+        if path.suffix == "":
+            path = path.with_suffix(".jpg")
+        self.pil().save(path)
+
     def check_valid_relative_crop_values(
         self,
         x_center: float,
@@ -262,6 +397,7 @@ class Image(Data):
         y_center: float,
         width_relative: float,
         height_relative: float,
+        confidence: float | None = None,
         orientation: Orientation = Orientation.NORTH,
         name: str = "",
     ) -> "ImageCrop":
@@ -280,11 +416,18 @@ class Image(Data):
             y_center=y_center,
             width_relative=width_relative,
             height_relative=height_relative,
+            confidence=confidence,
             orientation=orientation,
         )
 
     def make_crop_bounding_box(
-        self, left, top, right, bottom, min_height: float = 0.0
+        self,
+        left,
+        top,
+        right,
+        bottom,
+        min_height: float = 0.0,
+        confidence: float | None = None,
     ) -> "ImageCrop":
         bbox_width = right - left
         bbox_height = bottom - top
@@ -298,6 +441,7 @@ class Image(Data):
             y_center=y_center,
             width_relative=width_relative,
             height_relative=height_relative,
+            confidence=confidence,
         )
 
     def evaluate(self, gold: "ImageCrop") -> float:
@@ -328,7 +472,11 @@ class ImageCrop(Image):
     y_center: float = field(default=0.5)
     width_relative: float = field(default=1.0)
     height_relative: float = field(default=1.0)
+    confidence: float | None = field(default=None)
     source_parent: "Image | ImageCrop | None" = field(init=False, default=None)
+
+    def display_bounds(self):
+        return self.coordinates()
 
     def save(self, path: Path | str = None):
         im = self.source_parent.pil() if self.source_parent else self.pil()
@@ -379,6 +527,16 @@ class ImageCrop(Image):
 
     def pil(self) -> ImagePil.Image:
         coordinates = self.coordinates()
+        left, upper, right, bottom = coordinates
+        if right <= left or bottom <= upper:
+            raise ValueError(
+                f"ImageCrop {self.id!r} produces an empty pixel crop: "
+                f"input_file={str(self.source_file) if self.source_file else 'unknown'!r}, "
+                f"image_file={str(self.get_path())!r}, raw_size=({self.raw_width}, "
+                f"{self.raw_height}), normalized=(x_center={self.x_center}, "
+                f"y_center={self.y_center}, width={self.width_relative}, "
+                f"height={self.height_relative}), pixel_box={coordinates}"
+            )
         with ImagePil.open(self.get_path()) as imf:
             im_crop = imf.crop(coordinates)
         return im_crop.rotate(self.orientation.to_degree(), expand=True)
@@ -410,6 +568,7 @@ class ImageCrop(Image):
         y_center: float,
         width_relative: float,
         height_relative: float,
+        confidence: float | None = None,
         orientation: Orientation = Orientation.NORTH,
         name: str = "",
     ) -> "ImageCrop":
@@ -432,6 +591,7 @@ class ImageCrop(Image):
             y_center=self.y_center + (y_center - 0.5) * self.height_relative,
             width_relative=width_relative * self.width_relative,
             height_relative=height_relative * self.height_relative,
+            confidence=confidence,
             orientation=orientation,
             name=name,
         )

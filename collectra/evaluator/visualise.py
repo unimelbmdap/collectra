@@ -44,7 +44,7 @@ _PLOT_BG = "#121212"
 _PAGE_BG = "#000000"
 
 
-# ── Data helpers ──────────────────────────────────────────────────────────────
+# ── Artefact helpers ──────────────────────────────────────────────────────────────
 
 
 def _label_colors(report: EvaluationReport, data_types: list[str]) -> dict[str, str]:

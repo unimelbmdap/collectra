@@ -21,8 +21,8 @@ import pytest
 from PIL import Image as PILImage
 
 from collectra import Image, ImageCrop
-from collectra.tasks.machine_learning.detr import ObjectDetectionDETR
-from collectra.tasks.machine_learning.rfdetr import ObjectDetectionRFDETR
+from collectra.tasks.object_detection.detr import ObjectDetectionDETR
+from collectra.tasks.object_detection.rfdetr import ObjectDetectionRFDETR
 
 # ---------------------------------------------------------------------------
 # Helpers

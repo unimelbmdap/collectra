@@ -12,9 +12,14 @@ __all__ = ["Task", "TaskNode"]
 import re
 from dataclasses import dataclass
 from itertools import product
-from typing import Generic
+from pathlib import Path
+from typing import TYPE_CHECKING, Generic
 
 from collectra.commons import BaseEntity, Node, NodeStatus, T, TaskContext
+from collectra.cli import command
+
+if TYPE_CHECKING:
+    from collectra.pipelines.base import Collectra
 
 
 class Task(BaseEntity, Generic[T]):
@@ -29,8 +34,11 @@ class Task(BaseEntity, Generic[T]):
         context (TaskContext): Runtime context for task execution.
     """
 
+    collective: bool = False
+
     def __init__(self, name: str, **kwargs) -> None:
         super().__init__(name)
+        self.pipeline: Collectra | None = None
         self.context: TaskContext = TaskContext()
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -52,6 +60,12 @@ class Task(BaseEntity, Generic[T]):
         for parent in parents:
             if parent.name in input_dict:
                 input_dict[parent.name].extend(parent.items.values())
+
+        if self.collective:
+            collective_entries = [
+                item for values in input_dict.values() for item in values
+            ]
+            return [collective_entries] if collective_entries else []
 
         # Filter out empty inputs (READY but no items)
         non_empty_dict = {k: v for k, v in input_dict.items() if v}
@@ -112,6 +126,28 @@ class Task(BaseEntity, Generic[T]):
 
         """
         return self.run(*args)
+
+    @command(name="run")
+    def cli_run(
+        self,
+        inputs: list[str],
+        output: Path | None = None,
+        verbose: bool = False,
+        usage: bool = False,
+        render: bool = False,
+    ) -> None:
+        """Run this task for the supplied input files."""
+        if self.pipeline is None:
+            raise RuntimeError(f"Task {self.name!r} is not attached to a pipeline")
+        self.pipeline.cli_run(
+            inputs,
+            task=self.name,
+            output=output,
+            single=True,
+            verbose=verbose,
+            usage=usage,
+            render=render,
+        )
 
 
 @dataclass

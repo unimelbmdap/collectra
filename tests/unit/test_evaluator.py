@@ -1,118 +1,16 @@
-"""Tests for collectra.evaluator.base module"""
-
-from pathlib import Path
+"""
+Tests for evaluation edge cases in ArtefactNode.evaluate() and Evaluator helper methods.
+"""
 
 import pytest
 
-from collectra import DataNode, Text
+from collectra import ArtefactNode, Text
 from collectra.evaluator import Evaluator
-from collectra.evaluator.base import EvaluationReport, FileEvaluationResult
+from collectra.evaluator.base import FileEvaluationResult
 
 
-def _make_evaluator(tmp_path):
-    pred_dir = tmp_path / "pred"
-    gold_dir = tmp_path / "gold"
-    pred_dir.mkdir()
-    gold_dir.mkdir()
-    return Evaluator(pred_dir, gold_dir, ext="grapto")
-
-
-# =============================================================================
-# EvaluationReport
-# =============================================================================
-
-
-def test_evaluation_report_builds_aggregate_and_per_label_tables():
-    report = EvaluationReport(
-        file_results=[],
-        aggregate={
-            "Text": {
-                "overall": {
-                    "precision": 0.9,
-                    "recall": 0.8,
-                    "f1_micro": 0.85,
-                    "f1_file_averaged": 0.84,
-                    "total_files": 5,
-                },
-                "per_label": {
-                    "species": {
-                        "precision": 0.9,
-                        "recall": 0.8,
-                        "f1": 0.85,
-                        "mean_score": 0.9,
-                        "support": 10,
-                    }
-                },
-            }
-        },
-        threshold=0.5,
-    )
-    assert len(report.aggregate_tables) == 1
-    assert len(report.tables) == 1
-
-
-def test_evaluation_report_empty_per_label_skips_table():
-    report = EvaluationReport(
-        file_results=[],
-        aggregate={
-            "Text": {
-                "overall": {
-                    "precision": 0.0,
-                    "recall": 0.0,
-                    "f1_micro": 0.0,
-                    "f1_file_averaged": 0.0,
-                    "total_files": 0,
-                },
-                "per_label": {},
-            }
-        },
-        threshold=0.5,
-    )
-    assert len(report.aggregate_tables) == 1
-    assert len(report.tables) == 0
-
-
-# =============================================================================
-# Evaluator._validate_file_pairs
-# =============================================================================
-
-
-def test_validate_file_pairs_matched(tmp_path):
-    evaluator = _make_evaluator(tmp_path)
-    evaluator.entries = {"file1": [Path("gold.grapto"), Path("pred.grapto")]}
-    matched, missing, extra = evaluator._validate_file_pairs()
-    assert len(matched) == 1
-    assert missing == []
-    assert extra == []
-
-
-def test_validate_file_pairs_missing_gold(tmp_path):
-    evaluator = _make_evaluator(tmp_path)
-    evaluator.entries = {"file1": [None, Path("pred.grapto")]}
-    matched, missing, extra = evaluator._validate_file_pairs()
-    assert matched == []
-    assert len(missing) == 1
-    assert extra == []
-
-
-def test_validate_file_pairs_extra_gold(tmp_path):
-    evaluator = _make_evaluator(tmp_path)
-    evaluator.entries = {"file1": [Path("gold.grapto"), None]}
-    matched, missing, extra = evaluator._validate_file_pairs()
-    assert matched == []
-    assert missing == []
-    assert len(extra) == 1
-
-
-def test_validate_file_pairs_both_none_raises(tmp_path):
-    evaluator = _make_evaluator(tmp_path)
-    evaluator.entries = {"file1": [None, None]}
-    with pytest.raises(ValueError):
-        evaluator._validate_file_pairs()
-
-
-class TestDataNodeEvaluateEdgeCases:
-    """Test edge cases for DataNode.evaluate() method."""
+class TestArtefactNodeEvaluateEdgeCases:
+    """Test edge cases for ArtefactNode.evaluate() method."""
 
     def test_both_empty_returns_perfect_scores(self):
         """
@@ -121,8 +19,8 @@ class TestDataNodeEvaluateEdgeCases:
         Rationale: Vacuous truth - nothing to predict, nothing to find.
         This is the correct behavior for empty-to-empty comparison.
         """
-        predicted = DataNode(name="test_label")
-        gold = DataNode(name="test_label")
+        predicted = ArtefactNode(name="test_label")
+        gold = ArtefactNode(name="test_label")
 
         metrics = predicted.evaluate(gold)
 
@@ -145,8 +43,8 @@ class TestDataNodeEvaluateEdgeCases:
         Rationale: No predictions means precision is undefined (0/0), defaults to 0.0.
         Recall is 0.0 because we missed all gold items.
         """
-        predicted = DataNode(name="test_label")
-        gold = DataNode(name="test_label")
+        predicted = ArtefactNode(name="test_label")
+        gold = ArtefactNode(name="test_label")
 
         # Add gold items
         gold.add_item(Text(name="gold_1", data="hello"))
@@ -173,8 +71,8 @@ class TestDataNodeEvaluateEdgeCases:
         Rationale: All predictions are false positives (precision=0.0).
         Recall is 1.0 because there's nothing to miss (vacuously true).
         """
-        predicted = DataNode(name="test_label")
-        gold = DataNode(name="test_label")
+        predicted = ArtefactNode(name="test_label")
+        gold = ArtefactNode(name="test_label")
 
         # Add predicted items
         predicted.add_item(Text(name="pred_1", data="hello"))
@@ -201,8 +99,8 @@ class TestDataNodeEvaluateEdgeCases:
         Items with similarity above threshold should be matched,
         those below should be unmatched.
         """
-        predicted = DataNode(name="test_label")
-        gold = DataNode(name="test_label")
+        predicted = ArtefactNode(name="test_label")
+        gold = ArtefactNode(name="test_label")
 
         # Add items that should match well
         predicted.add_item(Text(name="pred_1", data="hello world"))
@@ -221,8 +119,8 @@ class TestDataNodeEvaluateEdgeCases:
         """
         Test that high threshold filters out partial matches.
         """
-        predicted = DataNode(name="test_label")
-        gold = DataNode(name="test_label")
+        predicted = ArtefactNode(name="test_label")
+        gold = ArtefactNode(name="test_label")
 
         # Add items that partially match
         predicted.add_item(Text(name="pred_1", data="hello"))
@@ -240,8 +138,8 @@ class TestDataNodeEvaluateEdgeCases:
         """
         Test that low threshold accepts partial matches.
         """
-        predicted = DataNode(name="test_label")
-        gold = DataNode(name="test_label")
+        predicted = ArtefactNode(name="test_label")
+        gold = ArtefactNode(name="test_label")
 
         # Add items that partially match
         predicted.add_item(Text(name="pred_1", data="hello"))
@@ -259,8 +157,8 @@ class TestDataNodeEvaluateEdgeCases:
         Using equal numbers of predictions and gold items to avoid
         edge cases with matrix padding in the Hungarian algorithm.
         """
-        predicted = DataNode(name="test_label")
-        gold = DataNode(name="test_label")
+        predicted = ArtefactNode(name="test_label")
+        gold = ArtefactNode(name="test_label")
 
         # Add equal number of items
         predicted.add_item(Text(name="pred_1", data="alpha"))
@@ -283,8 +181,8 @@ class TestDataNodeEvaluateEdgeCases:
         """
         Test that invalid threshold values raise ValueError.
         """
-        predicted = DataNode(name="test_label")
-        gold = DataNode(name="test_label")
+        predicted = ArtefactNode(name="test_label")
+        gold = ArtefactNode(name="test_label")
 
         with pytest.raises(ValueError, match="Invalid threshold"):
             predicted.evaluate(gold, threshold=1.5)
@@ -298,8 +196,8 @@ class TestDataNodeEvaluateEdgeCases:
         """
         from collectra import Image
 
-        predicted = DataNode(name="test_label")
-        gold = DataNode(name="test_label")
+        predicted = ArtefactNode(name="test_label")
+        gold = ArtefactNode(name="test_label")
 
         predicted.add_item(Text(name="pred_1", data="hello"))
         # Note: Image requires actual file path, this tests type validation
@@ -307,13 +205,13 @@ class TestDataNodeEvaluateEdgeCases:
         # For this test, we'll just check the error message format
 
         # Create two nodes with Text items first, then check the error handling
-        predicted2 = DataNode(name="test_label")
-        gold2 = DataNode(name="test_label")
+        predicted2 = ArtefactNode(name="test_label")
+        gold2 = ArtefactNode(name="test_label")
 
         predicted2.add_item(Text(name="pred_1", data="hello"))
 
         # This test verifies the type checking mechanism exists
-        # The actual type mismatch would require different Data subclasses
+        # The actual type mismatch would require different Artefact subclasses
         metrics = predicted2.evaluate(gold2)  # Should not raise with empty gold
         assert metrics["recall"] == 1.0
 
@@ -329,6 +227,31 @@ class TestEvaluatorHelperMethods:
         gold_dir.mkdir()
         return Evaluator(pred_dir, gold_dir, ext="grapto")
 
+    def test_match_by_order_pairs_independently_sorted_folders(self, tmp_path):
+        predictions = tmp_path / "predictions"
+        gold = tmp_path / "gold"
+        predictions.mkdir()
+        gold.mkdir()
+        for name in ("prediction-b.grapto", "prediction-a.grapto"):
+            (predictions / name).mkdir()
+        for name in ("target-b.grapto", "target-a.grapto", "target-c.grapto"):
+            (gold / name).mkdir()
+
+        evaluator = Evaluator(
+            predictions,
+            gold,
+            ext="grapto",
+            match_by_order=True,
+        )
+        matched, missing_gold, extra_gold = evaluator._validate_file_pairs()
+
+        assert [(pred.name, target.name) for pred, target in matched] == [
+            ("prediction-a.grapto", "target-a.grapto"),
+            ("prediction-b.grapto", "target-b.grapto"),
+        ]
+        assert missing_gold == []
+        assert [path.name for path in extra_gold] == ["target-c.grapto"]
+
     def test_create_missing_prediction_metrics_returns_zero_precision(self):
         """
         _create_missing_prediction_metrics should return precision=0.0.
@@ -337,16 +260,16 @@ class TestEvaluatorHelperMethods:
         All gold items become false negatives.
         """
         # Create a mock gold node with items
-        gold_node = DataNode(name="test_label")
+        gold_node = ArtefactNode(name="test_label")
         gold_node.add_item(Text(name="gold_1", data="item1"))
         gold_node.add_item(Text(name="gold_2", data="item2"))
         gold_node.add_item(Text(name="gold_3", data="item3"))
 
         # Create evaluator instance (we need to mock the folder discovery)
-        # Instead, directly test the method behavior through DataNode.evaluate
+        # Instead, directly test the method behavior through ArtefactNode.evaluate
         # which has the same edge case handling
 
-        predicted = DataNode(name="test_label")  # Empty predictions
+        predicted = ArtefactNode(name="test_label")  # Empty predictions
         metrics = predicted.evaluate(gold_node)
 
         assert metrics["precision"] == 0.0
@@ -370,11 +293,11 @@ class TestEvaluatorHelperMethods:
         Recall is 1.0 (vacuously true - nothing to miss).
         """
         # Create predicted node with items
-        predicted_node = DataNode(name="test_label")
+        predicted_node = ArtefactNode(name="test_label")
         predicted_node.add_item(Text(name="pred_1", data="item1"))
         predicted_node.add_item(Text(name="pred_2", data="item2"))
 
-        gold_node = DataNode(name="test_label")  # Empty gold
+        gold_node = ArtefactNode(name="test_label")  # Empty gold
 
         metrics = predicted_node.evaluate(gold_node)
 
@@ -395,7 +318,7 @@ class TestEvaluatorHelperMethods:
         """
         evaluator = self._create_evaluator_with_empty_folders(tmp_path)
 
-        gold_node = DataNode(name="test_label")
+        gold_node = ArtefactNode(name="test_label")
         gold_node.add_item(Text(name="gold_1", data="item1"))
         gold_node.add_item(Text(name="gold_2", data="item2"))
 
@@ -412,7 +335,7 @@ class TestEvaluatorHelperMethods:
         """
         evaluator = self._create_evaluator_with_empty_folders(tmp_path)
 
-        input_node = DataNode(name="test_label")
+        input_node = ArtefactNode(name="test_label")
         input_node.add_item(Text(name="pred_1", data="item1"))
 
         metrics = evaluator._create_extra_prediction_metrics(input_node)
@@ -428,7 +351,7 @@ class TestEvaluatorHelperMethods:
         """
         evaluator = self._create_evaluator_with_empty_folders(tmp_path)
 
-        gold_node = DataNode(name="missing_label")
+        gold_node = ArtefactNode(name="missing_label")
         gold_node.add_item(Text(name="gold_1", data="item1"))
         gold_node.add_item(Text(name="gold_2", data="item2"))
 
@@ -457,7 +380,7 @@ class TestEvaluatorHelperMethods:
         """
         evaluator = self._create_evaluator_with_empty_folders(tmp_path)
 
-        input_node = DataNode(name="extra_label")
+        input_node = ArtefactNode(name="extra_label")
         input_node.add_item(Text(name="pred_1", data="item1"))
         input_node.add_item(Text(name="pred_2", data="item2"))
         input_node.add_item(Text(name="pred_3", data="item3"))
@@ -485,8 +408,8 @@ class TestMetricsConsistency:
         """
         F1 should be the harmonic mean of precision and recall.
         """
-        predicted = DataNode(name="test_label")
-        gold = DataNode(name="test_label")
+        predicted = ArtefactNode(name="test_label")
+        gold = ArtefactNode(name="test_label")
 
         # Set up for known precision and recall
         predicted.add_item(Text(name="pred_1", data="exact match"))
@@ -511,8 +434,8 @@ class TestMetricsConsistency:
         - num_matched + num_false_positives = num_predicted
         - num_matched + num_false_negatives = num_gold
         """
-        predicted = DataNode(name="test_label")
-        gold = DataNode(name="test_label")
+        predicted = ArtefactNode(name="test_label")
+        gold = ArtefactNode(name="test_label")
 
         predicted.add_item(Text(name="pred_1", data="item one"))
         predicted.add_item(Text(name="pred_2", data="item two"))

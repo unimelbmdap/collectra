@@ -1,7 +1,8 @@
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
-from collectra import Collectra
+from collectra import Collectra, Task, TaskNode
 
 
 def build_pipeline(pipeline: dict) -> Collectra:
@@ -30,6 +31,31 @@ def test_pipeline_init(pipeline, debug):
         debug(e)
 
 
+def test_run_task_reports_rich_progress(tmp_path, monkeypatch):
+    pipeline = Collectra("progress", "collectra", "1", path=tmp_path)
+    task = Task("line_reader")
+    task.prepare_inputs = lambda parents: [["first"], ["second"], ["third"]]
+    task_node = TaskNode("line_reader", task)
+    monkeypatch.setattr(
+        pipeline.node_manager, "get_parents_artefact", lambda node: []
+    )
+    monkeypatch.setattr(pipeline, "_execute_entries", lambda entry, task: [])
+    progress_call = {}
+
+    def fake_track(iterable, *, total, description):
+        progress_call.update(total=total, description=description)
+        yield from iterable
+
+    monkeypatch.setattr("collectra.pipelines.base.track", fake_track)
+
+    pipeline._run_task(task_node)
+
+    assert progress_call == {
+        "total": 3,
+        "description": "Running line_reader",
+    }
+
+
 def test_pipeline_init_nodes(pipeline, debug, tmpdir):
     try:
         pipeline = build_pipeline(pipeline)
@@ -54,28 +80,48 @@ def test_get_task(pipeline, debug):
         debug(e)
 
 
-def test_train(pipeline, debug, tmp_path):
-    from datetime import datetime
-
+def test_train(pipeline, tmp_path, monkeypatch):
     from collectra.utils import change_dir
 
-    try:
-        pipeline = build_pipeline(pipeline)
-        task_name = "object_detector"
-        log = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        input_data = [Path.cwd() / "tests/data/images"]
-        with change_dir(tmp_path):
-            result = pipeline.train(
-                task_name,
-                input=input_data,
-                log=log,
-                validation="true",
-                project=f"{pipeline.name}-{task_name}",
-                base_folder=tmp_path,
-            )
-        assert result, "Train method should not return None"
-    except Exception as e:
-        debug(e)
+    pipeline = build_pipeline(pipeline)
+    task_name = "object_detector"
+    # One Collectra folder is sufficient to exercise pipeline loading and the
+    # training lifecycle; the backend boundary is faked below.
+    subset = tmp_path / "inputs"
+    subset.mkdir()
+    shutil.copytree(Path.cwd() / "tests/data/images/bar1.arb", subset / "bar1.arb")
+    input_data = [subset]
+    training_output = tmp_path / "chosen-training-output"
+    with change_dir(tmp_path):
+        pipeline.connect()
+        task = pipeline.cli_tasks()[task_name]
+
+        def fake_train(*images, **kwargs):
+            assert images
+            save_dir = kwargs["base_folder"] / kwargs["log"]
+            weights = save_dir / "weights"
+            weights.mkdir(parents=True)
+            (weights / "best.pt").touch()
+            return SimpleNamespace(save_dir=save_dir, results_dict={"mock": True})
+
+        monkeypatch.setattr(task, "_train", fake_train)
+        monkeypatch.setattr(
+            "collectra.tasks.object_detection.yolo.prepare_object_detection_inputs",
+            lambda processed_inputs, *args: processed_inputs,
+        )
+        monkeypatch.setattr(
+            "collectra.tasks.machine_learning.training.save_training_result",
+            lambda *args, **kwargs: None,
+        )
+        monkeypatch.setattr(pipeline, "save", lambda *args, **kwargs: None)
+        result = task.train(
+            input_data,
+            validation="true",
+            output=training_output,
+        )
+
+    assert result.results_dict == {"mock": True}
+    assert result.save_dir == training_output
 
 
 def test_run_full(pipeline, debug, tmpdir, raw_img_path):

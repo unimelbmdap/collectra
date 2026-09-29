@@ -2,7 +2,7 @@
 
 Two pieces of new behavior:
 
-1. ``Collectra.save_train`` copies ``classes.json`` from the training
+1. ``save_training_result`` copies ``classes.json`` from the training
    weights dir alongside the renamed checkpoint, named
    ``<new_model_stem>.classes.json``.
 
@@ -28,12 +28,14 @@ except Exception:  # pragma: no cover - environment guard
     sys.modules["cv2"] = MagicMock()
 
 from collectra.pipelines.base import Collectra  # noqa: E402
-from collectra.tasks.machine_learning.rfdetr import (  # noqa: E402
+from collectra.tasks.base import Task  # noqa: E402
+from collectra.tasks.machine_learning.training import save_training_result  # noqa: E402
+from collectra.tasks.object_detection.rfdetr import (  # noqa: E402
     ObjectDetectionRFDETR,
 )
 
 # ---------------------------------------------------------------------------
-# Save-side: Collectra.save_train copies classes.json next to renamed .pt
+# Save-side: training utility copies classes.json next to renamed .pt
 # ---------------------------------------------------------------------------
 
 
@@ -52,8 +54,10 @@ def test_save_train_copies_classes_sidecar(tmp_path: Path, monkeypatch):
 
     results = SimpleNamespace(save_dir=tmp_path / "run", results_dict={})
     pipeline = _make_pipeline("rfdetr")
+    task = Task(name="rfdetr", model="")
+    task.pipeline = pipeline
 
-    pipeline.save_train(SimpleNamespace(name="rfdetr"), results, log="20260101_120000")
+    save_training_result(task, results, log="20260101_120000")
 
     new_pt = tmp_path / "rfdetr-20260101_120000.pt"
     sidecar = tmp_path / "rfdetr-20260101_120000.classes.json"
@@ -70,8 +74,10 @@ def test_save_train_no_classes_json_no_crash(tmp_path: Path, monkeypatch):
 
     results = SimpleNamespace(save_dir=tmp_path / "run", results_dict={})
     pipeline = _make_pipeline("rfdetr")
+    task = Task(name="rfdetr", model="")
+    task.pipeline = pipeline
 
-    pipeline.save_train(SimpleNamespace(name="rfdetr"), results, log="20260101_120000")
+    save_training_result(task, results, log="20260101_120000")
 
     assert (tmp_path / "rfdetr-20260101_120000.pt").exists()
     assert list(tmp_path.glob("*.classes.json")) == []

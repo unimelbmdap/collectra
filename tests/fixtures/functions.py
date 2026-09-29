@@ -33,7 +33,7 @@ def train_yolo(tmp_path):
         log = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         # setting training run to be in the temp directory
         with change_dir(tmp_path):
-            results = task.train(
+            results = task._train(
                 *images,
                 log=log,
                 validation="true",

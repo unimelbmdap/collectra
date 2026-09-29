@@ -18,6 +18,7 @@ __all__ = ["LLM"]
 
 import os
 import re
+from functools import cached_property
 from pathlib import Path
 
 import llmloader
@@ -59,11 +60,7 @@ class LLM(Task):
         self.preamble: str = kwargs.get("preamble", "")
         self.temperature = kwargs.get("temperature", 0.8)
         self.max_tokens = kwargs.get("max_tokens", None)
-        self.llm = llmloader.load(
-            model, temperature=self.temperature, max_tokens=self.max_tokens
-        )
-
-        self.chain = self.llm
+        self.model = model
         self.parser = StrOutputParser()
 
         init_messages = (
@@ -72,6 +69,17 @@ class LLM(Task):
             else SystemMessage(content="You are a helpful assistant.")
         )
         self.messages: list[SystemMessage | HumanMessage] = [init_messages]
+
+    @cached_property
+    def llm(self):
+        """Load the LLM lazily so that it is only instantiated when first needed."""
+        return llmloader.load(
+            self.model, temperature=self.temperature, max_tokens=self.max_tokens
+        )
+
+    @property
+    def chain(self):
+        return self.llm
 
     def get_pattern_matches(self) -> tuple:
         prompt = f"{self.preamble}\n\n{self.template}".strip()

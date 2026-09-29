@@ -1,8 +1,12 @@
 import os
-import shutil
 from pathlib import Path
 
 import pytest
+
+# Disable experiment tracking before test collection imports any ML backends.
+# Subprocesses inherit these settings, including CLI and DataLoader tests.
+os.environ["WANDB_MODE"] = "disabled"
+os.environ["WANDB_DISABLED"] = "true"
 
 pytest_plugins = [
     "tests.fixtures.functions",

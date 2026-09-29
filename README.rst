@@ -2,7 +2,7 @@
 
 .. start-badges
 
-|testing badge| |coverage badge| |docs badge| |black badge| |torchapp badge|
+|testing badge| |coverage badge| |docs badge| |black badge|
 
 .. |testing badge| image:: https://github.com/unimelbmdap/collectra/actions/workflows/testing.yml/badge.svg
     :target: https://github.com/unimelbmdap/collectra/actions
@@ -16,244 +16,408 @@
 .. |coverage badge| image:: https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/unimelbmdap/f1d9191993105301fd6f813fe1e659f6/raw/coverage-badge.json
     :target: https://unimelbmdap.github.io/collectra/coverage/
 
-.. |torchapp badge| image:: https://img.shields.io/badge/torch-app-B1230A.svg
-    :target: https://rbturnbull.github.io/torchapp/
-
 .. end-badges
 
 .. start-quickstart
 
-Pipeline package builder to extract data from collection images.
+**This is a pre-release version of Collectra. The API and CLI may change in future releases.**
+
+Collectra builds reusable pipelines for extracting data from collection images.
+Define the tasks and their connections in YAML, run them over your images, and
+save the resulting crops, text, and classifications with their source relationships.
 
 
 Installation
 ==================================
 
-Install using pip:
+Use Python 3.11–3.14. Create a virtual environment and install from PyPI:
 
 .. code-block:: bash
 
-    pip install git+https://github.com/unimelbmdap/collectra.git
+    python -m venv .venv
+    source .venv/bin/activate
+    pip install collectra
 
-.. end-quickstart
+On Windows, activate the environment with ``.venv\Scripts\activate`` instead.
 
-Design Requirements
-===============
+Alternatively, install the development version directly from GitHub:
 
-Collectra caters to two user groups:
+.. code-block:: bash
 
-- Operator
-- Builder
+    python -m pip install git+https://github.com/unimelbmdap/collectra.git
 
-User Stories
-***************
+Graph rendering also requires the Graphviz system executable (``dot``) on your
+``PATH``. Model-based tasks may download weights on their first run.
 
-As an Operator, I can:
 
-- Run a workflow to process a set of files.
-- Train the machine learning engine attached to a machine learning task.
-- View and visualize workflow results in an interactive HTML viewer.
+Install a pipeline command
+==================================
 
-As a Builder, I can:
+If you already have a Collectra pipeline, keep its ``pipeline.yaml`` together
+with any model weights and other files it references. Install a launcher for it:
 
-- Create and edit task configurations within workflows.
-- Chain together existing task templates and engines via YAML configuration.
-- Define data flow between tasks using input/output declarations.
+.. code-block:: bash
 
-Architecture
-*************
+    collectra --pipeline /path/to/pipeline.yaml install my-pipeline
+    my-pipeline --help
+    my-pipeline run images --output results
+    my-pipeline gui results
 
-.. image:: img/collectra_wf.png
-    :width: 500px
-    :alt: Collectra workflow
+This creates a command for an existing pipeline; it does not download a pipeline
+or its model files. The launcher is written to ``~/.local/bin`` by default.
+Ensure that directory is on your ``PATH``, or choose another destination with
+``--bin-dir``. The launcher references the pipeline and Python environment at
+their current locations, so recreate it if either moves.
 
-`Collectra top-level architecture diagram <https://excalidraw.com/#json=KYcVyuFJIo4Jk7dngu3bV,NMmp8pk4D0VGQr7l2KgR3A>`_
+You can also run it directly without installing a launcher:
 
-Collectra uses a YAML-based workflow configuration stored in a ``pipeline.yaml`` file. The workflow defines tasks and their dependencies as a directed acyclic graph (DAG).
+.. code-block:: bash
 
-Workflow Structure
-*******************
+    collectra --pipeline /path/to/pipeline.yaml run images --output results
 
-A workflow directory contains a ``pipeline.yaml`` file with the following structure:
+To create your own pipeline, follow the example below.
+
+
+Design principles and direction
+==================================
+
+Collectra aims to help researchers and curators turn collection images and
+documents into structured, searchable data while keeping domain expertise
+central to the process. Its design is guided by these principles:
+
+* **Compose and reuse tasks.** Connect detection, classification, OCR, and LLM
+  tasks into a pipeline suited to your collection. Adapt an existing pipeline
+  or implement a custom task in Python.
+* **Keep results connected to their sources.** Store artefacts and their
+  relationships in result bundles, with the same format for predictions and
+  training annotations. RO-Crate compatibility is a goal for these bundles.
+* **Make human review part of the workflow.** Inspect and correct predictions
+  before using them as research data or training examples.
+* **Improve models with reviewed examples.** Fine-tune supported models on
+  corrected annotations and repeat the predict, review, and train cycle.
+* **Make annotation effort count.** Planned clustering and embedding-based
+  browsing will help reveal similar items and prioritise diverse examples.
+
+**Many of these features are still to come.** Today, pipelines are defined in
+YAML, the GUI supports reviewing and editing results, and supported models are
+trained through the CLI. The visual pipeline builder, training from the GUI,
+RO-Crate-compatible packaging, interactive clustering, and diversity-based
+annotation ordering remain planned work. Landmark/pose detection, segmentation,
+and oriented bounding boxes are also part of the intended task range.
+
+See the `design principles and development direction
+<https://unimelbmdap.github.io/collectra/design_principles.html>`_ for more detail.
+
+
+Build your first pipeline
+==================================
+
+A pipeline connects **tasks** (operations) through named **artefacts** (data).
+For example, a line detector takes an ``Image`` and produces ``ImageCrop``
+artefacts. An OCR task can consume those crops and produce ``Text`` artefacts.
+Tasks declare these connections using ``input`` and ``output`` names.
+
+Create a working directory with the following layout:
+
+.. code-block:: text
+
+    my-project/
+        pipeline.yaml
+        images/
+            page001.png
+            page002.png
+
+Save this as ``pipeline.yaml``:
 
 .. code-block:: yaml
 
     collectra_pipeline_metadata:
-      name: my_workflow
-      ext: myext
-      version: 1.0
+      name: printed-pages
+      ext: collectra
+      version: "1.0"
 
-    task1:
-      type: collectra.LLM
-      model: gpt-4
-      template: "Extract: {input}"
-      input: image_input
-      output: extracted_text
+    detect_lines:
+      type: collectra.LineDetectorRLSA
+      input: page
+      output: lines
+      deskew: true
 
-    task2:
-      type: collectra.ObjectDetectionYOLO
-      model: yolov8.pt
-      input: image_input
-      output: detections
+This pipeline detects lines of printed text without loading a pretrained model.
+Run the commands below from ``my-project``.
 
-The ``collectra_pipeline_metadata`` section defines:
+The metadata defines the pipeline's name, version, and result-directory suffix:
+``ext: collectra`` produces directories such as ``page001.collectra``. The
+``page`` node receives each input image. ``detect_lines`` is the task name used
+in CLI commands; ``lines`` is the output artefact name. Collectra infers the
+``Image`` input and ``ImageCrop`` output types from the task, so separate
+``page`` and ``lines`` definitions are not needed.
 
-- ``name``: Workflow name
-- ``ext``: File extension for output files
-- ``version``: Workflow version
+Every task needs a ``type`` identifying an importable Python class. Additional
+keys, such as ``deskew`` or ``model``, configure that task. Input and output names
+can be strings or lists. Connecting another task to ``lines`` makes it run
+after the detector. Keep these connections acyclic.
 
-Each task is defined with:
 
-- ``type``: The task class to use (e.g., ``collectra.LLM``, ``collectra.ObjectDetectionYOLO``)
-- ``input``: Input data node name
-- ``output``: Output data node name
-- Additional task-specific parameters
+Run a pipeline
+==================================
 
-Data File Structure
-************************
-A Collectra workflow produces a data folder with the following structure:
-- a result.yaml file containing metadata and task outputs
-- the artifact files (e.g., images, text files) referenced in result.yaml
-- The suffix of the data folder is defined in the workflow metadata (``ext`` field).
+Process one image or a directory of images:
 
-the result.yaml file contains:
+.. code-block:: bash
+
+    collectra --pipeline pipeline.yaml run images/page001.png --output results
+    collectra --pipeline pipeline.yaml run images --output results
+
+You can also supply multiple input paths. ``--pipeline`` accepts either a YAML
+file or a directory containing ``pipeline.yaml``. Without ``--output``, result
+directories are created alongside the input images.
+
+Discover commands and task-specific options with ``--help``:
+
+.. code-block:: bash
+
+    collectra --pipeline pipeline.yaml --help
+    collectra --pipeline pipeline.yaml run --help
+    collectra --pipeline pipeline.yaml task --help
+    collectra --pipeline pipeline.yaml task detect_lines run --help
+
+Add ``--verbose`` to see detailed processing logs, or ``--render`` to generate
+workflow diagrams while processing. The commands available under ``task``
+depend on the tasks defined in your pipeline.
+
+
+Inspect and reuse results
+==================================
+
+Each input gets a result directory:
+
+.. code-block:: text
+
+    results/
+        page001.collectra/
+            page001.png
+            results.yaml
+        page002.collectra/
+            page002.png
+            results.yaml
+
+``results.yaml`` records the pipeline metadata, artefact types, IDs, data, and
+parent relationships. Crops record their bounds and source image; they need
+not be separate image files. Other tasks may create additional files in the
+same result directory.
+
+Open results in the desktop GUI to inspect the image, crops, and other outputs:
+
+.. code-block:: bash
+
+    collectra --pipeline pipeline.yaml gui results/page001.collectra
+    collectra --pipeline pipeline.yaml gui results
+
+The GUI requires a desktop environment and a working pywebview backend. It opens
+existing results; run the pipeline first to create them.
+
+Run just one task on existing results:
+
+.. code-block:: bash
+
+    collectra --pipeline pipeline.yaml task detect_lines run results/page001.collectra
+
+To start at a task and continue through its downstream tasks, use:
+
+.. code-block:: bash
+
+    collectra --pipeline pipeline.yaml run results/page001.collectra --task detect_lines
+
+The task's inputs must already exist in the results. A task-level ``run`` runs
+only that task; a pipeline-level ``run --task ...`` also runs its downstream
+tasks. Running on an existing result directory updates its outputs.
+
+
+Add OCR and join the text
+==================================
+
+To extend the example, append these tasks to ``pipeline.yaml``:
+
+.. code-block:: yaml
+
+    read_lines:
+      type: collectra.OCRSuraya
+      input: lines
+      output: line_text
+
+    join_text:
+      type: collectra.ConcatenateText
+      input: line_text
+      output: transcription
+      separator: "\n"
+
+The data flow is now ``page → detect_lines → lines → read_lines → line_text →
+join_text → transcription``. OCR runs on each crop; ``ConcatenateText`` collects
+the resulting text artefacts and joins them into one transcription.
+
+``OCRSuraya`` is the Collectra class name for the Surya OCR backend. It requires
+the ``surya-ocr`` package in your environment and downloads its model weights
+on first use. The initial line-detection example does not require this backend.
+
+After installing the OCR backend, process new images with the same ``run``
+command, or start OCR on previously detected lines:
+
+.. code-block:: bash
+
+    collectra --pipeline pipeline.yaml run results/page001.collectra --task read_lines
+
+
+Choose a task
+==================================
+
+Built-in task types include:
+
+* ``collectra.LineDetectorRLSA``: detect printed-text lines using image processing.
+* ``collectra.LineDetectorSurya``: detect text lines with Surya models.
+* ``collectra.OCRSuraya``: recognize text in images or crops.
+* ``collectra.ConcatenateText``: combine text artefacts.
+* ``collectra.ObjectDetectionYOLO``, ``collectra.ObjectDetectionDETR``, and
+  ``collectra.ObjectDetectionRFDETR``: produce labelled object crops.
+* ``collectra.ImageClassifierYOLO``, ``collectra.ImageClassifierTorchvision``, and
+  ``collectra.ImageClassifierHuggingFace``: classify images or crops, producing
+  ``Link`` artefacts that retain a reference to the classified image.
+* ``collectra.LLM``: process inputs with a configured language model.
+
+Choose model weights trained for the objects or classes in your collection.
+Task-specific backends, model configuration, and credentials may be needed;
+use the documentation and the configured task's ``--help`` to inspect its options.
+
+
+Train a classifier
+==================================
+
+Trainable tasks expose their own ``train`` command. For example, save this
+separate pipeline as ``classifier/pipeline.yaml``:
+
+.. code-block:: yaml
+
+    collectra_pipeline_metadata:
+      name: specimen-classifier
+      ext: collectra
+      version: "1.0"
+
+    classify:
+      type: collectra.ImageClassifierTorchvision
+      model: resnet18
+      input: image
+      output: [Pollen, Spore]
+
+Prepare annotated ``*.collectra`` result directories under ``training-data``.
+For classification, each label is a ``Link`` named after an output class and
+linked to its source image or crop. Set the result metadata's ``partition`` to
+``validation`` for held-out examples. A minimal annotated ``results.yaml`` is:
 
 .. code-block:: yaml
 
     collectra_results_metadata:
-        workflow: name_of_workflow_that_generated_this_file
-        version: 1.0
-        timestamp: 2024-01-01T12:00:00Z
+      partition: validation
 
-    source_image:
-        type: collectra.Image
-        id: source_image
-        data: path_relative_to_yaml.jpg
+    image:
+      type: collectra.Image
+      id: image-001
+      data: specimen.png
 
-    first_label:
-        type: collectra.ImageCrop
-        id: first_label_id123
-        parents: source_image
-        data: path_relative_to_yaml.jpg
-        embeddings: []
-        orientation: north
-        x_center: 0.5
-        y_center: 0.3
-        width_relative: 0.2
-        height_relative: 0.1
+    Pollen:
+      type: collectra.Link
+      id: label-001
+      parents: image-001
 
-
-Available Task Types
-*********************
-
-Collectra provides several built-in task types:
-
-- **LLM**: Large Language Model inference with multimodal support
-- **ObjectDetectionYOLO**: YOLO-based object detection
-- **ImageOrienter**: EfficientNet-based image orientation detection
-- **SuryaOCR**: Character recognition using Surya models
-- **SuryaLineDetector**: Line detection in documents
-- **LLMCanonicaliser**: Entity canonicalization using LLMs
-
-Data Types
-***********
-
-Workflows process the following data types:
-
-- **Image**: Image files with metadata (dimensions, orientation, embeddings)
-- **ImageCrop**: Cropped regions with bounding box coordinates
-- **Text**: Text data extracted from images or generated by LLMs
-
-Usage
-=======
-
-Running a Workflow
-*******************
-
-Execute a workflow on input files:
+Place ``specimen.png`` alongside this file. Provide training examples for each
+class as well, using a different partition such as ``training``. Detection
+tasks instead train from labelled ``ImageCrop`` annotations.
 
 .. code-block:: bash
 
-    collectra run --workflow my_workflow --task task_name input_files...
+    collectra --pipeline classifier/pipeline.yaml task classify train --help
+    collectra --pipeline classifier/pipeline.yaml task classify train training-data \
+        --validation validation --epochs 10 --batch 16 --workers 0
 
-Options:
+Training saves the best checkpoint into the pipeline directory and updates the
+task's ``model`` entry in ``pipeline.yaml``. Training logs are retained by
+default; ``--no-keep-log`` removes the training directory after saving the model.
+For this Torchvision classifier, Weights & Biases logging is off by default.
+Add ``--wandb`` to opt in.
 
-- ``-w, --workflow``: Path to the workflow directory
-- ``-t, --task``: Specific task to run (optional, runs from root tasks if not specified)
-- ``-o, --output``: Output directory for results
-- ``--single``: Run only the designated task without dependencies
-- ``-v, --verbose``: Enable verbose output
-- ``--usage``: Enable token usage tracking for LLM tasks
-
-Training an ML Task
-********************
-
-Train a machine learning task within a workflow:
+Use the trained pipeline on new images:
 
 .. code-block:: bash
 
-    collectra train --workflow my_workflow --task detect_objects training_files...
+    collectra --pipeline classifier/pipeline.yaml run images --output classified
 
-Options:
 
-- ``-w, --workflow``: Path to the workflow directory
-- ``-t, --task``: Name of the task to train
-- ``--keep-log``: Keep training log files (default: True)
+Use a pipeline from Python
+==================================
 
-Training logs are saved with timestamps and the trained model is stored in the workflow directory.
+The same YAML configuration can be loaded and run from Python:
 
-Rendering a Workflow Diagram
-*****************************
+.. code-block:: python
 
-Generate an SVG visualization of the workflow:
+    from collectra import Collectra
 
-.. code-block:: bash
+    pipeline = Collectra.from_file("pipeline.yaml")
+    pipeline.cli_run(["images"], output="results")
 
-    collectra render --workflow my_workflow --dest output.svg
+    # Start at a particular task using existing artefacts.
+    pipeline.cli_run(
+        ["results/page001.collectra"],
+        task="detect_lines",
+        single=True,
+    )
 
-Options:
+    # Requires Graphviz's dot executable.
+    pipeline.render("pipeline-graph", render=True)
 
-- ``-w, --workflow``: Path to the workflow directory
-- ``-d, --dest``: Output file path for the SVG diagram
+``cli_run`` resolves file and directory inputs in the same way as the CLI.
+For an explicit list of files, you can also use
+``pipeline.run(files=["images/page001.png"], output="results")``.
 
-Viewing Results
-****************
 
-View workflow results in an interactive HTML viewer:
+For more task-specific guidance, see the
+`Collectra documentation <https://unimelbmdap.github.io/collectra/>`_.
 
-.. code-block:: bash
+.. end-quickstart
 
-    collectra view --file result_directory
 
-This opens an HTML visualization showing:
+Building the documentation
+==================================
 
-- Original images with bounding box overlays
-- Extracted text results
-- Workflow metadata
-
-Converting Files
-*****************
-
-Convert files based on a configuration:
+With ``uv`` installed, build the HTML documentation from a source checkout:
 
 .. code-block:: bash
 
-    collectra convert config.yaml
+    ./mkdocs.sh
+
+The script supplies Sphinx and its theme in an isolated environment, independent
+of any active virtual environment. Open ``docs/_build/html/index.html`` to view
+the result. To treat documentation warnings as errors, run
+``./mkdocs.sh -W --keep-going``.
 
 Credits
 ==================================
 
 .. start-credits
 
-Robert Turnbull
+- `Robert Turnbull <https://robturnbull.com>`_
+- Natalia Orel
+- James Quang
 
-For more information contact: `<robert.turnbull@unimelb.edu.au>`_
+Collectra is supported by the
+`Enhanced Analytics <https://ardc.edu.au/project/enhanced-analytics-for-hass-and-indigenous-data/>`_
+project at the Melbourne Data Analytics Platform. Enhanced Analytics is a
+co-investment partnership with the Australian Research Data Commons (ARDC)
+through the HASS and Indigenous Research Data Commons
+(DOI: `10.3565/6q82-h815 <https://doi.org/10.3565/6q82-h815>`_).
+The ARDC is enabled by the Australian Government’s National Collaborative
+Research Infrastructure Strategy (NCRIS).
 
-James Quang
-
-For more information contact: `<james.quang@unimelb.edu.au>`_
-
-Created using `torchapp <https://github.com/rbturnbull/torchapp>`_.
+.. image:: https://ardc.edu.au/wp-content/uploads/2022/09/ardc-logo.svg
+   :alt: Australian Research Data Commons (ARDC)
+   :width: 250px
+   :target: https://ardc.edu.au/
 
 .. end-credits
-

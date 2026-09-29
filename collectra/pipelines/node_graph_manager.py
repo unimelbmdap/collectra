@@ -10,7 +10,7 @@ import networkx as nx
 
 from ..commons.base import NodeStatus
 from ..tasks.base import Task, TaskNode
-from ..types.base import Data, DataNode, Node
+from ..types.base import Artefact, ArtefactNode, Node
 
 
 class NodeGraphManager:
@@ -19,7 +19,7 @@ class NodeGraphManager:
     This class encapsulates all graph manipulation operations including:
     - Node resolution and retrieval
     - Parent and child node queries
-    - Adding task and data nodes to the graph
+    - Adding task and artefact nodes to the graph
 
     Attributes:
         flow (nx.DiGraph): The NetworkX directed graph representing the workflow.
@@ -45,14 +45,14 @@ class NodeGraphManager:
     # Node Resolution
     # =========================================================================
 
-    def resolve_node(self, node_name: str) -> Union[TaskNode, DataNode]:
+    def resolve_node(self, node_name: str) -> Union[TaskNode, ArtefactNode]:
         """Get a node from the workflow graph by name.
 
         Args:
             node_name (str): Name of the node to retrieve.
 
         Returns:
-            Union[TaskNode, DataNode]: The resolved node object.
+            Union[TaskNode, ArtefactNode]: The resolved node object.
 
         Raises:
             ValueError: If the node is not found or is empty.
@@ -60,7 +60,7 @@ class NodeGraphManager:
         node: Union[dict, None] = self.flow.nodes.get(node_name, None)
         if not node:
             raise ValueError(f"{node_name} not found in workflow")
-        data: Union[TaskNode, DataNode, None] = node.get("node", None)
+        data: Union[TaskNode, ArtefactNode, None] = node.get("node", None)
         if not data:
             raise ValueError(
                 f"data for {node_name} not found in workflow. Possible empty node."
@@ -68,10 +68,10 @@ class NodeGraphManager:
         return data
 
     # =========================================================================
-    # Node Retrieval (hierarchical: get_nodes -> get_task_nodes / get_data_nodes)
+    # Node Retrieval (hierarchical: get_nodes -> get_task_nodes / get_artefact_nodes)
     # =========================================================================
 
-    def get_nodes(self) -> list[Union[TaskNode, DataNode]]:
+    def get_nodes(self) -> list[Union[TaskNode, ArtefactNode]]:
         """Return all node objects in the graph."""
         return [node["node"] for node in self.flow.nodes.values()]
 
@@ -79,43 +79,51 @@ class NodeGraphManager:
         """Return only TaskNode instances from the graph."""
         return [n for n in self.get_nodes() if isinstance(n, TaskNode)]
 
-    def get_data_nodes(self) -> list[DataNode]:
-        """Return only DataNode instances from the graph."""
-        return [n for n in self.get_nodes() if isinstance(n, DataNode)]
+    def get_artefact_nodes(self) -> list[ArtefactNode]:
+        """Return only ArtefactNode instances from the graph."""
+        return [n for n in self.get_nodes() if isinstance(n, ArtefactNode)]
 
     def get_node_names(self) -> list[str]:
         """Return all node names in the graph."""
         return list(self.flow.nodes.keys())
 
     # =========================================================================
-    # Parent Retrieval (hierarchical: get_parents -> get_parents_data / get_parents_task)
+    # Parent Retrieval (hierarchical: get_parents -> get_parents_artefact / get_parents_task)
     # =========================================================================
 
-    def get_parents(self, node: Node) -> list[Union[TaskNode, DataNode]]:
+    def get_parents(self, node: Node) -> list[Union[TaskNode, ArtefactNode]]:
         """Get all resolved parent nodes for a given node."""
         parent_names = list(self.flow.predecessors(str(node.name)))
         return [self.resolve_node(name) for name in parent_names]
 
-    def get_parents_data(self, node: Node) -> List[DataNode]:
-        """Get all parent data nodes for a given node."""
-        return [p for p in self.get_parents(node) if isinstance(p, DataNode)]
+    def get_parents_artefact(self, node: Node) -> List[ArtefactNode]:
+        """Get all parent artefact nodes for a given node."""
+        return [p for p in self.get_parents(node) if isinstance(p, ArtefactNode)]
 
     def get_parents_task(self, node: Node) -> list[TaskNode]:
         """Get all parent task nodes for a given node."""
         return [p for p in self.get_parents(node) if isinstance(p, TaskNode)]
 
+    def get_ancestor_artefacts(self, node: Node) -> list[ArtefactNode]:
+        """Return every artefact node upstream of ``node``."""
+        return [
+            resolved
+            for name in nx.ancestors(self.flow, str(node.name))
+            if isinstance((resolved := self.resolve_node(name)), ArtefactNode)
+        ]
+
     # =========================================================================
-    # Children Retrieval (hierarchical: get_children -> get_children_data / get_children_task)
+    # Children Retrieval (hierarchical: get_children -> get_children_artefact / get_children_task)
     # =========================================================================
 
-    def get_children(self, node: Node) -> list[Union[TaskNode, DataNode]]:
+    def get_children(self, node: Node) -> list[Union[TaskNode, ArtefactNode]]:
         """Get all resolved child nodes for a given node."""
         child_names = list(self.flow.successors(str(node.name)))
         return [self.resolve_node(name) for name in child_names]
 
-    def get_children_data(self, node: Node) -> List[DataNode]:
-        """Get all child data nodes for a given node."""
-        return [c for c in self.get_children(node) if isinstance(c, DataNode)]
+    def get_children_artefact(self, node: Node) -> List[ArtefactNode]:
+        """Get all child artefact nodes for a given node."""
+        return [c for c in self.get_children(node) if isinstance(c, ArtefactNode)]
 
     def get_children_task(self, node: Node) -> list[TaskNode]:
         """Get all child task nodes for a given node."""
@@ -157,7 +165,7 @@ class NodeGraphManager:
     def reset_all_nodes(self) -> None:
         """Reset all nodes to their initial state."""
         for node in self.get_nodes():
-            if isinstance(node, DataNode):
+            if isinstance(node, ArtefactNode):
                 node.items = dict()
                 node.ensemble_items = dict()
                 node.status = NodeStatus.NOT_READY
@@ -194,20 +202,20 @@ class NodeGraphManager:
             style="filled",
         )
 
-    def add_data_node(
+    def add_artefact_node(
         self,
         name: str,
-        obj: Union[Data, None] = None,
+        obj: Union[Artefact, None] = None,
         types: Union[List[type], Set[type]] = [],
     ) -> None:
-        """Add a data node to the workflow graph.
+        """Add an artefact node to the workflow graph.
 
         If the node already exists, updates it with the new object and types.
-        Otherwise, creates a new DataNode and adds it to the graph.
+        Otherwise, creates a new ArtefactNode and adds it to the graph.
 
         Args:
-            name (str): Name of the data node.
-            obj (Union[Data, None], optional): The data object to store. Defaults to None.
+            name (str): Name of the artefact node.
+            obj (Union[Artefact, None], optional): The artefact object to store. Defaults to None.
             types (Union[List[type], Set[type]], optional): Expected data types. Defaults to [].
         """
         node = self.flow.nodes.get(name, None)
@@ -219,7 +227,7 @@ class NodeGraphManager:
         if not node:
             items = {obj.id: obj} if obj else {}
             types = set(types)
-            node = DataNode(name, items=items, types=types)
+            node = ArtefactNode(name, items=items, types=types)
             self.flow.add_node(
                 name,
                 node=node,
@@ -230,10 +238,10 @@ class NodeGraphManager:
                 style="filled",
             )
         elif obj:
-            data_node: DataNode = node["node"]
-            if not isinstance(data_node, DataNode):
+            artefact_node: ArtefactNode = node["node"]
+            if not isinstance(artefact_node, ArtefactNode):
                 return
-            if type(obj) not in data_node.types:
+            if type(obj) not in artefact_node.types:
                 return
-            data_node.add_item(obj)
-            data_node.types = data_node.types.union(set(types))
+            artefact_node.add_item(obj)
+            artefact_node.types = artefact_node.types.union(set(types))
