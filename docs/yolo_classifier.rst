@@ -4,6 +4,8 @@ ImageClassifierYOLO
 Uses an Ultralytics classification model to predict a class for an image or
 crop, returning a Link to that input.
 
+Install its optional dependencies with ``pip install "collectra[yolo]"``.
+
 .. code-block:: yaml
 
     classify:

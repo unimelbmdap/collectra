@@ -30,3 +30,6 @@ Commands
 
 Variant availability depends on the installed RF-DETR package. Some variants
 require its optional packages. Add ``--no-wandb`` to disable W&B logging.
+
+See :doc:`../licensing` when choosing checkpoints; RF-DETR Plus components
+have different terms from the Apache-designated models.

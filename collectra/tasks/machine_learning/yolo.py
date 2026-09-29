@@ -18,6 +18,20 @@ __all__ = ["YOLOTask"]
 logger = get_logger(__name__)
 
 
+def get_yolo_class():
+    """Import the optional backend when a YOLO task executes."""
+    try:
+        from ultralytics.models import YOLO
+    except ModuleNotFoundError as error:
+        if error.name != "ultralytics":
+            raise
+        raise ImportError(
+            'YOLO tasks require optional dependencies. Install with: '
+            'pip install "collectra[yolo]"'
+        ) from error
+    return YOLO
+
+
 class YOLOTask(Task):
     """Base class for tasks backed by an Ultralytics YOLO model."""
 
@@ -64,7 +78,7 @@ class YOLOTask(Task):
 
     def _init_model(self) -> None:
         """Load and validate the configured YOLO model."""
-        from ultralytics.models import YOLO
+        YOLO = get_yolo_class()
 
         self._load()
         if not isinstance(self.model, YOLO):
@@ -80,7 +94,7 @@ class YOLOTask(Task):
 
     def _load(self) -> None:
         """Load a YOLO model only when execution or training requires it."""
-        from ultralytics.models import YOLO
+        YOLO = get_yolo_class()
 
         if self.model and isinstance(self.model, (str, Path)):
             self.original_model_path = self.model

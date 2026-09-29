@@ -24,7 +24,7 @@ from ..machine_learning.training import (
     print_distribution_table,
     run_training_command,
 )
-from ..machine_learning.yolo import YOLOTask
+from ..machine_learning.yolo import YOLOTask, get_yolo_class
 
 if TYPE_CHECKING:
     from ultralytics.engine.results import Results
@@ -582,7 +582,7 @@ class ObjectDetectionYOLO(YOLOTask):
     def _train(
         self, *images: ImageCrop, **kwargs
     ) -> DetMetrics | ClassifyMetrics | None:
-        from ultralytics.models import YOLO
+        YOLO = get_yolo_class()
 
         if kwargs.get("model"):
             self.model = kwargs["model"]
@@ -616,7 +616,7 @@ class ObjectDetectionYOLO(YOLOTask):
         kwargs: dict,
         fold_count: int | None = None,
     ) -> DetMetrics | ClassifyMetrics:
-        from ultralytics.models import YOLO
+        YOLO = get_yolo_class()
 
         if not isinstance(self.model, YOLO):
             raise ValueError("Expected model to be a YOLO instance for training.")
@@ -643,7 +643,15 @@ class ObjectDetectionYOLO(YOLOTask):
         return results
 
     def _preview_assets(self, log: Path, classes: list[str]) -> None:
-        from drawyolo.draw import draw_box_on_image_with_labels
+        try:
+            from drawyolo.draw import draw_box_on_image_with_labels
+        except ModuleNotFoundError as error:
+            if error.name != "drawyolo":
+                raise
+            raise ImportError(
+                'YOLO previews require drawyolo. Install with: '
+                'pip install "collectra[yolo]"'
+            ) from error
 
         preview_dir = log / "preview"
         preview_dir.mkdir(exist_ok=True)

@@ -40,6 +40,28 @@ Use Python 3.11–3.14. Create a virtual environment and install from PyPI:
 
 On Windows, activate the environment with ``.venv\Scripts\activate`` instead.
 
+YOLO tasks and their annotation previews require the optional ``yolo`` extra:
+
+.. code-block:: bash
+
+    pip install "collectra[yolo]"
+
+The default installation excludes Ultralytics and drawyolo. The YOLO extra
+installs both; Ultralytics is AGPL-licensed and its terms apply where relevant
+to combined applications. Making it optional does not remove those obligations.
+Other backends and the RLSA line detector do not require this extra.
+
+Collectra's own code remains Apache-2.0. Optional backends and model weights
+retain their own licences: in particular, check Surya's version and weights,
+and the GUI backend selected by pywebview. See the
+`licensing guide <https://unimelbmdap.github.io/collectra/licensing.html>`_
+before distributing a pipeline or bundled application.
+
+For a source checkout, use ``uv sync --extra yolo`` and
+``uv run --extra yolo collectra ...`` to enable YOLO. To run the complete test
+suite, use ``uv sync --group dev --extra yolo`` followed by
+``uv run --extra yolo pytest``.
+
 Alternatively, install the development version directly from GitHub:
 
 .. code-block:: bash

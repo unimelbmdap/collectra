@@ -951,7 +951,6 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "cappa" },
-    { name = "drawyolo" },
     { name = "editdistance" },
     { name = "ensemble-boxes" },
     { name = "graphviz" },
@@ -984,8 +983,13 @@ dependencies = [
     { name = "torchvision" },
     { name = "transformers" },
     { name = "typer" },
-    { name = "ultralytics" },
     { name = "wandb" },
+]
+
+[package.optional-dependencies]
+yolo = [
+    { name = "drawyolo" },
+    { name = "ultralytics" },
 ]
 
 [package.dev-dependencies]
@@ -1010,7 +1014,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cappa", specifier = ">=0.32.2" },
-    { name = "drawyolo", git = "https://github.com/jamestq/drawyolo.git" },
+    { name = "drawyolo", marker = "extra == 'yolo'", git = "https://github.com/jamestq/drawyolo.git" },
     { name = "editdistance", specifier = ">=0.6.0" },
     { name = "ensemble-boxes", specifier = ">=1.0.9" },
     { name = "graphviz", specifier = ">=0.21" },
@@ -1041,9 +1045,10 @@ requires-dist = [
     { name = "torchvision", specifier = "==0.24.0" },
     { name = "transformers", specifier = ">=4.46.0" },
     { name = "typer", specifier = ">=0.21.1" },
-    { name = "ultralytics", specifier = ">=8.3.166" },
+    { name = "ultralytics", marker = "extra == 'yolo'", specifier = ">=8.3.166" },
     { name = "wandb", specifier = ">=0.21.1" },
 ]
+provides-extras = ["yolo"]
 
 [package.metadata.requires-dev]
 dev = [

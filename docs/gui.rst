@@ -5,6 +5,10 @@ The desktop GUI displays existing Collectra results using the selected
 pipeline's task and artefact graph. It requires pywebview, a supported native
 webview backend, and a desktop session.
 
+Backend licences differ: PyQt is GPLv3 or commercially licensed, even though
+pywebview itself is BSD-licensed. See :doc:`licensing` before choosing a backend
+for a distributed application.
+
 Visual pipeline construction, training models from the GUI, and interactive
 clustering are planned features. See :doc:`design_principles` for the broader
 design goals and development direction.

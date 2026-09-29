@@ -26,7 +26,12 @@ jobs:
         enable-cache: true
     - name: Setup Graphviz
       uses: ts-graphviz/setup-graphviz@v2
+    - name: Check core installation without YOLO
+      run: |
+        uv sync --locked --python ${{ matrix.python-version }} --group dev
+        uv run --locked --python ${{ matrix.python-version }} python -c "import importlib.util; assert importlib.util.find_spec('ultralytics') is None; assert importlib.util.find_spec('drawyolo') is None"
+        uv run --locked --python ${{ matrix.python-version }} pytest tests/unit/test_optional_yolo.py tests/unit/test_line_detector_rlsa.py
     - name: Install dependencies for Python ${{ matrix.python-version }}
-      run: uv sync --python ${{ matrix.python-version }} --group dev
+      run: uv sync --python ${{ matrix.python-version }} --group dev --extra yolo
     - name: Run Tests
-      run: uv run --python ${{ matrix.python-version }} pytest
+      run: uv run --extra yolo --python ${{ matrix.python-version }} pytest

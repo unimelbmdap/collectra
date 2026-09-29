@@ -26,6 +26,7 @@ Builds pipelines to extract data from collection images.
    gui
    api
    cli
+   licensing
    credits
 
 Indices and tables

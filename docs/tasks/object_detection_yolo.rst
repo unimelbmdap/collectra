@@ -2,6 +2,7 @@ ObjectDetectionYOLO
 ===================
 
 Uses Ultralytics YOLO weights to detect objects and return labelled image crops.
+Install its optional dependencies with ``pip install "collectra[yolo]"``.
 For example, configure a detector trained to identify specimen labels:
 
 .. code-block:: yaml
