@@ -9,7 +9,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.10 dropped — pyproject.toml requires-python is ">=3.11,<3.14"
         python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
     - uses: actions/checkout@v7

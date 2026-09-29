@@ -75,6 +75,14 @@ def image_channel_count(path: str | Path) -> int:
         return len(image.getbands())
 
 
+def image_size(path: str | Path) -> tuple[int, int]:
+    """Return ``(width, height)`` from image metadata; supports multi-channel TIFFs."""
+    if Path(path).suffix.lower() in {".tif", ".tiff"}:
+        return _tiff_dimensions(path)[:2]
+    with ImagePil.open(path) as image:
+        return image.size
+
+
 def read_tiff_channels(path: str | Path, maxworkers: int | None = None):
     """Decode a TIFF into HWC order using the same axis rules as metadata inspection."""
     from tifffile import TiffFile

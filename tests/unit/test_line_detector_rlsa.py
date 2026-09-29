@@ -93,3 +93,17 @@ def test_rejects_invalid_input_and_parameters():
         LineDetectorRLSA("detect").run("not-an-image")
     with pytest.raises(ValueError, match="padding_fraction"):
         LineDetectorRLSA("detect", padding_fraction=2)
+
+
+@pytest.mark.parametrize("shape", [(2, 1, 4), (2, 4)])
+def test_skew_accepts_opencv_line_shapes(monkeypatch, shape):
+    import cv2
+    import numpy as np
+
+    lines = np.array([[0, 0, 100, 5], [0, 10, 100, 15]]).reshape(shape)
+    monkeypatch.setattr(cv2, "HoughLinesP", lambda *args, **kwargs: lines)
+    task = LineDetectorRLSA("detect", max_skew_degrees=4)
+
+    assert task._estimate_skew(np.ones((100, 200), dtype=np.uint8)) == pytest.approx(
+        np.degrees(np.arctan2(5, 100))
+    )

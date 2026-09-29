@@ -397,7 +397,7 @@ class TorchClassifierTask(Task):
             json.dumps({"classes": classes}, indent=2)
         )
         wandb_run = None
-        if bool(kwargs.get("wandb", True)):
+        if bool(kwargs.get("wandb", False)):
             try:
                 import wandb
 
@@ -454,8 +454,10 @@ class TorchClassifierTask(Task):
                     if score < best_loss:
                         best_loss, best_metrics, stale = score, dict(metrics), 0
                         torch.save(checkpoint, weights_dir / "best.pt")
+                        best_print = " best"
                     else:
                         stale += 1
+                        best_print = ""
                     if wandb_run is not None:
                         wandb_run.log(metrics)
                     logger.info("Epoch %d/%d: %s", epoch, epochs, metrics)
@@ -471,7 +473,7 @@ class TorchClassifierTask(Task):
                             f"val_acc={metrics['val_accuracy']:.4f} "
                             f"val_top5={metrics['val_top5_accuracy']:.4f}"
                         )
-                    console.print(metrics_line)
+                    console.print(metrics_line + best_print)
                     with (log / "history.csv").open("w", newline="") as stream:
                         writer = csv.DictWriter(stream, fieldnames=list(metrics))
                         writer.writeheader()
@@ -494,8 +496,10 @@ class TorchClassifierTask(Task):
     def _epoch(self, loader, optimizer=None) -> dict:
         import torch
         from torch.nn import functional as F
+        from sklearn.metrics import precision_recall_fscore_support
 
         total, correct, correct5, total_loss = 0, 0, 0, 0.0
+        all_preds, all_labels = [], []
         first_batch = True
         phase = "train" if optimizer is not None else "val"
         for pixels, labels in loader:
@@ -542,7 +546,15 @@ class TorchClassifierTask(Task):
                 .sum()
                 .item()
             )
+            all_preds.extend(logits.argmax(1).detach().cpu().tolist())
+            all_labels.extend(labels.cpu().tolist())
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            all_labels, all_preds, average="macro", zero_division=0
+        )
         return {
+            "precision": float(precision),
+            "recall": float(recall),
+            "f1": float(f1),
             "loss": total_loss / total,
             "accuracy": correct / total,
             "top5_accuracy": correct5 / total,

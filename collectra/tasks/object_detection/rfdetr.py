@@ -8,7 +8,13 @@ from typing import Annotated, TYPE_CHECKING
 from cappa import Arg
 
 from collectra.cli import command
-from collectra.types.images import Image, ImageCrop
+from collectra.types.images import (
+    Image,
+    ImageCrop,
+    image_channel_count,
+    image_size,
+    read_tiff_channels,
+)
 from collectra.utils import change_dir
 
 from ...logger import get_logger
@@ -57,11 +63,31 @@ def _backend_class(name: str):
 
 
 def load_rfdetr_model(model_path: str | Path) -> RFDETR:
+    from .rfdetr_channels import multichannel_checkpoints, sync_channels
+
     errors = []
+    try:
+        # Resolves the model size from checkpoint metadata. The loader widens
+        # the input layer to the stored channel count; num_channels=3 stops
+        # RF-DETR from widening it a second time.
+        with multichannel_checkpoints():
+            model = _backend_class("RFDETR").from_checkpoint(
+                str(model_path), num_channels=3
+            )
+        if isinstance(model, _backend_class("RFDETR")):
+            sync_channels(model)
+            return model
+    except Exception as e:
+        errors.append(("RFDETR.from_checkpoint", str(e)))
+
+    # Fallback for checkpoints without metadata. RF-DETR loads non-strictly, so
+    # a smaller variant can "load" a larger checkpoint while dropping weights.
     for class_name in _MODEL_VARIANTS.values():
         try:
             model_class = _backend_class(class_name)
-            model = model_class(pretrain_weights=str(model_path))
+            with multichannel_checkpoints():
+                model = model_class(pretrain_weights=str(model_path))
+            sync_channels(model)
             return model
         except Exception as e:
             errors.append((class_name, str(e)))
@@ -184,6 +210,30 @@ class ObjectDetectionRFDETR(Task):
             f"or a model variant: {', '.join(_MODEL_VARIANTS)}."
         )
 
+    def _tiff_tensor(self, image: Image):
+        """Read every channel of a TIFF image as a CHW float tensor in [0, 1]."""
+        import numpy as np
+        import torch
+
+        from .rfdetr_data import scale_tiff_pixels
+
+        pixels = read_tiff_channels(image.get_path())
+        if isinstance(image, ImageCrop):
+            left, top, right, bottom = image.coordinates()
+            if right <= left or bottom <= top:
+                raise ValueError(f"ImageCrop {image.id!r} produces an empty pixel crop")
+            pixels = pixels[top:bottom, left:right, :]
+        pixels = np.rot90(pixels, k=image.orientation.to_degree() // 90)
+
+        expected = self.model.model_config.num_channels
+        if pixels.shape[2] != expected:
+            raise ValueError(
+                f"{image.get_path()}: {pixels.shape[2]} image channels, "
+                f"but the detection model expects {expected}"
+            )
+        pixels = scale_tiff_pixels(pixels)
+        return torch.from_numpy(np.ascontiguousarray(pixels.transpose(2, 0, 1)))
+
     @threading_locked()
     def run(self, *args: Image) -> list[Image]:
         if len(args) != 1:
@@ -195,10 +245,16 @@ class ObjectDetectionRFDETR(Task):
         self._init_model()
 
         threshold = float(getattr(self, "threshold", 0.5))
-        pil_image = image.pil().convert("RGB")
-        width, height = pil_image.size
+        if image.get_path().suffix.lower() in {".tif", ".tiff"}:
+            model_input = self._tiff_tensor(image)
+            height, width = model_input.shape[1:]
+        else:
+            model_input = image.pil().convert("RGB")
+            width, height = model_input.size
 
-        detections = self.model.predict(pil_image, threshold=threshold)
+        detections = self.model.predict(
+            model_input, threshold=threshold, include_source_image=False
+        )
 
         results: list[Image] = []
         for i in range(len(detections.xyxy)):
@@ -262,7 +318,7 @@ class ObjectDetectionRFDETR(Task):
             "ema_tau": int(kwargs.get("ema_tau", 100)),
             "ema_update_interval": int(kwargs.get("ema_update_interval", 1)),
             "output_dir": str(kwargs["output_dir"]),
-            "wandb": bool(kwargs.get("wandb", True)),
+            "wandb": bool(kwargs.get("wandb", False)),
             "project": kwargs.get("project", "runs/rfdetr"),
             "run": kwargs.get("log", "rfdetr-run"),
             "early_stopping": bool(kwargs.get("early_stopping", False)),
@@ -401,13 +457,12 @@ class ObjectDetectionRFDETR(Task):
         classes: list[str],
         dataset_dir: Path,
     ) -> Path:
-        from PIL import Image as PILImage
-
         categories = [
             {"id": idx, "name": name, "supercategory": "object"}
             for idx, name in enumerate(classes)
         ]
 
+        channel_counts: dict[str, int] = {}
         for split_name, samples in [("train", train_samples), ("valid", val_samples)]:
             split_dir = dataset_dir / split_name
             split_dir.mkdir(parents=True, exist_ok=True)
@@ -422,8 +477,8 @@ class ObjectDetectionRFDETR(Task):
                 dest_path = split_dir / dest_name
                 shutil.copy2(src_path, dest_path)
 
-                with PILImage.open(dest_path) as pil_img:
-                    w, h = pil_img.size
+                w, h = image_size(dest_path)
+                channel_counts[str(src_path)] = image_channel_count(dest_path)
 
                 images_list.append(
                     {
@@ -461,6 +516,18 @@ class ObjectDetectionRFDETR(Task):
             with open(annotations_path, "w") as f:
                 json.dump(coco_json, f, indent=2)
 
+        if len(set(channel_counts.values())) > 1:
+            details = ", ".join(
+                f"{name}: {count} channels" for name, count in channel_counts.items()
+            )
+            raise ValueError(
+                f"Inconsistent input channel counts in prepared dataset: {details}"
+            )
+        if channel_counts:
+            logger.info(
+                "RF-DETR dataset images have %d channels",
+                next(iter(channel_counts.values())),
+            )
         return dataset_dir
 
     def _train_fold(
@@ -483,12 +550,29 @@ class ObjectDetectionRFDETR(Task):
         params_kwargs["log"] = f"{log.name}"
         params_kwargs["output_dir"] = str(weights_dir)
         params = self._prepare_params(**params_kwargs)
+        has_tiffs = any(
+            Path(sample["image_path"]).suffix.lower() in {".tif", ".tiff"}
+            for sample in [*train_samples, *val_samples]
+        )
+        if has_tiffs:
+            from .rfdetr_channels import require_multichannel_rfdetr
+
+            require_multichannel_rfdetr()
+        if has_tiffs and params["augmentation_backend"] == "cpu":
+            # "cpu" resolves to Albumentations when it is installed, which
+            # round-trips images through PIL and cannot keep extra channels.
+            logger.info("TIFF inputs: using the torchvision augmentation backend")
+            params["augmentation_backend"] = "torchvision"
+
+        from .rfdetr_channels import multichannel_checkpoints
+        from .rfdetr_data import multichannel_datasets
 
         model = self.model
-        model.train(
-            dataset_dir=str(dataset_dir),
-            **params,
-        )
+        with multichannel_datasets(), multichannel_checkpoints():
+            model.train(
+                dataset_dir=str(dataset_dir),
+                **params,
+            )
 
         self._categories = classes
         self.model = model
@@ -566,7 +650,7 @@ class ObjectDetectionRFDETR(Task):
         wandb: Annotated[
             bool,
             Arg(help="Log training metrics to Weights & Biases."),
-        ] = True,
+        ] = False,
         early_stopping: Annotated[
             bool,
             Arg(help="Stop training when validation performance stops improving."),
@@ -663,6 +747,12 @@ class ObjectDetectionRFDETR(Task):
             float | None,
             Arg(help="Change default resolution. Valid options will depend on the model type."),
         ] = None,
+        max_items: Annotated[
+            int,
+            Arg(
+                help="Use at most this many images in each of the training and validation sets (0 uses all); for quick tests."
+            ),
+        ] = 0,
     ):
         """Train this RF-DETR object detector."""
         return run_training_command(
@@ -701,6 +791,7 @@ class ObjectDetectionRFDETR(Task):
             warmup_epochs=warmup_epochs,
             model=model,
             resolution=resolution,
+            max_items=max_items,
         )
 
     def _train(self, *images: ImageCrop, **kwargs) -> DetectionTrainResult:
@@ -738,6 +829,14 @@ class ObjectDetectionRFDETR(Task):
             exclude,
             *images,
         )
+        max_items = int(kwargs.get("max_items", 0) or 0)
+        if max_items > 0:
+            train_samples = train_samples[:max_items]
+            val_samples = val_samples[:max_items]
+            print(
+                f"Limiting to {len(train_samples)} training and "
+                f"{len(val_samples)} validation images (max_items={max_items})"
+            )
         self._check_distribution(classes, train_samples, val_samples)
 
         with change_dir(kwargs["base_folder"]):

@@ -74,6 +74,20 @@ def make_samples(tmp_path):
     return samples
 
 
+def test_epoch_reports_forward_error_for_processor_batch(backend, monkeypatch):
+    task = ImageClassifierHuggingFace("classifier")
+    pixels = {"pixel_values": backend.zeros(1, 3, 16, 16)}
+    labels = backend.zeros(1, dtype=backend.long)
+
+    def fail_forward(inputs):
+        raise RuntimeError("backend failure")
+
+    monkeypatch.setattr(task, "_forward", fail_forward)
+    with pytest.raises(RuntimeError, match="pixel_values.*backend failure") as error:
+        task._epoch([(pixels, labels)])
+    assert str(error.value.__cause__) == "backend failure"
+
+
 def test_train_save_reload_and_native_export(tmp_path, local_model, backend):
     torch = backend
     from transformers import AutoImageProcessor, AutoModelForImageClassification
@@ -90,9 +104,10 @@ def test_train_save_reload_and_native_export(tmp_path, local_model, backend):
         exclude="excluded",
         epochs=2,
         batch=2,
-        device="cpu",
+        # Worker startup costs more than processing this tiny dataset.
         workers=0,
         wandb=False,
+        device="cpu",
         freeze_backbone=True,
         fliplr=0,
     )
@@ -359,9 +374,9 @@ def test_pipeline_save_and_reload_after_log_cleanup(tmp_path, local_model):
         validation="validation",
         epochs=1,
         batch=2,
-        device="cpu",
         workers=0,
         wandb=False,
+        device="cpu",
         keep_log=False,
     )
     assert not result.save_dir.exists()

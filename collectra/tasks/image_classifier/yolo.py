@@ -236,6 +236,9 @@ class ImageClassifierYOLO(YOLOTask):
             int | None,
             Arg(help="Freeze the first N model layers during training."),
         ] = None,
+        wandb: Annotated[
+            bool, Arg(help="Log training metrics to Weights & Biases.")
+        ] = False,
     ):
         """Train this YOLO image classifier."""
         return run_training_command(
@@ -265,6 +268,7 @@ class ImageClassifierYOLO(YOLOTask):
             hsv_v=hsv_v,
             cls_pw=cls_pw,
             freeze=freeze,
+            wandb=wandb,
         )
 
     def _train(self, *images: Image, **kwargs) -> ClassifyMetrics | None:
@@ -324,7 +328,10 @@ class ImageClassifierYOLO(YOLOTask):
             from .yolo_multichannel import MultichannelClassificationTrainer
 
             params["trainer"] = MultichannelClassificationTrainer
-        with change_dir(kwargs["base_folder"]):
+        with (
+            change_dir(kwargs["base_folder"]),
+            self._wandb_logging(kwargs.get("wandb", False)),
+        ):
             results = self.model.train(**params)
         if results is None:
             raise Exception("[red]Training failed, no results returned.[/red]")

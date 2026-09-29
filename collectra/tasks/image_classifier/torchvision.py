@@ -144,11 +144,13 @@ def _ensure_supported_multichannel_architecture(
 ) -> None:
     if input_channels == 3:
         return
-    supported = {"resnet18", "resnet34", "resnet50"}
+    #supported = {"resnet18", "resnet34", "resnet50"}
+    supported = {"resnet18", "resnet34", "resnet50", "resnet101", "resnet152",
+                 "convnext_base", "convnext_tiny", "convnext_small", "convnext_large"}
     if architecture not in supported:
         raise ValueError(
             f"{input_channels}-channel input adaptation is currently supported only for "
-            "resnet18, resnet34, and resnet50"
+            "resnet18, resnet34, resnet50, resnet101, resnet152, convnext_base, convnext_tiny, convnext_small, convnext_large"
         )
 
 
@@ -575,17 +577,45 @@ class ImageClassifierTorchvision(TorchClassifierTask):
 def _adapt_rgb_input_channels(model, input_channels: int):
     import torch
 
-    if not hasattr(model, "conv1"):
-        raise ValueError(
-            f"{type(model).__name__} does not expose a ResNet-style conv1"
-        )
+    # original RT coding
+    # if not hasattr(model, "conv1"):
+    #     raise ValueError(
+    #         f"{type(model).__name__} does not expose a ResNet-style conv1"
+    #     )
+    # old_conv = model.conv1
+    # if not isinstance(old_conv, torch.nn.Conv2d):
+    #     raise ValueError(
+    #         f"Expected model.conv1 to be Conv2d, got {type(old_conv).__name__}"
+    #     )
+    #  ---
+    # KT addition to allow for convnext models
+    # Locate the model's first convolution.
+    if hasattr(model, "conv1"):
+        # ResNet-style models
+        old_conv = model.conv1
+        conv_location = "conv1"
 
-    old_conv = model.conv1
+    elif (
+        hasattr(model, "features")
+        and len(model.features) > 0
+        and isinstance(model.features[0][0], torch.nn.Conv2d)
+    ):
+        # TorchVision ConvNeXt-style models
+        old_conv = model.features[0][0]
+        conv_location = "convnext"
+
+    else:
+        raise ValueError(
+            f"Could not find first Conv2d for model type "
+            f"{type(model).__name__}"
+        )
 
     if not isinstance(old_conv, torch.nn.Conv2d):
         raise ValueError(
-            f"Expected model.conv1 to be Conv2d, got {type(old_conv).__name__}"
+            f"Expected first layer to be Conv2d, "
+            f"got {type(old_conv).__name__}"
         )
+    # end KT addition
 
     if old_conv.in_channels == input_channels:
         return
@@ -599,15 +629,26 @@ def _adapt_rgb_input_channels(model, input_channels: int):
     if old_conv.groups != 1:
         raise ValueError(
             f"Cannot adapt grouped conv1 with groups={old_conv.groups}; expected 1"
+            # KT add
+            f"groups={old_conv.groups}; expected 1"
         )
 
     if input_channels % 3 != 0:
         raise ValueError(
-            f"Cannot adapt RGB pretrained weights to {input_channels} channels: "
-            "channel count must be divisible by 3."
+            f"Cannot adapt RGB pretrained weights to "
+            f"{input_channels} channels: channel count must be "
+            f"divisible by 3."
         )
 
     num_views = input_channels // 3
+    # KT additional
+    logger.info(
+        "Adapting first convolution: %d -> %d input channels (%d RGB stacks)",
+        old_conv.in_channels,
+        input_channels,
+        num_views,
+    )
+    # end KT additional
 
     new_conv = torch.nn.Conv2d(
         in_channels=input_channels,
@@ -633,5 +674,13 @@ def _adapt_rgb_input_channels(model, input_channels: int):
         if old_conv.bias is not None:
             new_conv.bias.copy_(old_conv.bias)
 
-    model.conv1 = new_conv
-
+    # original RT coding
+    # model.conv1 = new_conv
+    # ---
+    # KT addition
+    # Put the adapted convolution back into the model.
+    if conv_location == "conv1":
+        model.conv1 = new_conv
+    else:
+        model.features[0][0] = new_conv
+    # end KT addition

@@ -173,9 +173,10 @@ def test_training_checkpoint_reload_and_prediction(
         exclude="excluded",
         epochs=2,
         batch=2,
-        device="cpu",
+        # This tiny dataset does not need worker processes or external logging.
         workers=0,
         wandb=False,
+        device="cpu",
         fliplr=0,
         freeze_backbone=True,
     )
@@ -218,9 +219,9 @@ def test_checkpoint_retraining_replaces_head_for_new_classes(
         exclude="excluded",
         epochs=1,
         batch=2,
-        device="cpu",
         workers=0,
         wandb=False,
+        device="cpu",
     )
     for sample in samples:
         sample.name = "NewClass"
@@ -232,9 +233,9 @@ def test_checkpoint_retraining_replaces_head_for_new_classes(
         exclude="excluded",
         epochs=1,
         batch=2,
-        device="cpu",
         workers=0,
         wandb=False,
+        device="cpu",
     )
     assert second.results_dict["classes"] == ["NewClass"]
     assert task.model.fc.out_features == 1
@@ -252,11 +253,11 @@ def test_real_resnet_training_roundtrip(tmp_path, torch_backend):
         exclude="excluded",
         epochs=1,
         batch=2,
+        workers=0,
+        wandb=False,
         pretrained=False,
         freeze_backbone=True,
         device="cpu",
-        workers=0,
-        wandb=False,
         fliplr=0,
     )
     assert 0 <= result.results_dict["val_accuracy"] <= 1
@@ -395,9 +396,9 @@ def test_pipeline_training_persists_model_and_link_outputs(tmp_path, tiny_backen
         validation="validation",
         epochs=1,
         batch=2,
-        device="cpu",
         workers=0,
         wandb=False,
+        device="cpu",
         keep_log=False,
     )
     assert not result.save_dir.exists()
@@ -442,9 +443,9 @@ def test_best_checkpoint_and_early_stopping(
         epochs=5,
         early_stop=1,
         batch=2,
-        device="cpu",
         workers=0,
         wandb=False,
+        device="cpu",
     )
     assert result.results_dict["epoch"] == 1
     assert result.results_dict["epochs_completed"] == 2
@@ -463,9 +464,9 @@ def test_missing_validation_partition_is_reported(tmp_path, tiny_backend):
             epochs=1,
             validation="typo",
             exclude="excluded",
-            device="cpu",
             workers=0,
             wandb=False,
+            device="cpu",
         )
 
 
@@ -490,3 +491,65 @@ def test_validation_can_omit_a_training_class(tmp_path, tiny_backend):
     )
     assert result.results_dict["classes"] == ["Pollen", "Spore"]
     assert "val_loss" in result.results_dict
+
+
+@pytest.mark.parametrize("enabled", [None, False, True])
+def test_wandb_logging_requires_opt_in(tmp_path, tiny_backend, monkeypatch, enabled):
+    # Test lifecycle wiring without importing the W&B SDK or creating a run.
+    started, metrics, finished = [], [], []
+    run = SimpleNamespace(log=metrics.append, finish=lambda: finished.append(True))
+
+    def init(**kwargs):
+        started.append(kwargs)
+        return run
+
+    monkeypatch.setitem(sys.modules, "wandb", SimpleNamespace(init=init))
+    task = ImageClassifierTorchvision("classifier")
+    options = {} if enabled is None else {"wandb": enabled}
+    task._train(
+        *make_inputs(tmp_path),
+        base_folder=tmp_path,
+        log="run",
+        epochs=1,
+        batch=2,
+        workers=0,
+        device="cpu",
+        **options,
+    )
+    expected = 1 if enabled else 0
+    assert len(started) == len(metrics) == len(finished) == expected
+    if enabled:
+        assert started[0]["name"] == "run"
+        assert "train_loss" in metrics[0]
+
+
+@pytest.mark.parametrize("mapping_batch", [False, True])
+def test_epoch_metrics_cover_all_batches(torch_backend, monkeypatch, mapping_batch):
+    from collections import UserDict
+
+    torch, _ = torch_backend
+    task = ImageClassifierTorchvision("classifier")
+    task._device = torch.device("cpu")
+    task._categories = ["a", "b"]
+    logits = torch.tensor([[4., 0.], [4., 0.], [4., 0.], [0., 4.]])
+    labels = torch.tensor([0, 0, 1, 1])
+    batches = []
+    for start, end in [(0, 3), (3, 4)]:
+        pixels = logits[start:end]
+        if mapping_batch:
+            pixels = UserDict(pixel_values=pixels)
+        batches.append((pixels, labels[start:end]))
+    monkeypatch.setattr(
+        task, "_forward",
+        lambda pixels: pixels["pixel_values"] if mapping_batch else pixels,
+    )
+
+    metrics = task._epoch(batches)
+
+    assert metrics["accuracy"] == pytest.approx(0.75)
+    assert metrics["precision"] == pytest.approx(5 / 6)
+    assert metrics["recall"] == pytest.approx(0.75)
+    assert metrics["f1"] == pytest.approx(11 / 15)
+    assert metrics["loss"] == pytest.approx(
+        torch.nn.functional.cross_entropy(logits, labels).item()
+    )

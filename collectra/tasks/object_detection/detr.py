@@ -479,7 +479,7 @@ class ObjectDetectionDETR(Task):
         weights_dir.mkdir(parents=True, exist_ok=True)
 
         wandb_run = None
-        if bool(kwargs.get("wandb", True)):
+        if bool(kwargs.get("wandb", False)):
             try:
                 import wandb
 
@@ -593,6 +593,7 @@ class ObjectDetectionDETR(Task):
         weight_decay: float = 1e-4,
         pretrained: bool = True,
         model_name: str = "facebook/detr-resnet-50",
+        wandb: bool = False,
     ):
         """Train this DETR object detector."""
         return run_training_command(
@@ -612,6 +613,7 @@ class ObjectDetectionDETR(Task):
             weight_decay=weight_decay,
             pretrained=pretrained,
             model_name=model_name,
+            wandb=wandb,
         )
 
     def _train(self, *images: ImageCrop, **kwargs) -> DetectionTrainResult:
