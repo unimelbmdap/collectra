@@ -32,3 +32,40 @@ Commands
 
 Model-specific options and their defaults are described in ``run --help`` and
 ``train --help``.
+
+Multiview feature fusion
+-----------------------
+
+``adapt-yolo-feature-fusion.py`` adapts a pretrained RGB detection checkpoint
+for spatially registered RGB views. Every view passes through shared backbone
+weights. Reference-conditioned attention combines the backbone feature maps
+feeding the neck, including skip connections; the existing neck and detection
+head then run once. Zero-initialized residual gates preserve the selected RGB
+view's initial predictions in evaluation mode.
+
+.. code-block:: bash
+
+    python adapt-yolo-feature-fusion.py yolo11n.pt --num-views 5 --reference-view 0 --output models/yolo11n-fusion.pt
+
+Set the task's model to the resulting checkpoint and use the usual Collectra
+training command. Collectra retains the fusion architecture during training.
+Reference indices are zero-based. Input TIFFs must contain aligned uint8 RGB
+triplets ``R1,G1,B1,R2,G2,B2,...``. Direct tensor prediction accepts BCHW floats
+in ``[0,1]``. Dataset YAML must declare ``channels: 3*num_views``; Collectra
+prepares this automatically from image headers.
+
+From Python, use ``load_adapted_model`` and ``save_adapted_model`` from
+``collectra.tasks.object_detection.yolo_feature_fusion``. Native ``.pt`` files
+contain importable custom model classes, so this Collectra installation is
+required when loading them. Use the helper or Collectra for training; ordinary
+Ultralytics reconstruction is deliberately rejected to prevent loss of fusion
+weights. The implementation supports standard RGB YOLO detection backbones
+starting with ``Conv``; YOLOv8, YOLO11 and YOLO26 graphs are tested. It currently
+supports one training device and native PyTorch prediction, not exported
+runtimes, profiling or embedding extraction.
+
+Backbone compute and activation memory grow with view count. Shared BatchNorm
+uses all views during training, so exact reference preservation applies in
+evaluation mode. Prediction can fold BatchNorm into convolutions; reload an
+unfused checkpoint before subsequent training. Compare performance against
+both RGB and the existing input-channel expansion on the same validation split.

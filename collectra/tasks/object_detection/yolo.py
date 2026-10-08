@@ -155,10 +155,14 @@ class ObjectDetectionYOLO(YOLOTask):
                 for layer in self.model.model.modules()
                 if isinstance(layer, torch.nn.Conv2d)
             )
-            if pixels.shape[2] != first_conv.in_channels:
+            expected_channels = first_conv.in_channels
+            model_config = getattr(self.model.model, "yaml", {})
+            if "feature_fusion" in model_config:
+                expected_channels = model_config["channels"]
+            if pixels.shape[2] != expected_channels:
                 raise ValueError(
                     f"{image.get_path()}: {pixels.shape[2]} image channels, "
-                    f"but the detection model expects {first_conv.in_channels}"
+                    f"but the detection model expects {expected_channels}"
                 )
             # Ultralytics expects BGR for three-channel arrays, but preserves
             # channel order for multispectral arrays. Keep its usual resizing,

@@ -99,6 +99,10 @@ class YOLOTask(Task):
         if self.model and isinstance(self.model, (str, Path)):
             self.original_model_path = self.model
             self.model = YOLO(Path(self.model))
-            return
+        config = getattr(getattr(self.model, "model", None), "yaml", None)
+        if isinstance(config, dict) and "feature_fusion" in config:
+            from ..object_detection.yolo_feature_fusion import enable_feature_fusion
+
+            enable_feature_fusion(self.model)
         if not isinstance(self.model, YOLO):
             logger.warning("Invalid YOLO model value: %r", self.model)

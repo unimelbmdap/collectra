@@ -207,3 +207,6 @@ valentin.sh
 docs/old_readme.rst
 pyproject-cappa.toml
 adapt-rfdetr.py
+docs/rfdetr_multichannel_review.md
+adapt-rfdetr-feature-fusion.py
+adapt-yolo-feature-fusion.py
