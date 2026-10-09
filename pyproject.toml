@@ -18,6 +18,7 @@ classifiers = [
 
 requires-python = ">=3.11,<3.15"
 dependencies = [
+    "platformdirs (>=4.0.0)",
     "pydot (>=4.0.1)",
     "graphviz (>=0.21)",
     "wandb (>=0.21.1)",

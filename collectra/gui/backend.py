@@ -60,7 +60,42 @@ class GUIBackend:
         self._parent_folder: str | None = None
         self._global_labels: set[str] = set()
         self._global_label_counts: dict[str, int] = {}  # {label: total_count}
-        self._initial_items = self._load_input_paths(inputs) if inputs else None
+        from .session_cache import FolderSessionCache
+
+        pipeline_path = getattr(pipeline, "path", None)
+        self._session_cache = FolderSessionCache(pipeline_path) if pipeline_path else None
+        self._initial_items = (
+            self._load_input_paths(inputs) if inputs else self._restore_folder_session()
+        )
+
+    def _save_folder_session(self, folders=None) -> None:
+        if self._session_cache is not None:
+            paths = folders if folders is not None else [
+                folder["path"] for folder in self._collectra_folders
+            ]
+            self._session_cache.write([str(Path(path).resolve()) for path in paths])
+
+    def _restore_folder_session(self):
+        if self._session_cache is None:
+            return None
+        seen = set()
+        for value in self._session_cache.read():
+            try:
+                path = Path(value).resolve()
+                if path in seen or not path.is_dir():
+                    continue
+                scan = self._scan_collectra_folder(path)
+                if scan is None:
+                    continue
+                seen.add(path)
+                self._collectra_folders.append({"name": path.name, "path": str(path), **scan})
+            except (OSError, ValueError):
+                continue
+        self._save_folder_session()
+        if not self._collectra_folders:
+            return None
+        self._parent_folder = str(Path(self._collectra_folders[0]["path"]).parent)
+        return {**self._folder_list_result(), "provided": True, "mode": "parent"}
 
     def git_action(self, action: str, message: str = "", repository: str = "") -> dict:
         """Operate on the Git repository containing the active results file."""
@@ -119,6 +154,7 @@ class GUIBackend:
             if not matched:
                 raise ValueError(f"No GUI results found in: {path}")
         self._parent_folder = str(Path(self._collectra_folders[0]["path"]).parent)
+        self._save_folder_session()
         return {**self._folder_list_result(), "provided": True, "mode": "parent"}
 
     @property
@@ -297,6 +333,7 @@ class GUIBackend:
                     }
                 self._collectra_folders = []
                 self._parent_folder = str(selected_path.parent)
+                self._save_folder_session([selected_path])
                 return {
                     "success": True,
                     "mode": "single",
@@ -334,6 +371,7 @@ class GUIBackend:
                     }
                 )
 
+        self._save_folder_session()
         return self._folder_list_result()
 
     def _folder_list_result(self) -> dict:
@@ -566,6 +604,8 @@ class GUIBackend:
             self._collectra_file = collectra_file
             self._graph = graph
             self._yaml_path = str(self._collectra_file.results_path)
+            if not self._collectra_folders:
+                self._save_folder_session([self._collectra_file.results_path.parent])
 
             # Accumulate labels from this graph
             self._global_labels.update(self._graph.get_unique_labels())

@@ -29,6 +29,13 @@ result paths or parent directories. Result directories must use the extension
 configured by the pipeline and contain ``results.yaml``. The GUI opens existing
 results; it does not run a pipeline over raw images when opening a path.
 
+The GUI remembers the open result folders separately for each pipeline in the
+per-user cache directory (on macOS, ``~/Library/Caches/collectra/gui-sessions``).
+On the next launch without explicit input paths, it restores that list and opens
+the first folder. Missing or unreadable folders are skipped. Passing paths to
+``gui`` replaces the remembered session, as does choosing another folder in the
+GUI. The cache stores folder paths only; result data remains in its own files.
+
 An installed pipeline command offers the same interface::
 
     my-pipeline gui results
