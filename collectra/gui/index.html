@@ -553,6 +553,12 @@
             max-height: 320px;
             overflow-y: auto;
         }
+        .modal-popup.git-viewer { width: min(760px, 90vw); max-width: 90vw; min-width: 0; }
+        .git-repository { overflow-wrap: anywhere; font-size: 12px; opacity: 0.8; }
+        .git-actions { justify-content: flex-start; flex-wrap: wrap; }
+        .git-output { margin-top: 16px; max-height: 55vh; min-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--app-fg-bright, #e6e6e6); }
+        .git-message { width: 100%; box-sizing: border-box; background: var(--app-bg, #1a1a1a); color: var(--app-fg-bright, #e6e6e6); border: 1px solid var(--app-border, #3c3c3c); padding: 8px; }
+        #gitCommitModal { z-index: 1001; }
         .modal-popup.wide {
             min-width: 320px;
             max-width: 520px;
@@ -564,6 +570,8 @@
             margin-bottom: 12px;
         }
         .modal-close {
+            color: var(--app-fg-bright, #e6e6e6);
+            opacity: 1;
             background: none;
             border: none;
             font-size: 18px;
@@ -1500,6 +1508,7 @@
     <script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
     <!-- Pure node-click dispatch logic, unit tested in tests-js/ -->
     <script src="artefactDisplay.js"></script>
+    <script src="sourceControl.js"></script>
     <script src="rgbViewControls.js"></script>
     <!-- Pure collapse/expand state for sidebar, right panel, and DAG toggles, unit tested in tests-js/ -->
     <script src="collapsibleRegion.js"></script>
@@ -1579,6 +1588,15 @@
                 <button class="panel-toolbar-btn" id="newPanelToolbarBtn" onclick="showSplitViewPopover(event)" title="New Panel" aria-label="New panel">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
                         <path d="M8 2.5v11M2.5 8h11"/>
+                    </svg>
+                </button>
+                <button class="panel-toolbar-btn" id="gitToolbarBtn" title="Source control" aria-label="Source control">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                        <rect x="4" y="4" width="16" height="16" rx="1.5" transform="rotate(45 12 12)" fill="currentColor" stroke="none"/>
+                        <path d="M8 5v8l5 5M8 8h5v5" stroke="var(--app-surface, #1f1f1f)"/>
+                        <circle cx="8" cy="8" r="1.3" fill="var(--app-surface, #1f1f1f)" stroke="none"/>
+                        <circle cx="13" cy="13" r="1.3" fill="var(--app-surface, #1f1f1f)" stroke="none"/>
+                        <circle cx="13" cy="18" r="1.3" fill="var(--app-surface, #1f1f1f)" stroke="none"/>
                     </svg>
                 </button>
                 <div class="lineage-popover" id="ancestorsPopover" style="display:none;">
@@ -1663,6 +1681,36 @@
                     </button>
                 </div>
             </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="gitModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="gitTitle">
+        <div class="modal-popup git-viewer">
+            <div class="modal-header">
+                <h3 id="gitTitle">Source control</h3>
+                <button class="modal-close" id="gitClose" aria-label="Close source control">×</button>
+            </div>
+            <div id="gitRepository" class="git-repository"></div>
+            <div class="modal-buttons git-actions">
+                <button class="btn-cancel" data-git-action="status">Status</button>
+                <button class="btn-cancel" data-git-action="pull">Pull</button>
+                <button class="btn-cancel" data-git-action="add">Add</button>
+                <button class="btn-cancel" data-git-action="commit">Commit</button>
+                <button class="btn-cancel" data-git-action="push">Push</button>
+            </div>
+            <pre id="gitOutput" class="git-output" role="status" aria-live="polite"></pre>
+        </div>
+    </div>
+    <div id="gitCommitModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="gitCommitTitle">
+        <div class="modal-popup">
+            <h3 id="gitCommitTitle">Commit changes</h3>
+            <label class="modal-field-label" for="gitCommitMessage">Message</label>
+            <textarea id="gitCommitMessage" class="git-message" rows="4" placeholder="Describe your changes"></textarea>
+            <div id="gitCommitError" class="modal-field-error" role="alert"></div>
+            <div class="modal-buttons">
+                <button class="btn-cancel" id="gitCommitCancel">Cancel</button>
+                <button class="btn-confirm" id="gitCommitConfirm" disabled>Commit</button>
             </div>
         </div>
     </div>

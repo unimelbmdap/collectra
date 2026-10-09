@@ -33,6 +33,48 @@ An installed pipeline command offers the same interface::
 
     my-pipeline gui results
 
+macOS Applications launcher
+---------------------------
+
+Create a clickable app for a pipeline with the Collectra icon:
+
+.. code-block:: bash
+
+    collectra --pipeline pipeline.yaml install-app --name "My Pipeline"
+
+This creates ``~/Applications/My Pipeline.app``. Double-click it in Finder to
+open the GUI without a Terminal window. You can also drag it to the Dock.
+The launcher uses the current Python environment and the pipeline's absolute
+path, and starts with the pipeline directory as its working directory. Keep
+that environment and pipeline at their installed locations.
+
+To open particular results on launch, pass their paths. To choose a destination
+or a custom icon, use ``--app-dir`` or ``--icon``:
+
+.. code-block:: bash
+
+    collectra --pipeline pipeline.yaml install-app results --name "My Pipeline"
+    collectra --pipeline pipeline.yaml install-app --name "My Pipeline" --app-dir /Applications --icon custom.icns
+
+By default, the launcher uses ``icon`` from ``collectra_pipeline_metadata``
+when configured, resolving relative paths from the pipeline directory:
+
+.. code-block:: yaml
+
+    collectra_pipeline_metadata:
+      name: My Pipeline
+      ext: collectra
+      version: "1.0"
+      icon: assets/pipeline.png
+
+``--icon`` overrides this setting. If ``icon`` is absent, the pipeline's
+``logo`` is used. Without either metadata setting, the Collectra icon is used.
+Icons may be ``.icns`` or PNG files; PNGs are converted to macOS icons. The command requires macOS and
+refuses to overwrite an existing app unless ``--force`` is supplied.
+For example, reinstall with ``install-app --name "My Pipeline" --force``.
+The replacement is built before the existing app is replaced. Writing to ``/Applications`` requires write access;
+the default ``~/Applications`` is the user's Applications folder.
+
 Sidebar and folder actions
 ---------------------------
 
@@ -41,6 +83,25 @@ search box above the list to filter folders by name.
 
 Right-click a folder to reveal its ``results.yaml`` in the OS file manager
 (Finder on macOS, Explorer on Windows), selected within its result folder.
+
+Source control
+--------------
+
+Click the Git icon in the top-right toolbar to open source control. It shows
+status and the repository path for the currently open results folder. Git finds
+the repository in that folder or an ancestor; linked worktrees are supported.
+Open a results folder before using these actions.
+
+* **Status** shows ``git status``.
+* **Pull** runs ``git pull --no-edit`` using the configured remote and branch.
+* **Add** runs ``git add .`` from the repository root, staging all changes there.
+* **Commit** opens a message popup and commits staged changes with that message.
+* **Push** runs ``git push`` using the configured remote and branch.
+
+Command output and errors appear in the viewer. Actions run one at a time.
+Git must be installed, and remote authentication must already be configured;
+terminal credential prompts are disabled. After pulling changes, reopen the
+results folder to load the updated files into the viewer.
 
 Inspect and edit artefacts
 --------------------------

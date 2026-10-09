@@ -182,6 +182,38 @@ class Collectra:
         )
         print(f"Installed {name!r} at {launcher}")
 
+    @command(name="install-app")
+    def cli_install_app(
+        self,
+        *inputs: Path,
+        name: str = "Collectra",
+        app_dir: Path | None = None,
+        icon: Path | None = None,
+        force: bool = False,
+    ) -> Path:
+        """Create a macOS Applications launcher for this pipeline's GUI.
+
+        Optional inputs are result folders or files opened when the app starts.
+        The default destination is ~/Applications; icon accepts an .icns or PNG file. Pipeline metadata supplies the default icon.
+        """
+        from .app_launcher import install_app
+
+        pipeline_icon = self.pipeline_metadata.get("icon") or self.pipeline_metadata.get("logo")
+        if icon is None and pipeline_icon:
+            icon = Path(pipeline_icon).expanduser()
+            if not icon.is_absolute():
+                icon = self.path / icon
+        bundle = install_app(
+            self.path / self.PIPELINE_FILE,
+            name=name,
+            app_dir=app_dir,
+            icon=icon,
+            inputs=inputs,
+            force=force,
+        )
+        print(f"Installed {name!r} at {bundle}")
+        return bundle
+
     @group(name="task")
     def cli_tasks(self) -> dict[str, Task]:
         """Operate on one of the tasks in this pipeline."""

@@ -10,6 +10,7 @@ JavaScript usage:
 import base64
 import enum
 import platform
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -49,6 +50,7 @@ class GUIBackend:
         Sets up the annotation graph, YAML path, and window reference.
         All values are initially None until load_yaml() is called.
         """
+        self._git_lock = threading.Lock()
         self._pipeline = pipeline
         self._collectra_file: CollectraFile | None = None
         self._graph: CollectraGraph | None = None
@@ -59,6 +61,19 @@ class GUIBackend:
         self._global_labels: set[str] = set()
         self._global_label_counts: dict[str, int] = {}  # {label: total_count}
         self._initial_items = self._load_input_paths(inputs) if inputs else None
+
+    def git_action(self, action: str, message: str = "", repository: str = "") -> dict:
+        """Operate on the Git repository containing the active results file."""
+        from .source_control import run_git
+
+        if not self._yaml_path:
+            return {"success": False, "error": "Open a results folder first"}
+        if not self._git_lock.acquire(blocking=False):
+            return {"success": False, "error": "A Git operation is already running"}
+        try:
+            return run_git(Path(self._yaml_path).parent, action, message, repository)
+        finally:
+            self._git_lock.release()
 
     def get_initial_items(self) -> dict:
         """Return startup items once the JavaScript bridge is ready."""
@@ -1257,7 +1272,7 @@ def start(
     api = GUIBackend(pipeline, inputs=inputs)
     html_path = get_resource_path("index.html")
     window = webview.create_window(
-        title="Collectra Viewer",
+        title=pipeline.name,
         url=html_path,
         js_api=api,
         width=1200,
