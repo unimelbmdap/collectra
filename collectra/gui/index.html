@@ -2603,32 +2603,11 @@
                     document.getElementById('yamlPath').value = result.yaml_path;
                     selectedYamlPath = result.yaml_path;
                     await loadYaml();
-
-                    // Fetch and display label statistics
-                    const stats = await window.pywebview.api.get_label_statistics();
-                    if (stats.success && Object.keys(stats.label_counts).length > 0) {
-                        infoHtml += '<strong>Labels:</strong><br>';
-                        infoHtml += formatLabelCounts(stats.label_counts);
-                    } else {
-                        infoHtml += '<span class="file-missing">No annotations found</span>';
-                    }
                 }
 
-                // Show the selected page's artefact (image + bounding boxes)
-                // in the bottom panel, which is always visible so
-                // OpenSeadragon measures a real container size right away.
-                // The top panel's own copy is NOT eagerly created here —
-                // its content container is display:none at this point
-                // (its default active tab is DAG), and an
-                // OpenSeadragon/canvas viewer created against a
-                // zero-size, hidden container measures 0×0 and never
-                // recovers later even once the container becomes visible.
-                // PanelController.showNode() creates it lazily instead,
-                // the first time a panel actually needs to show it, when
-                // its container is guaranteed to already be on-screen.
-                if (result.image_path) {
-                    await panelControllers.bottom.renderPageArtefact(result.image_path);
-                }
+                // Statistics can run while the selected artefact loads.
+                const statsPromise = window.pywebview.api.get_label_statistics()
+                    .catch(() => ({success: false}));
 
                 // Grey out and disable DAG nodes that don't belong to this page,
                 // and cache their real types/ids for the hover tooltip and the
@@ -2661,7 +2640,9 @@
                     Object.values(panelControllers).forEach((c) => {
                         c.panel.pruneTabs(isStillValid);
                         c.renderTabStripView();
-                        c.showActiveTabContent();
+                        // The bottom panel is rendered once below, after choosing
+                        // the carried field or root for this page.
+                        if (c !== panelControllers.bottom) c.showActiveTabContent();
                     });
                 }
 
@@ -2694,6 +2675,13 @@
                     if (nextNodeId) await panelControllers.bottom.openOrActivateTab(nextNodeId);
                 }
 
+                const stats = await statsPromise;
+                if (stats.success && Object.keys(stats.label_counts).length > 0) {
+                    infoHtml += '<strong>Labels:</strong><br>';
+                    infoHtml += formatLabelCounts(stats.label_counts);
+                } else {
+                    infoHtml += '<span class="file-missing">No annotations found</span>';
+                }
                 folderInfoEl.innerHTML = infoHtml;
                 updateNavButtons();
 
@@ -3498,7 +3486,7 @@
             if (this.el.headerType) this.el.headerType.textContent = '';
         };
 
-        PanelController.prototype.renderPageArtefact = async function(imagePath, view = null) {
+        PanelController.prototype.renderPageArtefact = async function(imagePath, view = null, identity = null) {
             const display     = this.el.imageDisplay;
             const placeholder = this.el.placeholder;
             const contentDiv  = this.el.contentDiv;
@@ -3515,6 +3503,10 @@
             if (placeholder) placeholder.style.display = 'none';
             if (contentDiv)  contentDiv.style.display  = 'none';
             this.clearHeader();
+            if (identity) {
+                this.el.headerId.textContent = identity.id;
+                this.el.headerType.textContent = identity.type;
+            }
             display.style.display = 'block';
 
             try {
@@ -3604,7 +3596,7 @@
                                     if (!current || !result.updated_ids.includes(current.target_id)) return;
                                     const refreshed = await window.pywebview.api.get_artefact_display(current.target_id, current.rgb_view_index || 0);
                                     if (!refreshed.success) throw new Error(refreshed.error);
-                                    if (controller.displayView === current) await controller.renderPageArtefact(current.image_path, refreshed.view);
+                                    if (controller.displayView === current) await controller.renderPageArtefact(current.image_path, refreshed.view, refreshed);
                                 }));
                             } catch (error) {
                                 alert(error.message || String(error));
@@ -3703,10 +3695,9 @@
                 });
                 display.addEventListener('pointerup', () => this.flushAnnotationUpdate());
 
-                // Draw the page's ImageCrop bounding boxes.
-                const rowsResult = await window.pywebview.api.get_all_nodes_for_grid();
+                // The display response already contains these annotations.
+                await this.refreshPageAnnotations(null, view.annotations || []);
                 if (this._artefactToken !== token) return;
-                if (rowsResult.success) this.refreshPageAnnotations(rowsResult.rows);
 
                 const viewer = this.pageViewer;
                 mountRgbViewControls({
@@ -3741,12 +3732,14 @@
         // Redraws every ImageCrop row as an annotation on this panel's own
         // image — shared by the initial load and every create/update/
         // delete refresh, so they can't drift out of sync with each other.
-        PanelController.prototype.refreshPageAnnotations = async function(rows) {
+        PanelController.prototype.refreshPageAnnotations = async function(rows, initialAnnotations = null) {
             if (!this.pageAnno || !this.pageViewer || !this.displayView) return;
             const token = this._artefactToken;
-            const result = this.displayView.can_create_crop
-                ? await window.pywebview.api.get_display_annotations(this.displayView.target_id)
-                : {success: true, rows: this.displayView.annotations || []};
+            const result = initialAnnotations !== null
+                ? {success: true, rows: initialAnnotations}
+                : this.displayView.can_create_crop
+                    ? await window.pywebview.api.get_display_annotations(this.displayView.target_id)
+                    : {success: true, rows: this.displayView.annotations || []};
             if (token !== this._artefactToken || !result.success || !this.pageAnno) return;
             const imgW = this.pageViewer.world._contentSize.x;
             const imgH = this.pageViewer.world._contentSize.y;

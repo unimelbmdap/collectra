@@ -474,8 +474,15 @@ class GUIBackend:
 
         folder = self._collectra_folders[page_index]
         try:
-            collectra_file = CollectraFile.from_data(Path(folder["path"]))
-            graph = CollectraGraph.from_collectra_file(collectra_file)
+            if (
+                self._graph is not None
+                and self._yaml_path is not None
+                and Path(self._yaml_path).resolve() == Path(folder["yaml_path"]).resolve()
+            ):
+                graph = self._graph
+            else:
+                collectra_file = CollectraFile.from_data(Path(folder["path"]))
+                graph = CollectraGraph.from_collectra_file(collectra_file)
             node_types: dict[str, str] = {}
             node_ids: dict[str, list[str]] = {}
             crop_labels = set()

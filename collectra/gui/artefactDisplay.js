@@ -1,7 +1,7 @@
 // Views are selected by Artefact.display(), independent of Python type names.
 // Renderers receive the panel controller and a JSON-compatible view descriptor.
 const artefactRenderers = new Map([
-    ['image', async (controller, view) => controller.renderPageArtefact(view.image_path, view)],
+    ['image', async (controller, view, result) => controller.renderPageArtefact(view.image_path, view, result)],
     ['text', async (controller, view, result) => {
         controller.clearPageArtefact();
         await controller.renderTextNodeAsPage(result.id, result.type, view);

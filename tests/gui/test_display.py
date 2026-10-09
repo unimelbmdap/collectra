@@ -417,3 +417,14 @@ def test_unannotated_detector_output_has_crop_type(tmp_path):
     nodes = {node["id"]: node for node in graph["nodes"]}
     assert nodes["sandglass"]["detail"] == "collectra.ImageCrop"
     assert nodes["image"]["detail"] == "collectra.Image"
+
+
+def test_active_node_ids_reuse_loaded_page_graph(backend, monkeypatch):
+    backend._collectra_folders = [{"path": str(Path(backend._yaml_path).parent), "yaml_path": backend._yaml_path}]
+    def unexpected_reload(*args, **kwargs):
+        raise AssertionError("The loaded page should not be read again")
+    monkeypatch.setattr("collectra.gui.backend.CollectraFile.from_data", unexpected_reload)
+    result = backend.get_active_node_ids(0)
+    assert result["success"]
+    assert "image" in result["active_ids"]
+    assert result["node_ids"]["crop"] == ["crop"]

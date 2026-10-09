@@ -35,6 +35,9 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+# The GUI vendors browser-ready distributions for offline use.
+!collectra/gui/vendor/**/dist/
+!collectra/gui/vendor/**/dist/**
 downloads/
 eggs/
 .eggs/
