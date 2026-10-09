@@ -32,7 +32,9 @@ results; it does not run a pipeline over raw images when opening a path.
 The GUI remembers the open result folders separately for each pipeline in the
 per-user cache directory (on macOS, ``~/Library/Caches/collectra/gui-sessions``).
 On the next launch without explicit input paths, it restores that list and opens
-the first folder. Missing or unreadable folders are skipped. Passing paths to
+the last active folder (or the first if that folder is unavailable). The active
+folder is saved in a separate small cache file each time it changes.
+Missing or unreadable folders are skipped. Passing paths to
 ``gui`` replaces the remembered session, as does choosing another folder in the
 GUI. The cache stores folder paths only; result data remains in its own files.
 

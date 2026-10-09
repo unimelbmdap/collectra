@@ -101,3 +101,51 @@ def test_unwritable_cache_does_not_block_opening(tmp_path):
     blocker.write_text("not a directory")
     api._session_cache.path = blocker / "session.json"
     assert api.load_yaml(str(results / "results.yaml"))["success"]
+
+
+def test_active_folder_saved_separately_and_restored(tmp_path):
+    config = pipeline(tmp_path)
+    first = folder(tmp_path, "first.collectra")
+    second = folder(tmp_path, "second.collectra")
+    api = GUIBackend(config, inputs=[first, second])
+    cache = api._session_cache
+    original_list = cache.path.read_bytes()
+    original_mtime = cache.path.stat().st_mtime_ns
+    assert api.load_yaml(str(second / "results.yaml"))["success"]
+    assert json.loads(cache.active_path.read_text()) == str(second)
+    assert cache.path.read_bytes() == original_list
+    assert cache.path.stat().st_mtime_ns == original_mtime
+    assert GUIBackend(config).get_initial_items()["active_index"] == 1
+    assert api.load_yaml(str(first / "results.yaml"))["success"]
+    assert GUIBackend(config).get_initial_items()["active_index"] == 0
+    # Explicit launch inputs open their first folder instead of the saved selection.
+    assert (
+        "active_index"
+        not in GUIBackend(config, inputs=[second, first]).get_initial_items()
+    )
+
+
+def test_invalid_or_missing_active_folder_falls_back(tmp_path):
+    config = pipeline(tmp_path)
+    first = folder(tmp_path, "first.collectra")
+    api = GUIBackend(config, inputs=[first])
+    cache = api._session_cache
+    for content in [
+        "invalid json",
+        "null",
+        "[]",
+        json.dumps(str(tmp_path / "missing")),
+    ]:
+        cache.active_path.write_text(content)
+        assert GUIBackend(config).get_initial_items()["active_index"] == 0
+    cache.active_path.unlink()
+    assert GUIBackend(config).get_initial_items()["active_index"] == 0
+
+
+def test_failed_load_keeps_previous_active_folder(tmp_path):
+    config = pipeline(tmp_path)
+    first = folder(tmp_path, "first.collectra")
+    api = GUIBackend(config, inputs=[first])
+    assert api.load_yaml(str(first / "results.yaml"))["success"]
+    assert not api.load_yaml(str(tmp_path / "missing/results.yaml"))["success"]
+    assert api._session_cache.read_active() == str(first)

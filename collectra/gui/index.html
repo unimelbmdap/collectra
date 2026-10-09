@@ -2496,7 +2496,10 @@
 
             folderInfoEl.innerHTML = `<strong>Parent folder:</strong> ${result.folders.length} files found`;
             await loadAndRenderDag();    // DAG  — same time as sidebar
-            await loadCollectraFolder(0);
+            const activeIndex = Number.isInteger(result.active_index)
+                && result.active_index >= 0 && result.active_index < result.folders.length
+                ? result.active_index : 0;
+            await loadCollectraFolder(activeIndex);
         }
 
         async function selectCollectra() {

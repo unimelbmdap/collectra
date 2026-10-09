@@ -95,7 +95,16 @@ class GUIBackend:
         if not self._collectra_folders:
             return None
         self._parent_folder = str(Path(self._collectra_folders[0]["path"]).parent)
-        return {**self._folder_list_result(), "provided": True, "mode": "parent"}
+        active = self._session_cache.read_active()
+        active_index = next(
+            (index for index, folder in enumerate(self._collectra_folders)
+             if folder["path"] == active),
+            0,
+        )
+        return {
+            **self._folder_list_result(), "provided": True, "mode": "parent",
+            "active_index": active_index,
+        }
 
     def git_action(self, action: str, message: str = "", repository: str = "") -> dict:
         """Operate on the Git repository containing the active results file."""
@@ -603,7 +612,10 @@ class GUIBackend:
             graph = CollectraGraph.from_collectra_file(collectra_file)
             self._collectra_file = collectra_file
             self._graph = graph
+            previous_path = self._yaml_path
             self._yaml_path = str(self._collectra_file.results_path)
+            if self._session_cache is not None and previous_path != self._yaml_path:
+                self._session_cache.write_active(str(self._collectra_file.results_path.parent.resolve()))
             if not self._collectra_folders:
                 self._save_folder_session([self._collectra_file.results_path.parent])
 

@@ -23,6 +23,18 @@ class FolderSessionCache:
             / f"{key}.json"
         )
 
+        self.active_path = self.path.with_name(f"{key}-active.json")
+
+    def read_active(self) -> str | None:
+        try:
+            active = json.loads(self.active_path.read_text(encoding="utf-8"))
+            return active if isinstance(active, str) else None
+        except (OSError, ValueError):
+            return None
+
+    def write_active(self, folder: str) -> None:
+        self._write_json(self.active_path, folder)
+
     def read(self) -> list[str]:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
@@ -36,15 +48,18 @@ class FolderSessionCache:
         return []
 
     def write(self, folders: list[str]) -> None:
+        self._write_json(self.path, {"folders": folders})
+
+    def _write_json(self, destination: Path, data) -> None:
         temporary = None
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
+            destination.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(
-                mode="w", encoding="utf-8", dir=self.path.parent, delete=False
+                mode="w", encoding="utf-8", dir=destination.parent, delete=False
             ) as stream:
                 temporary = Path(stream.name)
-                json.dump({"folders": folders}, stream)
-            os.replace(temporary, self.path)
+                json.dump(data, stream)
+            os.replace(temporary, destination)
         except OSError as error:
             logger.warning("Could not save GUI folder session: %s", error)
         finally:
