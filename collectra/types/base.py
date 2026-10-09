@@ -497,7 +497,11 @@ class ArtefactNode(Node):
                                         f"{cls_} is not a subclass or not defined in {self.types}"
                                     )
                                 item["name"] = key
-                                if "data" not in item and "path" in item:
+                                if (
+                                    "data" not in item
+                                    and "path" in item
+                                    and "path" not in cls_.__dataclass_fields__
+                                ):
                                     item["data"] = item.pop("path")
                                 if "parents" in item and not isinstance(
                                     item["parents"], list
@@ -634,7 +638,7 @@ class ArtefactNode(Node):
                         if not match:
                             continue
                         item["name"] = name
-                        if "path" in item:
+                        if "path" in item and "path" not in cls_.__dataclass_fields__:
                             item["data"] = item.pop("path")
                         if partition is not None:
                             item["partition"] = partition

@@ -360,3 +360,18 @@ def test_gui_startup_reports_invalid_inputs(tmp_path):
         GUIBackend(SimpleNamespace(ext="collectra"), inputs=[tmp_path / "missing"])
     with pytest.raises(ValueError, match="No GUI results found"):
         GUIBackend(SimpleNamespace(ext="collectra"), inputs=[tmp_path])
+
+
+def test_explicit_text_path_save(backend):
+    path = Path(backend._yaml_path).parent / "explicit.md"
+    path.write_text("old text", encoding="utf-8")
+    backend._graph.add_node(
+        dict(label="external", type="collectra.Text", id="external", path=path.name)
+    )
+    assert view(backend, "external")["text"] == "old text"
+    assert backend.update_display_text("external", "new text")["success"]
+    assert path.read_text() == "new text"
+    backend._save_collectra_file()
+    saved = yaml.safe_load(Path(backend._yaml_path).read_text())
+    assert saved["external"]["path"] == path.name
+    assert "data" not in saved["external"]

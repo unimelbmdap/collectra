@@ -44,7 +44,9 @@ class DisplayContext:
         elif issubclass(cls, Text):
             source = self.text_path(node_id)
             if source:
-                record["data"] = source
+                if "path" not in record:
+                    record.pop("data", None)
+                record["path"] = source
         accepted = {f.name for f in fields(cls) if f.init}
         item = cls(**{k: v for k, v in record.items() if k in accepted})
         self.instances[node_id] = item
@@ -53,7 +55,8 @@ class DisplayContext:
         return item
 
     def text_path(self, node_id):
-        value = self.records[node_id].get("data", "")
+        record = self.records[node_id]
+        value = record.get("path", record.get("data", ""))
         if not isinstance(value, (str, Path)) or not value:
             return None
         try:

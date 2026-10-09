@@ -61,6 +61,8 @@ class CollectraNode(BaseModel):
     def model_dump(self, *args, **kwargs) -> dict[str, str | float]:
         data = super().model_dump(*args, **kwargs)
         label = data.pop("label", None)  # Exclude label from dump
+        if "path" in data and "data" not in self.model_fields_set:
+            data.pop("data", None)
         if data["parents"]:
             data["parents"] = (
                 data["parents"][0] if len(data["parents"]) == 1 else data["parents"]

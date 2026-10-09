@@ -35,21 +35,37 @@ def unmark(text):
 @dataclass
 class Text(Artefact):
 
-    data: str | Path = field(default="")
+    data: str | Path | None = field(default=None)
+    path: str | Path | None = field(default=None)
 
     def __post_init__(self):
         super().__post_init__()
-        try:
-            if self.data and Path(self.data).exists():
-                self.data = Path(self.data)
-        except OSError:
-            pass
+        if self.path is not None and self.data is not None:
+            raise ValueError("Text accepts either data or path, not both")
+        # Continue accepting legacy file references in data.
+        if self.path is None and self.data:
+            try:
+                if Path(self.data).is_file():
+                    self.path, self.data = Path(self.data), None
+            except (OSError, ValueError):
+                pass
+        if self.path is not None:
+            self.path = Path(self.path)
+            self.data = self.path.read_text(encoding="utf-8")
+        elif self.data is None:
+            self.data = ""
 
-        if isinstance(self.data, Path) and self.data.exists() and self.data.is_file():
-            self.data = self.data.read_text()
+    def serialize(self) -> dict:
+        serialized = super().serialize()
+        if self.path is not None:
+            serialized.pop("data", None)
+            serialized["path"] = str(self.path)
+        else:
+            serialized.pop("path", None)
+        return serialized
 
-    def __call__(self) -> str | Path:
-        return self.data
+    def __call__(self) -> str:
+        return str(self.data)
 
     def display(self, context) -> dict:
         return context.text(self)
