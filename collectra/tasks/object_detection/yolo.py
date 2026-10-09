@@ -104,7 +104,7 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
         model: str | Path | None = None,
         imgsz: int | None = None,
         **kwargs,
-    ) -> list[Image]:
+    ) -> list[ImageCrop]:
         """Run object detection inference on the provided Image.
 
         This method performs object detection on the provided input image
@@ -191,7 +191,7 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
             )
             results = results[keep]
 
-        detections: list[Image] = []
+        detections: list[ImageCrop] = []
 
         if results.boxes is None or len(results.boxes) == 0:
             return detections

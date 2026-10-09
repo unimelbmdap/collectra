@@ -109,3 +109,9 @@ build-backend = "poetry.core.masonry.api"
 [project.scripts]
 collectra = "collectra.main:main"
 utils = "utils.main:app"
+
+[tool.poetry]
+include = [
+    { path = "collectra/gui/vendor", format = ["sdist", "wheel"] },
+    { path = "collectra/gui/openseadragon", format = ["sdist", "wheel"] },
+]

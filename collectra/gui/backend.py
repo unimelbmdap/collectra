@@ -563,6 +563,41 @@ class GUIBackend:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def rotate_image_clockwise(self, node_id: str) -> dict:
+        """Persist a clockwise quarter-turn for an image and descendant images."""
+        from collectra.types.images import Image, Orientation
+        from collectra.types.links import Link
+        from collectra.utils import load_class_from_string
+
+        changes = []
+        try:
+            context = self._display_context()
+            item = context.artefact(self._graph.resolve_id(node_id))
+            if isinstance(item, Link):
+                item = item.resolve()
+            if not isinstance(item, Image):
+                raise ValueError("Only image artefacts can be rotated")
+            pending, seen = [item.id], set()
+            while pending:
+                current = pending.pop()
+                if current in seen:
+                    continue
+                seen.add(current)
+                pending.extend(self._graph.children(current))
+                node = self._graph.get_node(current)
+                if node and issubclass(load_class_from_string(node.type), Image):
+                    orientation = Orientation.from_string(node.orientation)
+                    next_orientation = Orientation((orientation.value + 1) % 4).to_string()
+                    changes.append((node, node.orientation, next_orientation))
+            for node, previous, updated in changes:
+                node.orientation = updated
+            self._save_collectra_file()
+            return {"success": True, "updated_ids": [node.id for node, _, _ in changes]}
+        except Exception as error:
+            for node, previous, updated in changes:
+                node.orientation = previous
+            return {"success": False, "error": str(error)}
+
     def get_display_annotations(self, node_id: str) -> dict:
         try:
             context = self._display_context()

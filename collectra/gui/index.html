@@ -1484,30 +1484,22 @@
             filter: brightness(1.1);
         }
     </style>
-    <link rel="stylesheet" 
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" 
-      integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" 
-      crossorigin="anonymous" 
-      referrerpolicy="no-referrer" /> 
-    <script src="https://cdn.jsdelivr.net/npm/openseadragon@5.0/build/openseadragon/openseadragon.min.js"></script>
-    <script
-        src="https://cdn.jsdelivr.net/npm/@annotorious/openseadragon@latest/dist/annotorious-openseadragon.js"></script>
-    <!-- Vendored, not CDN — file:// pages loading this cross-origin
-         stylesheet get it served as an opaque/wrong-MIME response under
-         strict MIME checking, which the browser then refuses to apply. -->
-    <link
-        rel="stylesheet"
-        href="annotorious-openseadragon.css">
-        <!-- DAG dependencies -->
-    <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
-    <link rel="stylesheet" href="https://bootswatch.com/5/solar/bootstrap.min.css">
-    <!-- Markdown / TEI editor -->
-    <link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
-    <script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
+    <!-- Pinned, bundled GUI dependencies; no network access required. -->
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+    <script src="openseadragon/openseadragon.min.js"></script>
+    <script src="vendor/annotorious/dist/annotorious-openseadragon.js"></script>
+    <link rel="stylesheet" href="vendor/annotorious/dist/annotorious-openseadragon.css">
+    <script src="vendor/cytoscape/dist/cytoscape.min.js"></script>
+    <script src="vendor/dagre/dist/dagre.min.js"></script>
+    <script src="vendor/cytoscape-dagre/cytoscape-dagre.js"></script>
+    <link rel="stylesheet" href="vendor/source-sans-pro/source-sans-pro.css">
+    <link rel="stylesheet" href="vendor/bootswatch/dist/solar/bootstrap.min.css">
+    <link rel="stylesheet" href="vendor/easymde/dist/easymde.min.css">
+    <script src="vendor/easymde/dist/easymde.min.js"></script>
     <!-- Pure node-click dispatch logic, unit tested in tests-js/ -->
     <script src="artefactDisplay.js"></script>
+    <script src="nodeColors.js"></script>
+    <script src="shiftDraw.js"></script>
     <script src="sourceControl.js"></script>
     <script src="rgbViewControls.js"></script>
     <!-- Pure collapse/expand state for sidebar, right panel, and DAG toggles, unit tested in tests-js/ -->
@@ -1984,8 +1976,7 @@
         let currentImagePath = "";
 
 
-        const annotation_color = ['#FD3216', '#00FE35', '#6A76FC', '#FED4C4', '#FE00CE', '#0DF9FF', '#F6F926', '#FF9616', '#479B55', '#EEA6FB', '#DC587D', '#D626FF', '#6E899C', '#00B5F7', '#B68E00', '#C9FBE5', '#FF0092', '#22FFA7', '#E3EE9E', '#86CE00', '#BC7196', '#7E7DCD', '#FC6955', '#E48F72'];
-        const current_annotation_color_index = 0;
+
 
         function formatLabelCounts(labelCounts) {
             const entries = Object.entries(labelCounts);
@@ -3002,7 +2993,7 @@
                     await new Promise((resolve) => {
                         viewer = OpenSeadragon({
                             element: container,
-                            prefixUrl: "https://cdn.jsdelivr.net/npm/openseadragon@5.0/build/openseadragon/images/",
+                            prefixUrl: "openseadragon/images/",
                             // Default drawer is WebGL; every new instance opens a fresh
                             // WebGL context, and WebKit (pywebview's engine on macOS)
                             // doesn't reliably reclaim one the instant destroy() runs —
@@ -3027,22 +3018,11 @@
                     });
 
                     anno = AnnotoriousOSD.createOSDAnnotator(viewer, {
-                        drawingEnabled: true,                                         
+                        drawingEnabled: true,
+                        drawingMode: 'drag',
                     });    
                     
-                    anno.setStyle((annotation, state) => {
-                        const idx = annotation.bodies[0]?.id || ' ';
-                        const label = idx.split("-")[0] || '';      
-                        
-                        color = label? annotation_color[label.charCodeAt(0) % annotation_color.length] : '#FF0000';
-
-                        return {
-                            fill: color,
-                            fillOpacity: 0.1,
-                            stroke: color,
-                            strokeOpacity: 1
-                        }
-                    });                        
+                    anno.setStyle(cropAnnotationStyle);
 
                     anno.on('selectionChanged', function(annotations, originalEvent){
                         // Grid removed — selection sync dormant until editing is rebuilt
@@ -3156,6 +3136,7 @@
         // Geometry follows OSD 5's nav PNGs (35x34, ~27px disc at 18,16.5).
         // Accent and armed fills read --app-primary/--app-primary-dark from the
         // live theme, so a project's theme.css carries through.
+        let imageRotationBusy = false;
         let _drawBoxImgs = null;
         function drawBoxImages() {
             if (_drawBoxImgs) return _drawBoxImgs;
@@ -3443,6 +3424,8 @@
         }
 
         PanelController.prototype.clearPageArtefact = function() {
+            this._shiftDrawCleanup?.();
+            this._shiftDrawCleanup = null;
             this.displayView = null;
             this._artefactToken = {}; // invalidate any renderPageArtefact still mid-await for this panel
             if (this.pageAnno)   { try { this.pageAnno.destroy(); }   catch (e) {} this.pageAnno = null; }
@@ -3457,7 +3440,7 @@
         PanelController.prototype.flushAnnotationUpdate = function() {
             if (!this._updateAnnotationFlush) return;
             clearTimeout(this._updateAnnotationTimer);
-            this._updateAnnotationFlush();
+            return this._updateAnnotationFlush();
         };
 
         PanelController.prototype.syncDrawBoxButton = function() {
@@ -3553,7 +3536,7 @@
                 await new Promise((resolve, reject) => {
                     this.pageViewer = OpenSeadragon({
                         element: display,
-                        prefixUrl: "https://cdn.jsdelivr.net/npm/openseadragon@5.0/build/openseadragon/images/",
+                        prefixUrl: "openseadragon/images/",
                         drawer: 'canvas', // avoids exhausting WebKit's WebGL context limit across page switches
                         tileSources: { type: 'image', url: imgResult.data },
                         gestureSettingsMouse: { clickToZoom: false, dblClickToZoom: false },
@@ -3571,7 +3554,7 @@
                     this.syncDrawBoxButton();
                 });
 
-                this.pageAnno = AnnotoriousOSD.createOSDAnnotator(this.pageViewer, { drawingEnabled: false });
+                this.pageAnno = AnnotoriousOSD.createOSDAnnotator(this.pageViewer, { drawingEnabled: false, drawingMode: 'drag' });
 
                 const drawBoxBtn = createDrawBoxButton(() => {
                     if (this.pageViewer.isFullPage()) return; // live check
@@ -3587,27 +3570,55 @@
                 }
                 this.drawBoxBtn = drawBoxBtn;
                 this.syncDrawBoxButton();
-
-                this.pageAnno.setStyle((annotation, state) => {
-                    const idx = annotation.bodies[0]?.id || ' ';
-                    const label = cropBaseName(idx);
-                    const selected = state && state.selected;
-                    // Only the selected box gets its real per-label colour — every
-                    // other box recedes to a neutral grey (same muted tone already
-                    // used for DAG edges) so colour itself signals "this is the one",
-                    // instead of every field competing with its own distinct hue.
-                    const neutral = '#839496';
-                    const color = selected
-                        ? (label ? annotation_color[label.charCodeAt(0) % annotation_color.length] : '#FF0000')
-                        : neutral;
-                    return {
-                        fill: color,
-                        fillOpacity: selected ? 0.35 : 0.08,
-                        stroke: color,
-                        strokeOpacity: selected ? 1 : 0.6,
-                        strokeWidth: selected ? 4 : 1.5,
-                    };
+                this._shiftDrawCleanup = mountShiftDraw({
+                    element: display, document, window,
+                    canDraw: () => {
+                        this.syncDrawBoxButton();
+                        return this._artefactToken === token && !drawBoxBtn.element.disabled
+                            && !imageRotationBusy && !document.querySelector('.modal-overlay.visible');
+                    },
+                    isDrawing: () => this.pageAnno.isDrawingEnabled(),
+                    setDrawing: enabled => this.pageAnno.setDrawingEnabled(enabled),
+                    sync: () => this.syncDrawBoxButton(),
                 });
+                if (view.can_rotate) {
+                    const rotateIcon = 'data:image/svg+xml,' + encodeURIComponent(
+                        '<svg xmlns="http://www.w3.org/2000/svg" width="35" height="34" viewBox="0 0 35 34">' +
+                        '<circle cx="18" cy="16.5" r="13.5" fill="#ececec" stroke="#b6b6b6"/>' +
+                        '<path d="M24 14a7 7 0 1 0 0 6M24 9v6h-6" fill="none" stroke="#333" stroke-width="2"/>' +
+                        '</svg>');
+                    const rotateButton = new OpenSeadragon.Button({
+                        tooltip: 'Rotate 90° clockwise',
+                        srcRest: rotateIcon, srcGroup: rotateIcon, srcHover: rotateIcon, srcDown: rotateIcon,
+                        onClick: async () => {
+                            if (this._artefactToken !== token || imageRotationBusy) return;
+                            imageRotationBusy = true;
+                            rotateButton.disable();
+                            try {
+                                await Promise.all(Object.values(panelControllers).map(controller => controller.flushAnnotationUpdate()));
+                                if (this._artefactToken !== token) return;
+                                const result = await window.pywebview.api.rotate_image_clockwise(view.target_id);
+                                if (!result.success) throw new Error(result.error);
+                                await Promise.all(Object.values(panelControllers).map(async controller => {
+                                    const current = controller.displayView;
+                                    if (!current || !result.updated_ids.includes(current.target_id)) return;
+                                    const refreshed = await window.pywebview.api.get_artefact_display(current.target_id, current.rgb_view_index || 0);
+                                    if (!refreshed.success) throw new Error(refreshed.error);
+                                    if (controller.displayView === current) await controller.renderPageArtefact(current.image_path, refreshed.view);
+                                }));
+                            } catch (error) {
+                                alert(error.message || String(error));
+                            } finally {
+                                imageRotationBusy = false;
+                                if (this._artefactToken === token) rotateButton.enable();
+                            }
+                        },
+                    });
+                    if (this.pageViewer.buttonGroup) this.pageViewer.addButton(rotateButton);
+                    else this.pageViewer.addControl(rotateButton.element, {anchor: OpenSeadragon.ControlAnchor.TOP_LEFT});
+                }
+
+                this.pageAnno.setStyle(cropAnnotationStyle);
 
                 // Hover tooltip; also feeds the right-click delete menu
                 // below — Annotorious's contextmenu event carries no
@@ -4387,7 +4398,7 @@
             const elements = [
                 ...nodes.map(n => ({
                     group: 'nodes',
-                    data: { id: n.id, label: n.id.replace(/_/g, ' '), nodeType: n.nodeType, detail: n.detail, inputs: n.inputs, outputs: n.outputs, params: n.params },
+                    data: { nodeColor: nodeColor(n.id), id: n.id, label: n.id.replace(/_/g, ' '), nodeType: n.nodeType, detail: n.detail, inputs: n.inputs, outputs: n.outputs, params: n.params },
                 })),
                 ...edges.map((e, i) => ({
                     group: 'edges',
@@ -4405,9 +4416,9 @@
                     {
                         selector: 'node',
                         style: {
-                            'background-color': colors.salmon,
+                            'background-color': 'data(nodeColor)',
                             'label': 'data(label)',
-                            'color': colors.salmonFg,
+                            'color': '#22313b',
                             'text-valign': 'center',
                             'text-halign': 'center',
                             'font-family': '-apple-system, "Segoe UI", sans-serif',
@@ -4423,8 +4434,6 @@
                     {
                         selector: 'node[nodeType = "llm"], node[nodeType = "detector"], node[nodeType = "processor"]',
                         style: {
-                            'background-color': colors.blue,
-                            'color': colors.blueFg,
                             'shape': 'round-rectangle',
                             'height': 58,
                         }
@@ -5240,6 +5249,7 @@
                 // once, so a fixed id here would duplicate across the document.
                 textDisplay.innerHTML = `<div style="display:flex;align-items:center;justify-content:flex-end;padding:10px 12px 8px;"><button class="page-text-save btn btn-sm btn-primary" style="font-size:11px;">Save</button><span class="page-text-status" style="font-size:11px;margin-left:8px;color:var(--app-fg-muted, #586e75);"></span></div><textarea class="mde-textarea"></textarea>`;
                 this.easyMDE = new EasyMDE({
+                    autoDownloadFontAwesome: false,
                     element: textDisplay.querySelector('.mde-textarea'),
                     initialValue: text,
                     spellChecker: false,

@@ -76,3 +76,13 @@ For pipelines intended for redistribution, record the model's source, version,
 licence and any required attribution alongside the pipeline. Include the terms
 for fine-tuned weights where applicable. Software licensing does not replace
 permissions needed for collection images, annotations, or hosted model services.
+
+Bundled GUI assets
+------------------
+
+The GUI ships local copies of Annotorious, Cytoscape, Dagre, cytoscape-dagre,
+Bootswatch/Bootstrap, EasyMDE, Font Awesome, and Source Sans Pro, in addition to
+OpenSeadragon. Version and source information is recorded in
+``collectra/gui/vendor/manifest.json``. Each dependency's licence is included
+beside its assets. Bootswatch's remote font import is replaced with local font
+files, and EasyMDE's automatic Font Awesome download is disabled.

@@ -375,3 +375,45 @@ def test_explicit_text_path_save(backend):
     saved = yaml.safe_load(Path(backend._yaml_path).read_text())
     assert saved["external"]["path"] == path.name
     assert "data" not in saved["external"]
+
+
+def test_rotate_image_and_descendants_persist(backend):
+    before = backend._graph.get_node('crop').model_dump()
+    assert backend.rotate_image_clockwise('image')['success']
+    for node_id in ['image', 'crop', 'child', 'different']:
+        assert backend._graph.get_node(node_id).orientation == 'west'
+    assert backend._graph.get_node('text').orientation == 'north'
+    saved = yaml.safe_load(Path(backend._yaml_path).read_text())
+    assert saved['crop']['orientation'] == 'west'
+    for key in ['x_center', 'y_center', 'width_relative', 'height_relative']:
+        assert saved['crop'][key] == before[key]
+    assert view(backend, 'crop')['annotations'][0]['crop_region']['x_center'] == pytest.approx(2 / 3)
+    for _ in range(3):
+        assert backend.rotate_image_clockwise('image')['success']
+    assert backend._graph.get_node('image').orientation == 'north'
+
+
+def test_rotate_crop_via_link_leaves_parent_and_siblings(backend):
+    assert backend.rotate_image_clockwise('link')['success']
+    assert backend._graph.get_node('crop').orientation == 'west'
+    assert backend._graph.get_node('child').orientation == 'west'
+    assert backend._graph.get_node('image').orientation == 'north'
+    assert backend._graph.get_node('different').orientation == 'north'
+    assert not backend.rotate_image_clockwise('text')['success']
+
+
+def test_unannotated_detector_output_has_crop_type(tmp_path):
+    from collectra import Collectra
+
+    pipeline_file = tmp_path / "pipeline.yaml"
+    pipeline_file.write_text(
+        "collectra_pipeline_metadata: {name: test, ext: sandglass, version: '1.0'}\n"
+        "detector:\n"
+        "  type: collectra.ObjectDetectionYOLO\n"
+        "  input: image\n"
+        "  output: sandglass\n"
+    )
+    graph = Collectra.from_file(pipeline_file).gui_graph()
+    nodes = {node["id"]: node for node in graph["nodes"]}
+    assert nodes["sandglass"]["detail"] == "collectra.ImageCrop"
+    assert nodes["image"]["detail"] == "collectra.Image"

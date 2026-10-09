@@ -212,6 +212,7 @@ class DisplayContext:
             "target_id": item.id,
             "annotations": self.annotations(item),
             "can_create_crop": True,
+            "can_rotate": True,
             "rgb_view_index": self.rgb_view,
             "rgb_view_count": view_count,
         }

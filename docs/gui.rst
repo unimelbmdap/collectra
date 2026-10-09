@@ -2,7 +2,9 @@ GUI
 ===
 
 The desktop GUI displays existing Collectra results using the selected
-pipeline's task and artefact graph. It requires pywebview, a supported native
+pipeline's task and artefact graph. Its scripts, styles, fonts, and image-viewer
+controls are bundled locally, so the GUI itself works offline. It requires
+pywebview, a supported native
 webview backend, and a desktop session.
 
 Backend licences differ: PyQt is GPLv3 or commercially licensed, even though
@@ -118,7 +120,14 @@ Inspect and edit artefacts
 Select an item and a node in its graph to inspect the corresponding artefacts.
 Images and crops display their source imagery and child boxes. Text artefacts
 use the relevant text editor, and Links display their referenced targets.
-Image views support box creation and editing. Edits are saved back to the
+Image views support box creation and editing. Hold Shift and drag on an image
+to draw a new crop using the annotation popup. Ordinary dragging pans the
+image; Escape cancels drawing. Shift-drag follows the toolbar drawing button's
+availability rules. The clockwise rotation icon
+rotates the displayed image by 90 degrees and saves its orientation, together
+with the orientations of descendant image artefacts, in ``results.yaml``.
+Crop coordinates remain relative to the original source image. Other open
+image panels refresh to show the new orientations. Edits are saved back to the
 results.
 
 For multichannel TIFFs, the viewer uses a preview of the channels. When the
