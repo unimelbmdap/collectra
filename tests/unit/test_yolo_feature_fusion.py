@@ -1,7 +1,7 @@
 """Exercise native YOLO graph skips, checkpoint reload and training reconstruction."""
 
+from pathlib import Path
 from copy import deepcopy
-import runpy
 from types import SimpleNamespace
 
 import numpy as np
@@ -93,20 +93,32 @@ def test_real_graph_preserves_rgb_and_fuses_all_neck_skips(rgb_yolo):
         DetectionModel(deepcopy(model.yaml), ch=9, verbose=False)
 
 
-def test_checkpoint_script_reload_in_fresh_process(rgb_yolo, tmp_path):
+def test_checkpoint_command_reload_in_fresh_process(rgb_yolo, tmp_path):
     import os
     import subprocess
     import sys
 
-    adapter = runpy.run_path("adapt-yolo-feature-fusion.py")
     rgb_yolo.ckpt = {}
     source = tmp_path / "rgb.pt"
     rgb_yolo.save(source)
     path = tmp_path / "fusion.pt"
-    adapter["expand_yolo_feature_fusion"](
-        source, path, 2, reference_view=1, hidden_dim=4
+    from collectra import ObjectDetectionYOLO
+    from collectra.cli import invoke
+
+    invoke(
+        ObjectDetectionYOLO("detector"),
+        [
+            "adapt-feature-fusion",
+            str(source),
+            "2",
+            "--output",
+            str(path),
+            "--reference-view",
+            "1",
+            "--hidden-dim",
+            "4",
+        ],
     )
-    adapter["validate_saved_model"](path, 2)
     loaded = load_adapted_model(path)
     assert loaded.model.yaml["channels"] == 6
     assert loaded.model.model[0].conv.in_channels == 3

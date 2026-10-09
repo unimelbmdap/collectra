@@ -296,3 +296,52 @@ def _train_feature_fusion(detector, **kwargs):
                 RFDETR.train(detector, **kwargs)
         finally:
             detector.model_config.pretrain_weights = previous
+
+
+def expand_rfdetr_feature_fusion(
+    input_model: Path,
+    output_model: Path,
+    num_views: int,
+    variant: str | None = None,
+    reference_view: int = 0,
+    hidden_dim: int = 64,
+):
+    import rfdetr
+
+    if variant is None:
+        detector = rfdetr.RFDETR.from_checkpoint(str(input_model), device="cpu")
+    else:
+        names = {
+            "nano": "RFDETRNano",
+            "small": "RFDETRSmall",
+            "medium": "RFDETRMedium",
+            "base": "RFDETRBase",
+            "large": "RFDETRLarge",
+            "xlarge": "RFDETRXLarge",
+            "2xlarge": "RFDETR2XLarge",
+        }
+        name = names.get(variant.lower(), variant)
+        if not name.startswith("RFDETR") or not hasattr(rfdetr, name):
+            raise ValueError(f"Unknown RF-DETR variant: {variant}")
+        detector = getattr(rfdetr, name)(
+            pretrain_weights=str(input_model), device="cpu"
+        )
+    adapt_model(detector, num_views, reference_view, hidden_dim)
+    save_adapted_model(detector, output_model)
+    return detector
+
+def validate_saved_model(path: Path, expected_views: int) -> None:
+    import torch
+
+    detector = load_adapted_model(path)
+    encoder = detector.model.model.backbone[0].encoder
+    if encoder.num_views != expected_views:
+        raise RuntimeError("Reloaded view count does not match")
+    detector.model.model.eval()
+    # Exercise the real encoder/attention/projector rather than only inspecting weights.
+    block = detector.model_config.patch_size * detector.model_config.num_windows
+    with torch.no_grad():
+        features = encoder(torch.zeros(1, 3 * expected_views, block, block))
+        projected = detector.model.model.backbone[0].projector(features)
+    if not projected or any(not torch.isfinite(feature).all() for feature in projected):
+        raise RuntimeError("Feature-fusion forward produced invalid features")

@@ -337,3 +337,56 @@ def load_adapted_model(path: str | Path):
     if not isinstance(yolo.model, FeatureFusionDetectionModel):
         raise ValueError("Checkpoint is not a YOLO feature-fusion model")
     return enable_feature_fusion(yolo)
+
+
+def expand_yolo_feature_fusion(
+    input_model: Path,
+    output_model: Path,
+    num_views: int,
+    reference_view: int = 0,
+    hidden_dim: int = 64,
+):
+    from ultralytics import YOLO
+
+    yolo = YOLO(str(input_model))
+    adapt_model(yolo, num_views, reference_view, hidden_dim)
+    save_adapted_model(yolo, output_model)
+    return yolo
+
+def validate_saved_model(path: Path, expected_views: int) -> None:
+    yolo = load_adapted_model(path)
+    model = yolo.model.eval()
+    if (
+        model.num_views != expected_views
+        or model.yaml["channels"] != 3 * expected_views
+    ):
+        raise RuntimeError("Reloaded model has inconsistent input channels")
+    if model.model[0].conv.in_channels != 3:
+        raise RuntimeError("Shared RGB backbone projection was unexpectedly widened")
+    size = max(64, 2 * int(model.stride.max()))
+    parameter = next(model.parameters())
+    with torch.no_grad():
+        result = model(
+            torch.zeros(
+                1,
+                3 * expected_views,
+                size,
+                size,
+                device=parameter.device,
+                dtype=parameter.dtype,
+            )
+        )
+
+    def tensors(value):
+        if isinstance(value, torch.Tensor):
+            yield value
+        elif isinstance(value, dict):
+            for item in value.values():
+                yield from tensors(item)
+        elif isinstance(value, (tuple, list)):
+            for item in value:
+                yield from tensors(item)
+
+    predictions = list(tensors(result))
+    if not predictions or any(not torch.isfinite(value).all() for value in predictions):
+        raise RuntimeError("Feature-fusion forward produced invalid predictions")

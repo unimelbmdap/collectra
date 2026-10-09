@@ -16,7 +16,7 @@ Classes:
     ImageCrop: Specialized class for cropped image regions
 """
 
-__all__ = ["Image", "ImageCrop"]
+__all__ = ["Image", "ImageCrop", "ImageSegmentation"]
 
 
 import base64
@@ -145,7 +145,8 @@ class ImageArtefactCommands(ArtefactCommands):
             destination.mkdir(parents=True, exist_ok=True)
             for item in items.values():
                 if isinstance(item, Image):
-                    item.extract(destination / f"{item.id}.jpg")
+                    suffix = ".png" if isinstance(item, ImageSegmentation) else ".jpg"
+                    item.extract(destination / f"{item.id}{suffix}")
 
 
 class Orientation(Enum):
@@ -631,3 +632,95 @@ class ImageCrop(Image):
         boxB = gold.coordinates()
         iou = self.compute_iou(boxA, boxB)
         return iou
+
+
+@dataclass
+class ImageSegmentation(Image):
+    """An image region defined by a source-sized binary PNG mask.
+
+    Mask pixels are 0 outside the region and 1 inside. Masks in Pillow's
+    one-bit mode are also supported. The rendered image is cropped to the
+    nonzero bounding box and retains source alpha within the region.
+    """
+
+    mask: str | Path = field(default="")
+
+    def __post_init__(self):
+        super().__post_init__()
+        if not self.mask:
+            raise ValueError("ImageSegmentation mask path is empty")
+        self.mask = Path(self.mask)
+        self._mask_path = self.mask.resolve()
+        self._mask_image()
+
+    def attributes_to_ignore(self):
+        return super().attributes_to_ignore() | {"_mask_path"}
+
+    def _mask_image(self) -> ImagePil.Image:
+        import numpy as np
+
+        with ImagePil.open(self._mask_path) as mask:
+            if mask.format != "PNG":
+                raise ValueError("ImageSegmentation mask must be a PNG file")
+            if mask.size != (self.raw_width, self.raw_height):
+                raise ValueError("Mask dimensions must match the source image")
+            pixels = np.asarray(mask)
+            if pixels.ndim != 2 or not np.isin(pixels, [0, 1]).all():
+                raise ValueError("Mask must contain only single-channel 0 and 1 pixels")
+            alpha = ImagePil.fromarray(pixels.astype("uint8") * 255)
+        if alpha.getbbox() is None:
+            raise ValueError("ImageSegmentation mask is empty")
+        return alpha
+
+    def serialize(self) -> dict:
+        serialized = super().serialize()
+        serialized["mask"] = str(self.mask)
+        return serialized
+
+    def display_bounds(self):
+        return self._mask_image().getbbox()
+
+    @property
+    def width(self):
+        left, top, right, bottom = self.display_bounds()
+        return right - left
+
+    @property
+    def height(self):
+        left, top, right, bottom = self.display_bounds()
+        return bottom - top
+
+    def masked_pil(self, image: ImagePil.Image) -> ImagePil.Image:
+        """Mask and crop an unrotated source image or display projection."""
+        from PIL import ImageChops
+
+        mask = self._mask_image()
+        if image.size != mask.size:
+            raise ValueError("Mask dimensions must match the source image")
+        result = image.convert("RGBA")
+        result.putalpha(ImageChops.multiply(result.getchannel("A"), mask))
+        return result.crop(mask.getbbox()).rotate(
+            self.orientation.to_degree(), expand=True
+        )
+
+    def pil(self) -> ImagePil.Image:
+        with ImagePil.open(self.get_path()) as image:
+            return self.masked_pil(image)
+
+    def _load_buffer(self, img: ImagePil.Image) -> bytes:
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    def mime(self) -> str:
+        return "image/png"
+
+    def save(self, path: Path | str = None):
+        if path is None:
+            raise ValueError("Path must be provided to save the segmented image")
+        self.extract(path)
+
+    def _extract(self, path: Path) -> None:
+        if not path.suffix:
+            path = path.with_suffix(".png")
+        self.pil().save(path)

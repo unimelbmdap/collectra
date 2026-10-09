@@ -19,6 +19,7 @@ individual crop ID or the class name ``ImageCrop``.
 
    image
    image_crop
+   image_segmentation
    text
    link
 

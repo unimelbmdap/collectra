@@ -173,10 +173,7 @@ def test_training_rebuild_keeps_attention_and_rgb_projection(
         detector.train(devices=2)
 
 
-def test_script_adapts_validates_and_preserves_detection_output(detector, tmp_path):
-    import runpy
-
-    adapter = runpy.run_path("adapt-rfdetr-feature-fusion.py")
+def test_command_adapts_validates_and_preserves_detection_output(detector, tmp_path):
     rgb_path = tmp_path / "rgb.pth"
     config = detector.model_config.model_dump(mode="json")
     torch.save(
@@ -189,10 +186,24 @@ def test_script_adapts_validates_and_preserves_detection_output(detector, tmp_pa
         rgb_path,
     )
     output = tmp_path / "fusion.pth"
-    fused = adapter["expand_rfdetr_feature_fusion"](
-        rgb_path, output, 2, reference_view=1, hidden_dim=4
+    from collectra import ObjectDetectionRFDETR
+    from collectra.cli import invoke
+
+    invoke(
+        ObjectDetectionRFDETR("detector"),
+        [
+            "adapt-feature-fusion",
+            str(rgb_path),
+            "2",
+            "--output",
+            str(output),
+            "--reference-view",
+            "1",
+            "--hidden-dim",
+            "4",
+        ],
     )
-    adapter["validate_saved_model"](output, 2)
+    fused = load_adapted_model(output)
     fused.model.model.eval()
     rgb = torch.randn(1, 3, 64, 64)
     with torch.no_grad():
@@ -200,3 +211,44 @@ def test_script_adapts_validates_and_preserves_detection_output(detector, tmp_pa
         actual = fused.model.model(torch.cat([torch.randn_like(rgb), rgb], dim=1))
     for key in ("pred_logits", "pred_boxes"):
         torch.testing.assert_close(actual[key], expected[key], atol=1e-4, rtol=1e-4)
+
+
+def test_input_channel_command_roundtrip(detector, tmp_path):
+    from collectra import ObjectDetectionRFDETR
+    from collectra.cli import invoke
+    from collectra.tasks.object_detection.rfdetr_input_adaptation import (
+        load_adapted_model,
+    )
+
+    source = tmp_path / "rgb.pth"
+    config = detector.model_config.model_dump(mode="json")
+    torch.save(
+        {
+            "model": detector.model.model.state_dict(),
+            "model_config": config,
+            "model_name": "RFDETRNano",
+            "args": dict(config, class_names=[]),
+        },
+        source,
+    )
+    output = tmp_path / "expanded.pth"
+    invoke(
+        ObjectDetectionRFDETR("detector"),
+        [
+            "adapt-input-channels",
+            str(source),
+            "2",
+            "--output",
+            str(output),
+        ],
+    )
+    expanded = load_adapted_model(output)
+    conv = expanded.model.model.backbone[
+        0
+    ].encoder.encoder.embeddings.patch_embeddings.projection
+    original = detector.model.model.backbone[
+        0
+    ].encoder.encoder.embeddings.patch_embeddings.projection
+    rgb = torch.randn(1, 3, 16, 16)
+    torch.testing.assert_close(conv(rgb.repeat(1, 2, 1, 1)), original(rgb))
+    assert expanded.model_config.num_channels == 6

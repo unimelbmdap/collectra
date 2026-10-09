@@ -1,5 +1,6 @@
 """Exercise the real RF-DETR transforms with multiview TIFF pixels and boxes."""
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -77,8 +78,8 @@ def test_tiff_training_uses_supported_backend_and_best_total(tmp_path, monkeypat
 
 
 def test_adapter_preserves_rgb_for_repeated_views_and_averages_distinct_views():
-    import runpy
-    adapter = runpy.run_path("adapt-rfdetr.py")
+    from collectra.tasks.object_detection.rfdetr_input_adaptation import _expand_model
+
     conv = torch.nn.Conv2d(3, 8, kernel_size=4, stride=4)
     embeddings = SimpleNamespace(projection=conv, num_channels=3)
     encoder = SimpleNamespace(embeddings=SimpleNamespace(patch_embeddings=embeddings),
@@ -88,7 +89,7 @@ def test_adapter_preserves_rgb_for_repeated_views_and_averages_distinct_views():
             encoder=SimpleNamespace(encoder=encoder))]), args=SimpleNamespace(num_channels=3)),
         model_config=SimpleNamespace(num_channels=3),
         means=[0.485, 0.456, 0.406], stds=[0.229, 0.224, 0.225])
-    adapter["_expand_model"](detector, 5)
+    _expand_model(detector, 5)
     views = torch.randn(2, 5, 3, 8, 8)
     torch.testing.assert_close(embeddings.projection(views.flatten(1, 2)), conv(views.mean(1)))
     rgb = views[:, 0]

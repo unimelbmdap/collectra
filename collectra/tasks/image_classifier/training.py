@@ -415,8 +415,7 @@ class TorchClassifierTask(Task):
                 )
             except Exception as error:
                 logger.warning("W&B init skipped: %s", error)
-        # history, best_loss, best_metrics, stale = [], math.inf, {}, 0
-        history, best_accuracy, best_metrics, stale = [], 0 , {}, 0
+        history, best_accuracy, best_metrics, stale = [], -math.inf, {}, 0
         try:
             with Progress(
                 SpinnerColumn(),
@@ -449,13 +448,10 @@ class TorchClassifierTask(Task):
                     history.append(metrics)
                     checkpoint = self._checkpoint(epoch, metrics)
                     torch.save(checkpoint, weights_dir / "last.pt")
-                    # score = val_metrics["loss"] if val_metrics else train_metrics["loss"]
                     score = val_metrics["accuracy"] if val_metrics else train_metrics["accuracy"]
-                    # if not math.isfinite(score):
-                    #     raise ValueError("Training produced a non-finite loss")
-                    # if score < best_loss:
+                    if not math.isfinite(score):
+                        raise ValueError("Training produced a non-finite accuracy")
                     if score > best_accuracy:
-                        # best_loss, best_metrics, stale = score, dict(metrics), 0
                         best_accuracy, best_metrics, stale = score, dict(metrics), 0
                         torch.save(checkpoint, weights_dir / "best.pt")
                         best_print = " best"
@@ -485,7 +481,7 @@ class TorchClassifierTask(Task):
                     progress.advance(epoch_task_id)
                     if val_loader is not None and patience and stale >= patience:
                         console.print(
-                            f"Early stopping at epoch {epoch}: no val-loss improvement in {patience} epoch(s)."
+                            f"Early stopping at epoch {epoch}: no val-accuracy improvement in {patience} epoch(s)."
                         )
                         break
         finally:

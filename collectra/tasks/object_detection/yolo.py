@@ -9,6 +9,7 @@ from typing import Annotated, TYPE_CHECKING
 from cappa import Arg
 
 from collectra.cli import command
+from .adaptation_commands import YOLOAdaptationCommands
 from collectra.types.images import (
     Image,
     ImageCrop,
@@ -64,7 +65,7 @@ class DetectionResult:
         return best_result
 
 
-class ObjectDetectionYOLO(YOLOTask):
+class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
     singletons: bool = False
     imgsz: int | None = None
 

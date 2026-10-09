@@ -8,6 +8,7 @@ from typing import Annotated, TYPE_CHECKING
 from cappa import Arg
 
 from collectra.cli import command
+from .adaptation_commands import RFDETRAdaptationCommands
 from collectra.types.images import (
     Image,
     ImageCrop,
@@ -109,7 +110,7 @@ def load_rfdetr_model(model_path: str | Path) -> RFDETR:
     logger.error("Failed to load RF-DETR model from %s. Errors: %s", model_path, errors)
 
 
-class ObjectDetectionRFDETR(Task):
+class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
     """RF-DETR task backed by the Roboflow rfdetr package."""
 
     model: str | Path | object | None

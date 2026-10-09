@@ -36,7 +36,7 @@ Model-specific options and their defaults are described in ``run --help`` and
 Multiview feature fusion
 -----------------------
 
-``adapt-yolo-feature-fusion.py`` adapts a pretrained RGB detection checkpoint
+The task command ``adapt-feature-fusion`` adapts a pretrained RGB detection checkpoint
 for spatially registered RGB views. Every view passes through shared backbone
 weights. Reference-conditioned attention combines the backbone feature maps
 feeding the neck, including skip connections; the existing neck and detection
@@ -45,7 +45,7 @@ view's initial predictions in evaluation mode.
 
 .. code-block:: bash
 
-    python adapt-yolo-feature-fusion.py yolo11n.pt --num-views 5 --reference-view 0 --output models/yolo11n-fusion.pt
+    collectra --pipeline pipeline.yaml task detect_labels adapt-feature-fusion yolo11n.pt 5 --reference-view 0 --output models/yolo11n-fusion.pt
 
 Set the task's model to the resulting checkpoint and use the usual Collectra
 training command. Collectra retains the fusion architecture during training.
@@ -69,3 +69,9 @@ uses all views during training, so exact reference preservation applies in
 evaluation mode. Prediction can fold BatchNorm into convolutions; reload an
 unfused checkpoint before subsequent training. Compare performance against
 both RGB and the existing input-channel expansion on the same validation split.
+
+The command reloads and validates the saved checkpoint by default; use
+``--no-validate`` to skip that check. Use ``--overwrite`` to replace an existing
+output. Outputs must differ from the input checkpoint. Without ``--output``,
+the checkpoint is saved beside the input as ``<name>-<N>views-fusion.pt``.
+The command leaves the configured task model unchanged.

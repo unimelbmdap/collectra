@@ -2,7 +2,7 @@
 
 RF-DETR loads checkpoint weights into a 3-channel model and only afterwards
 widens the input layer to ``num_channels``, so a checkpoint whose input layer is
-already wider (e.g. one written by ``adapt-rfdetr.py`` or by multi-channel
+already wider (e.g. one written by the ``adapt-input-channels`` task command or by multi-channel
 training) cannot be loaded through ``pretrain_weights``. Its Lightning training
 module also never widens the input layer at all.
 
