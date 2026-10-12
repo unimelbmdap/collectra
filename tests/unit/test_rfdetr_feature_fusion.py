@@ -20,6 +20,7 @@ from collectra.tasks.object_detection.rfdetr_channels import (
 from collectra.tasks.object_detection.rfdetr_feature_fusion import (
     ViewAttention,
     adapt_model,
+    fusion_spec,
     load_adapted_model,
     save_adapted_model,
 )
@@ -107,6 +108,29 @@ def test_checkpoint_roundtrip_and_collectra_dispatch(detector, tmp_path):
     torch.save(payload, broken)
     with pytest.raises(RuntimeError, match="Missing key"):
         load_adapted_model(broken)
+
+
+@pytest.mark.parametrize("truncated", [False, True])
+def test_ema_checkpoint_reloads_correct_view_count(detector, tmp_path, truncated):
+    adapt_model(detector, 25, reference_view=1, hidden_dim=4)
+    path = tmp_path / "ema.pth"
+    save_adapted_model(detector, path)
+    payload = torch.load(path, weights_only=True)
+    state = payload["model"]
+    key = "backbone.0.encoder.fusion_spec"
+    state[key] = torch.tensor([1.0, 24.999998, 0.9999999, 3.9999998])
+    if truncated:
+        state[key] = state[key].long()
+        # The reference index cannot be recovered from parameter shapes.
+        state[key][2] = 1
+    torch.save(payload, path)
+    loaded = load_adapted_model(path)
+    encoder = loaded.model.model.backbone[0].encoder
+    assert encoder.num_views == 25
+    assert loaded.model_config.num_channels == 75
+    assert encoder.view_fusion[0].reference_view == 1
+    assert encoder.view_fusion[0].view_bias.shape == (25,)
+    assert fusion_spec(loaded.model.model.state_dict())["hidden_dim"] == 4
 
 
 def test_training_rebuild_keeps_attention_and_rgb_projection(

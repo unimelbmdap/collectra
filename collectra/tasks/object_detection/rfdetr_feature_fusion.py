@@ -92,7 +92,16 @@ def fusion_spec(state: dict) -> dict | None:
     value = state.get(SPEC_KEY)
     if value is None:
         return None
-    version, views, reference, hidden = map(int, value.tolist())
+    # EMA can convert integer buffers to floats and introduce roundoff.
+    # Truncation would turn e.g. 24.999998 views into 24. The learned
+    # parameter shapes are authoritative for reconstruction, including older
+    # checkpoints whose specification has already been truncated.
+    version, views, reference, hidden = (round(v) for v in value.tolist())
+    prefix = "backbone.0.encoder.view_fusion.0."
+    if prefix + "view_bias" in state:
+        views = state[prefix + "view_bias"].shape[0]
+    if prefix + "score.0.weight" in state:
+        hidden = state[prefix + "score.0.weight"].shape[0]
     if version != FORMAT_VERSION:
         raise ValueError(f"Unsupported feature-fusion checkpoint version: {version}")
     if views < 1 or not 0 <= reference < views or hidden < 1:
