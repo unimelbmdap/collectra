@@ -762,6 +762,158 @@ class TestApiDeleteAnnotation:
         assert "crop_001" not in backend_with_extension._graph.nodes
 
 
+class TestApiDeletePreview:
+    """Tests for GUIBackend.get_delete_preview method (read-only)."""
+
+    def test_no_graph_loaded(self, backend_with_extension):
+        result = backend_with_extension.get_delete_preview("any_node")
+
+        assert result["success"] is False
+        assert "No graph loaded" in result["error"]
+
+    def test_unknown_node(self, backend_with_extension, temp_yaml_file):
+        backend_with_extension.load_yaml(str(temp_yaml_file))
+
+        result = backend_with_extension.get_delete_preview("nonexistent")
+
+        assert result["success"] is False
+        assert "error" in result
+
+    def test_lists_children_without_deleting(
+        self, backend_with_extension, temp_yaml_file
+    ):
+        backend_with_extension.load_yaml(str(temp_yaml_file))
+
+        result = backend_with_extension.get_delete_preview("crop_001")
+
+        assert result["success"] is True
+        assert result["id"] == "crop_001"
+        assert [c["id"] for c in result["children"]] == ["text_001"]
+        child = result["children"][0]
+        assert {"id", "label", "type"} <= set(child)
+        # Read-only: nothing was removed.
+        assert "crop_001" in backend_with_extension._graph.nodes
+        assert "text_001" in backend_with_extension._graph.nodes
+
+    def test_leaf_has_no_children(self, backend_with_extension, temp_yaml_file):
+        backend_with_extension.load_yaml(str(temp_yaml_file))
+
+        result = backend_with_extension.get_delete_preview("text_001")
+
+        assert result["success"] is True
+        assert result["children"] == []
+
+    def test_nested_children_match_what_delete_removes(
+        self, backend_with_extension, temp_folder_with_files
+    ):
+        backend_with_extension.load_yaml(str(temp_folder_with_files / "results.yaml"))
+        crop_region = {
+            "x_center": 0.6,
+            "y_center": 0.7,
+            "width_relative": 0.1,
+            "height_relative": 0.05,
+        }
+        image_path = str(temp_folder_with_files / "image.png")
+        backend_with_extension.create_annotation(
+            crop_region, "parent_crop", "", image_path, "", "parent_crop1"
+        )
+        backend_with_extension.create_annotation(
+            crop_region, "child_crop", "parent_crop1", image_path, "", "child_crop1"
+        )
+        backend_with_extension.create_annotation(
+            crop_region,
+            "grandchild_crop",
+            "child_crop1",
+            image_path,
+            "",
+            "grandchild_crop1",
+        )
+
+        preview = backend_with_extension.get_delete_preview("parent_crop1")
+        deleted = backend_with_extension.delete_annotation("parent_crop1")
+
+        previewed_ids = [c["id"] for c in preview["children"]]
+        assert previewed_ids == ["child_crop1", "grandchild_crop1"]
+        # The preview lists exactly what the real deletion removes, minus the
+        # requested node itself.
+        assert sorted(deleted["deleted_ids"]) == sorted(
+            ["parent_crop1", *previewed_ids]
+        )
+
+    def test_children_carry_their_depth_and_sit_under_their_parent(
+        self, backend_with_extension, temp_folder_with_files
+    ):
+        backend_with_extension.load_yaml(str(temp_folder_with_files / "results.yaml"))
+        region = {
+            "x_center": 0.6,
+            "y_center": 0.7,
+            "width_relative": 0.1,
+            "height_relative": 0.05,
+        }
+        image = str(temp_folder_with_files / "image.png")
+        make = lambda label, parent, crop_id: backend_with_extension.create_annotation(
+            region, label, parent, image, "", crop_id
+        )
+        make("parent_crop", "", "p1")
+        make("child_crop", "p1", "c1")
+        make("child_crop", "p1", "c2")
+        make("grandchild_crop", "c1", "g1")
+        make("grandchild_crop", "c2", "g2")
+
+        preview = backend_with_extension.get_delete_preview("p1")
+
+        # Each branch is listed together, directly under its own parent.
+        assert [(c["id"], c["depth"]) for c in preview["children"]] == [
+            ("c1", 1),
+            ("g1", 2),
+            ("c2", 1),
+            ("g2", 2),
+        ]
+
+    def test_root_is_flagged_so_its_own_node_can_be_kept(
+        self, backend_with_extension, temp_yaml_file
+    ):
+        backend_with_extension.load_yaml(str(temp_yaml_file))
+
+        root = backend_with_extension.get_delete_preview("img_001")
+        crop = backend_with_extension.get_delete_preview("crop_001")
+
+        assert root["keeps_self"] is True
+        assert crop["keeps_self"] is False
+
+
+class TestApiDeleteNested:
+    """delete_nested removes everything under a node but keeps the node."""
+
+    def test_no_graph_loaded(self, backend_with_extension):
+        result = backend_with_extension.delete_nested("any_node")
+
+        assert result["success"] is False
+        assert "No graph loaded" in result["error"]
+
+    def test_keeps_the_node_and_removes_all_below_it(
+        self, backend_with_extension, temp_yaml_file
+    ):
+        backend_with_extension.load_yaml(str(temp_yaml_file))
+        graph = backend_with_extension._graph
+
+        result = backend_with_extension.delete_nested("img_001")
+
+        assert result["success"] is True
+        assert "img_001" in graph.nodes
+        assert "crop_001" not in graph.nodes
+        assert "text_001" not in graph.nodes
+        assert "crop_001" in result["deleted_ids"]
+        assert "img_001" not in result["deleted_ids"]
+
+    def test_unknown_node(self, backend_with_extension, temp_yaml_file):
+        backend_with_extension.load_yaml(str(temp_yaml_file))
+
+        result = backend_with_extension.delete_nested("nonexistent")
+
+        assert result["success"] is False
+
+
 class TestApiRenameAnnotation:
     """Tests for GUIBackend.rename_annotation method.
 

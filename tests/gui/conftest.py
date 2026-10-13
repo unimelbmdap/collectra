@@ -15,6 +15,14 @@ def isolated_gui_session_cache(tmp_path, monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def isolated_gui_arrangement(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "collectra.gui.arrangement.user_cache_dir",
+        lambda *args, **kwargs: str(tmp_path / "user-arrangement"),
+    )
+
+
 @pytest.fixture
 def sample_yaml_data():
     """Minimal valid YAML structure for testing."""

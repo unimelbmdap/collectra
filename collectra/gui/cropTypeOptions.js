@@ -43,15 +43,10 @@ function imageCropDescendantLabels(focusedLabel, adjacency, typeOf, isTaskNode) 
     return result;
 }
 
-// First label with no instance on the current page (pageNodeIds: label ->
-// real id list), else the first label, else "".
-function firstUnusedLabel(labels, pageNodeIds) {
-    if (labels.length === 0) return '';
-    const unused = labels.find((l) => {
-        const ids = pageNodeIds.get(l);
-        return !ids || ids.length === 0;
-    });
-    return unused || labels[0];
+// The label the dropdown starts on: the first in pipeline order (labels come
+// in the DAG's own left-to-right order), else "".
+function defaultCropLabel(labels) {
+    return labels.length ? labels[0] : '';
 }
 
 // specific_epithet_image -> "Specific Epithet Image"
@@ -65,5 +60,5 @@ function humanizeLabel(label) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { isImageCropType, imageCropDescendantLabels, firstUnusedLabel, humanizeLabel };
+    module.exports = { isImageCropType, imageCropDescendantLabels, defaultCropLabel, humanizeLabel };
 }

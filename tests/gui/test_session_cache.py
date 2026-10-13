@@ -149,3 +149,53 @@ def test_failed_load_keeps_previous_active_folder(tmp_path):
     assert api.load_yaml(str(first / "results.yaml"))["success"]
     assert not api.load_yaml(str(tmp_path / "missing/results.yaml"))["success"]
     assert api._session_cache.read_active() == str(first)
+
+
+ARRANGEMENT = {
+    "version": 1,
+    "focused": "bottom",
+    "layout": [
+        {"op": "split", "from": "bottom", "direction": "right", "key": "panel2"}
+    ],
+    "sizes": {"bottom": "0 0 300px"},
+    "panels": {
+        "bottom": {
+            "active": 0,
+            "tabs": [{"kind": "node", "group": "specimen_sheet"}],
+        }
+    },
+}
+
+
+def test_arrangement_is_saved_and_returned_on_the_next_launch(tmp_path):
+    config = pipeline(tmp_path)
+
+    saved = GUIBackend(config).save_arrangement(ARRANGEMENT)
+    restored = GUIBackend(config).get_arrangement()
+
+    assert saved["success"] is True
+    assert restored == {"success": True, "arrangement": ARRANGEMENT}
+
+
+def test_no_saved_arrangement_returns_none(tmp_path):
+    result = GUIBackend(pipeline(tmp_path)).get_arrangement()
+
+    assert result == {"success": True, "arrangement": None}
+
+
+def test_a_bad_arrangement_is_refused_and_nothing_is_written(tmp_path):
+    config = pipeline(tmp_path)
+
+    result = GUIBackend(config).save_arrangement({"version": 99})
+
+    assert result["success"] is False
+    assert GUIBackend(config).get_arrangement()["arrangement"] is None
+
+
+def test_arrangement_is_per_pipeline(tmp_path):
+    one = pipeline(tmp_path, "one")
+    other = pipeline(tmp_path, "two")
+
+    GUIBackend(one).save_arrangement(ARRANGEMENT)
+
+    assert GUIBackend(other).get_arrangement()["arrangement"] is None

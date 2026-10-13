@@ -63,16 +63,23 @@ class GUIBackend:
         from .session_cache import FolderSessionCache
 
         pipeline_path = getattr(pipeline, "path", None)
-        self._session_cache = FolderSessionCache(pipeline_path) if pipeline_path else None
+        self._session_cache = (
+            FolderSessionCache(pipeline_path) if pipeline_path else None
+        )
+        from .arrangement import ArrangementStore
+
+        self._arrangement = ArrangementStore(pipeline_path) if pipeline_path else None
         self._initial_items = (
             self._load_input_paths(inputs) if inputs else self._restore_folder_session()
         )
 
     def _save_folder_session(self, folders=None) -> None:
         if self._session_cache is not None:
-            paths = folders if folders is not None else [
-                folder["path"] for folder in self._collectra_folders
-            ]
+            paths = (
+                folders
+                if folders is not None
+                else [folder["path"] for folder in self._collectra_folders]
+            )
             self._session_cache.write([str(Path(path).resolve()) for path in paths])
 
     def _restore_folder_session(self):
@@ -88,7 +95,9 @@ class GUIBackend:
                 if scan is None:
                     continue
                 seen.add(path)
-                self._collectra_folders.append({"name": path.name, "path": str(path), **scan})
+                self._collectra_folders.append(
+                    {"name": path.name, "path": str(path), **scan}
+                )
             except (OSError, ValueError):
                 continue
         self._save_folder_session()
@@ -97,12 +106,17 @@ class GUIBackend:
         self._parent_folder = str(Path(self._collectra_folders[0]["path"]).parent)
         active = self._session_cache.read_active()
         active_index = next(
-            (index for index, folder in enumerate(self._collectra_folders)
-             if folder["path"] == active),
+            (
+                index
+                for index, folder in enumerate(self._collectra_folders)
+                if folder["path"] == active
+            ),
             0,
         )
         return {
-            **self._folder_list_result(), "provided": True, "mode": "parent",
+            **self._folder_list_result(),
+            "provided": True,
+            "mode": "parent",
             "active_index": active_index,
         }
 
@@ -118,6 +132,23 @@ class GUIBackend:
             return run_git(Path(self._yaml_path).parent, action, message, repository)
         finally:
             self._git_lock.release()
+
+    def get_arrangement(self) -> dict:
+        """The saved panel/tab arrangement for this pipeline, or None."""
+        if self._arrangement is None:
+            return {"success": True, "arrangement": None}
+        return {"success": True, "arrangement": self._arrangement.read()}
+
+    def save_arrangement(self, arrangement: dict) -> dict:
+        """Remember the panel/tab arrangement (per user, per pipeline)."""
+        from .arrangement import sanitize_arrangement
+
+        clean = sanitize_arrangement(arrangement)
+        if clean is None:
+            return {"success": False, "error": "Not a valid arrangement"}
+        if self._arrangement is not None:
+            self._arrangement.write(clean)
+        return {"success": True}
 
     def get_initial_items(self) -> dict:
         """Return startup items once the JavaScript bridge is ready."""
@@ -477,7 +508,8 @@ class GUIBackend:
             if (
                 self._graph is not None
                 and self._yaml_path is not None
-                and Path(self._yaml_path).resolve() == Path(folder["yaml_path"]).resolve()
+                and Path(self._yaml_path).resolve()
+                == Path(folder["yaml_path"]).resolve()
             ):
                 graph = self._graph
             else:
@@ -594,7 +626,9 @@ class GUIBackend:
                 node = self._graph.get_node(current)
                 if node and issubclass(load_class_from_string(node.type), Image):
                     orientation = Orientation.from_string(node.orientation)
-                    next_orientation = Orientation((orientation.value + 1) % 4).to_string()
+                    next_orientation = Orientation(
+                        (orientation.value + 1) % 4
+                    ).to_string()
                     changes.append((node, node.orientation, next_orientation))
             for node, previous, updated in changes:
                 node.orientation = updated
@@ -657,7 +691,9 @@ class GUIBackend:
             previous_path = self._yaml_path
             self._yaml_path = str(self._collectra_file.results_path)
             if self._session_cache is not None and previous_path != self._yaml_path:
-                self._session_cache.write_active(str(self._collectra_file.results_path.parent.resolve()))
+                self._session_cache.write_active(
+                    str(self._collectra_file.results_path.parent.resolve())
+                )
             if not self._collectra_folders:
                 self._save_folder_session([self._collectra_file.results_path.parent])
 
@@ -1048,6 +1084,118 @@ class GUIBackend:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def _node_and_descendants(self, node_id: str) -> list[str]:
+        """The node followed by every descendant (any type, any depth),
+        breadth first, each id once."""
+        ids = []
+        queue = [node_id]
+        seen = {node_id}
+        while queue:
+            current = queue.pop(0)
+            ids.append(current)
+            for child_id in self._graph.children(current):
+                if child_id not in seen:
+                    seen.add(child_id)
+                    queue.append(child_id)
+        return ids
+
+    def get_delete_preview(self, node_id: str) -> dict:
+        """
+        List what delete_annotation would remove along with a node, without
+        changing anything.
+
+        Args:
+            node_id: The annotation ID (or DAG label) about to be deleted
+
+        Returns:
+            dict with the resolved 'id' and 'children' (each with id, label
+            and type, nearest first), or 'error' on failure
+        """
+        if self._graph is None:
+            return {"success": False, "error": "No graph loaded. Call load_yaml first."}
+
+        node_id = self._graph.resolve_id(node_id)
+        if node_id not in self._graph.nodes:
+            return {"success": False, "error": f"Node '{node_id}' not found"}
+
+        children = []
+        seen = {node_id}
+
+        def walk(current: str, depth: int) -> None:
+            for child_id in self._graph.children(current):
+                if child_id in seen:
+                    continue
+                seen.add(child_id)
+                node = self._graph.get_node(child_id)
+                children.append(
+                    {
+                        "id": child_id,
+                        "label": node.label if node else "",
+                        "type": node.type if node else "",
+                        "depth": depth,
+                    }
+                )
+                walk(child_id, depth + 1)
+
+        walk(node_id, 1)
+        return {
+            "success": True,
+            "id": node_id,
+            "children": children,
+            "keeps_self": not self._graph.parents(node_id),
+        }
+
+    def _remove_nodes(self, to_delete: list[str]) -> dict:
+        """Remove the given nodes, update label counts, save and return the
+        refreshed grid plus the removed ids."""
+        deleted_labels = [
+            node.label
+            for node_id in to_delete
+            if (node := self._graph.get_node(node_id))
+        ]
+
+        # Deepest-reached first, so a node's own children are already gone
+        # before it is.
+        for node_id in reversed(to_delete):
+            self._graph.remove_node(node_id)
+
+        # Update global label counts if in parent folder mode
+        if self._collectra_folders:
+            for label in deleted_labels:
+                if label in self._global_label_counts:
+                    self._global_label_counts[label] -= 1
+                    if self._global_label_counts[label] <= 0:
+                        del self._global_label_counts[label]
+
+        self._save_collectra_file()
+        result = self.get_all_nodes_for_grid()
+        # Every id actually removed — the frontend needs this to close any
+        # tab left open on a cascaded descendant.
+        result["deleted_ids"] = to_delete
+        if self._collectra_folders:
+            result["global_label_counts"] = self._global_label_counts
+            result["global_total"] = sum(self._global_label_counts.values())
+        return result
+
+    def delete_nested(self, node_id: str) -> dict:
+        """
+        Delete everything nested under a node but keep the node itself (used
+        for the page image, which cannot be removed).
+
+        Returns:
+            dict with updated grid data and 'deleted_ids', or 'error'
+        """
+        if self._graph is None:
+            return {"success": False, "error": "No graph loaded. Call load_yaml first."}
+
+        try:
+            node_id = self._graph.resolve_id(node_id)
+            if node_id not in self._graph.nodes:
+                return {"success": False, "error": f"Node '{node_id}' not found"}
+            return self._remove_nodes(self._node_and_descendants(node_id)[1:])
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def delete_annotation(self, node_id: str) -> dict:
         """
         Delete an ImageCrop annotation and everything nested under it —
@@ -1070,53 +1218,9 @@ class GUIBackend:
         try:
             node_id = self._graph.resolve_id(node_id)
 
-            # Collect every descendant (any type, any depth) before deleting
-            # anything — walking the graph while removing nodes from it would
-            # skip some.
-            to_delete = []
-            queue = [node_id]
-            seen = {node_id}
-            while queue:
-                current = queue.pop(0)
-                to_delete.append(current)
-                for child_id in self._graph.children(current):
-                    if child_id not in seen:
-                        seen.add(child_id)
-                        queue.append(child_id)
-
-            deleted_labels = [
-                node.label
-                for descendant_id in to_delete
-                if (node := self._graph.get_node(descendant_id))
-            ]
-
-            # Deepest-reached first, so a node's own children are already
-            # gone before it is (remove_node cleans up edges regardless, but
-            # this mirrors "delete what's inside first").
-            for descendant_id in reversed(to_delete):
-                self._graph.remove_node(descendant_id)
-
-            # Update global label counts if in parent folder mode
-            if self._collectra_folders:
-                for label in deleted_labels:
-                    if label in self._global_label_counts:
-                        self._global_label_counts[label] -= 1
-                        if self._global_label_counts[label] <= 0:
-                            del self._global_label_counts[label]
-
-            # Save and return updated grid
-            self._save_collectra_file()
-            result = self.get_all_nodes_for_grid()
-            # Every id actually removed (the requested one plus every
-            # cascaded descendant) — the frontend needs this to close any
-            # tab left open on a descendant that wasn't the one you directly
-            # deleted, not just the top-level id.
-            result["deleted_ids"] = to_delete
-            # Include updated global stats in response
-            if self._collectra_folders:
-                result["global_label_counts"] = self._global_label_counts
-                result["global_total"] = sum(self._global_label_counts.values())
-            return result
+            # Collect every descendant before deleting anything — walking the
+            # graph while removing nodes from it would skip some.
+            return self._remove_nodes(self._node_and_descendants(node_id))
 
         except Exception as e:
             return {"success": False, "error": str(e)}

@@ -6,12 +6,20 @@ annotations use viewer-relative normalized coordinates. Text formats are
 ``plain``, ``markdown``, or ``xml``. Custom classes may reuse these views.
 """
 
-from pathlib import Path
-from dataclasses import fields
 import base64
 import io
+from collections import OrderedDict
+from dataclasses import fields
+from pathlib import Path
 
 from collectra.utils import load_class_from_string
+
+# Encoding a page-sized image as PNG takes over half a second, and the same
+# view is asked for every time a tab or panel is switched back to. Keep the
+# few most recent encodings (each can be several MB), keyed on everything the
+# preview depends on, so a changed file or a different view is never reused.
+_PREVIEW_CACHE_SIZE = 6
+_preview_cache: "OrderedDict[tuple, tuple[str, int]]" = OrderedDict()
 
 
 class DisplayContext:
@@ -149,6 +157,7 @@ class DisplayContext:
 
     def image(self, item):
         from PIL import Image as PILImage
+
         from collectra.types.images import (
             ImageSegmentation,
             image_channel_count,
@@ -157,6 +166,11 @@ class DisplayContext:
 
         path = item.get_path()
         view_count = 1
+        key = self._preview_key(item, path)
+        if key in _preview_cache:
+            _preview_cache.move_to_end(key)
+            source, view_count = _preview_cache[key]
+            return self._image_view(item, path, source, view_count)
         if path.suffix.lower() in {".tif", ".tiff"}:
             import numpy as np
             from tifffile import TiffFile
@@ -205,9 +219,37 @@ class DisplayContext:
             preview = preview.crop(item.display_bounds()).rotate(
                 item.orientation.to_degree(), expand=True
             )
+        source = self.publish_image(preview)
+        if key is not None:
+            _preview_cache[key] = (source, view_count)
+            while len(_preview_cache) > _PREVIEW_CACHE_SIZE:
+                _preview_cache.popitem(last=False)
+        return self._image_view(item, path, source, view_count)
+
+    def _preview_key(self, item, path):
+        """What the encoded preview depends on, or None when it is not cached
+        (segmentations also depend on their mask file)."""
+        from collectra.types.images import ImageSegmentation
+
+        if isinstance(item, ImageSegmentation):
+            return None
+        try:
+            stat = path.stat()
+            return (
+                str(path.resolve()),
+                stat.st_mtime_ns,
+                stat.st_size,
+                self.rgb_view,
+                tuple(item.display_bounds()),
+                item.orientation.to_degree(),
+            )
+        except OSError:
+            return None
+
+    def _image_view(self, item, path, source, view_count):
         return {
             "kind": "image",
-            "source": self.publish_image(preview),
+            "source": source,
             "image_path": str(path),
             "target_id": item.id,
             "annotations": self.annotations(item),
