@@ -7,6 +7,7 @@ OCRSuraya
 ``collectra.OCRSuraya`` recognizes text in images or crops and returns ``Text``
 artefacts. The class name is spelled ``OCRSuraya``; the underlying backend is
 Surya. Install its ``surya-ocr`` package; weights load on first use.
+See :doc:`../licensing` for version-dependent code and model-weight terms.
 
 .. code-block:: yaml
 

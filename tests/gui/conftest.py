@@ -7,6 +7,14 @@ import pytest
 from collectra.gui.data_display import CollectraGraph
 
 
+@pytest.fixture(autouse=True)
+def isolated_gui_session_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "collectra.gui.session_cache.user_cache_dir",
+        lambda *args, **kwargs: str(tmp_path / "user-cache"),
+    )
+
+
 @pytest.fixture
 def sample_yaml_data():
     """Minimal valid YAML structure for testing."""

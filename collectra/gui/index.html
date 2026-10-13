@@ -553,6 +553,12 @@
             max-height: 320px;
             overflow-y: auto;
         }
+        .modal-popup.git-viewer { width: min(760px, 90vw); max-width: 90vw; min-width: 0; }
+        .git-repository { overflow-wrap: anywhere; font-size: 12px; opacity: 0.8; }
+        .git-actions { justify-content: flex-start; flex-wrap: wrap; }
+        .git-output { margin-top: 16px; max-height: 55vh; min-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--app-fg-bright, #e6e6e6); }
+        .git-message { width: 100%; box-sizing: border-box; background: var(--app-bg, #1a1a1a); color: var(--app-fg-bright, #e6e6e6); border: 1px solid var(--app-border, #3c3c3c); padding: 8px; }
+        #gitCommitModal { z-index: 1001; }
         .modal-popup.wide {
             min-width: 320px;
             max-width: 520px;
@@ -564,6 +570,8 @@
             margin-bottom: 12px;
         }
         .modal-close {
+            color: var(--app-fg-bright, #e6e6e6);
+            opacity: 1;
             background: none;
             border: none;
             font-size: 18px;
@@ -1476,30 +1484,23 @@
             filter: brightness(1.1);
         }
     </style>
-    <link rel="stylesheet" 
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" 
-      integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" 
-      crossorigin="anonymous" 
-      referrerpolicy="no-referrer" /> 
-    <script src="https://cdn.jsdelivr.net/npm/openseadragon@5.0/build/openseadragon/openseadragon.min.js"></script>
-    <script
-        src="https://cdn.jsdelivr.net/npm/@annotorious/openseadragon@latest/dist/annotorious-openseadragon.js"></script>
-    <!-- Vendored, not CDN — file:// pages loading this cross-origin
-         stylesheet get it served as an opaque/wrong-MIME response under
-         strict MIME checking, which the browser then refuses to apply. -->
-    <link
-        rel="stylesheet"
-        href="annotorious-openseadragon.css">
-        <!-- DAG dependencies -->
-    <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
-    <link rel="stylesheet" href="https://bootswatch.com/5/solar/bootstrap.min.css">
-    <!-- Markdown / TEI editor -->
-    <link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
-    <script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
+    <!-- Pinned, bundled GUI dependencies; no network access required. -->
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+    <script src="openseadragon/openseadragon.min.js"></script>
+    <script src="vendor/annotorious/dist/annotorious-openseadragon.js"></script>
+    <link rel="stylesheet" href="vendor/annotorious/dist/annotorious-openseadragon.css">
+    <script src="vendor/cytoscape/dist/cytoscape.min.js"></script>
+    <script src="vendor/dagre/dist/dagre.min.js"></script>
+    <script src="vendor/cytoscape-dagre/cytoscape-dagre.js"></script>
+    <link rel="stylesheet" href="vendor/source-sans-pro/source-sans-pro.css">
+    <link rel="stylesheet" href="vendor/bootswatch/dist/solar/bootstrap.min.css">
+    <link rel="stylesheet" href="vendor/easymde/dist/easymde.min.css">
+    <script src="vendor/easymde/dist/easymde.min.js"></script>
     <!-- Pure node-click dispatch logic, unit tested in tests-js/ -->
     <script src="artefactDisplay.js"></script>
+    <script src="nodeColors.js"></script>
+    <script src="shiftDraw.js"></script>
+    <script src="sourceControl.js"></script>
     <script src="rgbViewControls.js"></script>
     <!-- Pure collapse/expand state for sidebar, right panel, and DAG toggles, unit tested in tests-js/ -->
     <script src="collapsibleRegion.js"></script>
@@ -1579,6 +1580,15 @@
                 <button class="panel-toolbar-btn" id="newPanelToolbarBtn" onclick="showSplitViewPopover(event)" title="New Panel" aria-label="New panel">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
                         <path d="M8 2.5v11M2.5 8h11"/>
+                    </svg>
+                </button>
+                <button class="panel-toolbar-btn" id="gitToolbarBtn" title="Source control" aria-label="Source control">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                        <rect x="4" y="4" width="16" height="16" rx="1.5" transform="rotate(45 12 12)" fill="currentColor" stroke="none"/>
+                        <path d="M8 5v8l5 5M8 8h5v5" stroke="var(--app-surface, #1f1f1f)"/>
+                        <circle cx="8" cy="8" r="1.3" fill="var(--app-surface, #1f1f1f)" stroke="none"/>
+                        <circle cx="13" cy="13" r="1.3" fill="var(--app-surface, #1f1f1f)" stroke="none"/>
+                        <circle cx="13" cy="18" r="1.3" fill="var(--app-surface, #1f1f1f)" stroke="none"/>
                     </svg>
                 </button>
                 <div class="lineage-popover" id="ancestorsPopover" style="display:none;">
@@ -1663,6 +1673,36 @@
                     </button>
                 </div>
             </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="gitModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="gitTitle">
+        <div class="modal-popup git-viewer">
+            <div class="modal-header">
+                <h3 id="gitTitle">Source control</h3>
+                <button class="modal-close" id="gitClose" aria-label="Close source control">×</button>
+            </div>
+            <div id="gitRepository" class="git-repository"></div>
+            <div class="modal-buttons git-actions">
+                <button class="btn-cancel" data-git-action="status">Status</button>
+                <button class="btn-cancel" data-git-action="pull">Pull</button>
+                <button class="btn-cancel" data-git-action="add">Add</button>
+                <button class="btn-cancel" data-git-action="commit">Commit</button>
+                <button class="btn-cancel" data-git-action="push">Push</button>
+            </div>
+            <pre id="gitOutput" class="git-output" role="status" aria-live="polite"></pre>
+        </div>
+    </div>
+    <div id="gitCommitModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="gitCommitTitle">
+        <div class="modal-popup">
+            <h3 id="gitCommitTitle">Commit changes</h3>
+            <label class="modal-field-label" for="gitCommitMessage">Message</label>
+            <textarea id="gitCommitMessage" class="git-message" rows="4" placeholder="Describe your changes"></textarea>
+            <div id="gitCommitError" class="modal-field-error" role="alert"></div>
+            <div class="modal-buttons">
+                <button class="btn-cancel" id="gitCommitCancel">Cancel</button>
+                <button class="btn-confirm" id="gitCommitConfirm" disabled>Commit</button>
             </div>
         </div>
     </div>
@@ -1936,8 +1976,7 @@
         let currentImagePath = "";
 
 
-        const annotation_color = ['#FD3216', '#00FE35', '#6A76FC', '#FED4C4', '#FE00CE', '#0DF9FF', '#F6F926', '#FF9616', '#479B55', '#EEA6FB', '#DC587D', '#D626FF', '#6E899C', '#00B5F7', '#B68E00', '#C9FBE5', '#FF0092', '#22FFA7', '#E3EE9E', '#86CE00', '#BC7196', '#7E7DCD', '#FC6955', '#E48F72'];
-        const current_annotation_color_index = 0;
+
 
         function formatLabelCounts(labelCounts) {
             const entries = Object.entries(labelCounts);
@@ -2448,7 +2487,10 @@
 
             folderInfoEl.innerHTML = `<strong>Parent folder:</strong> ${result.folders.length} files found`;
             await loadAndRenderDag();    // DAG  — same time as sidebar
-            await loadCollectraFolder(0);
+            const activeIndex = Number.isInteger(result.active_index)
+                && result.active_index >= 0 && result.active_index < result.folders.length
+                ? result.active_index : 0;
+            await loadCollectraFolder(activeIndex);
         }
 
         async function selectCollectra() {
@@ -2561,32 +2603,11 @@
                     document.getElementById('yamlPath').value = result.yaml_path;
                     selectedYamlPath = result.yaml_path;
                     await loadYaml();
-
-                    // Fetch and display label statistics
-                    const stats = await window.pywebview.api.get_label_statistics();
-                    if (stats.success && Object.keys(stats.label_counts).length > 0) {
-                        infoHtml += '<strong>Labels:</strong><br>';
-                        infoHtml += formatLabelCounts(stats.label_counts);
-                    } else {
-                        infoHtml += '<span class="file-missing">No annotations found</span>';
-                    }
                 }
 
-                // Show the selected page's artefact (image + bounding boxes)
-                // in the bottom panel, which is always visible so
-                // OpenSeadragon measures a real container size right away.
-                // The top panel's own copy is NOT eagerly created here —
-                // its content container is display:none at this point
-                // (its default active tab is DAG), and an
-                // OpenSeadragon/canvas viewer created against a
-                // zero-size, hidden container measures 0×0 and never
-                // recovers later even once the container becomes visible.
-                // PanelController.showNode() creates it lazily instead,
-                // the first time a panel actually needs to show it, when
-                // its container is guaranteed to already be on-screen.
-                if (result.image_path) {
-                    await panelControllers.bottom.renderPageArtefact(result.image_path);
-                }
+                // Statistics can run while the selected artefact loads.
+                const statsPromise = window.pywebview.api.get_label_statistics()
+                    .catch(() => ({success: false}));
 
                 // Grey out and disable DAG nodes that don't belong to this page,
                 // and cache their real types/ids for the hover tooltip and the
@@ -2619,7 +2640,9 @@
                     Object.values(panelControllers).forEach((c) => {
                         c.panel.pruneTabs(isStillValid);
                         c.renderTabStripView();
-                        c.showActiveTabContent();
+                        // The bottom panel is rendered once below, after choosing
+                        // the carried field or root for this page.
+                        if (c !== panelControllers.bottom) c.showActiveTabContent();
                     });
                 }
 
@@ -2652,6 +2675,13 @@
                     if (nextNodeId) await panelControllers.bottom.openOrActivateTab(nextNodeId);
                 }
 
+                const stats = await statsPromise;
+                if (stats.success && Object.keys(stats.label_counts).length > 0) {
+                    infoHtml += '<strong>Labels:</strong><br>';
+                    infoHtml += formatLabelCounts(stats.label_counts);
+                } else {
+                    infoHtml += '<span class="file-missing">No annotations found</span>';
+                }
                 folderInfoEl.innerHTML = infoHtml;
                 updateNavButtons();
 
@@ -2951,7 +2981,7 @@
                     await new Promise((resolve) => {
                         viewer = OpenSeadragon({
                             element: container,
-                            prefixUrl: "https://cdn.jsdelivr.net/npm/openseadragon@5.0/build/openseadragon/images/",
+                            prefixUrl: "openseadragon/images/",
                             // Default drawer is WebGL; every new instance opens a fresh
                             // WebGL context, and WebKit (pywebview's engine on macOS)
                             // doesn't reliably reclaim one the instant destroy() runs —
@@ -2976,22 +3006,11 @@
                     });
 
                     anno = AnnotoriousOSD.createOSDAnnotator(viewer, {
-                        drawingEnabled: true,                                         
+                        drawingEnabled: true,
+                        drawingMode: 'drag',
                     });    
                     
-                    anno.setStyle((annotation, state) => {
-                        const idx = annotation.bodies[0]?.id || ' ';
-                        const label = idx.split("-")[0] || '';      
-                        
-                        color = label? annotation_color[label.charCodeAt(0) % annotation_color.length] : '#FF0000';
-
-                        return {
-                            fill: color,
-                            fillOpacity: 0.1,
-                            stroke: color,
-                            strokeOpacity: 1
-                        }
-                    });                        
+                    anno.setStyle(cropAnnotationStyle);
 
                     anno.on('selectionChanged', function(annotations, originalEvent){
                         // Grid removed — selection sync dormant until editing is rebuilt
@@ -3105,6 +3124,7 @@
         // Geometry follows OSD 5's nav PNGs (35x34, ~27px disc at 18,16.5).
         // Accent and armed fills read --app-primary/--app-primary-dark from the
         // live theme, so a project's theme.css carries through.
+        let imageRotationBusy = false;
         let _drawBoxImgs = null;
         function drawBoxImages() {
             if (_drawBoxImgs) return _drawBoxImgs;
@@ -3392,6 +3412,8 @@
         }
 
         PanelController.prototype.clearPageArtefact = function() {
+            this._shiftDrawCleanup?.();
+            this._shiftDrawCleanup = null;
             this.displayView = null;
             this._artefactToken = {}; // invalidate any renderPageArtefact still mid-await for this panel
             if (this.pageAnno)   { try { this.pageAnno.destroy(); }   catch (e) {} this.pageAnno = null; }
@@ -3406,7 +3428,7 @@
         PanelController.prototype.flushAnnotationUpdate = function() {
             if (!this._updateAnnotationFlush) return;
             clearTimeout(this._updateAnnotationTimer);
-            this._updateAnnotationFlush();
+            return this._updateAnnotationFlush();
         };
 
         PanelController.prototype.syncDrawBoxButton = function() {
@@ -3464,7 +3486,7 @@
             if (this.el.headerType) this.el.headerType.textContent = '';
         };
 
-        PanelController.prototype.renderPageArtefact = async function(imagePath, view = null) {
+        PanelController.prototype.renderPageArtefact = async function(imagePath, view = null, identity = null) {
             const display     = this.el.imageDisplay;
             const placeholder = this.el.placeholder;
             const contentDiv  = this.el.contentDiv;
@@ -3481,6 +3503,10 @@
             if (placeholder) placeholder.style.display = 'none';
             if (contentDiv)  contentDiv.style.display  = 'none';
             this.clearHeader();
+            if (identity) {
+                this.el.headerId.textContent = identity.id;
+                this.el.headerType.textContent = identity.type;
+            }
             display.style.display = 'block';
 
             try {
@@ -3502,7 +3528,7 @@
                 await new Promise((resolve, reject) => {
                     this.pageViewer = OpenSeadragon({
                         element: display,
-                        prefixUrl: "https://cdn.jsdelivr.net/npm/openseadragon@5.0/build/openseadragon/images/",
+                        prefixUrl: "openseadragon/images/",
                         drawer: 'canvas', // avoids exhausting WebKit's WebGL context limit across page switches
                         tileSources: { type: 'image', url: imgResult.data },
                         gestureSettingsMouse: { clickToZoom: false, dblClickToZoom: false },
@@ -3520,7 +3546,7 @@
                     this.syncDrawBoxButton();
                 });
 
-                this.pageAnno = AnnotoriousOSD.createOSDAnnotator(this.pageViewer, { drawingEnabled: false });
+                this.pageAnno = AnnotoriousOSD.createOSDAnnotator(this.pageViewer, { drawingEnabled: false, drawingMode: 'drag' });
 
                 const drawBoxBtn = createDrawBoxButton(() => {
                     if (this.pageViewer.isFullPage()) return; // live check
@@ -3536,27 +3562,55 @@
                 }
                 this.drawBoxBtn = drawBoxBtn;
                 this.syncDrawBoxButton();
-
-                this.pageAnno.setStyle((annotation, state) => {
-                    const idx = annotation.bodies[0]?.id || ' ';
-                    const label = cropBaseName(idx);
-                    const selected = state && state.selected;
-                    // Only the selected box gets its real per-label colour — every
-                    // other box recedes to a neutral grey (same muted tone already
-                    // used for DAG edges) so colour itself signals "this is the one",
-                    // instead of every field competing with its own distinct hue.
-                    const neutral = '#839496';
-                    const color = selected
-                        ? (label ? annotation_color[label.charCodeAt(0) % annotation_color.length] : '#FF0000')
-                        : neutral;
-                    return {
-                        fill: color,
-                        fillOpacity: selected ? 0.35 : 0.08,
-                        stroke: color,
-                        strokeOpacity: selected ? 1 : 0.6,
-                        strokeWidth: selected ? 4 : 1.5,
-                    };
+                this._shiftDrawCleanup = mountShiftDraw({
+                    element: display, document, window,
+                    canDraw: () => {
+                        this.syncDrawBoxButton();
+                        return this._artefactToken === token && !drawBoxBtn.element.disabled
+                            && !imageRotationBusy && !document.querySelector('.modal-overlay.visible');
+                    },
+                    isDrawing: () => this.pageAnno.isDrawingEnabled(),
+                    setDrawing: enabled => this.pageAnno.setDrawingEnabled(enabled),
+                    sync: () => this.syncDrawBoxButton(),
                 });
+                if (view.can_rotate) {
+                    const rotateIcon = 'data:image/svg+xml,' + encodeURIComponent(
+                        '<svg xmlns="http://www.w3.org/2000/svg" width="35" height="34" viewBox="0 0 35 34">' +
+                        '<circle cx="18" cy="16.5" r="13.5" fill="#ececec" stroke="#b6b6b6"/>' +
+                        '<path d="M24 14a7 7 0 1 0 0 6M24 9v6h-6" fill="none" stroke="#333" stroke-width="2"/>' +
+                        '</svg>');
+                    const rotateButton = new OpenSeadragon.Button({
+                        tooltip: 'Rotate 90° clockwise',
+                        srcRest: rotateIcon, srcGroup: rotateIcon, srcHover: rotateIcon, srcDown: rotateIcon,
+                        onClick: async () => {
+                            if (this._artefactToken !== token || imageRotationBusy) return;
+                            imageRotationBusy = true;
+                            rotateButton.disable();
+                            try {
+                                await Promise.all(Object.values(panelControllers).map(controller => controller.flushAnnotationUpdate()));
+                                if (this._artefactToken !== token) return;
+                                const result = await window.pywebview.api.rotate_image_clockwise(view.target_id);
+                                if (!result.success) throw new Error(result.error);
+                                await Promise.all(Object.values(panelControllers).map(async controller => {
+                                    const current = controller.displayView;
+                                    if (!current || !result.updated_ids.includes(current.target_id)) return;
+                                    const refreshed = await window.pywebview.api.get_artefact_display(current.target_id, current.rgb_view_index || 0);
+                                    if (!refreshed.success) throw new Error(refreshed.error);
+                                    if (controller.displayView === current) await controller.renderPageArtefact(current.image_path, refreshed.view, refreshed);
+                                }));
+                            } catch (error) {
+                                alert(error.message || String(error));
+                            } finally {
+                                imageRotationBusy = false;
+                                if (this._artefactToken === token) rotateButton.enable();
+                            }
+                        },
+                    });
+                    if (this.pageViewer.buttonGroup) this.pageViewer.addButton(rotateButton);
+                    else this.pageViewer.addControl(rotateButton.element, {anchor: OpenSeadragon.ControlAnchor.TOP_LEFT});
+                }
+
+                this.pageAnno.setStyle(cropAnnotationStyle);
 
                 // Hover tooltip; also feeds the right-click delete menu
                 // below — Annotorious's contextmenu event carries no
@@ -3641,10 +3695,9 @@
                 });
                 display.addEventListener('pointerup', () => this.flushAnnotationUpdate());
 
-                // Draw the page's ImageCrop bounding boxes.
-                const rowsResult = await window.pywebview.api.get_all_nodes_for_grid();
+                // The display response already contains these annotations.
+                await this.refreshPageAnnotations(null, view.annotations || []);
                 if (this._artefactToken !== token) return;
-                if (rowsResult.success) this.refreshPageAnnotations(rowsResult.rows);
 
                 const viewer = this.pageViewer;
                 mountRgbViewControls({
@@ -3679,12 +3732,14 @@
         // Redraws every ImageCrop row as an annotation on this panel's own
         // image — shared by the initial load and every create/update/
         // delete refresh, so they can't drift out of sync with each other.
-        PanelController.prototype.refreshPageAnnotations = async function(rows) {
+        PanelController.prototype.refreshPageAnnotations = async function(rows, initialAnnotations = null) {
             if (!this.pageAnno || !this.pageViewer || !this.displayView) return;
             const token = this._artefactToken;
-            const result = this.displayView.can_create_crop
-                ? await window.pywebview.api.get_display_annotations(this.displayView.target_id)
-                : {success: true, rows: this.displayView.annotations || []};
+            const result = initialAnnotations !== null
+                ? {success: true, rows: initialAnnotations}
+                : this.displayView.can_create_crop
+                    ? await window.pywebview.api.get_display_annotations(this.displayView.target_id)
+                    : {success: true, rows: this.displayView.annotations || []};
             if (token !== this._artefactToken || !result.success || !this.pageAnno) return;
             const imgW = this.pageViewer.world._contentSize.x;
             const imgH = this.pageViewer.world._contentSize.y;
@@ -4336,7 +4391,7 @@
             const elements = [
                 ...nodes.map(n => ({
                     group: 'nodes',
-                    data: { id: n.id, label: n.id.replace(/_/g, ' '), nodeType: n.nodeType, detail: n.detail, inputs: n.inputs, outputs: n.outputs, params: n.params },
+                    data: { nodeColor: nodeColor(n.id), id: n.id, label: n.id.replace(/_/g, ' '), nodeType: n.nodeType, detail: n.detail, inputs: n.inputs, outputs: n.outputs, params: n.params },
                 })),
                 ...edges.map((e, i) => ({
                     group: 'edges',
@@ -4354,9 +4409,9 @@
                     {
                         selector: 'node',
                         style: {
-                            'background-color': colors.salmon,
+                            'background-color': 'data(nodeColor)',
                             'label': 'data(label)',
-                            'color': colors.salmonFg,
+                            'color': '#22313b',
                             'text-valign': 'center',
                             'text-halign': 'center',
                             'font-family': '-apple-system, "Segoe UI", sans-serif',
@@ -4372,8 +4427,6 @@
                     {
                         selector: 'node[nodeType = "llm"], node[nodeType = "detector"], node[nodeType = "processor"]',
                         style: {
-                            'background-color': colors.blue,
-                            'color': colors.blueFg,
                             'shape': 'round-rectangle',
                             'height': 58,
                         }
@@ -5189,6 +5242,7 @@
                 // once, so a fixed id here would duplicate across the document.
                 textDisplay.innerHTML = `<div style="display:flex;align-items:center;justify-content:flex-end;padding:10px 12px 8px;"><button class="page-text-save btn btn-sm btn-primary" style="font-size:11px;">Save</button><span class="page-text-status" style="font-size:11px;margin-left:8px;color:var(--app-fg-muted, #586e75);"></span></div><textarea class="mde-textarea"></textarea>`;
                 this.easyMDE = new EasyMDE({
+                    autoDownloadFontAwesome: false,
                     element: textDisplay.querySelector('.mde-textarea'),
                     initialValue: text,
                     spellChecker: false,

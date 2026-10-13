@@ -10,6 +10,7 @@ JavaScript usage:
 import base64
 import enum
 import platform
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -49,6 +50,7 @@ class GUIBackend:
         Sets up the annotation graph, YAML path, and window reference.
         All values are initially None until load_yaml() is called.
         """
+        self._git_lock = threading.Lock()
         self._pipeline = pipeline
         self._collectra_file: CollectraFile | None = None
         self._graph: CollectraGraph | None = None
@@ -58,7 +60,64 @@ class GUIBackend:
         self._parent_folder: str | None = None
         self._global_labels: set[str] = set()
         self._global_label_counts: dict[str, int] = {}  # {label: total_count}
-        self._initial_items = self._load_input_paths(inputs) if inputs else None
+        from .session_cache import FolderSessionCache
+
+        pipeline_path = getattr(pipeline, "path", None)
+        self._session_cache = FolderSessionCache(pipeline_path) if pipeline_path else None
+        self._initial_items = (
+            self._load_input_paths(inputs) if inputs else self._restore_folder_session()
+        )
+
+    def _save_folder_session(self, folders=None) -> None:
+        if self._session_cache is not None:
+            paths = folders if folders is not None else [
+                folder["path"] for folder in self._collectra_folders
+            ]
+            self._session_cache.write([str(Path(path).resolve()) for path in paths])
+
+    def _restore_folder_session(self):
+        if self._session_cache is None:
+            return None
+        seen = set()
+        for value in self._session_cache.read():
+            try:
+                path = Path(value).resolve()
+                if path in seen or not path.is_dir():
+                    continue
+                scan = self._scan_collectra_folder(path)
+                if scan is None:
+                    continue
+                seen.add(path)
+                self._collectra_folders.append({"name": path.name, "path": str(path), **scan})
+            except (OSError, ValueError):
+                continue
+        self._save_folder_session()
+        if not self._collectra_folders:
+            return None
+        self._parent_folder = str(Path(self._collectra_folders[0]["path"]).parent)
+        active = self._session_cache.read_active()
+        active_index = next(
+            (index for index, folder in enumerate(self._collectra_folders)
+             if folder["path"] == active),
+            0,
+        )
+        return {
+            **self._folder_list_result(), "provided": True, "mode": "parent",
+            "active_index": active_index,
+        }
+
+    def git_action(self, action: str, message: str = "", repository: str = "") -> dict:
+        """Operate on the Git repository containing the active results file."""
+        from .source_control import run_git
+
+        if not self._yaml_path:
+            return {"success": False, "error": "Open a results folder first"}
+        if not self._git_lock.acquire(blocking=False):
+            return {"success": False, "error": "A Git operation is already running"}
+        try:
+            return run_git(Path(self._yaml_path).parent, action, message, repository)
+        finally:
+            self._git_lock.release()
 
     def get_initial_items(self) -> dict:
         """Return startup items once the JavaScript bridge is ready."""
@@ -104,6 +163,7 @@ class GUIBackend:
             if not matched:
                 raise ValueError(f"No GUI results found in: {path}")
         self._parent_folder = str(Path(self._collectra_folders[0]["path"]).parent)
+        self._save_folder_session()
         return {**self._folder_list_result(), "provided": True, "mode": "parent"}
 
     @property
@@ -282,6 +342,7 @@ class GUIBackend:
                     }
                 self._collectra_folders = []
                 self._parent_folder = str(selected_path.parent)
+                self._save_folder_session([selected_path])
                 return {
                     "success": True,
                     "mode": "single",
@@ -319,6 +380,7 @@ class GUIBackend:
                     }
                 )
 
+        self._save_folder_session()
         return self._folder_list_result()
 
     def _folder_list_result(self) -> dict:
@@ -412,8 +474,15 @@ class GUIBackend:
 
         folder = self._collectra_folders[page_index]
         try:
-            collectra_file = CollectraFile.from_data(Path(folder["path"]))
-            graph = CollectraGraph.from_collectra_file(collectra_file)
+            if (
+                self._graph is not None
+                and self._yaml_path is not None
+                and Path(self._yaml_path).resolve() == Path(folder["yaml_path"]).resolve()
+            ):
+                graph = self._graph
+            else:
+                collectra_file = CollectraFile.from_data(Path(folder["path"]))
+                graph = CollectraGraph.from_collectra_file(collectra_file)
             node_types: dict[str, str] = {}
             node_ids: dict[str, list[str]] = {}
             crop_labels = set()
@@ -501,6 +570,41 @@ class GUIBackend:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def rotate_image_clockwise(self, node_id: str) -> dict:
+        """Persist a clockwise quarter-turn for an image and descendant images."""
+        from collectra.types.images import Image, Orientation
+        from collectra.types.links import Link
+        from collectra.utils import load_class_from_string
+
+        changes = []
+        try:
+            context = self._display_context()
+            item = context.artefact(self._graph.resolve_id(node_id))
+            if isinstance(item, Link):
+                item = item.resolve()
+            if not isinstance(item, Image):
+                raise ValueError("Only image artefacts can be rotated")
+            pending, seen = [item.id], set()
+            while pending:
+                current = pending.pop()
+                if current in seen:
+                    continue
+                seen.add(current)
+                pending.extend(self._graph.children(current))
+                node = self._graph.get_node(current)
+                if node and issubclass(load_class_from_string(node.type), Image):
+                    orientation = Orientation.from_string(node.orientation)
+                    next_orientation = Orientation((orientation.value + 1) % 4).to_string()
+                    changes.append((node, node.orientation, next_orientation))
+            for node, previous, updated in changes:
+                node.orientation = updated
+            self._save_collectra_file()
+            return {"success": True, "updated_ids": [node.id for node, _, _ in changes]}
+        except Exception as error:
+            for node, previous, updated in changes:
+                node.orientation = previous
+            return {"success": False, "error": str(error)}
+
     def get_display_annotations(self, node_id: str) -> dict:
         try:
             context = self._display_context()
@@ -550,7 +654,12 @@ class GUIBackend:
             graph = CollectraGraph.from_collectra_file(collectra_file)
             self._collectra_file = collectra_file
             self._graph = graph
+            previous_path = self._yaml_path
             self._yaml_path = str(self._collectra_file.results_path)
+            if self._session_cache is not None and previous_path != self._yaml_path:
+                self._session_cache.write_active(str(self._collectra_file.results_path.parent.resolve()))
+            if not self._collectra_folders:
+                self._save_folder_session([self._collectra_file.results_path.parent])
 
             # Accumulate labels from this graph
             self._global_labels.update(self._graph.get_unique_labels())
@@ -1257,7 +1366,7 @@ def start(
     api = GUIBackend(pipeline, inputs=inputs)
     html_path = get_resource_path("index.html")
     window = webview.create_window(
-        title="Collectra Viewer",
+        title=pipeline.name,
         url=html_path,
         js_api=api,
         width=1200,

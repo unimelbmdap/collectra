@@ -79,7 +79,7 @@ Text and persistence
 --------------------
 
 Inline Text uses a plain text editor. If its serialized data references an
-existing file, the suffix chooses the editor: ``.md``/``.markdown`` for Markdown,
+existing file through ``path`` (or a legacy ``data`` reference), the suffix chooses the editor: ``.md``/``.markdown`` for Markdown,
 ``.xml`` for XML, and plain text otherwise. Node labels do not select the format.
 Saving writes to that referenced file and retains its reference in results.yaml.
 

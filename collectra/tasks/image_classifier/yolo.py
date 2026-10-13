@@ -17,7 +17,7 @@ from collectra.utils import change_dir
 from collectra.logger import get_logger
 from collectra.utils import threading_locked
 from ..machine_learning.training import print_distribution_table, run_training_command
-from ..machine_learning.yolo import YOLOTask
+from ..machine_learning.yolo import YOLOTask, get_yolo_class
 from .training import prepare_classification_inputs
 
 if TYPE_CHECKING:
@@ -272,7 +272,7 @@ class ImageClassifierYOLO(YOLOTask):
         )
 
     def _train(self, *images: Image, **kwargs) -> ClassifyMetrics | None:
-        from ultralytics.models import YOLO
+        YOLO = get_yolo_class()
 
         if kwargs.get("model"):
             self.model = kwargs["model"]
@@ -314,7 +314,7 @@ class ImageClassifierYOLO(YOLOTask):
         kwargs: dict,
         fold_count: int | None = None,
     ) -> ClassifyMetrics:
-        from ultralytics.models import YOLO
+        YOLO = get_yolo_class()
 
         if not isinstance(self.model, YOLO):
             raise ValueError("Expected model to be a YOLO instance for training.")

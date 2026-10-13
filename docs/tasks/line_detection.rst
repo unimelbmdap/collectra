@@ -30,6 +30,7 @@ LineDetectorSurya
 -----------------
 
 Uses the Surya text-detection model. Requires the Surya backend and its weights.
+See :doc:`../licensing` for version-dependent code and model-weight terms.
 
 .. code-block:: yaml
 

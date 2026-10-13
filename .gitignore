@@ -35,6 +35,9 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+# The GUI vendors browser-ready distributions for offline use.
+!collectra/gui/vendor/**/dist/
+!collectra/gui/vendor/**/dist/**
 downloads/
 eggs/
 .eggs/
@@ -206,4 +209,7 @@ evaluate.sh
 valentin.sh
 docs/old_readme.rst
 pyproject-cappa.toml
+docs/rfdetr_multichannel_review.md
 adapt-rfdetr.py
+adapt-rfdetr-feature-fusion.py
+adapt-yolo-feature-fusion.py

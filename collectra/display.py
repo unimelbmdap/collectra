@@ -28,7 +28,7 @@ class DisplayContext:
         return path if path.is_absolute() else self.directory / path
 
     def artefact(self, node_id):
-        from collectra.types.images import Image
+        from collectra.types.images import Image, ImageSegmentation
         from collectra.types.links import Link
         from collectra.types.texts import Text
 
@@ -41,10 +41,14 @@ class DisplayContext:
             record["parents"] = [record["parents"]]
         if issubclass(cls, Image):
             record["data"] = self.path(record.get("data", record.get("path", "")))
+        if issubclass(cls, ImageSegmentation):
+            record["mask"] = self.path(record.get("mask", ""))
         elif issubclass(cls, Text):
             source = self.text_path(node_id)
             if source:
-                record["data"] = source
+                if "path" not in record:
+                    record.pop("data", None)
+                record["path"] = source
         accepted = {f.name for f in fields(cls) if f.init}
         item = cls(**{k: v for k, v in record.items() if k in accepted})
         self.instances[node_id] = item
@@ -53,7 +57,8 @@ class DisplayContext:
         return item
 
     def text_path(self, node_id):
-        value = self.records[node_id].get("data", "")
+        record = self.records[node_id]
+        value = record.get("path", record.get("data", ""))
         if not isinstance(value, (str, Path)) or not value:
             return None
         try:
@@ -144,7 +149,11 @@ class DisplayContext:
 
     def image(self, item):
         from PIL import Image as PILImage
-        from collectra.types.images import image_channel_count, read_tiff_channels
+        from collectra.types.images import (
+            ImageSegmentation,
+            image_channel_count,
+            read_tiff_channels,
+        )
 
         path = item.get_path()
         view_count = 1
@@ -187,10 +196,15 @@ class DisplayContext:
             if self.rgb_view:
                 raise ValueError("This image has only one RGB view")
             with PILImage.open(path) as source:
-                preview = source.convert("RGB")
-        preview = preview.crop(item.display_bounds()).rotate(
-            item.orientation.to_degree(), expand=True
-        )
+                preview = source.convert(
+                    "RGBA" if isinstance(item, ImageSegmentation) else "RGB"
+                )
+        if isinstance(item, ImageSegmentation):
+            preview = item.masked_pil(preview)
+        else:
+            preview = preview.crop(item.display_bounds()).rotate(
+                item.orientation.to_degree(), expand=True
+            )
         return {
             "kind": "image",
             "source": self.publish_image(preview),
@@ -198,6 +212,7 @@ class DisplayContext:
             "target_id": item.id,
             "annotations": self.annotations(item),
             "can_create_crop": True,
+            "can_rotate": True,
             "rgb_view_index": self.rgb_view,
             "rgb_view_count": view_count,
         }

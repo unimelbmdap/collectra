@@ -553,3 +553,19 @@ def test_epoch_metrics_cover_all_batches(torch_backend, monkeypatch, mapping_bat
     assert metrics["loss"] == pytest.approx(
         torch.nn.functional.cross_entropy(logits, labels).item()
     )
+
+
+def test_zero_validation_accuracy_still_saves_best_checkpoint(
+    tmp_path, tiny_backend, monkeypatch
+):
+    task = ImageClassifierTorchvision("classifier")
+    monkeypatch.setattr(task, "_epoch", lambda *args: {
+        "loss": 1.0, "accuracy": 0.0, "top5_accuracy": 1.0,
+    })
+    result = task._train(
+        *make_inputs(tmp_path), base_folder=tmp_path, log="run", epochs=1,
+        validation="validation", exclude="excluded", device="cpu", workers=0,
+        wandb=False, batch=2,
+    )
+    assert (result.save_dir / "weights" / "best.pt").is_file()
+    assert result.results_dict["val_accuracy"] == 0.0

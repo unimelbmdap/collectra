@@ -2,7 +2,7 @@
 
 RF-DETR loads checkpoint weights into a 3-channel model and only afterwards
 widens the input layer to ``num_channels``, so a checkpoint whose input layer is
-already wider (e.g. one written by ``adapt-rfdetr.py`` or by multi-channel
+already wider (e.g. one written by the ``adapt-input-channels`` task command or by multi-channel
 training) cannot be loaded through ``pretrain_weights``. Its Lightning training
 module also never widens the input layer at all.
 
@@ -93,7 +93,11 @@ def sync_channels(detector) -> int:
     Wrappers without a DINOv2 patch projection (e.g. test doubles) are left unchanged.
     """
     try:
-        channels = _patch_embeddings(detector.model.model).projection.in_channels
+        encoder = detector.model.model.backbone[0].encoder
+        channels = (
+            3 * encoder.num_views if hasattr(encoder, "fusion_spec")
+            else _patch_embeddings(detector.model.model).projection.in_channels
+        )
     except (AttributeError, IndexError, TypeError):
         return getattr(getattr(detector, "model_config", None), "num_channels", 3)
     detector.model_config.num_channels = channels
@@ -107,6 +111,10 @@ def sync_channels(detector) -> int:
 
 def _channel_aware(load_pretrain_weights, widen_after: bool):
     def load(nn_model, model_config, *args, **kwargs):
+        # Feature fusion processes each view with an RGB projection. Its builder
+        # installs the fusion modules before loading; never widen that projection.
+        if hasattr(nn_model.backbone[0].encoder, "fusion_spec"):
+            return load_pretrain_weights(nn_model, model_config, *args, **kwargs)
         stored = checkpoint_channels(model_config.pretrain_weights)
         if stored != 3:
             set_input_channels(nn_model, stored)

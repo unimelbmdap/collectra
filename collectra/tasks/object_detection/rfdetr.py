@@ -8,6 +8,7 @@ from typing import Annotated, TYPE_CHECKING
 from cappa import Arg
 
 from collectra.cli import command
+from .adaptation_commands import RFDETRAdaptationCommands
 from collectra.types.images import (
     Image,
     ImageCrop,
@@ -65,6 +66,20 @@ def _backend_class(name: str):
 def load_rfdetr_model(model_path: str | Path) -> RFDETR:
     from .rfdetr_channels import multichannel_checkpoints, sync_channels
 
+    # Fusion checkpoints retain a three-channel projection but consume many
+    # RGB views. Ordinary RF-DETR loading would silently discard fusion weights.
+    import torch
+
+    try:
+        checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
+    except Exception:
+        checkpoint = {}
+    if "backbone.0.encoder.fusion_spec" in checkpoint.get("model", {}):
+        from .rfdetr_feature_fusion import load_adapted_model
+
+        return load_adapted_model(model_path)
+    del checkpoint
+
     errors = []
     try:
         # Resolves the model size from checkpoint metadata. The loader widens
@@ -95,7 +110,7 @@ def load_rfdetr_model(model_path: str | Path) -> RFDETR:
     logger.error("Failed to load RF-DETR model from %s. Errors: %s", model_path, errors)
 
 
-class ObjectDetectionRFDETR(Task):
+class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
     """RF-DETR task backed by the Roboflow rfdetr package."""
 
     model: str | Path | object | None
@@ -558,9 +573,10 @@ class ObjectDetectionRFDETR(Task):
             from .rfdetr_channels import require_multichannel_rfdetr
 
             require_multichannel_rfdetr()
-        if has_tiffs and params["augmentation_backend"] == "cpu":
-            # "cpu" resolves to Albumentations when it is installed, which
-            # round-trips images through PIL and cannot keep extra channels.
+        if has_tiffs and params["augmentation_backend"] != "torchvision":
+            # Albumentations round-trips through PIL; the GPU path uses
+            # three-channel normalization outside our dataset patch. "auto"
+            # can select either path, so TIFFs must explicitly use torchvision.
             logger.info("TIFF inputs: using the torchvision augmentation backend")
             params["augmentation_backend"] = "torchvision"
 
@@ -582,12 +598,12 @@ class ObjectDetectionRFDETR(Task):
         with open(weights_dir / "classes.json", "w") as f:
             json.dump(classes_metadata, f, indent=2)
 
-        # RF-DETR saves checkpoints as checkpoint_best_regular.pth
-        # Copy to best.pt for consistency with DETR/YOLO pattern
+        # RF-DETR's total checkpoint selects the validation winner across
+        # regular and EMA weights. Prefer it so best.pt keeps that winner.
         best_pt = weights_dir / "best.pt"
         for candidate in [
-            weights_dir / "checkpoint_best_regular.pth",
             weights_dir / "checkpoint_best_total.pth",
+            weights_dir / "checkpoint_best_regular.pth",
         ]:
             if candidate.exists():
                 shutil.copy2(candidate, best_pt)

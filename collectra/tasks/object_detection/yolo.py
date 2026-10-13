@@ -9,6 +9,7 @@ from typing import Annotated, TYPE_CHECKING
 from cappa import Arg
 
 from collectra.cli import command
+from .adaptation_commands import YOLOAdaptationCommands
 from collectra.types.images import (
     Image,
     ImageCrop,
@@ -24,7 +25,7 @@ from ..machine_learning.training import (
     print_distribution_table,
     run_training_command,
 )
-from ..machine_learning.yolo import YOLOTask
+from ..machine_learning.yolo import YOLOTask, get_yolo_class
 
 if TYPE_CHECKING:
     from ultralytics.engine.results import Results
@@ -64,7 +65,7 @@ class DetectionResult:
         return best_result
 
 
-class ObjectDetectionYOLO(YOLOTask):
+class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
     singletons: bool = False
     imgsz: int | None = None
 
@@ -103,7 +104,7 @@ class ObjectDetectionYOLO(YOLOTask):
         model: str | Path | None = None,
         imgsz: int | None = None,
         **kwargs,
-    ) -> list[Image]:
+    ) -> list[ImageCrop]:
         """Run object detection inference on the provided Image.
 
         This method performs object detection on the provided input image
@@ -155,10 +156,14 @@ class ObjectDetectionYOLO(YOLOTask):
                 for layer in self.model.model.modules()
                 if isinstance(layer, torch.nn.Conv2d)
             )
-            if pixels.shape[2] != first_conv.in_channels:
+            expected_channels = first_conv.in_channels
+            model_config = getattr(self.model.model, "yaml", {})
+            if "feature_fusion" in model_config:
+                expected_channels = model_config["channels"]
+            if pixels.shape[2] != expected_channels:
                 raise ValueError(
                     f"{image.get_path()}: {pixels.shape[2]} image channels, "
-                    f"but the detection model expects {first_conv.in_channels}"
+                    f"but the detection model expects {expected_channels}"
                 )
             # Ultralytics expects BGR for three-channel arrays, but preserves
             # channel order for multispectral arrays. Keep its usual resizing,
@@ -186,7 +191,7 @@ class ObjectDetectionYOLO(YOLOTask):
             )
             results = results[keep]
 
-        detections: list[Image] = []
+        detections: list[ImageCrop] = []
 
         if results.boxes is None or len(results.boxes) == 0:
             return detections
@@ -582,7 +587,7 @@ class ObjectDetectionYOLO(YOLOTask):
     def _train(
         self, *images: ImageCrop, **kwargs
     ) -> DetMetrics | ClassifyMetrics | None:
-        from ultralytics.models import YOLO
+        YOLO = get_yolo_class()
 
         if kwargs.get("model"):
             self.model = kwargs["model"]
@@ -616,7 +621,7 @@ class ObjectDetectionYOLO(YOLOTask):
         kwargs: dict,
         fold_count: int | None = None,
     ) -> DetMetrics | ClassifyMetrics:
-        from ultralytics.models import YOLO
+        YOLO = get_yolo_class()
 
         if not isinstance(self.model, YOLO):
             raise ValueError("Expected model to be a YOLO instance for training.")
@@ -643,7 +648,15 @@ class ObjectDetectionYOLO(YOLOTask):
         return results
 
     def _preview_assets(self, log: Path, classes: list[str]) -> None:
-        from drawyolo.draw import draw_box_on_image_with_labels
+        try:
+            from drawyolo.draw import draw_box_on_image_with_labels
+        except ModuleNotFoundError as error:
+            if error.name != "drawyolo":
+                raise
+            raise ImportError(
+                'YOLO previews require drawyolo. Install with: '
+                'pip install "collectra[yolo]"'
+            ) from error
 
         preview_dir = log / "preview"
         preview_dir.mkdir(exist_ok=True)

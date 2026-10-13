@@ -14,7 +14,7 @@ it('routes custom image types and crops to the same OpenSeadragon view', async (
         const controller = panel();
         const view = {kind: 'image', source: 'data:image/png;base64,abc', target_id: 'crop', annotations: []};
         await displayArtefact(controller, {id: 'link', type, view});
-        expect(controller.renderPageArtefact).toHaveBeenCalledWith(undefined, view);
+        expect(controller.renderPageArtefact).toHaveBeenCalledWith(undefined, view, {id: 'link', type, view});
     }
 });
 

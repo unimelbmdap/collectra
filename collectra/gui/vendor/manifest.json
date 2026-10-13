@@ -1,0 +1,98 @@
+[
+  {
+    "package": "@fortawesome/fontawesome-free",
+    "version": "6.4.0",
+    "license": "(CC-BY-4.0 AND OFL-1.1 AND MIT)",
+    "source": "https://registry.npmjs.org/@fortawesome/fontawesome-free/-/fontawesome-free-6.4.0.tgz",
+    "files": [
+      "LICENSE.txt",
+      "css/all.min.css",
+      "webfonts/fa-brands-400.ttf",
+      "webfonts/fa-brands-400.woff2",
+      "webfonts/fa-regular-400.ttf",
+      "webfonts/fa-regular-400.woff2",
+      "webfonts/fa-solid-900.ttf",
+      "webfonts/fa-solid-900.woff2",
+      "webfonts/fa-v4compatibility.ttf",
+      "webfonts/fa-v4compatibility.woff2"
+    ]
+  },
+  {
+    "package": "@annotorious/openseadragon",
+    "version": "3.9.4",
+    "license": "BSD-3-Clause",
+    "source": "https://registry.npmjs.org/@annotorious/openseadragon/-/openseadragon-3.9.4.tgz",
+    "files": [
+      "LICENSE",
+      "dist/annotorious-openseadragon.css",
+      "dist/annotorious-openseadragon.js"
+    ]
+  },
+  {
+    "package": "cytoscape",
+    "version": "3.30.4",
+    "license": "MIT",
+    "source": "https://registry.npmjs.org/cytoscape/-/cytoscape-3.30.4.tgz",
+    "files": [
+      "LICENSE",
+      "dist/cytoscape.min.js"
+    ]
+  },
+  {
+    "package": "dagre",
+    "version": "0.8.5",
+    "license": "MIT",
+    "source": "https://registry.npmjs.org/dagre/-/dagre-0.8.5.tgz",
+    "files": [
+      "LICENSE",
+      "dist/dagre.min.js"
+    ]
+  },
+  {
+    "package": "cytoscape-dagre",
+    "version": "2.5.0",
+    "license": "MIT",
+    "source": "https://registry.npmjs.org/cytoscape-dagre/-/cytoscape-dagre-2.5.0.tgz",
+    "files": [
+      "LICENSE",
+      "cytoscape-dagre.js"
+    ]
+  },
+  {
+    "package": "bootswatch",
+    "version": "5.3.8",
+    "license": "MIT",
+    "source": "https://registry.npmjs.org/bootswatch/-/bootswatch-5.3.8.tgz",
+    "files": [
+      "LICENSE",
+      "dist/solar/bootstrap.min.css"
+    ]
+  },
+  {
+    "package": "easymde",
+    "version": "2.21.0",
+    "license": "MIT",
+    "source": "https://registry.npmjs.org/easymde/-/easymde-2.21.0.tgz",
+    "files": [
+      "LICENSE",
+      "dist/easymde.min.css",
+      "dist/easymde.min.js"
+    ]
+  },
+  {
+    "package": "@fontsource/source-sans-pro",
+    "version": "5.3.0",
+    "license": "OFL-1.1",
+    "source": "https://registry.npmjs.org/@fontsource/source-sans-pro/-/source-sans-pro-5.3.0.tgz",
+    "files": [
+      "LICENSE",
+      "files/source-sans-pro-latin-400-normal.woff",
+      "files/source-sans-pro-latin-400-normal.woff2",
+      "files/source-sans-pro-latin-600-normal.woff",
+      "files/source-sans-pro-latin-600-normal.woff2",
+      "files/source-sans-pro-latin-700-normal.woff",
+      "files/source-sans-pro-latin-700-normal.woff2",
+      "source-sans-pro.css"
+    ]
+  }
+]
