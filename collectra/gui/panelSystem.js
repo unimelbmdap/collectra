@@ -7,12 +7,17 @@
 // and via require() in tests/.
 
 class Tab {
-    constructor({ id, nodeId, label, kind = 'node', pinned = false }) {
+    // groupKey is the DAG label a node tab belongs to. The tab stands for
+    // that label, and nodeId is whichever of the label's instances it is
+    // currently showing.
+    constructor({ id, nodeId, label, kind = 'node', pinned = false, groupKey = null }) {
         this.id = id;
         this.nodeId = nodeId;
         this.label = label ?? nodeId;
         this.kind = kind;
         this.pinned = pinned;
+        this.groupKey = groupKey;
+        this.lastIndex = null; // position among the label's instances when last reconciled
     }
 }
 
@@ -93,6 +98,55 @@ class Panel {
         if (this.activeTabId && !this.tabs.some((t) => t.id === this.activeTabId)) {
             this.activeTabId = this.tabs[0] ? this.tabs[0].id : null;
         }
+    }
+
+    // One tab per DAG label. Opening a label that is already open just
+    // activates its tab (switching it to nodeId when one is given); a
+    // different label's tab is never repurposed.
+    openOrActivateGroup({ id, groupKey, nodeId, label }) {
+        const existing = this.tabs.find((t) => t.kind === 'node' && t.groupKey === groupKey);
+        if (existing) {
+            if (nodeId) existing.nodeId = nodeId;
+            this.activateTab(existing.id);
+            return existing;
+        }
+        return this.addTab(new Tab({ id, nodeId, label: label ?? groupKey, groupKey }));
+    }
+
+    selectInstance(tabId, nodeId) {
+        const tab = this.getTab(tabId);
+        if (tab) tab.nodeId = nodeId;
+        return tab;
+    }
+
+    // Brings every label tab back in line with the label's real instances
+    // (instancesFor(groupKey) -> ids, in order) after a delete, a create or
+    // a page switch: a tab whose label has no instances stays open but blank
+    // (nodeId null) and fills again once one appears; one whose selected
+    // instance is gone moves to the neighbouring one (or the first, when
+    // preferFirst, e.g. on a new page). DAG tabs are untouched.
+    reconcileGroupTabs(instancesFor, { preferFirst = false } = {}) {
+        const closed = [];
+        const changed = [];
+        for (const tab of [...this.tabs]) {
+            if (tab.kind !== 'node' || tab.groupKey === null) continue;
+            const instances = instancesFor(tab.groupKey) || [];
+            if (instances.length === 0) {
+                if (tab.nodeId !== null) {
+                    tab.nodeId = null;
+                    changed.push(tab.id);
+                }
+                continue;
+            }
+            let index = instances.indexOf(tab.nodeId);
+            if (index === -1) {
+                index = preferFirst ? 0 : Math.min(tab.lastIndex ?? 0, instances.length - 1);
+                tab.nodeId = instances[index];
+                changed.push(tab.id);
+            }
+            tab.lastIndex = index;
+        }
+        return { closed, changed };
     }
 
     // Plain-click behavior: reuse the currently active tab, replacing its

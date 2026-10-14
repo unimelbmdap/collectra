@@ -714,6 +714,55 @@
         .modal-buttons .btn-confirm:hover:not(:disabled) {
             background: var(--app-primary-dark, #d97f18);
         }
+        /* Delete confirmation: the nested items that go with the box */
+        .delete-summary {
+            margin: 0 0 8px 0;
+            color: var(--app-fg, #cccccc);
+        }
+        .delete-children {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            max-height: 220px;
+            overflow-y: auto;
+            border: 1px solid var(--app-border, #3c3c3c);
+            border-radius: 4px;
+            background: var(--app-surface-alt, #0f0f0f);
+        }
+        .delete-children li {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 5px 10px;
+            font-size: 13px;
+            color: var(--app-fg-bright, #e6e6e6);
+        }
+        .delete-children .delete-child-id {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .delete-children .delete-child-id.nested::before {
+            content: '\21B3\00a0';
+            opacity: 0.55;
+        }
+        .delete-children .delete-child-type {
+            flex: none;
+            box-sizing: border-box;
+            width: 78px;
+            text-align: center;
+            padding: 0 6px;
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 11px;
+            color: var(--app-fg, #cccccc);
+            border: 1px solid var(--app-border, #3c3c3c);
+            border-radius: 4px;
+        }
+        #deleteModalTitle {
+            overflow-wrap: anywhere;
+        }
         /* Shared modal field layout — used by the new-box and rename popups */
         .modal-field {
             margin-bottom: 14px;
@@ -1161,6 +1210,65 @@
             flex-shrink: 0;
             white-space: nowrap;
         }
+        /* "< name >" pager for the instances of a label tab — right-aligned
+           on the same row as the type chip. */
+        .node-content-header .instance-pager {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+            font-size: 12px;
+            color: var(--app-fg-bright, #e6e6e6);
+        }
+        .node-content-header .instance-pager[hidden] {
+            display: none;
+        }
+        .instance-pager .pager-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 320px;
+            font-weight: 600;
+        }
+        .instance-pager .pager-count {
+            opacity: 0.7;
+            font-variant-numeric: tabular-nums;
+        }
+        .instance-pager .pager-btn {
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            line-height: 1;
+            font: inherit;
+            cursor: pointer;
+            border: 1px solid var(--app-border, #3c3c3c);
+            border-radius: 3px;
+            background: transparent;
+            color: inherit;
+        }
+        .instance-pager .pager-btn:hover:not(:disabled) {
+            background: rgba(var(--app-primary-rgb, 240, 146, 38), 0.2);
+        }
+        .instance-pager .pager-delete {
+            flex: none;
+            margin-left: 6px;
+            padding: 2px 8px;
+            font: inherit;
+            cursor: pointer;
+            border: 1px solid var(--app-border, #3c3c3c);
+            border-radius: 3px;
+            background: transparent;
+            color: inherit;
+        }
+        .instance-pager .pager-delete:hover {
+            background: rgba(220, 70, 70, 0.25);
+            border-color: rgba(220, 70, 70, 0.7);
+        }
+        .instance-pager .pager-btn:disabled {
+            opacity: 0.35;
+            cursor: default;
+        }
         .node-content-body {
             flex: 1;
             min-height: 0;
@@ -1499,6 +1607,9 @@
     <!-- Pure node-click dispatch logic, unit tested in tests-js/ -->
     <script src="artefactDisplay.js"></script>
     <script src="nodeColors.js"></script>
+    <script src="deleteDialog.js"></script>
+    <script src="instancePager.js"></script>
+    <script src="tabContextMenu.js"></script>
     <script src="shiftDraw.js"></script>
     <script src="sourceControl.js"></script>
     <script src="rgbViewControls.js"></script>
@@ -1508,6 +1619,7 @@
     <script src="iconPopover.js"></script>
     <!-- Pure Tab/Panel state for the content area, unit tested in tests-js/ -->
     <script src="panelSystem.js"></script>
+    <script src="arrangement.js"></script>
     <script src="dagNodeResolution.js"></script>
     <!-- Pure crop-type option logic for the create-box modal, unit tested in tests-js/ -->
     <script src="cropTypeOptions.js"></script>
@@ -1551,6 +1663,11 @@
                 <button class="panel-toolbar-btn" id="dagToolbarBtn" onclick="openDagTab()" title="DAG" aria-label="DAG">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19.5 17C19.36 17 19.24 17 19.11 17.04L17.5 13.8C17.95 13.35 18.25 12.71 18.25 12C18.25 10.62 17.13 9.5 15.75 9.5C15.61 9.5 15.5 9.5 15.35 9.54L13.74 6.3C14.21 5.84 14.5 5.21 14.5 4.5C14.5 3.12 13.38 2 12 2S9.5 3.12 9.5 4.5C9.5 5.2 9.79 5.84 10.26 6.29L8.65 9.54C8.5 9.5 8.39 9.5 8.25 9.5C6.87 9.5 5.75 10.62 5.75 12C5.75 12.71 6.04 13.34 6.5 13.79L4.89 17.04C4.76 17 4.64 17 4.5 17C3.12 17 2 18.12 2 19.5C2 20.88 3.12 22 4.5 22S7 20.88 7 19.5C7 18.8 6.71 18.16 6.24 17.71L7.86 14.46C8 14.5 8.12 14.5 8.25 14.5C8.38 14.5 8.5 14.5 8.63 14.46L10.26 17.71C9.79 18.16 9.5 18.8 9.5 19.5C9.5 20.88 10.62 22 12 22S14.5 20.88 14.5 19.5C14.5 18.12 13.38 17 12 17C11.87 17 11.74 17 11.61 17.04L10 13.8C10.45 13.35 10.75 12.71 10.75 12C10.75 11.3 10.46 10.67 10 10.21L11.61 6.96C11.74 7 11.87 7 12 7C12.13 7 12.26 7 12.39 6.96L14 10.21C13.54 10.66 13.25 11.3 13.25 12C13.25 13.38 14.37 14.5 15.75 14.5C15.88 14.5 16 14.5 16.13 14.46L17.76 17.71C17.29 18.16 17 18.8 17 19.5C17 20.88 18.12 22 19.5 22S22 20.88 22 19.5C22 18.12 20.88 17 19.5 17M4.5 20.5C3.95 20.5 3.5 20.05 3.5 19.5S3.95 18.5 4.5 18.5 5.5 18.95 5.5 19.5 5.05 20.5 4.5 20.5M13 19.5C13 20.05 12.55 20.5 12 20.5S11 20.05 11 19.5 11.45 18.5 12 18.5 13 18.95 13 19.5M7.25 12C7.25 11.45 7.7 11 8.25 11S9.25 11.45 9.25 12 8.8 13 8.25 13 7.25 12.55 7.25 12M11 4.5C11 3.95 11.45 3.5 12 3.5S13 3.95 13 4.5 12.55 5.5 12 5.5 11 5.05 11 4.5M14.75 12C14.75 11.45 15.2 11 15.75 11S16.75 11.45 16.75 12 16.3 13 15.75 13 14.75 12.55 14.75 12M19.5 20.5C18.95 20.5 18.5 20.05 18.5 19.5S18.95 18.5 19.5 18.5 20.5 18.95 20.5 19.5 20.05 20.5 19.5 20.5Z"/></svg>
                 </button>
+                <button class="panel-toolbar-btn" id="refitDagTabBtn" onclick="resetDag()" title="Fit DAG to view" aria-label="Fit DAG to view">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M2 5.5V2h3.5"/><path d="M10.5 2H14v3.5"/><path d="M14 10.5V14h-3.5"/><path d="M5.5 14H2v-3.5"/>
+                    </svg>
+                </button>
                 <button class="panel-toolbar-btn" id="ancestorsToolbarBtn" onclick="toggleAncestorsPopover()" title="Ancestors" aria-label="Show ancestors">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
                         <path d="M8 10V2M8 2L5 5M8 2l3 3"/><rect x="2" y="12" width="12" height="2.2" rx="0.5"/>
@@ -1559,11 +1676,6 @@
                 <button class="panel-toolbar-btn" id="descendantsToolbarBtn" onclick="toggleDescendantsPopover()" title="Descendants" aria-label="Show descendants">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
                         <rect x="2" y="1.8" width="12" height="2.2" rx="0.5"/><path d="M8 6v8M8 14l-3-3M8 14l3-3"/>
-                    </svg>
-                </button>
-                <button class="panel-toolbar-btn" id="refitDagTabBtn" onclick="resetDag()" title="Reset DAG" aria-label="Reset DAG">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
-                        <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/>
                     </svg>
                 </button>
                 <button class="panel-toolbar-btn" id="artefactsToolbarBtn" onclick="toggleArtefactsPopover()" title="Artefacts" aria-label="Show artefacts" disabled>
@@ -1626,6 +1738,7 @@
                         <div class="node-content-header" id="topNodeContentHeader">
                             <span id="topNodeContentHeaderId"></span>
                             <span class="node-content-header-type" id="topNodeContentHeaderType"></span>
+                            <span class="instance-pager" hidden></span>
                         </div>
                         <div class="node-content-body" id="topNodeContentBody">
                             <div class="node-content-placeholder" id="topNodeContentPlaceholder">Drag a DAG node, artefact, or task into this panel's tab strip to view it here.</div>
@@ -1650,6 +1763,7 @@
                                 <div class="node-content-header" id="nodeContentHeader">
                                     <span class="node-content-header-id" id="nodeContentHeaderId"></span>
                                     <span class="node-content-header-type" id="nodeContentHeaderType"></span>
+                                    <span class="instance-pager" hidden></span>
                                 </div>
                                 <div class="node-content-body" id="nodeContentBody">
                                     <div class="node-content-placeholder" id="nodeContentPlaceholder">Select a node in the DAG to view details, or highlight a page on the left to view its artefact.</div>
@@ -1742,6 +1856,18 @@
         </div>
     </div>
 
+    <div id="deleteModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
+        <div class="modal-popup">
+            <h3 id="deleteModalTitle"></h3>
+            <p id="deleteModalSummary" class="delete-summary" hidden></p>
+            <ul id="deleteModalChildren" class="delete-children" hidden></ul>
+            <div class="modal-buttons">
+                <button class="btn-cancel" id="deleteModalCancel">Cancel</button>
+                <button class="btn-confirm" id="deleteModalConfirm">Delete</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Stats Modal -->
     <div id="statsModal" class="modal-overlay">
         <div class="modal-popup wide">
@@ -1780,6 +1906,7 @@
         <div class="node-content-header">
             <span class="node-content-header-id"></span>
             <span class="node-content-header-type"></span>
+            <span class="instance-pager" hidden></span>
         </div>
         <div class="node-content-body">
             <div class="node-content-placeholder">Drag a DAG node, artefact, or task into this panel's tab strip to view it here.</div>
@@ -1857,6 +1984,7 @@
                     document.removeEventListener('mouseup', onUp);
                     handle.classList.remove('dragging');
                     document.body.style.userSelect = '';
+                    scheduleArrangementSave();
                 }
                 document.addEventListener('mousemove', onMove);
                 document.addEventListener('mouseup', onUp);
@@ -2084,7 +2212,7 @@
             const labels = focused
                 ? imageCropDescendantLabels(focused, adjacency, id => pageCropLabels.has(id) ? 'collectra.ImageCrop' : dagNodeType(id), isDagTaskNode)
                 : lastDagNodes.map((n) => n.id).filter((id) => pageCropLabels.has(id) || isImageCropType(dagNodeType(id)));
-            return { labels, prefill: firstUnusedLabel(labels, pageNodeIds) };
+            return { labels, prefill: defaultCropLabel(labels) };
         }
 
         // On a new crop-type selection, re-prefill the ID with the next
@@ -2213,7 +2341,12 @@
                 if (result.success) {
                     Object.values(panelControllers).forEach((c) => c.refreshPageAnnotations(result.rows));
                     await refreshActiveNodeIds(); // label/id change can affect the DAG's "Open <id>..." list
-                    updateSharedUiForFocusedPanel(); // Ancestors/Descendants popover — a changed id would otherwise stay stale there
+                    // A tab showing the renamed instance follows its new id.
+                    const renamedTo = newId || nodeId;
+                    Object.values(panelControllers).forEach((c) => c.panel.tabs.forEach((t) => {
+                        if (t.nodeId === nodeId) t.nodeId = renamedTo;
+                    }));
+                    await syncInstanceTabs(); // also redraws the Ancestors/Descendants popover, stale otherwise
                 } else {
                     console.error('Error renaming annotation:', result.error);
                 }
@@ -2278,7 +2411,7 @@
                 }
 
                 await refreshActiveNodeIds(); // new id under this label — DAG's "Open <id>..." menu needs it
-                updateSharedUiForFocusedPanel(); // Ancestors/Descendants popover — refreshActiveNodeIds alone doesn't redraw it
+                await syncInstanceTabs(); // pager counts and the Ancestors/Descendants popover follow the new instance
                 hideLabelPopup();
             } catch (e) {
                 console.error('Error creating annotation:', e);
@@ -2329,32 +2462,83 @@
         });
 
 
-        async function deleteAnnotation(nodeId) {
-            if (!confirm('Delete this annotation?')) return;
+        // Resolves true if the user confirms. Lists what is nested inside the
+        // item, since deleting it deletes all of that too. Enter lands on
+        // Cancel, so a destructive delete always takes a deliberate click.
+        function confirmDelete(target, preview) {
+            return new Promise((resolve) => {
+                const content = deleteDialogContent(target, preview);
+                const modal = document.getElementById('deleteModal');
+                const summary = document.getElementById('deleteModalSummary');
+                const list = document.getElementById('deleteModalChildren');
+                document.getElementById('deleteModalTitle').textContent = content.title;
+                summary.textContent = content.summary;
+                summary.hidden = !content.summary;
+                list.replaceChildren(...content.items.map((item) => {
+                    const row = document.createElement('li');
+                    const id = document.createElement('span');
+                    id.className = 'delete-child-id';
+                    id.textContent = item.id;
+                    id.title = item.id;
+                    id.style.paddingLeft = ((item.depth - 1) * 16) + 'px';
+                    id.classList.toggle('nested', item.depth > 1);
+                    const type = document.createElement('span');
+                    type.className = 'delete-child-type';
+                    type.textContent = item.type;
+                    row.append(type, id);
+                    return row;
+                }));
+                list.hidden = !content.items.length;
 
+                const cancel = document.getElementById('deleteModalCancel');
+                const confirmBtn = document.getElementById('deleteModalConfirm');
+                const finish = (confirmed) => {
+                    modal.classList.remove('visible');
+                    cancel.removeEventListener('click', onCancel);
+                    confirmBtn.removeEventListener('click', onConfirm);
+                    document.removeEventListener('keydown', onKey, true);
+                    resolve(confirmed);
+                };
+                const onCancel = () => finish(false);
+                const onConfirm = () => finish(true);
+                const onKey = (e) => { if (e.key === 'Escape') finish(false); };
+                cancel.addEventListener('click', onCancel);
+                confirmBtn.addEventListener('click', onConfirm);
+                document.addEventListener('keydown', onKey, true);
+                modal.classList.add('visible');
+                cancel.focus();
+            });
+        }
+
+
+        // Preview, confirm and delete one item. The page image keeps itself
+        // (only what is under it goes); anything else is removed with its
+        // nested items.
+        async function deleteNodeWithConfirm(nodeId, name) {
+            let preview = null;
             try {
-                const result = await window.pywebview.api.delete_annotation(nodeId);
+                preview = await window.pywebview.api.get_delete_preview(nodeId);
+            } catch (e) {
+                console.error('Error previewing delete:', e);
+            }
+            if (!await confirmDelete({id: nodeId, name}, preview)) return;
+            try {
+                const keepsSelf = Boolean(preview && preview.keeps_self);
+                const result = keepsSelf
+                    ? await window.pywebview.api.delete_nested(nodeId)
+                    : await window.pywebview.api.delete_annotation(nodeId);
                 if (result.success) {
-                    const display_data = result.rows.filter(row => row.type === "collectra.ImageCrop");
-
-                    // Refresh annotations on image
-                    anno.clearAnnotations();
-                    display_data.forEach(row => {
-                        const geom = calculateGeometryFromCropRegion(row.crop_region);
-                        if (geom) anno.addAnnotation(createAnnotation(geom, row));
-                    });
-
-                    // Update global stats if in parent folder mode
-                    if (collectraFolders.length > 0 && result.global_label_counts) {
-                        displayGlobalStats(result.global_label_counts, result.global_total);
-                    }
+                    Object.values(panelControllers).forEach((c) => c.refreshPageAnnotations(result.rows));
+                    await refreshActiveNodeIds();
+                    // A label tab showing a deleted instance (the requested
+                    // one or any cascaded descendant) steps to a surviving
+                    // instance of its label, or closes when none is left.
+                    await syncInstanceTabs();
                 } else {
-                    console.error('Error deleting annotation:', result.error);
-                    alert('Failed to delete: ' + result.error);
+                    console.error('Failed to delete:', result.error);
                 }
             } catch (e) {
-                console.error('Error deleting annotation:', e);
-                alert('Failed to delete annotation');
+                console.error('Error deleting:', e);
             }
         }
 
@@ -2636,9 +2820,10 @@
                     // resolveDagLabel maps it back first. Comparing nodeId
                     // directly only happened to work for source fields
                     // where label and real id are the same string.
-                    const isStillValid = (nodeId, kind) => kind === 'dag' || activeNodeIds.has(resolveDagLabel(nodeId));
                     Object.values(panelControllers).forEach((c) => {
-                        c.panel.pruneTabs(isStillValid);
+                        // A label tab survives while the new page has an
+                        // instance of that label, and moves to its first one.
+                        c.reconcileTabs({ preferFirst: true });
                         c.renderTabStripView();
                         // The bottom panel is rendered once below, after choosing
                         // the carried field or root for this page.
@@ -2646,21 +2831,20 @@
                     });
                 }
 
-                // Restore "the same field" on the new page — pendingCarryLabel
-                // (set by clearPageView from whatever was active before the
-                // switch) is a label, not a real per-instance id, so it's
-                // looked up fresh in this page's own pageNodeIds rather than
-                // matched by exact id (which only coincidentally works for
-                // fields whose id never gets a per-instance suffix). Falls
-                // back to the pipeline's root, same as if the user had
-                // clicked it themselves.
-                if (cy) {
+                // Switching pages keeps the tabs the user has open: the active
+                // tab simply shows this page's instance of its node (or stays
+                // blank when the page has none). Only a panel with no tabs at
+                // all opens something — the carried field, else the root.
+                const carried = pendingCarryLabel;
+                pendingCarryLabel = null;
+                if (panelControllers.bottom.panel.getActiveTab()) {
+                    await panelControllers.bottom.showActiveTabContent();
+                } else if (cy) {
                     let nextNodeId = null;
-                    if (pendingCarryLabel) {
-                        const ids = pageNodeIds.get(pendingCarryLabel);
+                    if (carried) {
+                        const ids = pageNodeIds.get(carried);
                         if (ids && ids.length) nextNodeId = ids[0];
                     }
-                    pendingCarryLabel = null;
                     if (!nextNodeId) {
                         const roots = cy.nodes().roots();
                         // Some projects (e.g. Livy) have a separate root for every
@@ -2805,8 +2989,7 @@
 
         // Releases a panel's live resources and removes it from the DOM/
         // registries — no guard, callers decide whether it's safe. Shared by
-        // removePanelByKey (× button, guarded) and collapseToSinglePanel
-        // (page-switch reset, deliberately unguarded).
+        // removePanelByKey (× button, guarded) and the layout replay on startup.
         function detachPanel(key) {
             const controller = panelControllers[key];
             if (!controller) return;
@@ -2850,18 +3033,7 @@
             if (Object.keys(panelControllers).length <= 1) return;
             if (isOnlyExpandedPanel(key)) return;
             detachPanel(key);
-        }
-
-        // Page-switch reset: back to the classic top+bottom pair, discarding
-        // any panels created via + New Panel. Unlike removePanelByKey, this
-        // is a deliberate full reset, so it bypasses the "don't leave
-        // nothing visible" guard on purpose.
-        function collapseToSinglePanel() {
-            Object.keys(panelControllers)
-                .filter((key) => key !== 'top' && key !== 'bottom')
-                .forEach((key) => detachPanel(key));
-            const bottomEntry = panelCollapseRegistry.bottom;
-            if (bottomEntry && bottomEntry.isCollapsed()) bottomEntry.expand();
+            recordLayoutOp({op: 'remove', key});
         }
 
         function closeTopPanel() { removePanelByKey('top'); }
@@ -2950,8 +3122,6 @@
         function clearPageView() {
             const focusedTab = panelControllers[focusedPanel]?.panel.getActiveTab();
             pendingCarryLabel = (focusedTab && focusedTab.kind === 'node') ? resolveDagLabel(focusedTab.nodeId) : null;
-            collapseToSinglePanel();
-
             clearImage();
             Object.values(panelControllers).forEach((c) => { c.clearPageArtefact(); c.clear(); });
             if (anno) { anno.clearAnnotations(); anno.destroy(); anno = null; }
@@ -3196,20 +3366,102 @@
                 renderTabStrip(this.panel, this.tabStripEl, this.key);
             }
 
+            // One tab per DAG label. nodeId may be a real instance id (the
+            // tab shows that instance) or the label itself (the tab keeps
+            // its selected instance, or starts on the first one).
             async openOrActivateTab(nodeId) {
-                this.panel.openOrActivateTab({ id: 'tab' + (nextTabId++), nodeId });
+                const groupKey = resolveDagLabel(nodeId);
+                const ids = pageNodeIds.get(groupKey) || [];
+                const existing = this.panel.tabs.find((t) => t.kind === 'node' && t.groupKey === groupKey);
+                const instanceId = ids.includes(nodeId) ? nodeId : (existing ? null : (ids[0] || nodeId));
+                this.panel.openOrActivateGroup({
+                    id: 'tab' + (nextTabId++),
+                    groupKey,
+                    nodeId: instanceId,
+                    label: humanizeLabel(groupKey),
+                });
                 this.renderTabStripView();
                 await this.showActiveTabContent();
                 onPanelTabsChanged(this);
             }
 
             async openInNewTab(nodeId) {
-                const existing = this.panel.tabs.find((t) => t.nodeId === nodeId);
-                if (existing) { await this.activateTab(existing.id); return; }
-                this.panel.addTab(new Tab({ id: 'tab' + (nextTabId++), nodeId }));
+                await this.openOrActivateTab(nodeId);
+            }
+
+            // Steps the active label tab to another of its instances.
+            async selectInstance(nodeId) {
+                const tab = this.panel.getActiveTab();
+                if (!tab || tab.kind !== 'node') return;
+                this.panel.selectInstance(tab.id, nodeId);
                 this.renderTabStripView();
                 await this.showActiveTabContent();
                 onPanelTabsChanged(this);
+            }
+
+            instancesForTab(tab) {
+                const ids = tab.groupKey !== null ? pageNodeIds.get(tab.groupKey) : null;
+                return ids && ids.length ? ids : [tab.nodeId];
+            }
+
+            // The "< name >" pager above the active label tab's artefact.
+            renderPager() {
+                const pagerEl = this.el.headerType && this.el.headerType.parentElement
+                    ? this.el.headerType.parentElement.querySelector('.instance-pager')
+                    : null;
+                if (!pagerEl) return;
+                const tab = this.panel.getActiveTab();
+                if (!tab || tab.kind !== 'node' || !tab.nodeId) {
+                    pagerEl.hidden = true;
+                    pagerEl.replaceChildren();
+                    return;
+                }
+                const state = pagerState(this.instancesForTab(tab), tab.nodeId);
+                const button = (text, label, targetId) => {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'pager-btn';
+                    b.textContent = text;
+                    b.title = label;
+                    b.setAttribute('aria-label', label);
+                    b.disabled = !targetId;
+                    if (targetId) b.addEventListener('click', () => this.selectInstance(targetId));
+                    return b;
+                };
+                const name = document.createElement('span');
+                name.className = 'pager-name';
+                name.textContent = state.name;
+                name.title = state.name;
+                const parts = [];
+                if (state.showControls) parts.push(button('\u2039', 'Previous', state.prevId));
+                parts.push(name);
+                if (state.showControls) {
+                    const count = document.createElement('span');
+                    count.className = 'pager-count';
+                    count.textContent = state.text;
+                    parts.push(button('\u203A', 'Next', state.nextId), count);
+                }
+                const del = document.createElement('button');
+                del.type = 'button';
+                del.className = 'pager-delete';
+                del.textContent = 'Delete';
+                del.title = `Delete ${state.name}`;
+                del.addEventListener('click', () => deleteNodeWithConfirm(tab.nodeId, ''));
+                parts.push(del);
+                pagerEl.replaceChildren(...parts);
+                pagerEl.hidden = false;
+            }
+
+            // Keeps this panel's label tabs in line with the page's real
+            // instances (after a delete, a create or a page switch). Returns
+            // true when the active tab's content needs reloading.
+            reconcileTabs(options) {
+                if (!activeNodeIds) return false; // no page bound yet — nothing to check against
+                const before = this.panel.getActiveTab();
+                const beforeId = before ? before.nodeId : null;
+                const result = this.panel.reconcileGroupTabs((label) => pageNodeIds.get(label) || [], options);
+                const after = this.panel.getActiveTab();
+                return result.closed.length > 0 || (!!after && after.nodeId !== beforeId);
             }
 
             async activateTab(tabId) {
@@ -3243,6 +3495,7 @@
 
             async showActiveTabContent() {
                 const tab = this.panel.getActiveTab();
+                this.renderPager();
                 if (!tab) {
                     if (this.dagContainerEl) {
                         this.dagContainerEl.style.display = 'none';
@@ -3268,6 +3521,23 @@
                 if (this.dagContainerEl) {
                     this.dagContainerEl.style.display = 'none';
                     if (this.contentEl) this.contentEl.style.display = 'flex';
+                }
+                if (tab.kind === 'node' && !tab.nodeId) {
+                    // This page has no instance of the tab's node: stay open, blank.
+                    this.selectedNodeId = null;
+                    this.clearPageArtefact();
+                    this.clear();
+                    const placeholder = this.el.placeholder;
+                    if (placeholder) {
+                        // Remember the panel's normal wording so it can be restored.
+                        if (placeholder.dataset.defaultText === undefined) placeholder.dataset.defaultText = placeholder.textContent;
+                        placeholder.textContent = blankTabMessage(tab);
+                    }
+                    this.syncDagHighlights();
+                    return;
+                }
+                if (this.el.placeholder && this.el.placeholder.dataset.defaultText !== undefined) {
+                    this.el.placeholder.textContent = this.el.placeholder.dataset.defaultText;
                 }
                 await this.showNode(tab.nodeId);
             }
@@ -3964,11 +4234,11 @@
         }
 
         // The content area's tab strip — one panel (mainWindow.root),
-        // multiple tabs. selectNode() (plain click) reuses/replaces the
-        // active tab; openNodeInNewTab() (right-click "Open in New Tab")
-        // adds another tab alongside it instead. Both route through
-        // whichever panel is currently focused (see focusedPanel/
-        // PanelController below), not hardcoded to one panel.
+        // multiple tabs, one per DAG label. selectNode() and
+        // openNodeInNewTab() both open the label's tab, or focus it if it is
+        // already open; the instance a tab shows is chosen with its pager.
+        // Both route through whichever panel is currently focused (see
+        // focusedPanel/PanelController below), not hardcoded to one panel.
         const mainWindow = new Window();
         let nextTabId = 1;
 
@@ -3992,6 +4262,15 @@
         // inside that panel (see the capture-phase mousedown listener
         // below). Defaults to 'bottom', today's original single panel.
         let focusedPanel = 'bottom';
+
+        // State for remembering the arrangement (see REMEMBERED ARRANGEMENT below).
+        // Declared up here because drawing a tab strip, which happens while this
+        // script is still loading, can schedule a save.
+        let arrangementReady = false; // saving waits until the saved one has been restored
+        let arrangementSaveTimer = null;
+        let layoutOps = [];           // every split and close the user made, in order
+        let replayingLayout = false;  // restoring must not add to the log it is replaying
+        const MAX_LAYOUT_OPS = 200;
 
         // PanelController's class declaration lives earlier in this file
         // now (just above highlightPageBox) — every PanelController.prototype.X
@@ -4026,6 +4305,7 @@
         }
 
         function updateFocusedPanelHighlight() {
+            scheduleArrangementSave();
             Object.keys(panelControllers).forEach((key) => {
                 const el = getPanelRootEl(key);
                 if (el) el.classList.toggle('panel-focused', key === focusedPanel);
@@ -4115,6 +4395,19 @@
             }
         }, true);
 
+        // Brings every panel's label tabs in line with the page's instances
+        // after the graph changed (delete, create, rename). Reloads a panel's
+        // content only when its tab closed or moved to another instance.
+        async function syncInstanceTabs() {
+            for (const c of Object.values(panelControllers)) {
+                const reload = c.reconcileTabs();
+                c.renderTabStripView();
+                if (reload) await c.showActiveTabContent();
+                else c.renderPager();
+                onPanelTabsChanged(c);
+            }
+        }
+
         function closeNodeContextMenu() {
             const existing = document.getElementById('nodeContextMenu');
             if (existing) existing.remove();
@@ -4194,35 +4487,8 @@
             });
             menu.querySelector('[data-action="delete"]').addEventListener('click', async () => {
                 closeNodeContextMenu();
-                // delete_annotation cascades to every nested child (any depth) —
-                // said explicitly so deleting a box that contains its own
-                // sub-crops isn't a silent-data-loss surprise.
-                if (!confirm('Delete this annotation and everything nested inside it?')) return;
-                try {
-                    const result = await window.pywebview.api.delete_annotation(annotation.id);
-                    if (result.success) {
-                        Object.values(panelControllers).forEach((c) => c.refreshPageAnnotations(result.rows));
-                        await refreshActiveNodeIds();
-                        // Close any tab left open on an id that just got deleted —
-                        // the requested one or any cascaded descendant — otherwise
-                        // it stays selectable but shows nothing for it
-                        // (highlightPageBox finds no match, falls back to the full
-                        // page). Exact-id check, not the page-switch prune's
-                        // label-level one — a sibling instance under the same
-                        // label surviving the delete shouldn't save this tab.
-                        const deletedIds = new Set(result.deleted_ids || [annotation.id]);
-                        Object.values(panelControllers).forEach((c) => {
-                            c.panel.pruneTabs((nodeId, kind) => kind === 'dag' || !deletedIds.has(nodeId));
-                            c.renderTabStripView();
-                            c.showActiveTabContent();
-                        });
-                        updateSharedUiForFocusedPanel(); // Ancestors/Descendants popover — stale otherwise if it's open and the tab that closed wasn't the focused one's
-                    } else {
-                        console.error('Failed to delete annotation:', result.error);
-                    }
-                } catch (e) {
-                    console.error('Error deleting annotation:', e);
-                }
+                const body = (annotation.bodies && annotation.bodies[0]) || {};
+                await deleteNodeWithConfirm(annotation.id, body.name || '');
             });
             document.body.appendChild(menu);
 
@@ -4483,15 +4749,14 @@
             instance.on('mouseover', 'node', function(evt) { showDagTooltip(evt, evt.target.data(), tooltipEl, containerEl); });
             instance.on('mouseout',  'node', function()    { hideDagTooltip(tooltipEl); });
             instance.on('mousemove', 'node', function(evt) { moveDagTooltip(evt, tooltipEl, containerEl); });
-            // A DAG node is a pipeline label, which can have zero, one,
-            // or several real per-page instances (results.yaml) behind it —
-            // resolveDagClickTarget picks the one real id when there's
-            // exactly one; a label with several is ambiguous on a plain
-            // click, so this is a no-op then (right-click lists them
-            // individually instead — see showNodeContextMenu).
+            // A DAG node is a pipeline label, which can have zero, one, or
+            // several real per-page instances (results.yaml) behind it.
+            // Clicking opens the label's tab (or focuses it if already
+            // open), where a pager steps between the instances. A node
+            // with no instance on this page does nothing.
             instance.on('tap', 'node', function(evt) {
-                const target = resolveDagClickTarget(evt.target.id(), pageNodeIds);
-                if (target.nodeId) selectNode(target.nodeId);
+                const target = dagNodeOpenTarget(evt.target.id(), pageNodeIds, !!activeNodeIds);
+                if (target) selectNode(target.nodeId);
             });
             instance.on('cxttap', 'node', function(evt) { showNodeContextMenu(evt.originalEvent, evt.target.id()); });
 
@@ -4510,14 +4775,14 @@
             // DAG canvas this instance is — dragging from either into any
             // strip works the same way.
             let dagDragStartPos = null;
-            let dagDragAmbiguous = false;
+            let dagDragNotOpenable = false;
             instance.on('grab', 'node', function(evt) {
                 ensureMouseTracking();
                 dagDragStartPos = { ...evt.target.position() };
-                dagDragAmbiguous = resolveDagClickTarget(evt.target.id(), pageNodeIds).nodeId === null;
+                dagDragNotOpenable = !dagNodeOpenTarget(evt.target.id(), pageNodeIds, !!activeNodeIds);
             });
             instance.on('drag', 'node', function() {
-                if (dagDragAmbiguous) return; // never shows as droppable — dropping it would no-op anyway
+                if (dagDragNotOpenable) return; // a node with no instance on this page never shows as droppable
                 Object.keys(panelControllers).forEach((key) => {
                     const strip = panelControllers[key].tabStripEl;
                     const rect = strip.getBoundingClientRect();
@@ -4541,11 +4806,10 @@
                     // gesture, not a real reposition, so put the node back
                     // where it started before opening the tab.
                     if (dagDragStartPos) evt.target.position(dagDragStartPos);
-                    // Ambiguous (multiple real instances) — same as a plain
-                    // click, no-op; nothing sensible to drop onto a tab
-                    // strip when the gesture can't say which instance.
-                    const target = resolveDagClickTarget(evt.target.id(), pageNodeIds);
-                    if (target.nodeId) panelControllers[targetPanelKey].openInNewTab(target.nodeId);
+                    // A node with no instance on this page does nothing,
+                    // same as a plain click.
+                    const target = dagNodeOpenTarget(evt.target.id(), pageNodeIds, !!activeNodeIds);
+                    if (target) panelControllers[targetPanelKey].openInNewTab(target.nodeId);
                 }
                 dagDragStartPos = null;
             });
@@ -4569,19 +4833,22 @@
 
         function showDagTooltip(evt, data, tooltipEl, containerEl) {
             const tooltip = tooltipEl || document.getElementById('dagTooltip');
-            const displayType = pageNodeTypes.get(data.id) || data.detail;
+            const displayType = shortTypeName(pageNodeTypes.get(data.id) || data.detail);
             // Tooltip background is always --app-secondary (matches the sidebar's
             // own highlighted-item look), so every label inside it must use
             // --app-secondary-fg (or that at reduced opacity for de-emphasis) —
             // never a node's own accent color, which could match the background
             // itself and disappear.
             const badge = displayType
-                ? `<span class="badge ms-2" style="background:transparent;color:inherit;opacity:0.75;border:1px solid currentColor;font-family:monospace;font-weight:normal;font-size:10px">${displayType}</span>`
+                ? `<span class="badge" style="background:transparent;color:inherit;opacity:0.75;border:1px solid currentColor;font-family:monospace;font-weight:normal;font-size:10px">${displayType}</span>`
                 : '';
+            // A typed node (an artefact) shows only its type; task nodes have
+            // no type, so they keep their name.
+            const title = displayType ? '' : `<strong style="font-size:12px">${data.id}</strong>`;
             const paramsEntries = data.params ? Object.entries(data.params) : [];
             tooltip.innerHTML = `
                 <div class="card-header d-flex align-items-center justify-content-between py-2 px-3" style="background:transparent;border-bottom:none">
-                    <strong style="font-size:12px">${data.id}</strong>${badge}
+                    ${title}${badge}
                 </div>
                 ${paramsEntries.length ? `<div class="card-body py-2 px-3">
                     <div class="row g-2" style="font-size:11px">
@@ -4666,12 +4933,47 @@
                 // nodes with no generated suffix is the same string as the
                 // label anyway (e.g. "specimen_sheet"). A DAG tab has no
                 // nodeId to show, so it always shows its plain label.
-                const fullId = firstRealId(tab.nodeId);
-                const labelHtml = (isActive && tab.kind !== 'dag')
-                    ? `<span title="${escapeHtml(fullId)}">${escapeHtml(truncateId(fullId))}</span>`
+                const labelHtml = tab.kind !== 'dag' && tab.nodeId
+                    ? `<span title="${escapeHtml(tab.nodeId)}">${escapeHtml(tab.label)}</span>`
                     : escapeHtml(tab.label);
-                return `<div class="tab${isActive ? ' active' : ''}" data-tab-id="${tab.id}" draggable="true" ondragstart="onTabDragStart(event, '${tab.id}', '${panelKey}')" ondragover="onTabDragOver(event)" ondrop="onTabDrop(event, '${panelKey}', '${tab.id}')" onclick="activateTabInPanel('${panelKey}', '${tab.id}')">${labelHtml}${close}</div>`;
+                return `<div class="tab${isActive ? ' active' : ''}" data-tab-id="${tab.id}" draggable="true" ondragstart="onTabDragStart(event, '${tab.id}', '${panelKey}')" ondragover="onTabDragOver(event)" ondrop="onTabDrop(event, '${panelKey}', '${tab.id}')" onclick="activateTabInPanel('${panelKey}', '${tab.id}')" oncontextmenu="showTabContextMenu(event, '${panelKey}', '${tab.id}')">${labelHtml}${close}</div>`;
             }).join('');
+            scheduleArrangementSave();
+        }
+
+        // Right-click on a tab: delete the instance it shows, or close it.
+        function showTabContextMenu(event, panelKey, tabId) {
+            event.preventDefault();
+            const controller = panelControllers[panelKey];
+            const tab = controller && controller.panel.getTab(tabId);
+            const items = tabMenuItems(tab, controller ? controller.panel.canCloseTab(tabId) : false);
+            if (!items.length) return;
+            closeNodeContextMenu();
+
+            const menu = document.createElement('div');
+            menu.id = 'nodeContextMenu';
+            menu.className = 'node-context-menu';
+            menu.style.left = event.clientX + 'px';
+            menu.style.top = event.clientY + 'px';
+            menu.innerHTML = items
+                .map((item) => `<div class="node-context-menu-item" data-action="${item.action}">${escapeHtml(item.label)}</div>`)
+                .join('');
+            const run = {
+                delete: () => deleteNodeWithConfirm(tab.nodeId, ''),
+                close: () => controller.closeTab(tabId),
+            };
+            menu.querySelectorAll('.node-context-menu-item').forEach((el) => {
+                el.addEventListener('click', () => {
+                    closeNodeContextMenu();
+                    run[el.dataset.action]();
+                });
+            });
+            document.body.appendChild(menu);
+
+            setTimeout(() => {
+                document.addEventListener('mousedown', onNodeContextMenuOutsideClick, true);
+                document.addEventListener('keydown', onNodeContextMenuEscape, true);
+            }, 0);
         }
 
         function activateTabInPanel(panelKey, tabId) {
@@ -4686,10 +4988,8 @@
         panelControllers.top.renderTabStripView();
         updateSharedUiForFocusedPanel();
 
-        // Plain click (DAG node, or a list item without an existing tab):
-        // reuses/replaces whatever tab is currently active in the focused
-        // panel — same "reuse the active tab" behavior as before, just no
-        // longer hardcoded to one panel.
+        // Plain click (DAG node or list item): opens the node's label tab in
+        // the focused panel, or focuses it if it is already open there.
         async function selectNode(nodeId) {
             await panelControllers[focusedPanel].openOrActivateTab(nodeId);
         }
@@ -4938,6 +5238,7 @@
                     document.removeEventListener('mouseup', onUp);
                     handle.classList.remove('dragging');
                     document.body.style.userSelect = '';
+                    scheduleArrangementSave();
                 }
                 document.addEventListener('mousemove', onMove);
                 document.addEventListener('mouseup', onUp);
@@ -4976,6 +5277,7 @@
                 wireGenericResizeHandle(resizeHandle, layout.flexDirection, sourceEl);
             }
 
+            recordLayoutOp({op: 'split', from: sourceKey, direction, key});
             const controller = createDynamicPanelController(key, newRoot);
             panelControllers[key] = controller;
             controller.renderTabStripView();
@@ -5142,7 +5444,8 @@
             const tab = sourceController.panel.removeTab(tabId);
             if (!tab) return;
 
-            const existing = targetController.panel.tabs.find((t) => t.kind === tab.kind && t.nodeId === tab.nodeId);
+            const existing = targetController.panel.tabs.find((t) => t.kind === tab.kind
+                && (tab.groupKey !== null ? t.groupKey === tab.groupKey : t.nodeId === tab.nodeId));
             let insertIndex = toIndex;
             if (existing) {
                 insertIndex = targetController.panel.tabs.indexOf(existing);
@@ -5435,6 +5738,104 @@
 
         // ── END PIPELINE DAG ─────────────────────────────────────────────────
 
+        // ── REMEMBERED ARRANGEMENT (open tabs per panel, per user) ──────────
+
+
+        function recordLayoutOp(op) {
+            if (replayingLayout) return;
+            layoutOps.push(op);
+            if (layoutOps.length > MAX_LAYOUT_OPS) layoutOps = layoutOps.slice(-MAX_LAYOUT_OPS);
+            scheduleArrangementSave();
+        }
+
+        // Pixel/percent sizes the user dragged panels to (collapsed panels excluded).
+        function currentPanelSizes() {
+            const sizes = {};
+            Object.keys(panelControllers).forEach((key) => {
+                const entry = panelCollapseRegistry[key];
+                if (entry && entry.isCollapsed()) return;
+                const el = getPanelRootEl(key);
+                const flex = el && el.style.flex;
+                if (flex && /^0 0 [\d.]+(px|%)$/.test(flex)) sizes[key] = flex;
+            });
+            return sizes;
+        }
+
+        function applyPanelSizes(sizes, keyMap) {
+            Object.entries(sizes || {}).forEach(([savedKey, flex]) => {
+                const key = keyMap[savedKey];
+                const el = key && panelControllers[key] ? getPanelRootEl(key) : null;
+                if (el) el.style.flex = flex;
+            });
+        }
+
+        function currentArrangement() {
+            const panels = {};
+            Object.keys(panelControllers).forEach((key) => { panels[key] = panelControllers[key].panel; });
+            return serializeArrangement(panels, focusedPanel, resolveDagLabel, {layout: layoutOps, sizes: currentPanelSizes()});
+        }
+
+        function scheduleArrangementSave() {
+            if (!arrangementReady || !apiReady) return;
+            clearTimeout(arrangementSaveTimer);
+            arrangementSaveTimer = setTimeout(() => {
+                window.pywebview.api.save_arrangement(currentArrangement()).catch((e) => console.error('Error saving arrangement:', e));
+            }, 400);
+        }
+
+        // Reopens the tabs this user left open last time. A node a page lacks
+        // simply leaves its tab blank (see reconcileGroupTabs).
+        async function restoreArrangement() {
+            try {
+                const result = await window.pywebview.api.get_arrangement();
+                const saved = result && result.arrangement;
+                if (saved) {
+                    // Rebuild the panels the user had by redoing their splits and
+                    // closes, then put each panel's tabs and size back on it.
+                    layoutOps = (saved.layout || []).slice();
+                    replayingLayout = true;
+                    let keyMap;
+                    try {
+                        keyMap = replayLayout(saved.layout, {
+                            has: (key) => !!panelControllers[key],
+                            split: (from, direction) => {
+                                focusedPanel = from;
+                                createPanel(direction);
+                                return focusedPanel;
+                            },
+                            remove: (key) => detachPanel(key),
+                        });
+                    } finally {
+                        replayingLayout = false;
+                    }
+                    Object.entries(saved.panels || {}).forEach(([savedKey, spec]) => {
+                        const controller = panelControllers[keyMap[savedKey]];
+                        if (!controller) return; // panels that no longer exist are skipped
+                        restorePanelTabs(controller.panel, spec, {
+                            makeId: () => 'tab' + (nextTabId++),
+                            instancesFor: (group) => pageNodeIds.get(group) || [],
+                            labelFor: humanizeLabel,
+                        });
+                        controller.renderTabStripView();
+                    });
+                    applyPanelSizes(saved.sizes, keyMap);
+                    if (saved.focused && keyMap[saved.focused] && panelControllers[keyMap[saved.focused]]) {
+                        focusedPanel = keyMap[saved.focused];
+                    }
+                    for (const controller of Object.values(panelControllers)) {
+                        await controller.showActiveTabContent();
+                        onPanelTabsChanged(controller);
+                    }
+                }
+            } catch (e) {
+                console.error('Error restoring arrangement:', e);
+            } finally {
+                arrangementReady = true;
+            }
+        }
+
+        // ── END REMEMBERED ARRANGEMENT ──────────────────────────────────────
+
         window.addEventListener('pywebviewready', async function() {
             apiReady = true;
             document.getElementById('selectCollectraBtn').disabled = false;
@@ -5442,6 +5843,7 @@
             // pipeline object, never a selected folder, so they must load even
             // if get_initial_items() itself throws — see startupActions().
             await loadWorkflowAssets();
+            await restoreArrangement();
             try {
                 const initial = await window.pywebview.api.get_initial_items();
                 if (startupActions(initial).handleParentFolderResult) {

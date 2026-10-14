@@ -1,7 +1,7 @@
 const {
     isImageCropType,
     imageCropDescendantLabels,
-    firstUnusedLabel,
+    defaultCropLabel,
     humanizeLabel,
 } = require('../collectra/gui/cropTypeOptions.js');
 
@@ -92,29 +92,20 @@ describe('imageCropDescendantLabels', () => {
     });
 });
 
-describe('firstUnusedLabel', () => {
-    const labels = ['registration_number_image', 'specific_epithet_image'];
+describe('defaultCropLabel', () => {
+    const labels = ['primary_label_unoriented', 'handwritten_data'];
 
-    it('returns the first label with no instance on the page', () => {
-        const pageNodeIds = new Map([['registration_number_image', ['registration_number_image1']]]);
-        expect(firstUnusedLabel(labels, pageNodeIds)).toBe('specific_epithet_image');
+    it('is the first label in pipeline order', () => {
+        expect(defaultCropLabel(labels)).toBe('primary_label_unoriented');
     });
 
-    it('treats an empty instance list as unused', () => {
-        expect(firstUnusedLabel(labels, new Map([['registration_number_image', []]])))
-            .toBe('registration_number_image');
-    });
-
-    it('falls back to the first label when all are used', () => {
-        const pageNodeIds = new Map([
-            ['registration_number_image', ['registration_number_image1']],
-            ['specific_epithet_image', ['specific_epithet_image1']],
-        ]);
-        expect(firstUnusedLabel(labels, pageNodeIds)).toBe('registration_number_image');
+    it('stays on the first label even when the page already has an instance of it', () => {
+        expect(defaultCropLabel(labels, new Map([['primary_label_unoriented', ['primary_label_unoriented1']]])))
+            .toBe('primary_label_unoriented');
     });
 
     it('returns "" for an empty label list', () => {
-        expect(firstUnusedLabel([], new Map())).toBe('');
+        expect(defaultCropLabel([])).toBe('');
     });
 });
 

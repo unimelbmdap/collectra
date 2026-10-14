@@ -9,6 +9,17 @@ function resolveDagClickTarget(labelOrId, pageNodeIds) {
     return { nodeId: null, instances: ids };
 }
 
+// What clicking a DAG node opens: its label's tab, on the label's first
+// instance. A node with no instance on the bound page does nothing (null).
+// Before any page is bound there is nothing to check against, so the label
+// is opened as-is.
+function dagNodeOpenTarget(label, pageNodeIds, pageBound) {
+    if (!pageBound) return { groupKey: label, nodeId: label };
+    const ids = pageNodeIds.get(label);
+    if (!ids || ids.length === 0) return null;
+    return { groupKey: label, nodeId: ids[0] };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { resolveDagClickTarget };
+    module.exports = { resolveDagClickTarget, dagNodeOpenTarget };
 }
