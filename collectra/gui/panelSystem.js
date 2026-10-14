@@ -113,6 +113,20 @@ class Panel {
         return this.addTab(new Tab({ id, nodeId, label: label ?? groupKey, groupKey }));
     }
 
+    // Drops node tabs whose label is not one of `labels` (the pipeline's labels) — for
+    // example a tab that was once named after an instance id — and returns how many.
+    // DAG tabs stay. With no labels to compare against (the pipeline is not loaded yet)
+    // nothing is dropped.
+    removeNodeTabsNotIn(labels) {
+        if (!labels || labels.size === 0) return 0;
+        const before = this.tabs.length;
+        this.tabs = this.tabs.filter((t) => t.kind !== 'node' || t.groupKey === null || labels.has(t.groupKey));
+        if (this.activeTabId && !this.tabs.some((t) => t.id === this.activeTabId)) {
+            this.activeTabId = this.tabs[0] ? this.tabs[0].id : null;
+        }
+        return before - this.tabs.length;
+    }
+
     selectInstance(tabId, nodeId) {
         const tab = this.getTab(tabId);
         if (tab) tab.nodeId = nodeId;

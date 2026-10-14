@@ -196,3 +196,179 @@ describe('blank tabs in the page', () => {
         expect(html).toContain("if (!tab || tab.kind !== 'node' || !tab.nodeId) {");
     });
 });
+
+describe('tabTypeTitle', () => {
+    const { tabTypeTitle } = require('../collectra/gui/instancePager.js');
+    const types = new Map([['age', 'collectra.Text'], ['specimen_sheet', 'collectra.Image']]);
+    const same = (id) => id;
+
+    it('is the data type of the tab\'s node, for the tooltip', () => {
+        expect(tabTypeTitle({ kind: 'node', groupKey: 'age', nodeId: 'age1' }, types, same)).toBe('collectra.Text');
+    });
+
+    it('finds the type through the shown instance when the tab has no label of its own', () => {
+        const toLabel = (id) => (id === 'age1' ? 'age' : id);
+        expect(tabTypeTitle({ kind: 'node', groupKey: null, nodeId: 'age1' }, types, toLabel)).toBe('collectra.Text');
+    });
+
+    it('is empty for a DAG tab, a blank tab and an unknown node', () => {
+        expect(tabTypeTitle({ kind: 'dag', groupKey: null, nodeId: null }, types, same)).toBe('');
+        expect(tabTypeTitle({ kind: 'node', groupKey: 'zzz', nodeId: null }, types, same)).toBe('');
+        expect(tabTypeTitle({ kind: 'node', groupKey: 'zzz', nodeId: 'zzz1' }, types, same)).toBe('');
+    });
+
+    it('still names the type for a blank tab whose label the page knows', () => {
+        expect(tabTypeTitle({ kind: 'node', groupKey: 'age', nodeId: null }, types, same)).toBe('collectra.Text');
+    });
+});
+
+describe('the data type no longer sits under the tabs', () => {
+    const html = require('node:fs').readFileSync(require.resolve('../collectra/gui/index.html'), 'utf8');
+    const strip = html.slice(html.indexOf('function renderTabStrip('), html.indexOf('function activateTabInPanel'));
+
+    it('hands the type to the same styled hover as the DAG, not a plain browser tooltip', () => {
+        expect(strip).toContain('tabTypeTitle(tab, pageNodeTypes, resolveDagLabel)');
+        expect(strip).toContain('data-type-title="${escapeHtml(typeTitle)}"');
+        expect(strip).toContain('onmouseenter="showTabTooltip(this)"');
+        expect(strip).toContain('onmouseleave="hideTabTooltip()"');
+        expect(strip).not.toMatch(/class="tab[^"]*"[^>]*\stitle=/s);
+    });
+
+    it('does not let the label\'s own tooltip get in the way', () => {
+        expect(strip).not.toContain('<span title="${escapeHtml(tab.nodeId)}">');
+    });
+
+    it('hides the type chip under the tabs', () => {
+        const start = html.indexOf('        .node-content-header .node-content-header-type {');
+        expect(html.slice(start, html.indexOf('}', start))).toContain('display: none;');
+    });
+
+    it('keeps the row for the pager, and hides it when there is no pager', () => {
+        expect(html).toContain('.node-content-header:has(.instance-pager[hidden]) {');
+        expect(html).not.toContain('.node-content-header:has(.node-content-header-type:empty) {');
+    });
+
+    it('has one tooltip card that looks like the DAG one', () => {
+        const at = html.indexOf('id="tabTooltip"');
+        expect(at).toBeGreaterThan(-1);
+        const tag = html.slice(html.lastIndexOf('<div', at), html.indexOf('>', at));
+        expect(tag).toContain('class="card"');
+        expect(tag).toContain('var(--app-secondary');
+        expect(tag).toContain('position:fixed');
+    });
+});
+
+describe('the tab hover behaves', () => {
+    const vm = require('node:vm');
+    const html = require('node:fs').readFileSync(require.resolve('../collectra/gui/index.html'), 'utf8');
+    const start = html.indexOf('// ── TAB TOOLTIP');
+    const source = html.slice(start, html.indexOf('// ── END TAB TOOLTIP', start));
+    const { typeChipHtml } = require('../collectra/gui/deleteDialog.js');
+
+    function setup() {
+        const tooltip = { style: {}, innerHTML: '' };
+        const timer = require('../collectra/gui/hoverTimer.js');
+        const context = { typeChipHtml, ...timer, document: { getElementById: () => tooltip } };
+        vm.createContext(context);
+        vm.runInContext(source, context);
+        return { tooltip, context };
+    }
+    const tab = (type) => ({
+        dataset: { typeTitle: type },
+        getBoundingClientRect: () => ({ left: 120, bottom: 60 }),
+    });
+
+    it('shows the type chip just below the tab', () => {
+        const { tooltip, context } = setup();
+        context.showTabTooltip(tab('collectra.Text'));
+        expect(tooltip.style.display).toBe('block');
+        expect(tooltip.innerHTML).toContain('>Text</span>');
+        expect(tooltip.style.left).toBe('120px');
+        expect(tooltip.style.top).toBe('66px');
+    });
+
+    it('shows nothing for a tab with no type, like the DAG tab', () => {
+        const { tooltip, context } = setup();
+        context.showTabTooltip(tab(''));
+        expect(tooltip.style.display).toBe('none');
+    });
+
+    it('hides when the pointer leaves', () => {
+        const { tooltip, context } = setup();
+        context.showTabTooltip(tab('collectra.Text'));
+        context.hideTabTooltip();
+        expect(tooltip.style.display).toBe('none');
+    });
+});
+
+describe('the DAG tab shows no node details', () => {
+    const html = require('node:fs').readFileSync(require.resolve('../collectra/gui/index.html'), 'utf8');
+    const show = html.slice(html.indexOf('async showActiveTabContent() {'), html.indexOf('renderDagTab() {'));
+    const dagBranch = show.slice(show.indexOf("if (tab.kind === 'dag') {"), show.indexOf("if (tab.kind === 'node' && !tab.nodeId)"));
+
+    it('clears whatever the last node left in the header, including its type', () => {
+        expect(dagBranch).toContain('this.clearHeader();');
+    });
+
+    it('also clears the selected node, so nothing from it is highlighted or shown', () => {
+        expect(dagBranch).toContain('this.selectedNodeId = null;');
+    });
+});
+
+describe('the hidden type label under the tabs', () => {
+    const html = require('node:fs').readFileSync(require.resolve('../collectra/gui/index.html'), 'utf8');
+
+    it('is no longer filled in anywhere, since the type shows on hover instead', () => {
+        expect(html).not.toMatch(/headerType\.textContent/);
+    });
+
+    it('stays in the page as the anchor the row\'s slots are found from', () => {
+        expect(html).toContain('this.el.headerType.parentElement');
+    });
+});
+
+describe('Panel.removeNodeTabsNotIn', () => {
+    const build = () => {
+        const panel = new Panel();
+        panel.addTab(new Tab({ id: 'dag', nodeId: null, label: 'DAG', kind: 'dag' }));
+        panel.openOrActivateGroup({ id: 'a', groupKey: 'locality', nodeId: 'locality-1', label: 'Locality' });
+        panel.openOrActivateGroup({ id: 'b', groupKey: 'locality-18925dcf-6676-4990-8e88-6a5c0a7db284', nodeId: null, label: 'Locality-18925dcf' });
+        panel.openOrActivateGroup({ id: 'c', groupKey: 'genus', nodeId: null, label: 'Genus' });
+        return panel;
+    };
+    const labels = new Set(['locality', 'genus']);
+
+    it('drops node tabs whose label is not a pipeline label, such as one named after an instance id', () => {
+        const panel = build();
+        const removed = panel.removeNodeTabsNotIn(labels);
+        expect(removed).toBe(1);
+        expect(panel.tabs.map((t) => t.groupKey || t.kind)).toEqual(['dag', 'locality', 'genus']);
+    });
+
+    it('never touches DAG tabs, and keeps the active tab when it survives', () => {
+        const panel = build();
+        panel.activateTab('a');
+        panel.removeNodeTabsNotIn(labels);
+        expect(panel.getTab('dag')).not.toBe(null);
+        expect(panel.activeTabId).toBe('a');
+    });
+
+    it('moves the active tab to one that remains when the active one is dropped', () => {
+        const panel = build();
+        panel.activateTab('b');
+        panel.removeNodeTabsNotIn(labels);
+        expect(panel.getTab(panel.activeTabId)).not.toBe(null);
+    });
+
+    it('does nothing when it has no labels to compare with (the pipeline is not loaded yet)', () => {
+        const panel = build();
+        expect(panel.removeNodeTabsNotIn(new Set())).toBe(0);
+        expect(panel.tabs).toHaveLength(4);
+    });
+
+    it('does nothing when every tab is fine', () => {
+        const panel = new Panel();
+        panel.openOrActivateGroup({ id: 'a', groupKey: 'locality', nodeId: null, label: 'Locality' });
+        expect(panel.removeNodeTabsNotIn(labels)).toBe(0);
+    });
+});

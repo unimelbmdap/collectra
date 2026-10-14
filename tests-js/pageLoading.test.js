@@ -25,7 +25,7 @@ function pageContext({carry = null, activeTab = null} = {}) {
         panelControllers: {bottom, other}, activeNodeIds: new Set(['image', 'crop']),
         resolveDagLabel: id => id, pendingCarryLabel: carry, PAGE_NODE_RE: /^Page/,
         cy: {nodes: () => ({roots: () => [{id: () => 'image'}]})}, lastDagNodes: [],
-        showResult: vi.fn(), formatLabelCounts: vi.fn(),
+        showResult: vi.fn(), formatLabelCounts: vi.fn(), rerunArtefactSearch: vi.fn(),
     };
     return {context, bottom, other};
 }
@@ -44,6 +44,7 @@ it.each([null, 'crop'])('renders only the final selected artefact when carrying 
     expect(bottom.reconcileTabs).toHaveBeenCalledWith({preferFirst: true});
     expect(other.reconcileTabs).toHaveBeenCalledWith({preferFirst: true});
     expect(context.showResult).not.toHaveBeenCalled();
+    expect(context.rerunArtefactSearch).toHaveBeenCalledTimes(1);
 });
 
 describe('switching page keeps the tabs the user has open', () => {

@@ -10,6 +10,7 @@ JavaScript usage:
 import base64
 import enum
 import platform
+import re
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -1098,6 +1099,110 @@ class GUIBackend:
                     seen.add(child_id)
                     queue.append(child_id)
         return ids
+
+    def search_artefacts(self, query: str) -> dict:
+        """
+        Find the artefacts on the open page that contain ``query``
+        (case-insensitive) in their content: the text of a Text artefact or
+        a custom name. DAG labels and ids are not searched.
+
+        Returns:
+            dict with 'matches': one entry per artefact, in page order, each
+            with id, DAG label (to place it in the tabs), type, the first
+            field that matched (text, name) and a snippet around the match
+        """
+        if self._graph is None:
+            return {"success": False, "error": "No graph loaded. Call load_yaml first."}
+
+        needle = (query or "").strip().lower()
+        if not needle:
+            return {"success": True, "matches": []}
+
+        from collectra.types.texts import Text
+        from collectra.utils import load_class_from_string
+
+        context = self._display_context()
+        matches = []
+        for node_id in self._nodes_top_down():
+            node = self._graph.get_node(node_id)
+            if node is None:
+                continue
+            fields = []
+            try:
+                if issubclass(load_class_from_string(node.type), Text):
+                    path = context.text_path(node_id)
+                    if path:
+                        text = path.read_text(encoding="utf-8")
+                    elif context.records.get(node_id, {}).get("path"):
+                        text = (
+                            ""  # its file is missing: nothing to search, not its path
+                        )
+                    else:
+                        text = node.data
+                    fields.append(("text", str(text or "")))
+            except Exception:
+                # One artefact that cannot be read (unknown type, a type that is not
+                # a class, a file that is not text) must not stop the whole search.
+                pass
+            fields.append(("name", node.name or ""))
+            for field, value in fields:
+                found = re.search(re.escape(needle), value, re.IGNORECASE)
+                position = found.start() if found else -1
+                if position != -1:
+                    matches.append(
+                        {
+                            "id": node_id,
+                            "label": node.label,
+                            "type": node.type,
+                            "field": field,
+                            "snippet": self._snippet(
+                                value, position, len(found.group())
+                            ),
+                        }
+                    )
+                    break
+        # Walk the matches the way the pipeline reads; labels it does not know
+        # (made by hand) come last. The sort is stable, so within one label the
+        # order of the page is kept.
+        ranks = self._pipeline_label_ranks()
+        matches.sort(key=lambda match: ranks.get(match["label"], len(ranks)))
+        return {"success": True, "matches": matches}
+
+    def _pipeline_label_ranks(self) -> dict[str, int]:
+        from .pipeline_order import pipeline_label_ranks
+
+        try:
+            return pipeline_label_ranks(self._pipeline.gui_graph())
+        except Exception:
+            return {}
+
+    def _nodes_top_down(self) -> list[str]:
+        """Every node, each followed by its descendants (the image, then its
+        crops, then their texts), so results read in the order of the page."""
+        ordered, seen = [], set()
+
+        def visit(node_id: str) -> None:
+            if node_id in seen:
+                return
+            seen.add(node_id)
+            ordered.append(node_id)
+            for child_id in self._graph.children(node_id):
+                visit(child_id)
+
+        for node_id in self._graph.nodes:
+            if not self._graph.parents(node_id):
+                visit(node_id)
+        for node_id in self._graph.nodes:  # anything only reachable around a cycle
+            visit(node_id)
+        return ordered
+
+    @staticmethod
+    def _snippet(value: str, position: int, length: int, context: int = 40) -> str:
+        """The match with a little text either side, trimmed with ellipses."""
+        start = max(0, position - context)
+        end = min(len(value), position + length + context)
+        snippet = " ".join(value[start:end].split())
+        return ("…" if start > 0 else "") + snippet + ("…" if end < len(value) else "")
 
     def get_delete_preview(self, node_id: str) -> dict:
         """
