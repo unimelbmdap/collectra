@@ -22,6 +22,7 @@ __all__ = ["Collectra"]
 import copy
 import datetime
 import json
+import shlex
 import shutil
 import stat
 import sys
@@ -171,11 +172,17 @@ class Collectra:
         destination.mkdir(parents=True, exist_ok=True)
         launcher = destination / name
         pipeline_path = (self.path / self.PIPELINE_FILE).resolve()
-        launcher.write_text(
-            f"#!{sys.executable}\n"
+        code = (
             "from pathlib import Path\n"
             "from collectra.main import main\n"
             f"main(pipeline_path=Path({str(pipeline_path)!r}), program_name={name!r})\n"
+        )
+        # Kernel shebang parsing cannot quote an interpreter path containing
+        # spaces. Let the shell invoke the exact interpreter as one argument.
+        launcher.write_text(
+            "#!/bin/sh\n"
+            f'exec {shlex.join([sys.executable, "-c", code])} "$@"\n',
+            encoding="utf-8",
         )
         launcher.chmod(
             launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH

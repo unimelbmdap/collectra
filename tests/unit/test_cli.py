@@ -240,7 +240,20 @@ def test_pipeline_run_warns_when_no_inputs_match(tmp_path, monkeypatch, capsys):
     assert "No supported input files found" in capsys.readouterr().out
 
 
-def test_installed_pipeline_launcher_delegates_to_main(tmp_path):
+@pytest.mark.parametrize("spaced", [False, True])
+def test_installed_pipeline_launcher_delegates_to_main(tmp_path, monkeypatch, spaced):
+    if spaced:
+        import shlex
+        import sys
+
+        directory = tmp_path / "Pipeline with 'quotes' and $symbols"
+        directory.mkdir()
+        interpreter = directory / "Python Environment" / "bin" / "python"
+        interpreter.parent.mkdir(parents=True)
+        interpreter.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} "$@"\n')
+        interpreter.chmod(0o755)
+        monkeypatch.setattr(sys, "executable", str(interpreter))
+        tmp_path = directory
     pipeline_file = write_empty_pipeline(tmp_path)
     pipeline = Collectra.from_file(pipeline_file)
     bin_dir = tmp_path / "bin"
