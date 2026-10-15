@@ -1188,6 +1188,13 @@
             display: flex;
             gap: 6px;
         }
+        .panel-arrange-popover { max-height: calc(100vh - 16px); overflow-y: auto; min-width: 200px; }
+        .panel-arrange-popover hr { border: 0; border-top: 1px solid var(--app-divider, #2a2a2a); margin: 10px 0; }
+        .layout-menu-item {
+            display: block; width: 100%; text-align: left; padding: 6px;
+            background: transparent; color: inherit; border: none; cursor: pointer;
+        }
+        .layout-menu-item:hover { background: var(--app-bg, #000); }
         .panel-arrange-tile {
             width: 44px;
             height: 34px;
@@ -5748,7 +5755,7 @@
 
         const ARRANGE_TILE_OUTLINE = '<rect x="1" y="1" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/>'; // shared tile outline
 
-        function showSplitViewPopover(mouseEvent) {
+        async function showSplitViewPopover(mouseEvent) {
             mouseEvent.preventDefault();
             buildArrangePopover(mouseEvent.currentTarget, 'Split View', [
                 { title: 'Split Left',  icon: ARRANGE_TILE_OUTLINE + '<rect x="2" y="2" width="8" height="10" rx="1" fill="currentColor"/>',  onSelect: () => createPanel('left') },
@@ -5756,6 +5763,93 @@
                 { title: 'Split Above', icon: ARRANGE_TILE_OUTLINE + '<rect x="2" y="2" width="16" height="5" rx="1" fill="currentColor"/>',  onSelect: () => createPanel('above') },
                 { title: 'Split Below', icon: ARRANGE_TILE_OUTLINE + '<rect x="2" y="7" width="16" height="5" rx="1" fill="currentColor"/>',  onSelect: () => createPanel('below') },
             ]);
+            const menu = document.getElementById('nodeContextMenu');
+            try {
+                const result = await window.pywebview.api.get_layouts();
+                if (!menu.isConnected) return;
+                for (const [source, title] of [['pipeline', `${result.pipeline_name} Layouts`], ['custom', 'Custom Layouts']]) {
+                    menu.appendChild(document.createElement('hr'));
+                    const heading = document.createElement('div');
+                    heading.className = 'panel-arrange-section-label';
+                    heading.textContent = title;
+                    menu.appendChild(heading);
+                    const layouts = result.layouts.filter((layout) => layout.source === source);
+                    if (!layouts.length) {
+                        const empty = document.createElement('div');
+                        empty.className = 'panel-arrange-section-label';
+                        empty.textContent = 'No saved layouts';
+                        menu.appendChild(empty);
+                    }
+                    for (const layout of layouts) {
+                        const button = document.createElement('button');
+                        button.className = 'layout-menu-item';
+                        button.textContent = layout.name;
+                        button.onclick = () => selectSavedLayout(layout.id);
+                        menu.appendChild(button);
+                    }
+                }
+                menu.appendChild(document.createElement('hr'));
+                const save = document.createElement('button');
+                save.className = 'layout-menu-item';
+                save.textContent = 'Save current layout…';
+                save.onclick = showSaveLayoutDialog;
+                menu.appendChild(save);
+                menu.style.top = Math.max(8, Math.min(parseFloat(menu.style.top), window.innerHeight - menu.offsetHeight - 8)) + 'px';
+            } catch (error) {
+                const message = document.createElement('div');
+                message.textContent = 'Could not load saved layouts.';
+                menu.appendChild(message);
+            }
+        }
+
+        async function selectSavedLayout(id) {
+            try {
+                // Rebuild from the same clean panel tree used at startup, including
+                // original panels that the current arrangement may have removed.
+                clearTimeout(arrangementSaveTimer);
+                arrangementReady = false;
+                const saved = await window.pywebview.api.activate_layout(id, currentFolderIndex);
+                if (!saved.success) throw new Error(saved.error);
+                window.location.reload();
+            } catch (error) {
+                arrangementReady = true;
+                alert('Could not load layout: ' + error.message);
+            }
+        }
+
+        function showSaveLayoutDialog() {
+            closeNodeContextMenu();
+            const snapshot = currentArrangement();
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay visible';
+            overlay.setAttribute('role', 'dialog');
+            overlay.setAttribute('aria-modal', 'true');
+            overlay.setAttribute('aria-label', 'Save current layout');
+            overlay.innerHTML = `<form class="modal-popup">
+                <h3>Save current layout</h3>
+                <label>Layout name <input type="text" name="layoutName" required autocomplete="off"></label>
+                <p role="status"></p>
+                <div class="modal-buttons"><button type="button">Cancel</button><button type="submit">Save layout</button></div>
+            </form>`;
+            const form = overlay.querySelector('form');
+            const close = () => { overlay.remove(); document.getElementById('newPanelToolbarBtn').focus(); };
+            overlay.querySelector('button[type="button"]').onclick = close;
+            overlay.onkeydown = (event) => { if (event.key === 'Escape') { event.stopPropagation(); close(); } };
+            form.onsubmit = async (event) => {
+                event.preventDefault();
+                const button = form.querySelector('button[type="submit"]');
+                button.disabled = true;
+                try {
+                    const result = await window.pywebview.api.save_named_layout(form.elements.layoutName.value, snapshot);
+                    if (!result.success) throw new Error(result.error);
+                    close();
+                } catch (error) {
+                    form.querySelector('[role="status"]').textContent = error.message;
+                    button.disabled = false;
+                }
+            };
+            document.body.appendChild(overlay);
+            form.elements.layoutName.focus();
         }
 
         // Tab reordering — drag a tab left/right within the strip to

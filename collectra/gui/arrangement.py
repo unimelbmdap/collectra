@@ -95,36 +95,84 @@ def _sanitize_tab(tab):
 
 
 class ArrangementStore:
-    def __init__(self, pipeline_directory: Path):
+    def __init__(
+        self,
+        pipeline_directory: Path,
+        pipeline_name: str | None = None,
+        default_layout: Path | None = None,
+    ):
         key = hashlib.sha256(
             str(Path(pipeline_directory).resolve()).encode()
         ).hexdigest()
-        self.path = (
+        directory = (
             Path(user_cache_dir("collectra", appauthor=False))
             / "gui-arrangements"
-            / f"{key}.yaml"
         )
+        name = pipeline_name or Path(pipeline_directory).name
+        name = re.sub(r'[/\\\x00-\x1f]', "_", name).strip()
+        if name in {"", ".", ".."}:
+            name = "pipeline"
+        self.path = directory / name / f"{key}.yaml"
+        self.legacy_path = directory / f"{key}.yaml"
+        self.default_layout = default_layout
 
     def read(self):
+        for path in (self.path, self.legacy_path, self.default_layout):
+            if path is not None:
+                arrangement = self._read_file(path)
+                if arrangement is not None:
+                    return arrangement
+        return None
+
+    @staticmethod
+    def _read_file(path):
         try:
             return sanitize_arrangement(
-                yaml.safe_load(self.path.read_text(encoding="utf-8"))
+                yaml.safe_load(path.read_text(encoding="utf-8"))
             )
-        except (OSError, yaml.YAMLError):
+        except (OSError, UnicodeError, yaml.YAMLError):
             return None
 
+    def custom_layouts(self):
+        try:
+            return sorted(
+                (p for p in self.path.parent.glob("*.y*ml")
+                 if p != self.path and not re.fullmatch(r"[0-9a-f]{64}", p.stem)
+                 and p.suffix in {".yaml", ".yml"}),
+                key=lambda p: p.name.casefold(),
+            )
+        except OSError:
+            return []
+
+    def save_named(self, name: str, arrangement: dict):
+        if (not isinstance(name, str) or not name.strip()
+                or name.strip() in {".", ".."}
+                or re.search(r'[/\\\x00-\x1f]', name)
+                or re.fullmatch(r"[0-9a-f]{64}", name.strip())):
+            raise ValueError("Enter a layout name without slashes or control characters.")
+        path = self.path.parent / (name.strip() + ".yaml")
+        if path.exists():
+            raise ValueError("A layout with that name already exists. Choose another name.")
+        self._write_file(path, arrangement, raise_errors=True)
+
     def write(self, arrangement: dict) -> None:
+        self._write_file(self.path, arrangement)
+
+    @staticmethod
+    def _write_file(path, arrangement, raise_errors=False):
         temporary = None
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
+            path.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(
-                mode="w", encoding="utf-8", dir=self.path.parent, delete=False
+                mode="w", encoding="utf-8", dir=path.parent, delete=False
             ) as stream:
                 temporary = Path(stream.name)
                 yaml.safe_dump(arrangement, stream, sort_keys=False)
-            os.replace(temporary, self.path)
+            os.replace(temporary, path)
         except OSError as error:
             logger.warning("Could not save GUI arrangement: %s", error)
+            if raise_errors:
+                raise
         finally:
             if temporary is not None:
                 try:

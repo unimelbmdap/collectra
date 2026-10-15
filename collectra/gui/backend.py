@@ -69,7 +69,21 @@ class GUIBackend:
         )
         from .arrangement import ArrangementStore
 
-        self._arrangement = ArrangementStore(pipeline_path) if pipeline_path else None
+        metadata = getattr(pipeline, "pipeline_metadata", {})
+        layouts = metadata.get("layouts")
+        default_layout = None
+        if pipeline_path and isinstance(layouts, list) and layouts:
+            if isinstance(layouts[0], str) and layouts[0].strip():
+                default_layout = Path(pipeline_path) / layouts[0]
+        self._arrangement = (
+            ArrangementStore(
+                pipeline_path,
+                pipeline_name=metadata.get("name") or getattr(pipeline, "name", None),
+                default_layout=default_layout,
+            )
+            if pipeline_path
+            else None
+        )
         self._initial_items = (
             self._load_input_paths(inputs) if inputs else self._restore_folder_session()
         )
@@ -149,6 +163,68 @@ class GUIBackend:
             return {"success": False, "error": "Not a valid arrangement"}
         if self._arrangement is not None:
             self._arrangement.write(clean)
+        return {"success": True}
+
+    def _available_layouts(self):
+        metadata = getattr(self._pipeline, "pipeline_metadata", {})
+        entries = []
+        layouts = metadata.get("layouts", [])
+        for index, filename in enumerate(layouts if isinstance(layouts, list) else []):
+            if isinstance(filename, str) and filename.strip():
+                entries.append((f"pipeline:{index}", "pipeline", Path(filename).stem,
+                                Path(self._pipeline.path) / filename))
+        if self._arrangement:
+            for path in self._arrangement.custom_layouts():
+                entries.append((f"custom:{path.name}", "custom", path.stem, path))
+        return entries
+
+    def get_layouts(self) -> dict:
+        """List workflow and named user layouts without exposing arbitrary file access."""
+        metadata = getattr(self._pipeline, "pipeline_metadata", {})
+        return {
+            "success": True,
+            "pipeline_name": metadata.get("name") or getattr(self._pipeline, "name", "Pipeline"),
+            "layouts": [{"id": key, "source": source, "name": name}
+                        for key, source, name, _ in self._available_layouts()],
+        }
+
+    def load_layout(self, layout_id: str) -> dict:
+        from .arrangement import ArrangementStore
+
+        for key, _, _, path in self._available_layouts():
+            if key == layout_id:
+                arrangement = ArrangementStore._read_file(path)
+                if arrangement is not None:
+                    return {"success": True, "arrangement": arrangement}
+                return {"success": False, "error": "This layout is missing or invalid."}
+        return {"success": False, "error": "Layout not found."}
+
+    def save_named_layout(self, name: str, arrangement: dict) -> dict:
+        from .arrangement import sanitize_arrangement
+
+        clean = sanitize_arrangement(arrangement)
+        if clean is None or self._arrangement is None:
+            return {"success": False, "error": "No valid layout to save."}
+        try:
+            self._arrangement.save_named(name, clean)
+        except (ValueError, OSError) as error:
+            return {"success": False, "error": str(error)}
+        return {"success": True}
+
+    def activate_layout(self, layout_id: str, active_index: int = 0) -> dict:
+        """Persist a chosen layout and retain the open results for the UI rebuild."""
+        result = self.load_layout(layout_id)
+        if not result["success"] or self._arrangement is None:
+            return result if not result["success"] else {"success": False, "error": "No pipeline open."}
+        try:
+            self._arrangement._write_file(
+                self._arrangement.path, result["arrangement"], raise_errors=True
+            )
+        except OSError as error:
+            return {"success": False, "error": str(error)}
+        self._initial_items = self._restore_folder_session()
+        if self._initial_items and type(active_index) is int:
+            self._initial_items["active_index"] = active_index
         return {"success": True}
 
     def get_initial_items(self) -> dict:

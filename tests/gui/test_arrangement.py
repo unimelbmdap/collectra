@@ -36,6 +36,35 @@ def test_nothing_saved_yet_reads_as_none(store):
     assert store.read() is None
 
 
+def test_named_directory_preserves_separate_pipelines(tmp_path):
+    one = ArrangementStore(tmp_path / "one", pipeline_name="My Workflow")
+    other = ArrangementStore(tmp_path / "two", pipeline_name="My Workflow")
+    assert one.path.parent.name == "My Workflow"
+    assert one.path != other.path
+
+
+def test_legacy_user_layout_takes_priority_over_workflow_default(store, tmp_path):
+    default = tmp_path / "default.yaml"
+    default.write_text(yaml.safe_dump({**SAMPLE, "focused": "top"}))
+    store.default_layout = default
+    assert store.read()["focused"] == "top"
+    store.legacy_path.parent.mkdir(parents=True, exist_ok=True)
+    store.legacy_path.write_text(yaml.safe_dump(SAMPLE))
+    assert store.read() == SAMPLE
+    store.write({**SAMPLE, "focused": "new"})
+    assert store.read()["focused"] == "new"
+
+
+@pytest.mark.parametrize("contents", ["not a layout", ": : [", "version: 99"])
+def test_bad_user_layout_falls_back_to_default(store, tmp_path, contents):
+    default = tmp_path / "default.yaml"
+    default.write_text(yaml.safe_dump(SAMPLE))
+    store.default_layout = default
+    store.path.parent.mkdir(parents=True)
+    store.path.write_text(contents)
+    assert store.read() == SAMPLE
+
+
 def test_what_is_written_is_read_back(store):
     store.write(SAMPLE)
 

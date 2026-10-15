@@ -1,6 +1,9 @@
 """Persist folder sessions across backend instances without touching user caches."""
 
 import json
+
+import pytest
+import yaml
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -181,6 +184,31 @@ def test_no_saved_arrangement_returns_none(tmp_path):
     result = GUIBackend(pipeline(tmp_path)).get_arrangement()
 
     assert result == {"success": True, "arrangement": None}
+
+
+def test_pipeline_default_layout_and_user_override(tmp_path):
+    config = pipeline(tmp_path)
+    config.pipeline_metadata = {"name": "Workflow", "layouts": ["layouts/default.yaml"]}
+    default = config.path / "layouts" / "default.yaml"
+    default.parent.mkdir()
+    default.write_text(yaml.safe_dump(ARRANGEMENT))
+    api = GUIBackend(config)
+    assert api.get_arrangement()["arrangement"] == ARRANGEMENT
+    assert api._arrangement.path.parent.name == "Workflow"
+    personal = {**ARRANGEMENT, "focused": "top"}
+    api.save_arrangement(personal)
+    assert GUIBackend(config).get_arrangement()["arrangement"] == personal
+    assert yaml.safe_load(default.read_text()) == ARRANGEMENT
+
+
+@pytest.mark.parametrize(
+    "layouts", [None, [], "default.yaml", [None], ["missing.yaml", "valid.yaml"]]
+)
+def test_missing_or_invalid_first_default_uses_builtin_layout(tmp_path, layouts):
+    config = pipeline(tmp_path)
+    config.pipeline_metadata = {"layouts": layouts}
+    (config.path / "valid.yaml").write_text(yaml.safe_dump(ARRANGEMENT))
+    assert GUIBackend(config).get_arrangement()["arrangement"] is None
 
 
 def test_a_bad_arrangement_is_refused_and_nothing_is_written(tmp_path):

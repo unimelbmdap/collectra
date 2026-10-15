@@ -86,6 +86,44 @@ For example, reinstall with ``install-app --name "My Pipeline" --force``.
 The replacement is built before the existing app is replaced. Writing to ``/Applications`` requires write access;
 the default ``~/Applications`` is the user's Applications folder.
 
+Workflow layouts
+----------------
+
+List layout YAML files in the pipeline metadata, with paths relative to the
+pipeline directory:
+
+.. code-block:: yaml
+
+    collectra_pipeline_metadata:
+      name: My Pipeline
+      ext: collectra
+      version: "1.0"
+      layouts:
+        - layouts/default.yaml
+        - layouts/review.yaml
+
+The first entry supplies the workflow's default layout when the user has no
+valid saved layout. All entries appear under ``<Pipeline name> Layouts`` in
+the Customize Layout menu, in metadata order. Later entries are not tried as
+fallback defaults. Missing or invalid defaults leave the GUI
+using its built-in layout.
+
+User changes auto-save in the user's cache directory under
+``collectra/gui-arrangements/<pipeline name>/<pipeline path hash>.yaml``.
+On macOS the cache directory is ``~/Library/Caches``. Existing layout files
+from the previous flat cache directory are still read, and subsequent saves
+use the new directory. A saved user layout takes priority over the workflow
+default. Copy a saved layout YAML into the pipeline directory and list it
+above to share it as a workflow default. Layout files contain panel splits,
+sizes, tabs, focus, and collapsed panels.
+
+The Customize Layout menu also lists named YAML files from the pipeline's
+user layout directory under ``Custom Layouts``. Choose ``Save current layout…``
+to save a named copy of the current arrangement. Existing names are preserved;
+choose a different name to save another copy. Selecting a layout makes it the
+current user arrangement and refreshes the viewer, retaining the open results
+and selected page. Workflow layout files are never overwritten by this action.
+
 Sidebar and folder actions
 ---------------------------
 
