@@ -86,6 +86,35 @@ For example, reinstall with ``install-app --name "My Pipeline" --force``.
 The replacement is built before the existing app is replaced. Writing to ``/Applications`` requires write access;
 the default ``~/Applications`` is the user's Applications folder.
 
+Native menus
+------------
+
+The desktop menu bar provides the same actions as the viewer controls:
+
+* ``File``: open results, reveal the current results file, and close the current tab.
+* ``Navigate``: previous/next file, file search, artefact search, and search matches.
+* ``Panels``: sidebar, graph, artefact/task lists, fit views, split, collapse, and remove panels.
+* ``Layouts``: open the live layout chooser or save the current layout.
+* ``Tools``: source control, statistics, and load details.
+
+Panel actions target the last focused panel. macOS retains its standard
+application, Edit, and View menus. Restart the GUI to pick up menu changes.
+
+``Tools → Check for Updates…`` checks the pipeline directory and the imported
+Collectra source checkout independently. Each must have a ``.git`` directory
+or worktree file and a configured remote tracking branch. A packaged Collectra
+installation without a source checkout is reported as unavailable.
+
+Checking fetches remote commits without changing working files. When a clean
+checkout is behind its remote and can fast-forward, the dialog offers an Update
+button. It rechecks the repository before applying the update. Local changes,
+diverged branches, missing tracking branches, and fetch failures are reported;
+the updater never resets, stashes, or merges local work. Restart the GUI after
+updating. Updating source does not install new Python dependencies.
+After a successful update, ``Restart Now`` saves pending text edits and the
+layout, then restarts the app with the same Python environment and pipeline.
+Open results and the selected page are restored from the saved session.
+
 Text editing
 ------------
 

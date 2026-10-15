@@ -53,6 +53,9 @@ class GUIBackend:
         """
         self._git_lock = threading.Lock()
         self._text_save_lock = threading.Lock()
+        self._update_lock = threading.Lock()
+        self._restart_requested = False
+        self._restart_required = False
         self._pipeline = pipeline
         self._collectra_file: CollectraFile | None = None
         self._graph: CollectraGraph | None = None
@@ -180,6 +183,26 @@ class GUIBackend:
                 entries.append((f"custom:{path.name}", "custom", path.stem, path))
         return entries
 
+    def restart_gui(self) -> dict:
+        """Close the GUI so start() can replace the process with fresh code."""
+        if self._window is None:
+            return {"success": False, "error": "No GUI window is open."}
+        if not self._update_lock.acquire(blocking=False):
+            return {"success": False, "error": "Wait for the update to finish before restarting."}
+        try:
+            if self._collectra_folders:
+                self._save_folder_session()
+            elif self._yaml_path:
+                self._save_folder_session([Path(self._yaml_path).parent])
+            self._restart_requested = True
+            self._window.destroy()
+            return {"success": True}
+        except Exception as error:
+            self._restart_requested = False
+            return {"success": False, "error": str(error)}
+        finally:
+            self._update_lock.release()
+
     def get_layouts(self) -> dict:
         """List workflow and named user layouts without exposing arbitrary file access."""
         metadata = getattr(self._pipeline, "pipeline_metadata", {})
@@ -189,6 +212,41 @@ class GUIBackend:
             "layouts": [{"id": key, "source": source, "name": name}
                         for key, source, name, _ in self._available_layouts()],
         }
+
+    def check_updates(self) -> dict:
+        from .updates import collectra_repository, inspect_repository
+
+        if not self._update_lock.acquire(blocking=False):
+            return {"success": False, "error": "An update operation is already running."}
+        try:
+            targets = [
+                ("pipeline", getattr(self._pipeline, "path", None), "Pipeline"),
+                ("collectra", collectra_repository(), "Collectra"),
+            ]
+            return {"success": True, "restart_required": self._restart_required, "repositories": [
+                {"id": key, **inspect_repository(root, label)} for key, root, label in targets
+            ]}
+        finally:
+            self._update_lock.release()
+
+    def install_update(self, target: str) -> dict:
+        from .updates import collectra_repository, update_repository
+
+        if target not in {"pipeline", "collectra"}:
+            return {"success": False, "error": "Unknown update target."}
+        if not self._update_lock.acquire(blocking=False):
+            return {"success": False, "error": "An update operation is already running."}
+        try:
+            root, label = (
+                (getattr(self._pipeline, "path", None), "Pipeline") if target == "pipeline"
+                else (collectra_repository(), "Collectra")
+            )
+            repository = {"id": target, **update_repository(root, label)}
+            if repository["status"] == "updated":
+                self._restart_required = True
+            return {"success": True, "repository": repository}
+        finally:
+            self._update_lock.release()
 
     def load_layout(self, layout_id: str) -> dict:
         from .arrangement import ArrangementStore
@@ -1646,6 +1704,24 @@ class GUIBackend:
         return {"success": False, "error": "No logo file found"}
 
 
+def _set_macos_app_name(name: str) -> None:
+    """Set the app identity before Cocoa creates its native application menu."""
+    if platform.system() != "Darwin":
+        return
+    try:
+        from Foundation import NSBundle, NSProcessInfo
+
+        info = NSBundle.mainBundle().infoDictionary()
+        info["CFBundleName"] = name
+        info["CFBundleDisplayName"] = name
+        NSProcessInfo.processInfo().setProcessName_(name)
+    except Exception:
+        # A packaged launcher also supplies these names in its Info.plist.
+        import logging
+
+        logging.getLogger(__name__).warning("Could not set macOS application name", exc_info=True)
+
+
 def _disable_macos_tabbing() -> None:
     """Disable macOS Window Tab Bar for the pywebview window."""
     import platform
@@ -1687,6 +1763,7 @@ def start(
         debug: Enable developer tools
         inputs: Optional result files/folders to populate the sidebar at startup.
     """
+    _set_macos_app_name(pipeline.name)
     api = GUIBackend(pipeline, inputs=inputs)
     html_path = get_resource_path("index.html")
     window = webview.create_window(
@@ -1701,6 +1778,20 @@ def start(
     def on_started():
         api.set_window(window)
         _disable_macos_tabbing()
+        arrange_native_menu()
 
-    webview.start(func=on_started, debug=debug)
+    from .native_menu import arrange_native_menu, build_native_menu
+
+    webview.start(func=on_started, debug=debug, menu=build_native_menu(window))
+    if api._restart_requested:
+        import os
+        import sys
+
+        arguments = [sys.executable, "-m", "collectra.main", "--pipeline",
+                     str(Path(pipeline.path).resolve() / "pipeline.yaml"), "gui"]
+        if debug:
+            arguments.append("--debug")
+        # Reuse the environment and process. Startup restores saved results,
+        # the selected page, and layout rather than the original launch inputs.
+        os.execv(sys.executable, arguments)
     return window

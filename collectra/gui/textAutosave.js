@@ -8,6 +8,7 @@ function createTextAutosave({initialValue, read, write, report, delay = 500}) {
     let disposed = false;
 
     async function drain() {
+        let success = true;
         while (pending !== null) {
             const value = pending;
             pending = null;
@@ -17,13 +18,16 @@ function createTextAutosave({initialValue, read, write, report, delay = 500}) {
                 const result = await write(value);
                 if (!result || result.success === false) throw new Error(result?.error || 'Save failed');
                 saved = value;
+                success = true;
                 report('Saved', false);
             } catch (error) {
+                success = false;
                 report('Error: ' + error.message, true);
                 // Keep the edit available for a manual retry.
                 if (pending === null) break;
             }
         }
+        return success;
     }
 
     function flush() {
