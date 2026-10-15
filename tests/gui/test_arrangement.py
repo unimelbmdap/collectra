@@ -224,6 +224,14 @@ class TestLayout:
             "bottom": "0 0 410.5px",
         }
 
+    def test_keeps_shrinkable_percentage_sizes(self):
+        data = {
+            "version": 1,
+            "sizes": {"a": "0 1 45.50%", "b": "0 2 10%", "c": "1 1 30%"},
+        }
+
+        assert sanitize_arrangement(data)["sizes"] == {"a": "0 1 45.50%"}
+
     def test_keeps_percentage_sizes_too(self):
         data = {"version": 1, "sizes": {"top": "0 0 45.50%", "bottom": "0 0 100%x"}}
 
@@ -231,3 +239,40 @@ class TestLayout:
 
     def test_missing_sizes_are_an_empty_dictionary(self):
         assert sanitize_arrangement({"version": 1})["sizes"] == {}
+
+
+class TestCollapsed:
+    def test_keeps_the_list_of_collapsed_panels(self):
+        data = {"version": 1, "collapsed": ["top", "panel2"]}
+
+        assert sanitize_arrangement(data)["collapsed"] == ["top", "panel2"]
+
+    def test_an_empty_list_means_none_are_collapsed(self):
+        assert sanitize_arrangement({"version": 1, "collapsed": []})["collapsed"] == []
+
+    def test_a_save_without_the_list_stays_without_it(self):
+        # An older save must not be read as "nothing is collapsed".
+        assert "collapsed" not in sanitize_arrangement({"version": 1})
+
+    def test_drops_anything_that_is_not_a_panel_name(self):
+        data = {"version": 1, "collapsed": ["top", 7, None, "", "panel3"]}
+
+        assert sanitize_arrangement(data)["collapsed"] == ["top", "panel3"]
+
+    def test_a_list_of_the_wrong_kind_is_treated_as_missing(self):
+        assert "collapsed" not in sanitize_arrangement(
+            {"version": 1, "collapsed": "top"}
+        )
+
+    def test_round_trips_through_the_file(self, store):
+        store.write(
+            {
+                "version": 1,
+                "layout": [],
+                "sizes": {},
+                "panels": {},
+                "collapsed": ["top"],
+            }
+        )
+
+        assert store.read()["collapsed"] == ["top"]

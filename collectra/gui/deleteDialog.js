@@ -3,6 +3,14 @@ function shortTypeName(type) {
     return String(type || '').split('.').pop();
 }
 
+// The outlined monospace chip that names a data type ("Text", "ImageCrop"),
+// shared by the DAG hover and the tab hover so the two always look the same.
+function typeChipHtml(type) {
+    const name = shortTypeName(type).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    if (!name) return '';
+    return `<span class="badge" style="background:transparent;color:inherit;opacity:0.75;border:1px solid currentColor;font-family:monospace;font-weight:normal;font-size:10px">${name}</span>`;
+}
+
 // What the delete-confirmation popup shows for an item: its title and the
 // nested items that are deleted along with it.
 function deleteDialogContent(target, preview) {
@@ -28,4 +36,4 @@ function deleteDialogContent(target, preview) {
     };
 }
 
-if (typeof module !== 'undefined') module.exports = {deleteDialogContent, shortTypeName};
+if (typeof module !== 'undefined') module.exports = {deleteDialogContent, shortTypeName, typeChipHtml};

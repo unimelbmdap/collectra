@@ -1,5 +1,5 @@
 const { Tab, Panel } = require('../collectra/gui/panelSystem.js');
-const { serializeArrangement, restorePanelTabs, replayLayout } = require('../collectra/gui/arrangement.js');
+const { serializeArrangement, restorePanelTabs, replayLayout, sizeToPercent } = require('../collectra/gui/arrangement.js');
 
 const labelOf = (nodeId) => nodeId.replace(/\d+$/, '');
 const humanize = (label) => label.split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
@@ -245,7 +245,7 @@ describe('extra panels in the page', () => {
     });
 
     it('stores the log and the panel sizes with the arrangement', () => {
-        expect(between('function currentArrangement()', 'function scheduleArrangementSave')).toContain('{layout: layoutOps, sizes: currentPanelSizes()}');
+        expect(between('function currentArrangement()', 'function scheduleArrangementSave')).toContain('{layout: layoutOps, sizes: currentPanelSizes(), collapsed: currentCollapsedKeys()}');
     });
 
     it('rebuilds the panels before restoring tabs, then puts sizes and focus back', () => {
@@ -269,5 +269,68 @@ describe('startup order', () => {
             expect(declared, name).toBeGreaterThan(-1);
             expect(declared, name).toBeLessThan(firstDraw);
         }
+    });
+});
+
+describe('sizeToPercent', () => {
+    it('turns a saved pixel size into a share of the container', () => {
+        expect(sizeToPercent('0 0 344.5px', 689)).toBe('0 1 50.00%');
+        expect(sizeToPercent('0 0 704px', 1000)).toBe('0 1 70.40%');
+    });
+
+    it('keeps a percentage, making it shrinkable', () => {
+        expect(sizeToPercent('0 0 45.50%', 1000)).toBe('0 1 45.50%');
+        expect(sizeToPercent('0 1 30.00%', 1000)).toBe('0 1 30.00%');
+    });
+
+    it('never lets one side take more than 90% or less than 10%', () => {
+        expect(sizeToPercent('0 0 10px', 1000)).toBe('0 1 10.00%');
+        expect(sizeToPercent('0 0 990px', 1000)).toBe('0 1 90.00%');
+        expect(sizeToPercent('0 0 99%', 1000)).toBe('0 1 90.00%');
+    });
+
+    it('is null for a value it cannot use, or an unknown container size', () => {
+        expect(sizeToPercent('calc(evil)', 1000)).toBe(null);
+        expect(sizeToPercent('0 0 300px', 0)).toBe(null);
+        expect(sizeToPercent('', 1000)).toBe(null);
+        expect(sizeToPercent(undefined, 1000)).toBe(null);
+    });
+});
+
+describe('restoring sizes in the page', () => {
+    const vm = require('node:vm');
+    const html = require('node:fs').readFileSync(require.resolve('../collectra/gui/index.html'), 'utf8');
+    const start = html.indexOf('function applyPanelSizes(');
+    const source = html.slice(start, html.indexOf('\n        }\n', start) + 11);
+
+    function page() {
+        const column = { classList: { contains: (c) => c === 'split-column' }, getBoundingClientRect: () => ({ width: 900, height: 600 }) };
+        const row = { classList: { contains: (c) => c === 'split-row' }, getBoundingClientRect: () => ({ width: 1000, height: 500 }) };
+        const mk = (parent) => ({ style: {}, parentElement: parent });
+        const els = { a: mk(column), b: mk(row), c: mk(null) };
+        const context = { sizeToPercent, panelControllers: { a: {}, b: {}, c: {} }, getPanelRootEl: (k) => els[k] };
+        vm.createContext(context);
+        vm.runInContext(source, context);
+        return { els, context };
+    }
+
+    it('converts an old pixel size into a share of the panel\'s own container', () => {
+        const { els, context } = page();
+        context.applyPanelSizes({ a: '0 0 300px', b: '0 0 250px' }, { a: 'a', b: 'b' });
+        expect(els.a.style.flex).toBe('0 1 50.00%'); // 300 of the 600px column height
+        expect(els.b.style.flex).toBe('0 1 25.00%'); // 250 of the 1000px row width
+    });
+
+    it('applies a percentage directly', () => {
+        const { els, context } = page();
+        context.applyPanelSizes({ a: '0 0 40.00%' }, { a: 'a' });
+        expect(els.a.style.flex).toBe('0 1 40.00%');
+    });
+
+    it('leaves a panel with no wrapper, or an unusable size, as it is', () => {
+        const { els, context } = page();
+        context.applyPanelSizes({ c: '0 0 300px', a: 'junk' }, { a: 'a', c: 'c' });
+        expect(els.c.style.flex).toBeUndefined();
+        expect(els.a.style.flex).toBeUndefined();
     });
 });

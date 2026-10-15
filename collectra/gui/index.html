@@ -7,6 +7,7 @@
     <style>
         :root {
             --sidebar-width: 280px;
+            --collapsed-bar: 34px; /* thickness of a collapsed panel's bar */
             /* App shell background/foreground — a project defines these
                directly via its own theme.css (see collectra_themes); this is
                only the fallback for a project with no theme.css at all. */
@@ -47,16 +48,6 @@
                elastic overscroll chaining. */
             overscroll-behavior: contain;
         }
-        /* Reserved strip at the very top so the macOS traffic lights never
-           overlap the sidebar logo/buttons. Draggable to move the window. */
-        .titlebar-strip {
-            height: 30px;
-            flex-shrink: 0;
-            background: var(--app-bg, #000);
-            -webkit-user-select: none;
-            user-select: none;
-            cursor: default;
-        }
         .app-container {
             display: grid;
             grid-template-columns: minmax(220px, var(--sidebar-width)) 1fr;
@@ -64,10 +55,8 @@
             align-items: stretch;
             flex: 1;
             min-height: 0;
-            margin: 6px;
-            border-radius: 4px;
+            margin: 0;
             overflow: hidden;
-            border: 1px solid var(--app-border, #3c3c3c);
         }
         .panels-container {
             display: flex;
@@ -78,6 +67,168 @@
         }
         /* Acts on whichever panel is focused, not any one panel specifically
            — sits above all of them instead of living inside one. */
+        /* Find bar for artefacts: centred over the top of the window, shown only
+           while searching */
+        .artefact-search {
+            display: none;
+            position: fixed;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 300;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            background: var(--app-surface, #1f1f1f);
+            border: 1px solid var(--app-border, #3c3c3c);
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+        }
+        .artefact-search.open {
+            display: flex;
+        }
+        .artefact-search-field {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        /* Two classes: .folder-search-input (the pages box) is declared later with
+           its own margin and padding, which a single class here would lose to. */
+        .artefact-search .artefact-search-input {
+            box-sizing: border-box;
+            margin: 0;
+            width: 340px;
+            height: 26px;
+            padding: 0 32px 0 28px; /* room for the magnifier, count and clear button */
+            font-size: 13px;
+            border-radius: 6px;
+        }
+        .artefact-search .artefact-search-input::-webkit-search-cancel-button,
+        .artefact-search .artefact-search-input::-webkit-search-decoration {
+            -webkit-appearance: none;
+            display: none;
+        }
+        .artefact-search .artefact-search-input:focus {
+            outline: none;
+            border-color: var(--app-primary, #F09226);
+            box-shadow: 0 0 0 2px rgba(var(--app-primary-rgb, 240, 146, 38), 0.25);
+        }
+        .artefact-search-icon {
+            position: absolute;
+            left: 9px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 12px;
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        .artefact-search-field .artefact-search-count {
+            position: absolute;
+            right: 30px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 12px;
+            color: var(--app-fg, #cccccc);
+            opacity: 0.75;
+            font-variant-numeric: tabular-nums;
+            pointer-events: none;
+        }
+        .artefact-search-clear {
+            position: absolute;
+            right: 7px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
+            padding: 0;
+            line-height: 14px;
+            border: none;
+            border-radius: 50%;
+            background: var(--app-border, #3c3c3c);
+            color: var(--app-bg, #000);
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .artefact-search-clear[hidden] {
+            display: none;
+        }
+        .artefact-search-steps {
+            display: inline-flex;
+            border: 1px solid var(--app-border, #3c3c3c);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .artefact-search-steps button {
+            width: 28px;
+            height: 24px;
+            padding: 0;
+            border: none;
+            background: transparent;
+            color: inherit;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .artefact-search-steps button + button {
+            border-left: 1px solid var(--app-border, #3c3c3c);
+        }
+        .artefact-search-steps button:hover:not(:disabled) {
+            background: rgba(var(--app-primary-rgb, 240, 146, 38), 0.2);
+        }
+        .artefact-search-steps button:disabled {
+            background: transparent;
+            opacity: 0.35;
+            cursor: default;
+        }
+        .artefact-search-done {
+            height: 26px;
+            padding: 0 12px;
+            font: inherit;
+            font-size: 13px;
+            cursor: pointer;
+            border: 1px solid var(--app-border, #3c3c3c);
+            border-radius: 6px;
+            background: transparent;
+            color: inherit;
+        }
+        .artefact-search-done:hover {
+            background: rgba(var(--app-primary-rgb, 240, 146, 38), 0.2);
+        }
+        /* A tab (in any panel) whose node has a match */
+        .tab-strip .tab.search-hit {
+            box-shadow: inset 0 -3px 0 #facc15;
+        }
+        /* Matched words inside a shown text */
+        .CodeMirror .search-mark {
+            background: rgba(250, 204, 21, 0.45);
+            border-radius: 2px;
+        }
+        /* Fit DAG to view: a small button in the corner of each DAG view, so it
+           is only there while a DAG tab is showing. */
+        .dag-fit-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            z-index: 5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            border: 1px solid var(--app-divider, #2a2a2a);
+            border-radius: 6px;
+            background: var(--app-surface, #121212);
+            color: var(--app-fg-muted, #8a9698);
+            cursor: pointer;
+        }
+        .dag-fit-btn:hover {
+            color: var(--app-fg-bright, #e6e6e6);
+            background: rgba(var(--app-primary-rgb, 240, 146, 38), 0.2);
+        }
+        /* Left edge of the toolbar; everything else stays on the right. */
+        #sidebarToggleBtn {
+            margin-right: auto;
+        }
         .global-toolbar-row {
             display: flex;
             align-items: center;
@@ -125,54 +276,34 @@
             display: flex;
             flex-direction: column;
         }
-        .dynamic-panel.collapsed {
-            min-width: 24px !important;
-            min-height: 24px !important;
+        /* The focused panel is shown by a thin accent on top of its active tab —
+           the tab strips themselves all carry the same hairline underneath. */
+        .panel-focused .tab-strip .tab.active {
+            box-shadow: inset 0 2px 0 rgba(var(--app-primary-rgb, 240, 146, 38), 0.6);
         }
-        .panel-focused {
-            box-shadow: inset 0 0 0 1px rgba(var(--app-primary-rgb, 240, 146, 38), 0.3);
+        /* Both at once: the accent on top and the search marker underneath. */
+        .panel-focused .tab-strip .tab.active.search-hit {
+            box-shadow: inset 0 2px 0 rgba(var(--app-primary-rgb, 240, 146, 38), 0.6), inset 0 -3px 0 #facc15;
         }
-        .dynamic-panel.collapsed > *:not(.panel-collapse-toggle) {
-            visibility: hidden;
-        }
-        .dynamic-panel.collapsed .tab-strip-row,
-        .dynamic-panel.collapsed .node-content-header {
-            display: none;
-        }
-        .new-panel-collapse-toggle {
-            top: 1px;
-            left: 1px;
-        }
+        /* Dividers between panels are 1px hairlines, the same as the sidebar edge.
+           A wider invisible area (::after) makes them easy to grab. */
         .panel-resize-handle {
-            width: 8px;
+            width: 1px;
             flex-shrink: 0;
             cursor: col-resize;
             position: relative;
-            background: transparent;
-            /* Shift so this handle's visible center sits right at #rightPanel's
-               edge, matching .sidebar-resize-handle's own overlap convention
-               (that one is absolutely positioned straddling the boundary; this
-               one is a normal flex item, so a negative margin achieves the
-               same visual result instead). Purely visual — the drag logic
-               below tracks tablePanel's width and mouse clientX deltas, not
-               this handle's own position, so this doesn't affect resizing. */
-            margin-right: -4px;
+            z-index: 2;
+            background: var(--app-divider, #2a2a2a);
+            transition: background 0.15s;
         }
         .panel-resize-handle::after {
             content: '';
             position: absolute;
             top: 0;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 1px;
+            left: -4px;
+            width: 9px;
             height: 100%;
-            background: var(--app-divider, #2a2a2a);
-            transition: background 0.15s, width 0.15s;
-        }
-        .panel-resize-handle:hover::after,
-        .panel-resize-handle.dragging::after {
-            background: rgba(var(--app-primary-rgb, 0, 120, 212), 0.5);
-            width: 2px;
+            background: transparent;
         }
         .sidebar {
             width: 100%;
@@ -186,10 +317,12 @@
             border-radius: 0;
             position: relative;
         }
+        /* The sidebar's edge: drawn inside the sidebar (which clips anything outside
+           it), as a 1px line on its right edge with an 8px area to grab it by. */
         .sidebar-resize-handle {
             position: absolute;
             top: 0;
-            right: -4px;
+            right: 0;
             width: 8px;
             height: 100%;
             cursor: col-resize;
@@ -199,92 +332,121 @@
             content: '';
             position: absolute;
             top: 0;
-            left: 50%;
-            transform: translateX(-50%);
+            right: 0;
             width: 1px;
             height: 100%;
             background: var(--app-divider, #2a2a2a);
-            transition: background 0.15s, width 0.15s;
+            transition: background 0.15s;
         }
         .sidebar-resize-handle:hover::after,
         .sidebar-resize-handle.dragging::after {
-            background: rgba(var(--app-primary-rgb, 0, 120, 212), 0.5);
-            width: 2px;
+            background: rgba(var(--app-primary-rgb, 0, 120, 212), 0.6);
         }
-        /* ── COLLAPSIBLE SIDEBAR / RIGHT PANEL (VS Code-style chevrons) ──
-           Each toggle sits inside its OWN panel, top corner nearest the
-           divider it collapses toward — not floating on the shared divider
-           between the two panels. */
-        .panel-collapse-toggle {
-            position: absolute;
-            top: 1px;
-            width: 15px;
-            height: 15px;
-            padding: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: var(--app-surface, #121212);
-            border: 1px solid var(--app-divider, #2a2a2a);
-            border-radius: 3px;
-            color: var(--app-fg-muted, #999);
-            cursor: pointer;
-            z-index: 101;
-            font-size: 8px;
-            transition: background 0.15s, color 0.15s;
-        }
-        .panel-collapse-toggle:hover {
-            background: var(--app-primary, #F09226);
-            color: var(--app-primary-fg, #fff);
-            border-color: var(--app-primary, #F09226);
-        }
-        /* Sidebar: top-right corner (nearest its own right-hand divider). */
-        .sidebar-collapse-toggle {
-            right: 1px;
-        }
-        /* DAG: bottom-right corner (nearest its own bottom-hand divider,
-           imagePanelResizeHandle) — collapses upward, so unlike the other
-           two toggles this one sits at the bottom of its panel, not the top. */
-        .dag-collapse-toggle {
-            top: auto;
-            bottom: 1px;
-            right: 1px;
-        }
+        /* Collapsed, the sidebar is hidden completely, as in VS Code; the
+           toolbar's Toggle Primary Side Bar button (or Cmd/Ctrl+B) brings it back. */
         .app-container.sidebar-collapsed {
-            grid-template-columns: 24px 1fr;
+            grid-template-columns: 0 1fr;
         }
         .sidebar.collapsed .sidebar-top,
         .sidebar.collapsed .sidebar-list {
             display: none;
         }
-        /* Interim state: fully hidden, no chevron sliver — the top panel
-           is going away in favor of a new multi-panel setup, so there's
-           no re-open affordance here for now. */
-        .image-panel-top.collapsed {
-            min-height: 0 !important;
+        /* Collapsed panels dock as a narrow bar, as VS Code's
+           terminal does: a stacked panel keeps just its tab row along the edge, a
+           side-by-side panel becomes a thin vertical bar. Everything under the tab
+           row is hidden; the neighbour grows into the freed space. */
+        /* A collapsed panel shrinks to a narrow bar and stays where it was, like a collapsed
+           section in VS Code's sidebar: nothing moves, and the neighbours share the space. */
+        .image-panel-top.collapsed-h,
+        .image-panel-bottom.collapsed-h,
+        .dynamic-panel.collapsed-h {
+            flex: 0 0 var(--collapsed-bar) !important;
+            min-height: var(--collapsed-bar) !important;
         }
-        .image-panel-top.collapsed > * {
-            visibility: hidden;
+        .image-panel-top.collapsed-v,
+        .image-panel-bottom.collapsed-v,
+        .dynamic-panel.collapsed-v {
+            flex: 0 0 var(--collapsed-bar) !important;
+            min-width: var(--collapsed-bar) !important;
         }
-        /* Bottom panel's own collapse — same shape as the DAG panel above:
-           shrink to a thin strip via inline flex (set in
-           applyBottomPanelCollapsedState), keep the DAG-tab canvas (if
-           open) at visibility:hidden rather than display:none so it stays
-           correctly sized for Cytoscape, and drop the tab strip/header
-           down to display:none since they don't need to stay measurable. */
-        .image-panel-bottom.collapsed {
-            min-height: 24px !important;
+        /* The bar's line is on the side facing the next panel; a last panel has none
+           after it, so its line goes on the other side. */
+        .collapsed-h .tab-strip-row {
+            border-bottom: 1px solid var(--app-divider, #2a2a2a);
         }
-        .image-panel-bottom.collapsed > *:not(.panel-collapse-toggle) {
-            visibility: hidden;
+        .collapsed-h:last-child {
+            border-top: 1px solid var(--app-divider, #2a2a2a);
         }
-        .image-panel-bottom.collapsed .tab-strip-row,
-        .image-panel-bottom.collapsed .node-content-header {
+        .collapsed-h:last-child .tab-strip-row {
+            border-bottom: none;
+        }
+        /* The bar has its own edge, so the divider beside it would only be a stray line. */
+        .collapsed + .panel-resize-handle,
+        .collapsed + .image-panel-resize-handle,
+        .panel-resize-handle:has(+ .collapsed),
+        .image-panel-resize-handle:has(+ .collapsed) {
             display: none;
         }
-        .bottom-panel-collapse-toggle {
-            top: 1px;
-            left: 1px;
+        .collapsed .tab-strip-row ~ * {
+            display: none !important;
+        }
+        .collapsed-v .tab-strip {
+            display: none;
+        }
+        /* A collapsed bar is one row tall: tabs that did not fit would wrap into rows the bar
+           clips, taking the buttons with them. They stay on one row and the rest is cut off. */
+        .collapsed-h .tab-strip {
+            flex-wrap: nowrap;
+            overflow: hidden;
+        }
+        .collapsed-v .tab-strip-row {
+            flex-direction: column;
+            align-items: center;
+            height: 100%;
+            padding-top: 6px;
+            border-bottom: none;
+            border-right: 1px solid var(--app-divider, #2a2a2a);
+        }
+        .collapsed-v:last-child .tab-strip-row {
+            border-right: none;
+            border-left: 1px solid var(--app-divider, #2a2a2a);
+        }
+        .split-wrapper:has(> .collapsed) > :not(.collapsed):not(.panel-resize-handle):not(.image-panel-resize-handle) {
+            flex: 1 1 0 !important;
+        }
+        .image-panel:has(> .collapsed) > :not(.collapsed):not(.image-panel-resize-handle) {
+            flex: 1 1 0 !important;
+        }
+        /* The button at the left of each tab row that collapses and expands the panel. */
+        .panel-collapse-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            align-self: center;
+            width: 14px;
+            height: 22px;
+            margin-left: 4px;
+            padding: 0;
+            border: none;
+            border-radius: 4px;
+            background: transparent;
+            color: var(--app-fg-muted, #8a9698);
+            cursor: pointer;
+            font-size: 10px;
+            flex-shrink: 0;
+        }
+        /* The first tab sits right beside the button, with no empty space between. */
+        .panel-collapse-btn + .tab-strip {
+            padding-left: 2px;
+        }
+        .panel-collapse-btn:hover:not(:disabled) {
+            background: rgba(var(--app-secondary-rgb, 108, 117, 125), 0.2);
+            color: var(--app-fg, #93a1a1);
+        }
+        .panel-collapse-btn:disabled {
+            background: transparent; /* the page-wide button:disabled would paint a dark box */
+            opacity: 0.35;
+            cursor: default;
         }
         /* Sits in the same row as each panel's tab strip, opposite end —
            closing a panel collapses it the same way its own chevron
@@ -292,6 +454,7 @@
            whenever the other panel is already collapsed, so there's
            always at least one panel visible. */
         .panel-close-btn {
+            align-self: center;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -312,30 +475,17 @@
             color: var(--app-fg, #93a1a1);
         }
         .panel-close-btn:disabled {
+            background: transparent;
             opacity: 0.3;
             cursor: default;
             pointer-events: none;
         }
-        /* The tab strip above #dagContainer is real display:none (not just
-           visibility:hidden like its sibling above) while collapsed — it
-           doesn't need to keep real dimensions the way #dagContainer does,
-           and its own min-height:28px would otherwise eat into the
-           collapsed panel's 24px budget, squeezing #dagContainer down to
-           ~0px. Cytoscape then computes its initial fit/zoom against a
-           zero-size container and never recovers a sane zoom level even
-           after expanding — the graph would render either blank or
-           absurdly zoomed in, needing the user to manually zoom out to
-           find it. */
-        .image-panel-top.collapsed .tab-strip,
-        .image-panel-top.collapsed .tab-strip-row {
-            display: none;
-        }
         .sidebar-top {
-            padding: 15px;
+            padding: 10px 15px 15px;
             display: flex;
             flex-direction: column;
             gap: 12px;
-            border-bottom: 1px solid var(--app-border, #2a2a2a);
+            border-bottom: 1px solid var(--app-divider, #2a2a2a);
             background: var(--app-bg, #000);
             flex-shrink: 0;
             min-height: 200px;
@@ -498,27 +648,30 @@
             padding: 12px 15px;
         }
         .image-panel-resize-handle {
-            height: 8px;
+            height: 1px;
             flex-shrink: 0;
             cursor: row-resize;
             position: relative;
-            background: transparent;
+            z-index: 2;
+            background: var(--app-divider, #2a2a2a);
+            transition: background 0.15s;
         }
         .image-panel-resize-handle::after {
             content: '';
             position: absolute;
             left: 0;
-            top: 50%;
-            transform: translateY(-50%);
+            top: -4px;
             width: 100%;
-            height: 1px;
-            background: var(--app-divider, #2a2a2a);
-            transition: background 0.15s, height 0.15s;
+            height: 9px;
+            background: transparent;
         }
-        .image-panel-resize-handle:hover::after,
-        .image-panel-resize-handle.dragging::after {
-            background: rgba(var(--app-primary-rgb, 0, 120, 212), 0.5);
-            height: 2px;
+        /* Hover / drag: the line only changes colour, never its thickness, so every
+           divider stays the same hairline whatever you do with it. */
+        .panel-resize-handle:hover,
+        .panel-resize-handle.dragging,
+        .image-panel-resize-handle:hover,
+        .image-panel-resize-handle.dragging {
+            background: rgba(var(--app-primary-rgb, 0, 120, 212), 0.6);
         }
         .image-container {
             width: 100%;
@@ -1015,7 +1168,7 @@
             background: var(--app-primary, #f09226);
             color: var(--app-primary-fg, #fff);
         }
-        /* Split View popover (+ New Panel button) */
+        /* Split View popover (Customize Layout button) */
         .panel-arrange-popover {
             position: fixed;
             z-index: 1000;
@@ -1081,7 +1234,8 @@
             display: flex;
             align-items: flex-start;
             justify-content: space-between;
-            gap: 8px;
+            gap: 2px;
+            border-bottom: 1px solid var(--app-divider, #2a2a2a);
         }
         .tab-strip-row .tab-strip {
             flex: 1;
@@ -1132,11 +1286,6 @@
             white-space: nowrap;
             user-select: none;
         }
-        .tab-strip .tab .tab-node-id {
-            opacity: 0.6;
-            font-size: 10px;
-            margin-left: 2px;
-        }
         /* Drop-position indicator while reordering tabs — a thin bar on
            whichever side the dragged tab would land, subtle enough not to
            compete with .active's own styling. box-shadow rather than
@@ -1149,6 +1298,9 @@
             box-shadow: 2px 0 0 0 var(--app-primary, #F09226);
         }
         .tab-strip .tab.active {
+            position: relative;
+            margin-bottom: -1px; /* sits on the strip's hairline... */
+            border-bottom: 1px solid var(--app-surface, #121212); /* ...and hides it under itself */
             color: var(--app-primary, #cbd6d6);
             font-weight: 700;
             background: var(--app-surface, #121212);
@@ -1191,14 +1343,16 @@
         .node-content-header .node-content-header-id {
             display: none;
         }
-        /* No active node tab means both id and type are empty text — the
-           bar itself would otherwise still render as a blank 33px strip
-           with its border-bottom, showing as a stray divider line above
-           the placeholder message. */
-        .node-content-header:has(.node-content-header-type:empty) {
+        /* No pager (no active node tab) means nothing to show in this bar — it
+           would otherwise render as a blank 33px strip with its border-bottom,
+           a stray divider line above the placeholder message. */
+        .node-content-header:has(.instance-pager[hidden]) {
             display: none;
         }
+        /* The data type shows in the tab's hover tooltip now, not under the tab.
+           The element stays because several functions still write to it. */
         .node-content-header .node-content-header-type {
+            display: none;
             font-family: monospace;
             font-size: 10px;
             font-weight: normal;
@@ -1212,6 +1366,14 @@
         }
         /* "< name >" pager for the instances of a label tab — right-aligned
            on the same row as the type chip. */
+        /* Left side of the row: the text-editing tools (formatted text only). */
+        .node-content-header .node-tools {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+        }
         .node-content-header .instance-pager {
             margin-left: auto;
             display: flex;
@@ -1250,20 +1412,43 @@
         .instance-pager .pager-btn:hover:not(:disabled) {
             background: rgba(var(--app-primary-rgb, 240, 146, 38), 0.2);
         }
-        .instance-pager .pager-delete {
+        /* Delete, Ancestors, Descendants and Save: one family of square icon buttons. */
+        .node-action-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
             flex: none;
-            margin-left: 6px;
-            padding: 2px 8px;
+            width: 26px;
+            height: 26px;
+            padding: 0;
             font: inherit;
+            font-size: 13px;
             cursor: pointer;
             border: 1px solid var(--app-border, #3c3c3c);
-            border-radius: 3px;
+            border-radius: 5px;
             background: transparent;
             color: inherit;
         }
-        .instance-pager .pager-delete:hover {
-            background: rgba(220, 70, 70, 0.25);
-            border-color: rgba(220, 70, 70, 0.7);
+        .node-action-btn:hover:not(:disabled) {
+            background: rgba(var(--app-primary-rgb, 240, 146, 38), 0.2);
+        }
+        .node-action-btn:disabled {
+            background: transparent;
+            opacity: 0.35;
+            cursor: default;
+        }
+        .node-action-btn.primary {
+            background: var(--app-primary, #F09226);
+            border-color: var(--app-primary, #F09226);
+            color: var(--app-primary-fg, #fff);
+        }
+        .node-action-btn.primary:hover:not(:disabled) {
+            filter: brightness(1.1);
+            background: var(--app-primary, #F09226);
+        }
+        .node-save-status {
+            font-size: 11px;
+            color: var(--app-fg-muted, #586e75);
         }
         .instance-pager .pager-btn:disabled {
             opacity: 0.35;
@@ -1273,10 +1458,10 @@
             flex: 1;
             min-height: 0;
             overflow-y: auto;
-            padding: 12px 14px;
+            padding: 0;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 0;
         }
         .node-data-image {
             max-width: 100%;
@@ -1317,8 +1502,55 @@
             flex: 1;
             min-height: 0;
             background: var(--app-bg, #000);
-            border: 1px solid var(--app-border, #2a2a2a);
+            border: none;
+            border-radius: 0;
+        }
+        /* EasyMDE's own bundled CSS boxes the editor and the toolbar in borders and
+           padding; the panel already frames them, so drop all of it. */
+        .page-text-display .EasyMDEContainer .CodeMirror,
+        .node-content-display .EasyMDEContainer .CodeMirror {
+            border: none;
+            border-radius: 0;
+            padding: 0;
+        }
+        .page-text-display .CodeMirror-lines,
+        .node-content-display .CodeMirror-lines {
+            padding: 8px 12px;
+        }
+        /* The formatting tools live in the row under the tabs (see .node-tools), not
+           above the text, so they carry none of EasyMDE's own box. */
+        .node-tools .editor-toolbar {
+            display: flex;
+            align-items: center;
+            border: none;
+            border-radius: 0;
+            padding: 0;
+            background: transparent;
+            opacity: 1;
+        }
+        .node-tools .editor-toolbar::before,
+        .node-tools .editor-toolbar::after {
+            display: none;
+        }
+        .node-tools .editor-toolbar button {
+            color: inherit;
+            background: transparent;
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            border: 1px solid transparent;
             border-radius: 4px;
+        }
+        .node-tools .editor-toolbar button:hover,
+        .node-tools .editor-toolbar button.active {
+            background: rgba(var(--app-primary-rgb, 240, 146, 38), 0.2);
+            border-color: transparent;
+        }
+        .node-tools .editor-toolbar i.separator {
+            border-left: 1px solid var(--app-divider, #2a2a2a);
+            border-right: none;
+            margin: 0 4px;
+            height: 16px;
         }
         /* EasyMDE inserts its own .EasyMDEContainer wrapper between
            .page-text-display/.node-content-display and .CodeMirror. flex only
@@ -1427,7 +1659,7 @@
             min-height: 300px;
             width: 100%;
             background: var(--app-bg, #000);
-            border-radius: 4px;
+            border-radius: 0;
             overflow: hidden;
         }
         /* Draw-box toggle is an OpenSeadragon.Button (see createDrawBoxButton),
@@ -1501,6 +1733,15 @@
             box-shadow: 0 4px 16px rgba(0,0,0,0.5);
             max-width: 260px;
             line-height: 1.5;
+        }
+        /* Hover cards never show over a dialog: the delete dialog (and the others)
+           must not have a box, tab or DAG hover floating on top of it. */
+        body:has(.modal-overlay.visible) #pageBoxTooltip,
+        body:has(.modal-overlay.visible) #tabTooltip,
+        body:has(.modal-overlay.visible) #dagTooltip,
+        body:has(.modal-overlay.visible) #dagTabTooltip,
+        body:has(.modal-overlay.visible) .dag-tab-tooltip {
+            display: none !important;
         }
         #pageBoxTooltip .box-name {
             color: var(--app-fg-bright, #fdf6e3);
@@ -1609,6 +1850,9 @@
     <script src="nodeColors.js"></script>
     <script src="deleteDialog.js"></script>
     <script src="instancePager.js"></script>
+    <script src="collapseToggle.js"></script>
+    <script src="hoverTimer.js"></script>
+    <script src="lineage.js"></script>
     <script src="tabContextMenu.js"></script>
     <script src="shiftDraw.js"></script>
     <script src="sourceControl.js"></script>
@@ -1620,6 +1864,7 @@
     <!-- Pure Tab/Panel state for the content area, unit tested in tests-js/ -->
     <script src="panelSystem.js"></script>
     <script src="arrangement.js"></script>
+    <script src="artefactSearch.js"></script>
     <script src="dagNodeResolution.js"></script>
     <!-- Pure crop-type option logic for the create-box modal, unit tested in tests-js/ -->
     <script src="cropTypeOptions.js"></script>
@@ -1630,7 +1875,7 @@
     <script src="startupActions.js"></script>
 </head>
 <body>
-    <div class="titlebar-strip pywebview-drag-region"></div>
+    <div id="tabTooltip" class="card" style="position:fixed;display:none;z-index:400;pointer-events:none;background:var(--app-secondary, #073642) !important;border:1px solid var(--app-secondary, #344d5a) !important;box-shadow:0 4px 16px rgba(0,0,0,0.5);color:var(--app-secondary-fg, #93a1a1);font-size:11px;padding:6px 10px;"></div>
     <div class="app-container">
         <aside id="sidebar" class="sidebar">
             <div class="sidebar-top">
@@ -1653,30 +1898,35 @@
             <input type="search" id="folderSearchInput" class="folder-search-input" placeholder="Search pages…" oninput="handleFolderSearchInput()" aria-label="Search pages">
             <ul id="folderList" class="sidebar-list"></ul>
             <div class="sidebar-resize-handle" id="sidebarResizeHandle"></div>
-            <button class="panel-collapse-toggle sidebar-collapse-toggle" id="sidebarCollapseToggle" onclick="toggleSidebarCollapse()" aria-label="Collapse sidebar">
-                <i class="fa fa-chevron-left" aria-hidden="true"></i>
-            </button>
         </aside>
 
         <div class="panels-container">
             <div class="global-toolbar-row">
+                <button class="panel-toolbar-btn active" id="sidebarToggleBtn" onclick="toggleSidebarCollapse()" title="Toggle Primary Side Bar" aria-label="Toggle Primary Side Bar">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="2" y="2.5" width="12" height="11" rx="1.5"/>
+                        <path d="M6.5 2.5v11"/>
+                        <rect x="2.7" y="3.2" width="3.1" height="9.6" fill="currentColor" stroke="none" opacity="0.4"/>
+                    </svg>
+                </button>
+                <div class="artefact-search" id="artefactSearchBar" role="search">
+                    <div class="artefact-search-field">
+                        <i class="fa fa-search artefact-search-icon" aria-hidden="true"></i>
+                        <input type="text" role="searchbox" enterkeyhint="search" id="artefactSearchInput" class="folder-search-input artefact-search-input" placeholder="Search artefacts" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" oninput="handleArtefactSearchInput()" onkeydown="handleArtefactSearchKey(event)" aria-label="Search artefacts">
+                        <span id="artefactSearchCount" class="artefact-search-count" aria-live="polite"></span>
+                        <button type="button" id="artefactSearchClear" class="artefact-search-clear" onclick="clearArtefactSearch()" title="Clear search" aria-label="Clear search" hidden>&times;</button>
+                    </div>
+                    <div class="artefact-search-steps">
+                        <button type="button" id="artefactSearchPrev" onclick="stepArtefactSearch(-1)" title="Previous match" aria-label="Previous match" disabled><i class="fa fa-chevron-left" aria-hidden="true"></i></button>
+                        <button type="button" id="artefactSearchNext" onclick="stepArtefactSearch(1)" title="Next match" aria-label="Next match" disabled><i class="fa fa-chevron-right" aria-hidden="true"></i></button>
+                    </div>
+                    <button type="button" id="artefactSearchDone" class="artefact-search-done" onclick="doneArtefactSearch()">Done</button>
+                </div>
+                <button class="panel-toolbar-btn" id="artefactSearchToggle" onclick="toggleArtefactSearch()" title="Search artefacts (Cmd/Ctrl+F)" aria-label="Search artefacts">
+                    <i class="fa fa-search" aria-hidden="true"></i>
+                </button>
                 <button class="panel-toolbar-btn" id="dagToolbarBtn" onclick="openDagTab()" title="DAG" aria-label="DAG">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19.5 17C19.36 17 19.24 17 19.11 17.04L17.5 13.8C17.95 13.35 18.25 12.71 18.25 12C18.25 10.62 17.13 9.5 15.75 9.5C15.61 9.5 15.5 9.5 15.35 9.54L13.74 6.3C14.21 5.84 14.5 5.21 14.5 4.5C14.5 3.12 13.38 2 12 2S9.5 3.12 9.5 4.5C9.5 5.2 9.79 5.84 10.26 6.29L8.65 9.54C8.5 9.5 8.39 9.5 8.25 9.5C6.87 9.5 5.75 10.62 5.75 12C5.75 12.71 6.04 13.34 6.5 13.79L4.89 17.04C4.76 17 4.64 17 4.5 17C3.12 17 2 18.12 2 19.5C2 20.88 3.12 22 4.5 22S7 20.88 7 19.5C7 18.8 6.71 18.16 6.24 17.71L7.86 14.46C8 14.5 8.12 14.5 8.25 14.5C8.38 14.5 8.5 14.5 8.63 14.46L10.26 17.71C9.79 18.16 9.5 18.8 9.5 19.5C9.5 20.88 10.62 22 12 22S14.5 20.88 14.5 19.5C14.5 18.12 13.38 17 12 17C11.87 17 11.74 17 11.61 17.04L10 13.8C10.45 13.35 10.75 12.71 10.75 12C10.75 11.3 10.46 10.67 10 10.21L11.61 6.96C11.74 7 11.87 7 12 7C12.13 7 12.26 7 12.39 6.96L14 10.21C13.54 10.66 13.25 11.3 13.25 12C13.25 13.38 14.37 14.5 15.75 14.5C15.88 14.5 16 14.5 16.13 14.46L17.76 17.71C17.29 18.16 17 18.8 17 19.5C17 20.88 18.12 22 19.5 22S22 20.88 22 19.5C22 18.12 20.88 17 19.5 17M4.5 20.5C3.95 20.5 3.5 20.05 3.5 19.5S3.95 18.5 4.5 18.5 5.5 18.95 5.5 19.5 5.05 20.5 4.5 20.5M13 19.5C13 20.05 12.55 20.5 12 20.5S11 20.05 11 19.5 11.45 18.5 12 18.5 13 18.95 13 19.5M7.25 12C7.25 11.45 7.7 11 8.25 11S9.25 11.45 9.25 12 8.8 13 8.25 13 7.25 12.55 7.25 12M11 4.5C11 3.95 11.45 3.5 12 3.5S13 3.95 13 4.5 12.55 5.5 12 5.5 11 5.05 11 4.5M14.75 12C14.75 11.45 15.2 11 15.75 11S16.75 11.45 16.75 12 16.3 13 15.75 13 14.75 12.55 14.75 12M19.5 20.5C18.95 20.5 18.5 20.05 18.5 19.5S18.95 18.5 19.5 18.5 20.5 18.95 20.5 19.5 20.05 20.5 19.5 20.5Z"/></svg>
-                </button>
-                <button class="panel-toolbar-btn" id="refitDagTabBtn" onclick="resetDag()" title="Fit DAG to view" aria-label="Fit DAG to view">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M2 5.5V2h3.5"/><path d="M10.5 2H14v3.5"/><path d="M14 10.5V14h-3.5"/><path d="M5.5 14H2v-3.5"/>
-                    </svg>
-                </button>
-                <button class="panel-toolbar-btn" id="ancestorsToolbarBtn" onclick="toggleAncestorsPopover()" title="Ancestors" aria-label="Show ancestors">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
-                        <path d="M8 10V2M8 2L5 5M8 2l3 3"/><rect x="2" y="12" width="12" height="2.2" rx="0.5"/>
-                    </svg>
-                </button>
-                <button class="panel-toolbar-btn" id="descendantsToolbarBtn" onclick="toggleDescendantsPopover()" title="Descendants" aria-label="Show descendants">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
-                        <rect x="2" y="1.8" width="12" height="2.2" rx="0.5"/><path d="M8 6v8M8 14l-3-3M8 14l3-3"/>
-                    </svg>
                 </button>
                 <button class="panel-toolbar-btn" id="artefactsToolbarBtn" onclick="toggleArtefactsPopover()" title="Artefacts" aria-label="Show artefacts" disabled>
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
@@ -1689,18 +1939,20 @@
                         <path d="M2 3.5h2M2 8h2M2 12.5h2"/><path d="M6 3.5h8M6 8h8M6 12.5h8"/>
                     </svg>
                 </button>
-                <button class="panel-toolbar-btn" id="newPanelToolbarBtn" onclick="showSplitViewPopover(event)" title="New Panel" aria-label="New panel">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
-                        <path d="M8 2.5v11M2.5 8h11"/>
+                <button class="panel-toolbar-btn" id="newPanelToolbarBtn" onclick="showSplitViewPopover(event)" title="Customize Layout" aria-label="Customize Layout">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="2" y="2.5" width="12" height="11" rx="1.5"/>
+                        <path d="M6.5 2.5v11"/>
+                        <path d="M6.5 8H14"/>
                     </svg>
                 </button>
                 <button class="panel-toolbar-btn" id="gitToolbarBtn" title="Source control" aria-label="Source control">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                        <rect x="4" y="4" width="16" height="16" rx="1.5" transform="rotate(45 12 12)" fill="currentColor" stroke="none"/>
-                        <path d="M8 5v8l5 5M8 8h5v5" stroke="var(--app-surface, #1f1f1f)"/>
-                        <circle cx="8" cy="8" r="1.3" fill="var(--app-surface, #1f1f1f)" stroke="none"/>
-                        <circle cx="13" cy="13" r="1.3" fill="var(--app-surface, #1f1f1f)" stroke="none"/>
-                        <circle cx="13" cy="18" r="1.3" fill="var(--app-surface, #1f1f1f)" stroke="none"/>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true">
+                        <circle cx="4" cy="3" r="1.7"/>
+                        <circle cx="4" cy="13" r="1.7"/>
+                        <circle cx="12" cy="5.5" r="1.7"/>
+                        <path d="M4 4.7v6.6"/>
+                        <path d="M12 7.2v0.3c0 2.4-8 1.6-8 3.8"/>
                     </svg>
                 </button>
                 <div class="lineage-popover" id="ancestorsPopover" style="display:none;">
@@ -1724,10 +1976,12 @@
             <div class="image-panel">
                 <div class="image-panel-top collapsed" id="imagePanelTop">
                     <div class="tab-strip-row">
+                        <button class="panel-collapse-btn" id="dagPanelCollapseBtn" onclick="toggleDagCollapse()" title="Expand panel" aria-label="Expand panel"><i class="fa fa-chevron-right" aria-hidden="true"></i></button>
                         <div class="tab-strip" id="dagPanelTabStrip"></div>
                         <button class="panel-close-btn" id="topPanelCloseBtn" onclick="closeTopPanel()" title="Remove panel" aria-label="Remove panel">&times;</button>
                     </div>
                     <div id="dagContainer" style="width:100%;flex:1;min-height:0;border-radius:4px;overflow:hidden;position:relative;">
+                    <button class="dag-fit-btn" onclick="resetDag()" title="Fit DAG to view" aria-label="Fit DAG to view"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 5.5V2h3.5"/><path d="M10.5 2H14v3.5"/><path d="M14 10.5V14h-3.5"/><path d="M5.5 14H2v-3.5"/></svg></button>
                         <div id="dagPlaceholder" style="color:#666;font-size:12px;font-family:-apple-system,sans-serif;text-align:center;padding-top:40px;">
                             Load a folder to view the pipeline graph.
                         </div>
@@ -1738,6 +1992,7 @@
                         <div class="node-content-header" id="topNodeContentHeader">
                             <span id="topNodeContentHeaderId"></span>
                             <span class="node-content-header-type" id="topNodeContentHeaderType"></span>
+                            <span class="node-tools"></span>
                             <span class="instance-pager" hidden></span>
                         </div>
                         <div class="node-content-body" id="topNodeContentBody">
@@ -1747,9 +2002,6 @@
                             <div class="node-content-display" id="topNodeContentDisplay" style="display:none;"></div>
                         </div>
                     </div>
-                    <button class="panel-collapse-toggle dag-collapse-toggle" id="dagCollapseToggle" onclick="toggleDagCollapse()" aria-label="Expand DAG">
-                        <i class="fa fa-chevron-down" aria-hidden="true"></i>
-                    </button>
                 </div>
                 <div class="image-panel-resize-handle" id="imagePanelResizeHandle"></div>
                 <div class="image-panel-bottom" id="imagePanelBottom">
@@ -1757,18 +2009,21 @@
                         <div class="panel-layout-host" id="panelLayoutHost">
                             <div class="node-content-panel" id="nodeContentPanel">
                                 <div class="tab-strip-row">
+                                    <button class="panel-collapse-btn" id="bottomPanelCollapseBtn" onclick="toggleBottomPanelCollapse()" title="Collapse panel" aria-label="Collapse panel"><i class="fa fa-chevron-down" aria-hidden="true"></i></button>
                                     <div class="tab-strip" id="panelTabStrip"></div>
                                     <button class="panel-close-btn" id="bottomPanelCloseBtn" onclick="closeBottomPanel()" title="Remove panel" aria-label="Remove panel">&times;</button>
                                 </div>
                                 <div class="node-content-header" id="nodeContentHeader">
                                     <span class="node-content-header-id" id="nodeContentHeaderId"></span>
                                     <span class="node-content-header-type" id="nodeContentHeaderType"></span>
+                                    <span class="node-tools"></span>
                                     <span class="instance-pager" hidden></span>
                                 </div>
                                 <div class="node-content-body" id="nodeContentBody">
                                     <div class="node-content-placeholder" id="nodeContentPlaceholder">Select a node in the DAG to view details, or highlight a page on the left to view its artefact.</div>
                                     <div id="dagTabContent" style="display:none;width:100%;height:100%;">
                                         <div id="dagTabContainer" style="width:100%;height:100%;position:relative;">
+                    <button class="dag-fit-btn" onclick="resetDag()" title="Fit DAG to view" aria-label="Fit DAG to view"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 5.5V2h3.5"/><path d="M10.5 2H14v3.5"/><path d="M14 10.5V14h-3.5"/><path d="M5.5 14H2v-3.5"/></svg></button>
                                             <div id="dagTabCy" style="width:100%;height:100%;"></div>
                                             <div id="dagTabTooltip" class="card" style="position:absolute;display:none;max-width:300px;z-index:100;pointer-events:none;background:var(--app-secondary, #073642) !important;border:1px solid var(--app-secondary, #344d5a) !important;box-shadow:0 4px 16px rgba(0,0,0,0.5);color:var(--app-secondary-fg, #93a1a1);font-size:11px;"></div>
                                         </div>
@@ -1782,9 +2037,6 @@
                     </div>
                     <!-- Hidden image viewer — kept for future editing revival -->
                     <div id="imageContainer" class="image-container" style="display:none;"></div>
-                    <button class="panel-collapse-toggle bottom-panel-collapse-toggle" id="bottomPanelCollapseToggle" onclick="toggleBottomPanelCollapse()" aria-label="Expand panel">
-                        <i class="fa fa-chevron-up" aria-hidden="true"></i>
-                    </button>
                 </div>
             </div>
             </div>
@@ -1900,18 +2152,21 @@
          markup does. -->
     <template id="genericPanelTemplate">
         <div class="tab-strip-row">
+            <button class="panel-collapse-btn" title="Collapse panel" aria-label="Collapse panel"><i class="fa fa-chevron-down" aria-hidden="true"></i></button>
             <div class="tab-strip"></div>
             <button class="panel-close-btn" title="Remove panel" aria-label="Remove panel">&times;</button>
         </div>
         <div class="node-content-header">
             <span class="node-content-header-id"></span>
             <span class="node-content-header-type"></span>
+            <span class="node-tools"></span>
             <span class="instance-pager" hidden></span>
         </div>
         <div class="node-content-body">
             <div class="node-content-placeholder">Drag a DAG node, artefact, or task into this panel's tab strip to view it here.</div>
             <div class="dag-tab-content" style="display:none;width:100%;height:100%;">
                 <div class="dag-tab-container" style="width:100%;height:100%;position:relative;">
+                    <button class="dag-fit-btn" onclick="resetDag()" title="Fit DAG to view" aria-label="Fit DAG to view"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 5.5V2h3.5"/><path d="M10.5 2H14v3.5"/><path d="M14 10.5V14h-3.5"/><path d="M5.5 14H2v-3.5"/></svg></button>
                     <div class="dag-tab-cy" style="width:100%;height:100%;"></div>
                     <div class="dag-tab-tooltip card" style="position:absolute;display:none;max-width:300px;z-index:100;pointer-events:none;background:var(--app-secondary, #073642) !important;border:1px solid var(--app-secondary, #344d5a) !important;box-shadow:0 4px 16px rgba(0,0,0,0.5);color:var(--app-secondary-fg, #93a1a1);font-size:11px;"></div>
                 </div>
@@ -1920,9 +2175,6 @@
             <div class="page-text-display" style="display:none;"></div>
             <div class="node-content-display" style="display:none;"></div>
         </div>
-        <button class="panel-collapse-toggle new-panel-collapse-toggle" title="Collapse panel" aria-label="Collapse panel">
-            <i class="fa fa-chevron-up" aria-hidden="true"></i>
-        </button>
     </template>
 
     <script>
@@ -1959,10 +2211,12 @@
         // Image panel vertical split resize (top ↔ bottom) — min 120px top, 100px bottom
         (function() {
             const handle = document.getElementById('imagePanelResizeHandle');
-            const top = document.getElementById('imagePanelTop');
             const container = document.querySelector('.image-panel'); // not top.parentElement — splitting wraps it
 
             handle.addEventListener('mousedown', (e) => {
+                // Whatever is directly above the divider now: the top panel, or the
+                // wrapper around it once that panel has been split.
+                const top = handle.previousElementSibling;
                 const startY = e.clientY;
                 const startHeight = top.getBoundingClientRect().height;
                 if (startHeight <= 0) return;  // layout not yet ready
@@ -2084,6 +2338,23 @@
         // functions below are the thin DOM adapter that applies it.
         const sidebarRegion = new CollapsibleRegion();
         const dagRegion = new CollapsibleRegion({ collapsed: true });
+
+        // State the page's own start-up code reads (drawing a tab strip, collapsing a panel), so it
+        // is declared here, before any of that runs.
+        // State for the artefact search (see ARTEFACT SEARCH below). Also read by
+        // tab strips, which are drawn while this script is still loading.
+        let searchLabels = new Set(); // DAG labels that have a match on this page
+        let searchState = {query: '', matches: [], index: -1, token: 0, timer: null, problem: ''};
+
+        // State for remembering the arrangement (see REMEMBERED ARRANGEMENT below).
+        // Declared up here because drawing a tab strip, which happens while this
+        // script is still loading, can schedule a save.
+        let arrangementReady = false; // saving waits until the saved one has been restored
+        let arrangementSaveTimer = null;
+        let layoutOps = [];           // every split and close the user made, in order
+        let replayingLayout = false;  // restoring must not add to the log it is replaying
+        const MAX_LAYOUT_OPS = 200;
+
         const bottomPanelRegion = new CollapsibleRegion();
         // Toolbar popovers — same open/closed shape as CollapsibleRegion,
         // but a separate IconPopover class since their DOM adapter
@@ -2093,8 +2364,6 @@
         const descendantsPopover = new IconPopover();
         const artefactsPopover = new IconPopover();
         const tasksPopover = new IconPopover();
-        let dagPrevFlex = null;        // pre-collapse inline flex value, restored on expand
-        let bottomPanelPrevFlex = null; // pre-collapse inline flex value, restored on expand
         let pendingAnnotation = null;
         let pendingAnnotationController = null; // which panel this pendingAnnotation belongs to, if any
         let pendingRenameNodeId = null; // node the rename popup is currently editing
@@ -2347,6 +2616,7 @@
                         if (t.nodeId === nodeId) t.nodeId = renamedTo;
                     }));
                     await syncInstanceTabs(); // also redraws the Ancestors/Descendants popover, stale otherwise
+                    rerunArtefactSearch(); // names are searched too
                 } else {
                     console.error('Error renaming annotation:', result.error);
                 }
@@ -2412,6 +2682,7 @@
 
                 await refreshActiveNodeIds(); // new id under this label — DAG's "Open <id>..." menu needs it
                 await syncInstanceTabs(); // pager counts and the Ancestors/Descendants popover follow the new instance
+                rerunArtefactSearch();
                 hideLabelPopup();
             } catch (e) {
                 console.error('Error creating annotation:', e);
@@ -2466,6 +2737,7 @@
         // item, since deleting it deletes all of that too. Enter lands on
         // Cancel, so a destructive delete always takes a deliberate click.
         function confirmDelete(target, preview) {
+            hideBoxTooltip();
             return new Promise((resolve) => {
                 const content = deleteDialogContent(target, preview);
                 const modal = document.getElementById('deleteModal');
@@ -2479,7 +2751,6 @@
                     const id = document.createElement('span');
                     id.className = 'delete-child-id';
                     id.textContent = item.id;
-                    id.title = item.id;
                     id.style.paddingLeft = ((item.depth - 1) * 16) + 'px';
                     id.classList.toggle('nested', item.depth > 1);
                     const type = document.createElement('span');
@@ -2534,6 +2805,7 @@
                     // one or any cascaded descendant) steps to a surviving
                     // instance of its label, or closes when none is left.
                     await syncInstanceTabs();
+                    rerunArtefactSearch();
                 } else {
                     console.error('Failed to delete:', result.error);
                 }
@@ -2670,7 +2942,11 @@
             }
 
             folderInfoEl.innerHTML = `<strong>Parent folder:</strong> ${result.folders.length} files found`;
-            await loadAndRenderDag();    // DAG  — same time as sidebar
+            try {
+                await loadAndRenderDag();    // DAG  — same time as sidebar
+            } catch (e) {
+                console.error('Error loading the DAG:', e); // not a reason to leave the user with no page open
+            }
             const activeIndex = Number.isInteger(result.active_index)
                 && result.active_index >= 0 && result.active_index < result.folders.length
                 ? result.active_index : 0;
@@ -2868,6 +3144,7 @@
                 }
                 folderInfoEl.innerHTML = infoHtml;
                 updateNavButtons();
+                rerunArtefactSearch();
 
             } catch (e) {
                 showResult('loadResult', { error: e.message }, true);
@@ -2883,49 +3160,55 @@
         function toggleSidebarCollapse() {
             const sidebar = document.getElementById('sidebar');
             const appContainer = document.querySelector('.app-container');
-            const icon = document.querySelector('#sidebarCollapseToggle i');
             const collapsed = sidebarRegion.toggle();
             sidebar.classList.toggle('collapsed', collapsed);
             appContainer.classList.toggle('sidebar-collapsed', collapsed);
-            icon.className = collapsed ? 'fa fa-chevron-right' : 'fa fa-chevron-left';
+            // Pressed while the sidebar is showing, like the VS Code button.
+            document.getElementById('sidebarToggleBtn').classList.toggle('active', !collapsed);
         }
 
-        // The DAG's height is drag-resized via an inline style (not a CSS
-        // variable), same situation as the right panel above — collapsing
-        // has to remember that inline value to restore it on expand.
-        // Collapses upward (shrinks toward the top edge) rather than
-        // sideways, so the icon points up when expanded (collapse this
-        // way) and down when collapsed (expand this way).
-        //
-        // Split from the toggle itself so the same DOM-sync logic can also
-        // run once at startup — the DAG defaults to collapsed (see
-        // dagRegion's construction above), and loadAndRenderDag() still
-        // lays the graph out correctly while collapsed (visibility:hidden,
-        // not display:none — see the .image-panel-top.collapsed CSS rule),
-        // so it's already correct the first time the user expands it.
-        function applyDagCollapsedState() {
-            const dagTop = document.getElementById('imagePanelTop');
-            const icon = document.querySelector('#dagCollapseToggle i');
-            const collapsed = dagRegion.collapsed;
-            if (collapsed) {
-                dagPrevFlex = dagTop.style.flex || '';
-                dagTop.style.flex = '0 0 0';
-            } else {
-                dagTop.style.flex = dagPrevFlex || '';
-                // Re-fit to whatever the panel's real (now-visible) size
-                // actually is — the one-time fit computed when the graph
-                // was first built ran against the collapsed panel's tiny
-                // size, so without this the graph can look lost/tiny (or,
-                // before the container-sizing fix above, absurdly zoomed
-                // in) the first time it's expanded. Redundant with the
-                // generic ResizeObserver below (which now also re-fits on
-                // every resize), but kept explicit here so expanding is
-                // correct in the same tick rather than waiting on the
-                // observer's next callback.
-                if (cy) { cy.resize(); cy.fit(undefined, DAG_FIT_PADDING); }
+        // Collapsing is by class only (the CSS does the docking and keeps the inline
+        // size, so expanding needs no bookkeeping). The orientation is decided now,
+        // from where the panel sits: beside another panel it becomes a thin vertical
+        // bar, otherwise a thin horizontal one. The chevron and hover text follow.
+        function applyPanelCollapse(rootEl, collapsed) {
+            const orientation = panelCollapseOrientation(rootEl.parentElement);
+            rootEl.classList.toggle('collapsed', collapsed);
+            rootEl.classList.toggle('collapsed-v', collapsed && orientation === 'vertical');
+            rootEl.classList.toggle('collapsed-h', collapsed && orientation === 'horizontal');
+            scheduleArrangementSave(); // which panels are collapsed is remembered
+            const button = rootEl.querySelector('.panel-collapse-btn');
+            if (!button) return;
+            const icon = button.querySelector('i');
+            if (icon) icon.className = 'fa ' + collapseChevron(collapsed);
+            setCollapseToggleLabels(button, collapsed, 'panel');
+        }
+
+        // Whether a collapsed panel is a horizontal or a vertical bar depends on what it sits
+        // beside, which changes when a panel is split or removed around it: redo every one.
+        function refreshCollapsedOrientations() {
+            Object.entries(panelCollapseRegistry).forEach(([key, entry]) => {
+                const el = getPanelRootEl(key);
+                if (el && entry.isCollapsed()) applyPanelCollapse(el, true);
+            });
+        }
+
+        // Clicking a tab in a collapsed panel opens the panel again, as in VS Code.
+        function expandPanelIfCollapsed(panelKey) {
+            const entry = panelCollapseRegistry[panelKey];
+            if (entry && entry.isCollapsed()) {
+                entry.expand();
+                updatePanelCloseButtons();
             }
-            dagTop.classList.toggle('collapsed', collapsed);
-            icon.className = collapsed ? 'fa fa-chevron-down' : 'fa fa-chevron-up';
+        }
+
+        function applyDagCollapsedState() {
+            applyPanelCollapse(document.getElementById('imagePanelTop'), dagRegion.collapsed);
+            // Re-fit to whatever size the panel really has now it is open — the one-time
+            // fit was computed against the collapsed panel's tiny size, so without this
+            // the graph can look lost or absurdly zoomed in the first time it is
+            // expanded. The resize observer also re-fits; this does it in the same tick.
+            if (!dagRegion.collapsed && cy) { cy.resize(); cy.fit(undefined, DAG_FIT_PADDING); }
         }
 
         function toggleDagCollapse() {
@@ -2942,17 +3225,7 @@
         // that for free from its own ResizeObserver once expanding
         // changes dagTabContainer's size).
         function applyBottomPanelCollapsedState() {
-            const bottomPanel = document.getElementById('imagePanelBottom');
-            const icon = document.querySelector('#bottomPanelCollapseToggle i');
-            const collapsed = bottomPanelRegion.collapsed;
-            if (collapsed) {
-                bottomPanelPrevFlex = bottomPanel.style.flex || '';
-                bottomPanel.style.flex = '0 0 24px';
-            } else {
-                bottomPanel.style.flex = bottomPanelPrevFlex || '';
-            }
-            bottomPanel.classList.toggle('collapsed', collapsed);
-            icon.className = collapsed ? 'fa fa-chevron-up' : 'fa fa-chevron-down';
+            applyPanelCollapse(document.getElementById('imagePanelBottom'), bottomPanelRegion.collapsed);
         }
 
         function toggleBottomPanelCollapse() {
@@ -2971,12 +3244,14 @@
                 collapse: () => { dagRegion.collapse(); applyDagCollapsedState(); },
                 expand: () => { dagRegion.expand(); applyDagCollapsedState(); },
                 closeBtn: () => document.getElementById('topPanelCloseBtn'),
+                collapseBtn: () => document.getElementById('dagPanelCollapseBtn'),
             },
             bottom: {
                 isCollapsed: () => bottomPanelRegion.collapsed,
                 collapse: () => { bottomPanelRegion.collapse(); applyBottomPanelCollapsedState(); },
                 expand: () => { bottomPanelRegion.expand(); applyBottomPanelCollapsedState(); },
                 closeBtn: () => document.getElementById('bottomPanelCloseBtn'),
+                collapseBtn: () => document.getElementById('bottomPanelCollapseBtn'),
             },
         };
 
@@ -3019,9 +3294,11 @@
 
             if (focusedPanel === key) {
                 focusedPanel = Object.keys(panelControllers)[0];
+                panelFocusChosen = false; // moved only because its panel was removed
                 updateSharedUiForFocusedPanel();
             }
             updatePanelCloseButtons();
+            refreshCollapsedOrientations();
         }
 
         // × removes a panel entirely; chevron only collapses it. Refuses if
@@ -3047,6 +3324,14 @@
             Object.entries(panelCollapseRegistry).forEach(([key, entry]) => {
                 const btn = entry.closeBtn();
                 if (btn) btn.disabled = totalPanels <= 1 || isOnlyExpandedPanel(key);
+                // The only open panel cannot be collapsed: grey its chevron out, with the reason.
+                const collapseBtn = entry.collapseBtn && entry.collapseBtn();
+                if (collapseBtn) {
+                    const { disabled, title } = collapseButtonState(entry.isCollapsed(), isOnlyExpandedPanel(key));
+                    collapseBtn.disabled = disabled;
+                    collapseBtn.title = title;
+                    collapseBtn.setAttribute('aria-label', title);
+                }
             });
         }
         // not called here — panelControllers is a const, reading it before its own declaration throws (TDZ)
@@ -3059,8 +3344,6 @@
         // Every toolbar popover, in stacking order — each one open stacks
         // top-to-bottom under the icon row so none ever overlaps another.
         const TOOLBAR_POPOVERS = [
-            { id: 'ancestorsPopover', btnId: 'ancestorsToolbarBtn', state: () => ancestorsPopover },
-            { id: 'descendantsPopover', btnId: 'descendantsToolbarBtn', state: () => descendantsPopover },
             { id: 'artefactsPopover', btnId: 'artefactsToolbarBtn', state: () => artefactsPopover },
             { id: 'tasksPopover', btnId: 'tasksToolbarBtn', state: () => tasksPopover },
         ];
@@ -3074,16 +3357,6 @@
                     top += el.offsetHeight + 6;
                 }
             });
-        }
-
-        function toggleAncestorsPopover() {
-            applyPopoverState('ancestorsPopover', 'ancestorsToolbarBtn', ancestorsPopover.toggle());
-            repositionLineagePopovers();
-        }
-
-        function toggleDescendantsPopover() {
-            applyPopoverState('descendantsPopover', 'descendantsToolbarBtn', descendantsPopover.toggle());
-            repositionLineagePopovers();
         }
 
         function toggleArtefactsPopover() {
@@ -3244,6 +3517,11 @@
             pageMouseTracked = true;
         }
 
+        function hideBoxTooltip() {
+            const t = document.getElementById('pageBoxTooltip');
+            if (t) t.style.display = 'none';
+        }
+
         function getBoxTooltip() {
             let t = document.getElementById('pageBoxTooltip');
             if (!t) {
@@ -3337,6 +3615,14 @@
         // near mainWindow/dagPanel below. Declared here, not there — class
         // declarations aren't hoisted, and the .prototype.X assignments
         // below need the class to already exist.
+        // Icons for the buttons at the right of the row under a tab.
+        const NODE_ACTION_ICONS = {
+            delete: '<i class="fa-solid fa-trash-can" aria-hidden="true"></i>',
+            ancestors: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M8 10V2M8 2L5 5M8 2l3 3"/><rect x="2" y="12" width="12" height="2.2" rx="0.5"/></svg>',
+            descendants: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="2" y="1.8" width="12" height="2.2" rx="0.5"/><path d="M8 6v8M8 14l-3-3M8 14l3-3"/></svg>',
+            save: '<i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>',
+        };
+
         class PanelController {
             constructor({ key, windowRef, panel, tabStripEl, contentEl, dagContainerEl, elements, dagTabEls, dagCy }) {
                 this.key = key;
@@ -3362,18 +3648,26 @@
                 return this.windowRef ? this.windowRef.getActivePanel() : this._panel;
             }
 
-            renderTabStripView() {
-                renderTabStrip(this.panel, this.tabStripEl, this.key);
+            // save: false for a redraw that only changes highlights (e.g. search), so it
+            // does not rewrite the remembered layout.
+            renderTabStripView({ save = true } = {}) {
+                renderTabStrip(this.panel, this.tabStripEl, this.key, { save });
             }
 
             // One tab per DAG label. nodeId may be a real instance id (the
             // tab shows that instance) or the label itself (the tab keeps
             // its selected instance, or starts on the first one).
-            async openOrActivateTab(nodeId) {
-                const groupKey = resolveDagLabel(nodeId);
+            // labelHint is the pipeline label when the caller already knows it for certain
+            // (a search hit comes with its label from the backend), so the tab is named and
+            // looked up by that instead of being guessed from the page record, which may
+            // not have the instance.
+            async openOrActivateTab(nodeId, labelHint) {
+                const groupKey = labelHint || resolveDagLabel(nodeId);
                 const ids = pageNodeIds.get(groupKey) || [];
                 const existing = this.panel.tabs.find((t) => t.kind === 'node' && t.groupKey === groupKey);
-                const instanceId = ids.includes(nodeId) ? nodeId : (existing ? null : (ids[0] || nodeId));
+                const instanceId = labelHint || ids.includes(nodeId)
+                    ? nodeId
+                    : (existing ? null : (ids[0] || nodeId));
                 this.panel.openOrActivateGroup({
                     id: 'tab' + (nextTabId++),
                     groupKey,
@@ -3441,13 +3735,35 @@
                     count.textContent = state.text;
                     parts.push(button('\u203A', 'Next', state.nextId), count);
                 }
-                const del = document.createElement('button');
-                del.type = 'button';
-                del.className = 'pager-delete';
-                del.textContent = 'Delete';
-                del.title = `Delete ${state.name}`;
-                del.addEventListener('click', () => deleteNodeWithConfirm(tab.nodeId, ''));
-                parts.push(del);
+                // Delete, Ancestors, Descendants (this tab's own) and Save (editable text only).
+                const available = lineageAvailability(tab.groupKey || tab.nodeId);
+                if (this.textSave) {
+                    const status = document.createElement('span');
+                    status.className = 'node-save-status';
+                    this.textSave.statusEl = status;
+                    parts.push(status);
+                }
+                const actions = {
+                    delete: () => deleteNodeWithConfirm(tab.nodeId, ''),
+                    ancestors: (b) => openLineageFor(this, 'ancestors', b),
+                    descendants: (b) => openLineageFor(this, 'descendants', b),
+                    save: () => this.textSave && this.textSave.onSave(),
+                };
+                nodeActionButtons({
+                    hasAncestors: available.ancestors,
+                    hasDescendants: available.descendants,
+                    canSave: !!this.textSave,
+                }).forEach((spec) => {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'node-action-btn' + (spec.primary ? ' primary' : '');
+                    b.innerHTML = NODE_ACTION_ICONS[spec.id];
+                    b.title = spec.title;
+                    b.setAttribute('aria-label', spec.title);
+                    b.disabled = spec.disabled;
+                    b.addEventListener('click', () => actions[spec.id](b));
+                    parts.push(b);
+                });
                 pagerEl.replaceChildren(...parts);
                 pagerEl.hidden = false;
             }
@@ -3508,6 +3824,10 @@
                     return;
                 }
                 if (tab.kind === 'dag') {
+                    // The DAG is not a node: drop whatever the last node tab left in
+                    // the header (its id and data type) so nothing stale shows.
+                    this.clearHeader();
+                    this.selectedNodeId = null;
                     if (this.dagContainerEl) {
                         // Top panel: the DAG lives in a canvas outside contentEl.
                         if (this.contentEl) this.contentEl.style.display = 'none';
@@ -3540,6 +3860,7 @@
                     this.el.placeholder.textContent = this.el.placeholder.dataset.defaultText;
                 }
                 await this.showNode(tab.nodeId);
+                this.renderPager(); // the row's buttons (Save in particular) follow what is now shown
             }
 
             renderDagTab() {
@@ -3598,7 +3919,6 @@
                 }
                 if (this._displayRequest !== request) return;
                 this.el.headerId.textContent = result.id;
-                this.el.headerType.textContent = result.type;
             }
 
             // Marks every node with an open tab in this panel (cy-open),
@@ -3685,6 +4005,8 @@
             this._shiftDrawCleanup?.();
             this._shiftDrawCleanup = null;
             this.displayView = null;
+            this.textSave = null;   // nothing to save any more...
+            this.clearNodeTools();  // ...and no text-editing tools
             this._artefactToken = {}; // invalidate any renderPageArtefact still mid-await for this panel
             if (this.pageAnno)   { try { this.pageAnno.destroy(); }   catch (e) {} this.pageAnno = null; }
             if (this.pageViewer) { try { this.pageViewer.destroy(); } catch (e) {} this.pageViewer = null; }
@@ -3753,7 +4075,6 @@
 
         PanelController.prototype.clearHeader = function() {
             if (this.el.headerId)   this.el.headerId.textContent   = '';
-            if (this.el.headerType) this.el.headerType.textContent = '';
         };
 
         PanelController.prototype.renderPageArtefact = async function(imagePath, view = null, identity = null) {
@@ -3775,7 +4096,6 @@
             this.clearHeader();
             if (identity) {
                 this.el.headerId.textContent = identity.id;
-                this.el.headerType.textContent = identity.type;
             }
             display.style.display = 'block';
 
@@ -3890,6 +4210,7 @@
                 let hoveredAnnotation = null;
                 this.pageAnno.on('mouseEnterAnnotation', (annotation) => {
                     hoveredAnnotation = annotation;
+                    if (document.querySelector('.modal-overlay.visible')) return; // no hover over a dialog
                     const body = (annotation.bodies && annotation.bodies[0]) || {};
                     const rawId = body.id || annotation.id || '';
                     const typeName = (body.type || 'collectra.ImageCrop');
@@ -3906,9 +4227,11 @@
                     tooltip.style.display = 'block';
                     tooltip.style.left = (lastMousePos.x + 14) + 'px';
                     tooltip.style.top  = (lastMousePos.y + 14) + 'px';
+                    scheduleHoverHide(tooltip);
                 });
                 this.pageAnno.on('mouseLeaveAnnotation', () => {
                     hoveredAnnotation = null;
+                    cancelHoverHide(tooltip);
                     tooltip.style.display = 'none';
                 });
                 display.addEventListener('contextmenu', (event) => {
@@ -4180,12 +4503,19 @@
         // create/delete/rename too, or the DAG/Artefacts lists go stale.
         async function refreshActiveNodeIds() {
             if (currentFolderIndex < 0) return;
-            const activeResult = await window.pywebview.api.get_active_node_ids(currentFolderIndex);
+            let activeResult;
+            try {
+                activeResult = await window.pywebview.api.get_active_node_ids(currentFolderIndex);
+            } catch (e) {
+                console.error('Error refreshing the page\'s artefacts:', e);
+                return; // keep what we had: an emptied record would leave tabs nameless and buttons greyed out
+            }
+            if (!activeResult || !activeResult.success) return;
             pageNodeTypes = new Map(Object.entries(activeResult.node_types || {}));
-                pageCropLabels = new Set(activeResult.crop_labels || []);
+            pageCropLabels = new Set(activeResult.crop_labels || []);
             pageNodeIds = new Map(Object.entries(activeResult.node_ids || {}));
             populateTabs(lastDagNodes);
-            setActive(activeResult.success ? activeResult.active_ids : null);
+            setActive(activeResult.active_ids);
         }
 
         // The single id to show/use for idOrLabel — either idOrLabel
@@ -4262,15 +4592,11 @@
         // inside that panel (see the capture-phase mousedown listener
         // below). Defaults to 'bottom', today's original single panel.
         let focusedPanel = 'bottom';
+        // True only once the user has picked a panel (clicked in it, split, dropped a tab, used
+        // its buttons). 'bottom' above is just a starting value, so search uses this to know
+        // whether to honour focusedPanel or to default to the top panel.
+        let panelFocusChosen = false;
 
-        // State for remembering the arrangement (see REMEMBERED ARRANGEMENT below).
-        // Declared up here because drawing a tab strip, which happens while this
-        // script is still loading, can schedule a save.
-        let arrangementReady = false; // saving waits until the saved one has been restored
-        let arrangementSaveTimer = null;
-        let layoutOps = [];           // every split and close the user made, in order
-        let replayingLayout = false;  // restoring must not add to the log it is replaying
-        const MAX_LAYOUT_OPS = 200;
 
         // PanelController's class declaration lives earlier in this file
         // now (just above highlightPageBox) — every PanelController.prototype.X
@@ -4285,7 +4611,6 @@
         // currently-focused panel.
         function onPanelTabsChanged(controller) {
             controller.syncDagHighlights();
-            updateToolbarEnabledState(); // a DAG tab may have opened/closed in a non-focused panel
             if (panelControllers[focusedPanel] !== controller) return;
             updateSharedUiForFocusedPanel();
         }
@@ -4294,13 +4619,12 @@
             const controller = panelControllers[focusedPanel];
             const tab = controller ? controller.panel.getActiveTab() : null;
             if (tab && tab.kind === 'node') {
-                renderLineage(tab.nodeId);
+                renderLineage(tab.groupKey || tab.nodeId);
                 highlightLists(tab.nodeId);
             } else {
                 renderLineage(null);
                 highlightLists(null);
             }
-            updateToolbarEnabledState();
             updateFocusedPanelHighlight();
         }
 
@@ -4310,30 +4634,6 @@
                 const el = getPanelRootEl(key);
                 if (el) el.classList.toggle('panel-focused', key === focusedPanel);
             });
-        }
-
-        // Relies on renderLineage() having already populated parentsList/
-        // childrenList for the current tab (see updateSharedUiForFocusedPanel,
-        // which always calls it first) — disables Ancestors/Descendants
-        // when that node genuinely has none, not just when there's no node tab.
-        function updateToolbarEnabledState() {
-            const controller = panelControllers[focusedPanel];
-            const tab = controller ? controller.panel.getActiveTab() : null;
-            const isNodeTab = !!tab && tab.kind === 'node';
-            const isDagTab  = !!tab && tab.kind === 'dag';
-            const ancestorsBtn   = document.getElementById('ancestorsToolbarBtn');
-            const descendantsBtn = document.getElementById('descendantsToolbarBtn');
-            const refitBtn       = document.getElementById('refitDagTabBtn');
-            const parentsList  = document.getElementById('parentsList');
-            const childrenList = document.getElementById('childrenList');
-            const hasAncestors   = isNodeTab && !parentsList?.querySelector('.lineage-empty');
-            const hasDescendants = isNodeTab && !childrenList?.querySelector('.lineage-empty');
-            if (ancestorsBtn)   ancestorsBtn.disabled   = !hasAncestors;
-            if (descendantsBtn) descendantsBtn.disabled = !hasDescendants;
-            // Enabled whenever a DAG is on screen anywhere — resetDag() rebuilds
-            // the focused panel's DAG, or every visible one if the focus has none.
-            const anyVisibleDag = liveDagInstances().some((i) => i.width() > 0 && i.height() > 0);
-            if (refitBtn)       refitBtn.disabled       = !isDagTab && !anyVisibleDag;
         }
 
         const panelControllers = {
@@ -4389,6 +4689,7 @@
                 const dynamicRoot = e.target.closest('.dynamic-panel'); // no fixed id, key is a data attribute
                 if (dynamicRoot && dynamicRoot.dataset.panelKey) next = dynamicRoot.dataset.panelKey;
             }
+            if (next) panelFocusChosen = true;
             if (next && next !== focusedPanel) {
                 focusedPanel = next;
                 updateSharedUiForFocusedPanel();
@@ -4470,6 +4771,7 @@
 
         // Right-click on a bounding box in a page's image viewer.
         function showAnnotationContextMenu(mouseEvent, annotation) {
+            hideBoxTooltip();
             closeNodeContextMenu();
 
             const menu = document.createElement('div');
@@ -4593,6 +4895,17 @@
             }
         }
 
+        // The DAG tabs in panels (not the original top panel) draw from the pipeline data, so
+        // one restored before that data arrived was drawn empty: draw it again with the data.
+        function refreshDagTabs() {
+            Object.values(panelControllers).forEach((c) => {
+                if (!c.dagTabEls) return;
+                c.destroyDagTab();
+                const tab = c.panel.getActiveTab();
+                if (tab && tab.kind === 'dag') c.renderDagTab();
+            });
+        }
+
         async function loadAndRenderDag() {
             if (!apiReady) return;
             const placeholder = document.getElementById('dagPlaceholder');
@@ -4600,15 +4913,19 @@
             try {
                 const result = await window.pywebview.api.get_pipeline_graph();
                 if (!result.success) {
-                    placeholder.textContent = result.error || 'Pipeline graph unavailable.';
-                    placeholder.style.display = 'block';
+                    if (placeholder) {
+                        placeholder.textContent = result.error || 'Pipeline graph unavailable.';
+                        placeholder.style.display = 'block';
+                    }
                     if (cyDiv) cyDiv.style.display = 'none';
                     return;
                 }
                 const { nodes, edges, ext } = result;
                 if (!ext) {
-                    placeholder.textContent = 'No pipeline extension defined.';
-                    placeholder.style.display = 'block';
+                    if (placeholder) {
+                        placeholder.textContent = 'No pipeline extension defined.';
+                        placeholder.style.display = 'block';
+                    }
                     if (cyDiv) cyDiv.style.display = 'none';
                     return;
                 }
@@ -4616,14 +4933,35 @@
                 if (dagContainer) dagContainer.dataset.ext = ext;
                 lastDagNodes = nodes;
                 lastDagEdges = edges;
-                initCytoscape(nodes, edges);
-                placeholder.style.display = 'none';
-
+                // The lists need only the data, not a drawn graph, so they are available now —
+                // not at the end, after steps that can fail.
                 document.getElementById('artefactsToolbarBtn').disabled = false;
                 document.getElementById('tasksToolbarBtn').disabled = false;
+                // Rows drawn before this (e.g. tabs restored at start-up) had no lineage to
+                // go on, so their Ancestors/Descendants buttons are redrawn now. One row that
+                // cannot be drawn must not stop the pipeline from loading.
+                try {
+                    // Tabs for something that is not a pipeline label (an old bug named some after an
+                    // instance id, and the saved layout kept them) are dropped, and the layout saved.
+                    const known = new Set(nodes.map((n) => n.id));
+                    Object.values(panelControllers).forEach((c) => {
+                        if (c.panel.removeNodeTabsNotIn(known) > 0) c.renderTabStripView();
+                    });
+                    refreshDagTabs(); // DAG tabs restored before this had no nodes to draw
+                    Object.values(panelControllers).forEach((c) => c.renderPager());
+                } catch (e) {
+                    console.error('Error refreshing the panels:', e);
+                }
+                initCytoscape(nodes, edges);
+                if (placeholder) placeholder.style.display = 'none';
             } catch (e) {
-                placeholder.textContent = 'Error loading pipeline: ' + e.message;
-                placeholder.style.display = 'block';
+                // Whatever went wrong here must not stop the page from opening, so this
+                // never throws — the elements it reports on may not exist at all.
+                console.error('Error loading pipeline:', e);
+                if (placeholder) {
+                    placeholder.textContent = 'Error loading pipeline: ' + e.message;
+                    placeholder.style.display = 'block';
+                }
                 if (cyDiv) cyDiv.style.display = 'none';
             }
         }
@@ -4676,6 +5014,7 @@
                         selector: 'node',
                         style: {
                             'background-color': 'data(nodeColor)',
+                            'background-opacity': 0.35,
                             'label': 'data(label)',
                             'color': '#22313b',
                             'text-valign': 'center',
@@ -4711,9 +5050,12 @@
                         style: { 'border-width': 3, 'border-color': colors.orange }
                     },
                     {
+                        // Not on this page: fill at 10% (active nodes are 35%), label
+                        // text as faint as it always was.
                         selector: 'node.dimmed',
                         style: {
-                            'opacity': 0.38,
+                            'background-opacity': 0.10,
+                            'text-opacity': 0.38,
                             'events': 'no',
                         }
                     },
@@ -4819,6 +5161,9 @@
 
         function initCytoscape(nodes, edges) {
             const cyDiv = document.getElementById('cy');
+            // The original top DAG panel may have been closed (and is restored closed), so
+            // there may be no canvas to draw on; other panels draw their own DAG tabs.
+            if (!cyDiv) return;
             if (cy) { cy.destroy(); cy = null; }
             cy = createDagInstance({
                 cyDiv,
@@ -4839,9 +5184,7 @@
             // --app-secondary-fg (or that at reduced opacity for de-emphasis) —
             // never a node's own accent color, which could match the background
             // itself and disappear.
-            const badge = displayType
-                ? `<span class="badge" style="background:transparent;color:inherit;opacity:0.75;border:1px solid currentColor;font-family:monospace;font-weight:normal;font-size:10px">${displayType}</span>`
-                : '';
+            const badge = typeChipHtml(displayType);
             // A typed node (an artefact) shows only its type; task nodes have
             // no type, so they keep their name.
             const title = displayType ? '' : `<strong style="font-size:12px">${data.id}</strong>`;
@@ -4860,10 +5203,12 @@
                 </div>` : ''}`;
             tooltip.style.display = 'block';
             moveDagTooltip(evt, tooltip, containerEl);
+            scheduleHoverHide(tooltip);
         }
 
         function hideDagTooltip(tooltipEl) {
             const t = tooltipEl || document.getElementById('dagTooltip');
+            cancelHoverHide(t);
             if (t) t.style.display = 'none';
         }
 
@@ -4919,8 +5264,9 @@
         // into `panelControllers`, threaded into the generated markup so
         // the click/drag handlers below can look up which panel an event
         // came from instead of needing a bespoke copy per panel.
-        function renderTabStrip(panel, stripEl, panelKey) {
+        function renderTabStrip(panel, stripEl, panelKey, { save = true } = {}) {
             if (!stripEl) return;
+            hideTabTooltip(); // the tab under the pointer is about to be replaced, so it can never report leaving
             stripEl.innerHTML = panel.tabs.map((tab) => {
                 const isActive = tab.id === panel.activeTabId;
                 const close = panel.canCloseTab(tab.id)
@@ -4933,12 +5279,13 @@
                 // nodes with no generated suffix is the same string as the
                 // label anyway (e.g. "specimen_sheet"). A DAG tab has no
                 // nodeId to show, so it always shows its plain label.
-                const labelHtml = tab.kind !== 'dag' && tab.nodeId
-                    ? `<span title="${escapeHtml(tab.nodeId)}">${escapeHtml(tab.label)}</span>`
-                    : escapeHtml(tab.label);
-                return `<div class="tab${isActive ? ' active' : ''}" data-tab-id="${tab.id}" draggable="true" ondragstart="onTabDragStart(event, '${tab.id}', '${panelKey}')" ondragover="onTabDragOver(event)" ondrop="onTabDrop(event, '${panelKey}', '${tab.id}')" onclick="activateTabInPanel('${panelKey}', '${tab.id}')" oncontextmenu="showTabContextMenu(event, '${panelKey}', '${tab.id}')">${labelHtml}${close}</div>`;
+                const labelHtml = escapeHtml(tab.label);
+                // The data type (collectra.Text …) shows on hover, not under the tab.
+                const typeTitle = tabTypeTitle(tab, pageNodeTypes, resolveDagLabel);
+                const hit = tab.kind === 'node' && tab.groupKey !== null && searchLabels.has(tab.groupKey);
+                return `<div class="tab${isActive ? ' active' : ''}${hit ? ' search-hit' : ''}" data-tab-id="${tab.id}" data-type-title="${escapeHtml(typeTitle)}" onmouseenter="showTabTooltip(this)" onmouseleave="hideTabTooltip()" draggable="true" ondragstart="onTabDragStart(event, '${tab.id}', '${panelKey}')" ondragover="onTabDragOver(event)" ondrop="onTabDrop(event, '${panelKey}', '${tab.id}')" onclick="activateTabInPanel('${panelKey}', '${tab.id}')" oncontextmenu="showTabContextMenu(event, '${panelKey}', '${tab.id}')">${labelHtml}${close}</div>`;
             }).join('');
-            scheduleArrangementSave();
+            if (save) scheduleArrangementSave();
         }
 
         // Right-click on a tab: delete the instance it shows, or close it.
@@ -4976,7 +5323,50 @@
             }, 0);
         }
 
+        // ── TAB TOOLTIP (the data type, in the same chip as the DAG hover) ───
+
+        function showTabTooltip(tabEl) {
+            const tooltip = document.getElementById('tabTooltip');
+            const chip = typeChipHtml(tabEl.dataset.typeTitle);
+            if (!chip) { tooltip.style.display = 'none'; return; } // e.g. the DAG tab
+            const rect = tabEl.getBoundingClientRect();
+            tooltip.innerHTML = chip;
+            tooltip.style.left = rect.left + 'px';
+            tooltip.style.top = (rect.bottom + 6) + 'px';
+            tooltip.style.display = 'block';
+            scheduleHoverHide(tooltip);
+        }
+
+        function hideTabTooltip() {
+            const tooltip = document.getElementById('tabTooltip');
+            cancelHoverHide(tooltip);
+            tooltip.style.display = 'none';
+        }
+
+        // ── END TAB TOOLTIP ─────────────────────────────────────────────────
+
+        // ── HOVER CARDS: clear them all on any click, scroll or key press ───
+
+        function hideAllHoverCards() {
+            const cards = ['pageBoxTooltip', 'tabTooltip', 'dagTooltip', 'dagTabTooltip']
+                .map((id) => document.getElementById(id))
+                // The DAG tab of a panel made with Customize Layout has a class, not an id.
+                .concat([...document.querySelectorAll('.dag-tab-tooltip')]);
+            cards.forEach((card) => {
+                if (!card) return;
+                cancelHoverHide(card);
+                card.style.display = 'none';
+            });
+        }
+        document.addEventListener('mousedown', hideAllHoverCards, true);
+        document.addEventListener('wheel', hideAllHoverCards, true);
+        document.addEventListener('keydown', hideAllHoverCards, true);
+
+        // ── END HOVER CARDS ──────────────────────────────────────────────────
+
+
         function activateTabInPanel(panelKey, tabId) {
+            expandPanelIfCollapsed(panelKey);
             panelControllers[panelKey].activateTab(tabId);
         }
 
@@ -4990,8 +5380,22 @@
 
         // Plain click (DAG node or list item): opens the node's label tab in
         // the focused panel, or focuses it if it is already open there.
+        // The panel a click opens something in: the focused one, unless it cannot be seen
+        // (collapsed), in which case the topmost visible panel — so nothing ever opens
+        // somewhere hidden and looks like nothing happened.
+        function openingPanel() {
+            const key = searchTargetPanel(Object.keys(panelControllers), focusedPanel, panelIsVisible, panelPosition);
+            if (key === null) return null;
+            if (key !== focusedPanel) {
+                focusedPanel = key;
+                updateFocusedPanelHighlight();
+            }
+            return panelControllers[key];
+        }
+
         async function selectNode(nodeId) {
-            await panelControllers[focusedPanel].openOrActivateTab(nodeId);
+            const panel = openingPanel();
+            if (panel) await panel.openOrActivateTab(nodeId);
         }
 
         // "Open in New Tab" — adds nodeId as another tab in the focused
@@ -5001,14 +5405,16 @@
         // Ancestors-Descendants list); plain click still goes through
         // selectNode().
         function openNodeInNewTab(nodeId) {
-            panelControllers[focusedPanel].openInNewTab(nodeId);
+            const panel = openingPanel();
+            if (panel) panel.openInNewTab(nodeId);
         }
 
         // Toolbar DAG icon — opens a DAG tab in the focused panel, or
         // switches to it if already open, same "unless already open" rule
         // as node tabs.
         function openDagTab() {
-            panelControllers[focusedPanel].openDagKindTab();
+            const panel = openingPanel();
+            if (panel) panel.openDagKindTab();
         }
 
         // "Reset DAG" — rebuild the tree layout (undoing manual node drags)
@@ -5127,15 +5533,7 @@
         }
 
         function applyDynamicPanelCollapsedState(controller, collapsed) {
-            const icon = controller.rootEl.querySelector('.new-panel-collapse-toggle i');
-            if (collapsed) {
-                controller.prevFlex = controller.rootEl.style.flex || '';
-                controller.rootEl.style.flex = '0 0 24px';
-            } else {
-                controller.rootEl.style.flex = controller.prevFlex || '';
-            }
-            controller.rootEl.classList.toggle('collapsed', collapsed);
-            icon.className = collapsed ? 'fa fa-chevron-down' : 'fa fa-chevron-up';
+            applyPanelCollapse(controller.rootEl, collapsed);
         }
 
         function toggleDynamicPanelCollapse(key) {
@@ -5174,11 +5572,10 @@
             });
             controller.rootEl = rootEl;
             controller.region = new CollapsibleRegion();
-            controller.prevFlex = null;
             rootEl.dataset.panelKey = key; // click-to-focus lookup — see the document mousedown listener
 
             rootEl.querySelector('.panel-close-btn').addEventListener('click', () => removePanelByKey(key));
-            rootEl.querySelector('.new-panel-collapse-toggle').addEventListener('click', () => toggleDynamicPanelCollapse(key));
+            rootEl.querySelector('.panel-collapse-btn').addEventListener('click', () => toggleDynamicPanelCollapse(key));
             watchDagContainerResize(dagTabEls.containerEl, () => controller.dagCy());
             watchImageViewerResize(rootEl.querySelector('.page-artefact-display'), () => controller);
 
@@ -5187,6 +5584,7 @@
                 collapse: () => { controller.region.collapse(); applyDynamicPanelCollapsedState(controller, true); },
                 expand: () => { controller.region.expand(); applyDynamicPanelCollapsedState(controller, false); },
                 closeBtn: () => rootEl.querySelector('.panel-close-btn'),
+                collapseBtn: () => rootEl.querySelector('.panel-collapse-btn'),
             };
 
             return controller;
@@ -5206,13 +5604,17 @@
         const PANEL_MIN_SIZE = 120; // matches imagePanelResizeHandle's own floor
 
         // Generic drag-resize between two flex siblings sharing a handle —
-        // 'row' resizes width (drag horizontally), 'column' resizes height
-        // (drag vertically). Resizes `first` (the panel before the handle
-        // in DOM order); `second` just grows/shrinks to fill what's left,
+        // A row container resizes width (drag horizontally), a column resizes
+        // height (drag vertically). Resizes whatever sits directly before the
+        // handle; the next sibling just grows/shrinks to fill what's left,
         // same as every existing resize handle in this app already does.
-        function wireGenericResizeHandle(handle, direction, first) {
+        function wireGenericResizeHandle(handle) {
             handle.addEventListener('mousedown', (e) => {
-                const isRow = direction === 'row';
+                // Decided now, not when the divider was made: splitting a panel
+                // again re-wraps it, so what sits before this divider, and which
+                // way its container runs, can have changed since.
+                const first = handle.previousElementSibling;
+                const isRow = handle.parentElement.classList.contains('split-row');
                 const startPos = isRow ? e.clientX : e.clientY;
                 const startSize = isRow
                     ? first.getBoundingClientRect().width
@@ -5231,7 +5633,9 @@
                         PANEL_MIN_SIZE,
                         Math.min(totalSize - PANEL_MIN_SIZE, startSize + (pos - startPos))
                     );
-                    first.style.flex = `0 0 ${newSize}px`;
+                    // A share of the container, not pixels: panels then keep their
+                    // proportions when the window changes size, and none is squeezed out.
+                    first.style.flex = `0 1 ${(newSize / totalSize * 100).toFixed(2)}%`;
                 }
                 function onUp() {
                     document.removeEventListener('mousemove', onMove);
@@ -5269,12 +5673,12 @@
                 wrapper.appendChild(newRoot);
                 wrapper.appendChild(resizeHandle);
                 wrapper.appendChild(sourceEl);
-                wireGenericResizeHandle(resizeHandle, layout.flexDirection, newRoot);
+                wireGenericResizeHandle(resizeHandle);
             } else {
                 wrapper.appendChild(sourceEl);
                 wrapper.appendChild(resizeHandle);
                 wrapper.appendChild(newRoot);
-                wireGenericResizeHandle(resizeHandle, layout.flexDirection, sourceEl);
+                wireGenericResizeHandle(resizeHandle);
             }
 
             recordLayoutOp({op: 'split', from: sourceKey, direction, key});
@@ -5284,8 +5688,10 @@
             wireTabStripBackgroundDnD(key, controller.tabStripEl);
             wireTabDropOnPanel(key, controller.rootEl);
             updatePanelCloseButtons();
+            refreshCollapsedOrientations();
 
             focusedPanel = key;
+            panelFocusChosen = true;
             updateSharedUiForFocusedPanel();
         }
 
@@ -5459,6 +5865,7 @@
             targetController.showActiveTabContent();
 
             focusedPanel = targetPanelKey;
+            panelFocusChosen = true;
             onPanelTabsChanged(sourceController);
             onPanelTabsChanged(targetController);
         }
@@ -5526,7 +5933,7 @@
         // node independently.
 
         PanelController.prototype.renderTextNodeAsPage = async function(nodeId, detail, view) {
-            const { placeholder, imageDisplay, contentDiv, headerId, headerType, textDisplay } = this.el;
+            const { placeholder, imageDisplay, contentDiv, headerId, textDisplay } = this.el;
             if (!textDisplay) return;
 
             if (placeholder) placeholder.style.display = 'none';
@@ -5537,13 +5944,13 @@
 
             const isTei = view.format === 'xml';
             headerId.textContent   = nodeId;
-            headerType.textContent = detail;
 
             const mountEditor = (text, tei) => {
                 if (this.easyMDE) { try { this.easyMDE.toTextArea(); this.easyMDE = null; } catch (e) {} }
                 // Classes, not ids — this markup can exist in two panels at
                 // once, so a fixed id here would duplicate across the document.
-                textDisplay.innerHTML = `<div style="display:flex;align-items:center;justify-content:flex-end;padding:10px 12px 8px;"><button class="page-text-save btn btn-sm btn-primary" style="font-size:11px;">Save</button><span class="page-text-status" style="font-size:11px;margin-left:8px;color:var(--app-fg-muted, #586e75);"></span></div><textarea class="mde-textarea"></textarea>`;
+                this.clearNodeTools();
+                textDisplay.innerHTML = `<textarea class="mde-textarea"></textarea>`;
                 this.easyMDE = new EasyMDE({
                     autoDownloadFontAwesome: false,
                     element: textDisplay.querySelector('.mde-textarea'),
@@ -5567,26 +5974,55 @@
                     readOnly: view ? !view.editable : false,
                 });
                 requestAnimationFrame(() => this.easyMDE?.codemirror.refresh());
-                textDisplay.querySelector('.page-text-save').hidden = view ? !view.editable : false;
-                textDisplay.querySelector('.page-text-save').onclick = async () => {
-                    const statusEl = textDisplay.querySelector('.page-text-status');
-                    statusEl.textContent = 'Saving…';
-                    try {
-                        const r = await window.pywebview.api.update_display_text(nodeId, this.easyMDE.value());
-                        if (r && r.success !== false) {
-                            flashStatus(statusEl, 'Saved', false);
-                        } else {
-                            flashStatus(statusEl, 'Error: ' + (r?.error || ''), true);
+                // The formatting tools go to the left of the row under the tabs
+                // (formatted text only — plain text has none).
+                this.moveEditorToolbar();
+                // Save sits with the other buttons at the right of that row, only for
+                // editable text; renderPager draws it from this.
+                this.textSave = (view ? view.editable : true) ? {
+                    statusEl: null,
+                    onSave: async () => {
+                        const statusEl = this.textSave && this.textSave.statusEl;
+                        if (statusEl) statusEl.textContent = 'Saving…';
+                        const report = (message, isError) => { if (statusEl) flashStatus(statusEl, message, isError); };
+                        try {
+                            const r = await window.pywebview.api.update_display_text(nodeId, this.easyMDE.value());
+                            if (r && r.success !== false) { report('Saved', false); rerunArtefactSearch(); }
+                            else report('Error: ' + (r?.error || ''), true);
+                        } catch (e) {
+                            report('Error: ' + e.message, true);
                         }
-                    } catch (e) {
-                        flashStatus(statusEl, 'Error: ' + e.message, true);
-                    }
-                };
+                    },
+                } : null;
             };
 
             mountEditor(view.text, isTei);
             if (isTei) this.easyMDE.codemirror.setOption('mode', 'xml');
             if (view.format === 'plain') this.easyMDE.codemirror.setOption('mode', 'text/plain');
+            markSearchInEditor(this);
+            this.renderPager(); // now that Save may exist
+        };
+
+        // The slot at the left of the row under the tabs, for the text-editing tools.
+        PanelController.prototype.nodeToolsEl = function() {
+            const header = this.el.headerType && this.el.headerType.parentElement;
+            return header ? header.querySelector('.node-tools') : null;
+        };
+
+        PanelController.prototype.clearNodeTools = function() {
+            const slot = this.nodeToolsEl();
+            if (slot) slot.replaceChildren();
+        };
+
+        // EasyMDE builds its formatting toolbar above the text; move it up into the row
+        // under the tabs. The buttons keep working (they refer to the editor, not to
+        // where they sit).
+        PanelController.prototype.moveEditorToolbar = function() {
+            const slot = this.nodeToolsEl();
+            if (!slot) return;
+            slot.replaceChildren();
+            const toolbar = this.el.textDisplay && this.el.textDisplay.querySelector('.editor-toolbar');
+            if (toolbar) slot.appendChild(toolbar);
         };
 
         PanelController.prototype.clear = function() {
@@ -5598,6 +6034,8 @@
             // same node on the new page. clearDag() (real project/DAG
             // reset, where continuity makes no sense) resets it itself.
             if (this.easyMDE) { try { this.easyMDE.toTextArea(); this.easyMDE = null; } catch (e) {} }
+            this.textSave = null;
+            this.clearNodeTools();
             if (this.el.placeholder) this.el.placeholder.style.display = 'block';
             if (this.el.contentDiv)  { this.el.contentDiv.style.display = 'none'; this.el.contentDiv.innerHTML = ''; }
             if (this.el.textDisplay) { this.el.textDisplay.style.display = 'none'; this.el.textDisplay.innerHTML = ''; }
@@ -5605,54 +6043,78 @@
             if (panelControllers[focusedPanel] === this) renderLineage(null);
         };
 
+        // Whether a node has any ancestors / descendants, for greying out its buttons. From
+        // the pipeline's data, so it holds whatever panels (including the DAG panel) are open.
+        function lineageAvailability(nodeId) {
+            const label = nodeId ? resolveDagLabel(nodeId) : null;
+            const neighbors = (direction) => lineageNeighbors(label, direction, lastDagNodes, lastDagEdges, (id) => PAGE_NODE_RE.test(id));
+            return {
+                ancestors: neighbors('ancestors').length > 0,
+                descendants: neighbors('descendants').length > 0,
+            };
+        }
+
+        // Ancestors / Descendants of one panel's tab: focus that panel (which fills the
+        // shared lists for its node), then open the popover beside the button, closing
+        // the other one. Pressing the same button again closes it.
+        function openLineageFor(controller, kind, anchorEl) {
+            focusedPanel = controller.key;
+            panelFocusChosen = true;
+            updateSharedUiForFocusedPanel();
+            const mine = kind === 'ancestors'
+                ? { state: ancestorsPopover, id: 'ancestorsPopover' }
+                : { state: descendantsPopover, id: 'descendantsPopover' };
+            const other = kind === 'ancestors'
+                ? { state: descendantsPopover, id: 'descendantsPopover' }
+                : { state: ancestorsPopover, id: 'ancestorsPopover' };
+            const el = document.getElementById(mine.id);
+            // Open for a different panel's tab: move it there instead of closing it.
+            const open = mine.state.open && el.dataset.owner !== controller.key ? mine.state.show() : mine.state.toggle();
+            other.state.hide();
+            document.getElementById(other.id).style.display = 'none';
+            el.style.display = open ? 'block' : 'none';
+            if (!open) return;
+            el.dataset.owner = controller.key;
+            const rect = anchorEl.getBoundingClientRect();
+            const width = 220;
+            el.style.position = 'fixed';
+            el.style.zIndex = '500';
+            el.style.right = 'auto';
+            el.style.top = (rect.bottom + 6) + 'px';
+            el.style.left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width)) + 'px';
+        }
+
+        function closeLineagePopovers() {
+            ancestorsPopover.hide();
+            descendantsPopover.hide();
+            document.getElementById('ancestorsPopover').style.display = 'none';
+            document.getElementById('descendantsPopover').style.display = 'none';
+        }
+        // Clicking anywhere else, or pressing Escape, closes them.
+        document.addEventListener('mousedown', (e) => {
+            if (!e.target.closest('.lineage-popover, .node-action-btn')) closeLineagePopovers();
+        });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeLineagePopovers(); });
+
         function renderLineage(nodeId) {
             const parentsList  = document.getElementById('parentsList');
             const childrenList = document.getElementById('childrenList');
             if (!parentsList || !childrenList) return;
 
-            if (!nodeId || !cy) {
-                parentsList.innerHTML  = '<span class="lineage-empty">—</span>';
-                childrenList.innerHTML = '<span class="lineage-empty">—</span>';
-                repositionLineagePopovers();
-                return;
-            }
+            const skipPageNodes = (id) => PAGE_NODE_RE.test(id);
 
-            const node = cy.getElementById(resolveDagLabel(nodeId));
-            if (!node || node.empty()) return;
-
-            const taskTypes = new Set(['llm', 'detector', 'processor']);
-
-            // BFS in `direction`, collecting all same-type nodes at any depth.
-            // Traverses through opposite-type intermediaries without adding them.
-            function sameTypeNeighbors(n, direction) {
-                const selectedIsTask = taskTypes.has(n.data('nodeType'));
-                const visited = new Set([n.id()]);
-                const queue = [n];
-                const result = new Map();
-                while (queue.length) {
-                    const cur = queue.shift();
-                    for (const m of cur[direction]('node').toArray()) {
-                        if (visited.has(m.id()) || PAGE_NODE_RE.test(m.id())) continue;
-                        visited.add(m.id());
-                        if (taskTypes.has(m.data('nodeType')) === selectedIsTask) result.set(m.id(), m);
-                        queue.push(m);
-                    }
-                }
-                return [...result.values()];
-            }
-
-            function renderList(nodes, listEl) {
-                if (!nodes.length) { listEl.innerHTML = '<span class="lineage-empty">—</span>'; return; }
-                listEl.innerHTML = nodes
-                    .map(n => {
-                        const isActive = !activeNodeIds || activeNodeIds.has(n.id());
+            function renderList(labels, listEl) {
+                if (!labels.length) { listEl.innerHTML = '<span class="lineage-empty">—</span>'; return; }
+                listEl.innerHTML = labels
+                    .map((labelId) => {
+                        const isActive = !activeNodeIds || activeNodeIds.has(labelId);
                         // One item per real instance under this label — a
                         // detector-type ancestor/descendant can have any
                         // number of real instances per page, same as in
                         // the Artefacts list, and all of them belong here,
                         // not just one arbitrarily picked one.
-                        const ids = pageNodeIds.get(n.id());
-                        const realIds = (ids && ids.length) ? ids : [n.id()];
+                        const ids = pageNodeIds.get(labelId);
+                        const realIds = (ids && ids.length) ? ids : [labelId];
                         return realIds.map(id => {
                             const displayId = escapeHtml(truncateId(id));
                             return isActive
@@ -5663,8 +6125,8 @@
                     .join('');
             }
 
-            renderList(sameTypeNeighbors(node, 'incomers'), parentsList);
-            renderList(sameTypeNeighbors(node, 'outgoers'), childrenList);
+            renderList(lineageNeighbors(resolveDagLabel(nodeId), 'ancestors', lastDagNodes, lastDagEdges, skipPageNodes), parentsList);
+            renderList(lineageNeighbors(resolveDagLabel(nodeId), 'descendants', lastDagNodes, lastDagEdges, skipPageNodes), childrenList);
             repositionLineagePopovers();
         }
 
@@ -5738,6 +6200,159 @@
 
         // ── END PIPELINE DAG ─────────────────────────────────────────────────
 
+        // Where a panel is on screen, so search can default to the topmost one.
+        function panelPosition(key) {
+            const rect = getPanelRootEl(key).getBoundingClientRect();
+            return { top: rect.top, left: rect.left };
+        }
+
+        // A panel counts as visible when it is not collapsed and has a real size
+        // (the DAG panel at the top starts collapsed to nothing).
+        function panelIsVisible(key) {
+            const entry = panelCollapseRegistry[key];
+            if (entry && entry.isCollapsed()) return false;
+            const el = getPanelRootEl(key);
+            if (!el) return false;
+            const rect = el.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+        }
+
+        // ── ARTEFACT SEARCH (toolbar box: finds text and names) ───
+
+        function openArtefactSearch() {
+            document.getElementById('artefactSearchBar').classList.add('open');
+            document.getElementById('artefactSearchToggle').classList.add('active');
+            const input = document.getElementById('artefactSearchInput');
+            input.focus();
+            input.select();
+        }
+
+        function closeArtefactSearch() {
+            document.getElementById('artefactSearchBar').classList.remove('open');
+            document.getElementById('artefactSearchToggle').classList.remove('active');
+        }
+
+        function toggleArtefactSearch() {
+            if (document.getElementById('artefactSearchBar').classList.contains('open')) {
+                doneArtefactSearch();
+            } else {
+                openArtefactSearch();
+            }
+        }
+
+        function handleArtefactSearchKey(e) {
+            if (e.key === 'Enter') {
+                if (e.isComposing) return; // Enter is confirming text from an input method, not "next"
+                e.preventDefault();
+                stepArtefactSearch(e.shiftKey ? -1 : 1);
+            } else if (e.key === 'Escape') {
+                doneArtefactSearch();
+            }
+        }
+
+        function handleArtefactSearchInput() {
+            clearTimeout(searchState.timer);
+            searchState.timer = setTimeout(runArtefactSearch, 250);
+        }
+
+        async function runArtefactSearch() {
+            const query = document.getElementById('artefactSearchInput').value;
+            const token = ++searchState.token; // answers to an older query are dropped
+            searchState.query = query;
+            if (!query.trim() || !apiReady) { setSearchMatches([]); return; }
+            let matches = [];
+            let problem = '';
+            try {
+                const result = await window.pywebview.api.search_artefacts(query);
+                if (result && result.success) {
+                    matches = result.matches;
+                } else {
+                    // The backend says "No graph loaded" while no page is open.
+                    problem = /No graph loaded/i.test((result && result.error) || '') ? 'Open a page to search' : 'Search failed';
+                }
+            } catch (e) {
+                console.error('Error searching artefacts:', e);
+                problem = 'Search failed';
+            }
+            if (token !== searchState.token) return;
+            setSearchMatches(matches, problem);
+        }
+
+        // Search again for what is typed, on whatever page is open now.
+        function rerunArtefactSearch() {
+            if (searchState.query.trim()) return runArtefactSearch();
+        }
+
+        function setSearchMatches(matches, problem = '') {
+            searchState.matches = matches;
+            searchState.problem = problem;
+            searchState.index = -1;
+            searchLabels = matchingLabels(matches);
+            Object.values(panelControllers).forEach((c) => {
+                c.renderTabStripView({ save: false }); // highlights only: no need to save the layout
+                markSearchInEditor(c);
+            });
+            updateArtefactSearchUi();
+        }
+
+        function updateArtefactSearchUi() {
+            const {query, matches, index, problem} = searchState;
+            document.getElementById('artefactSearchCount').textContent = searchSummary(query, matches.length, index, problem);
+            document.getElementById('artefactSearchClear').hidden = !query.trim();
+            document.getElementById('artefactSearchPrev').disabled = matches.length === 0;
+            document.getElementById('artefactSearchNext').disabled = matches.length === 0;
+        }
+
+        // The round x inside the box: empties the search and its highlights,
+        // and leaves the bar open for the next search.
+        function clearArtefactSearch() {
+            clearTimeout(searchState.timer); // a search still waiting to run is not wanted any more
+            const input = document.getElementById('artefactSearchInput');
+            input.value = '';
+            runArtefactSearch();
+            input.focus();
+        }
+
+        // Done: finished searching — empties the search and closes the bar.
+        function doneArtefactSearch() {
+            clearTimeout(searchState.timer);
+            const input = document.getElementById('artefactSearchInput');
+            input.value = '';
+            runArtefactSearch();
+            input.blur();
+            closeArtefactSearch();
+        }
+
+        // Marks the matched words in the text a panel is showing, and scrolls
+        // the first one into view.
+        function markSearchInEditor(controller) {
+            const cm = controller && controller.easyMDE && controller.easyMDE.codemirror;
+            if (!cm) return;
+            cm.getAllMarks().filter((m) => m.className === 'search-mark').forEach((m) => m.clear());
+            const ranges = findRanges(cm.getValue(), searchState.query);
+            ranges.forEach((r) => cm.markText(cm.posFromIndex(r.from), cm.posFromIndex(r.to), {className: 'search-mark'}));
+            if (ranges.length) cm.scrollIntoView(cm.posFromIndex(ranges[0].from), 80);
+        }
+
+        // Next/previous match: opens it on its own tab in the panel the user chose — or, when
+        // they have not chosen one (or it was deleted or cannot be seen), in the topmost
+        // panel on screen, which then shows as the focused one.
+        async function stepArtefactSearch(direction) {
+            const {matches} = searchState;
+            if (!matches.length) return;
+            const key = searchTargetPanel(Object.keys(panelControllers), panelFocusChosen ? focusedPanel : null, panelIsVisible, panelPosition);
+            if (key === null) return;
+            if (key !== focusedPanel) {
+                focusedPanel = key; // not "chosen": searching does not pick a panel for the user
+                updateFocusedPanelHighlight();
+            }
+            searchState.index = stepIndex(matches.length, searchState.index, direction);
+            updateArtefactSearchUi();
+            await panelControllers[key].openOrActivateTab(matches[searchState.index].id, matches[searchState.index].label);
+        }
+
+        // ── END ARTEFACT SEARCH ─────────────────────────────────────────────
+
         // ── REMEMBERED ARRANGEMENT (open tabs per panel, per user) ──────────
 
 
@@ -5756,23 +6371,34 @@
                 if (entry && entry.isCollapsed()) return;
                 const el = getPanelRootEl(key);
                 const flex = el && el.style.flex;
-                if (flex && /^0 0 [\d.]+(px|%)$/.test(flex)) sizes[key] = flex;
+                if (flex && /^0 [01] [\d.]+(px|%)$/.test(flex)) sizes[key] = flex;
             });
             return sizes;
         }
 
+        // Old saves hold pixel sizes; every size is turned into a share of the
+        // panel's own container so it follows the window (see sizeToPercent).
         function applyPanelSizes(sizes, keyMap) {
             Object.entries(sizes || {}).forEach(([savedKey, flex]) => {
                 const key = keyMap[savedKey];
                 const el = key && panelControllers[key] ? getPanelRootEl(key) : null;
-                if (el) el.style.flex = flex;
+                const parent = el && el.parentElement;
+                if (!parent) return;
+                const rect = parent.getBoundingClientRect();
+                const along = parent.classList.contains('split-row') ? rect.width : rect.height;
+                const share = sizeToPercent(flex, along);
+                if (share) el.style.flex = share;
             });
+        }
+
+        function currentCollapsedKeys() {
+            return Object.keys(panelCollapseRegistry).filter((key) => panelCollapseRegistry[key].isCollapsed());
         }
 
         function currentArrangement() {
             const panels = {};
             Object.keys(panelControllers).forEach((key) => { panels[key] = panelControllers[key].panel; });
-            return serializeArrangement(panels, focusedPanel, resolveDagLabel, {layout: layoutOps, sizes: currentPanelSizes()});
+            return serializeArrangement(panels, focusedPanel, resolveDagLabel, {layout: layoutOps, sizes: currentPanelSizes(), collapsed: currentCollapsedKeys()});
         }
 
         function scheduleArrangementSave() {
@@ -5819,6 +6445,19 @@
                         controller.renderTabStripView();
                     });
                     applyPanelSizes(saved.sizes, keyMap);
+                    // Which panels were collapsed — only when the save says (an older one does
+                    // not, and then the usual start-up state is left as it is).
+                    if (Array.isArray(saved.collapsed)) {
+                        const wanted = new Set(saved.collapsed.map((k) => keyMap[k]).filter(Boolean));
+                        Object.entries(panelCollapseRegistry).forEach(([key, entry]) => {
+                            const collapse = wanted.has(key);
+                            if (entry.isCollapsed() !== collapse) (collapse ? entry.collapse() : entry.expand());
+                        });
+                    }
+                    // Rebuilding the layout may have removed the panel that was open: one must stay open.
+                    const mustOpen = keepOneExpanded(Object.keys(panelCollapseRegistry), (k) => panelCollapseRegistry[k].isCollapsed());
+                    if (mustOpen) panelCollapseRegistry[mustOpen].expand();
+                    updatePanelCloseButtons();
                     if (saved.focused && keyMap[saved.focused] && panelControllers[keyMap[saved.focused]]) {
                         focusedPanel = keyMap[saved.focused];
                     }
@@ -5835,6 +6474,32 @@
         }
 
         // ── END REMEMBERED ARRANGEMENT ──────────────────────────────────────
+
+        // Cmd/Ctrl+B toggles the sidebar from anywhere, as in VS Code. Capture phase,
+        // so the text editor's own bold shortcut never gets it.
+        document.addEventListener('keydown', function(e) {
+            if (isSidebarShortcut(e)) {
+                e.preventDefault();
+                toggleSidebarCollapse();
+            }
+        }, true);
+
+        // The toolbar button's hover text names the shortcut for this platform.
+        (function() {
+            const button = document.getElementById('sidebarToggleBtn');
+            const title = sidebarToggleTitle(/Mac|iPhone|iPad/.test(navigator.platform));
+            button.title = title;
+            button.setAttribute('aria-label', title);
+        })();
+
+        // Cmd/Ctrl+F opens the artefact search instead of the browser's own find.
+        document.addEventListener('keydown', function(e) {
+            if (isSearchShortcut(e)) {
+                if (document.querySelector('.modal-overlay.visible')) return; // leave a dialog alone
+                e.preventDefault();
+                openArtefactSearch();
+            }
+        });
 
         window.addEventListener('pywebviewready', async function() {
             apiReady = true;

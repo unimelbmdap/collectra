@@ -1,4 +1,4 @@
-const {deleteDialogContent, shortTypeName} = require('../collectra/gui/deleteDialog.js');
+const {deleteDialogContent, shortTypeName, typeChipHtml} = require('../collectra/gui/deleteDialog.js');
 
 const child = (id, type, depth = 1) => ({id, type, label: '', depth});
 const target = (id, name = '') => ({id, name});
@@ -89,4 +89,25 @@ it('DAG hover shows just the type chip when a node has a type, and the name only
     expect(html).toContain("const title = displayType ? '' : `<strong style=\"font-size:12px\">${data.id}</strong>`;");
     expect(html).toContain('${title}${badge}');
     expect(html).not.toContain('<strong style="font-size:12px">${data.id}</strong>${badge}');
+});
+
+describe('typeChipHtml (the chip shared by the DAG hover and the tab hover)', () => {
+    it('is the outlined monospace chip with the short type', () => {
+        const chip = typeChipHtml('collectra.Text');
+        expect(chip).toContain('>Text</span>');
+        expect(chip).not.toContain('collectra.');
+        expect(chip).toContain('font-family:monospace');
+        expect(chip).toContain('border:1px solid currentColor');
+    });
+
+    it('is empty when there is no type', () => {
+        expect(typeChipHtml('')).toBe('');
+        expect(typeChipHtml(undefined)).toBe('');
+    });
+
+    it('is used by the DAG hover', () => {
+        const html = require('node:fs').readFileSync(require.resolve('../collectra/gui/index.html'), 'utf8');
+        const dag = html.slice(html.indexOf('function showDagTooltip('), html.indexOf('function hideDagTooltip('));
+        expect(dag).toContain('const badge = typeChipHtml(displayType);');
+    });
 });

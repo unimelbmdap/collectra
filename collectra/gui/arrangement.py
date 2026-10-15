@@ -20,7 +20,7 @@ VERSION = 1
 TAB_KINDS = {"dag", "node"}
 DIRECTIONS = {"left", "right", "above", "below"}
 MAX_LAYOUT_OPS = 200
-PIXEL_FLEX = re.compile(r"^0 0 \d+(\.\d+)?(px|%)$")
+PIXEL_FLEX = re.compile(r"^0 [01] \d+(\.\d+)?(px|%)$")
 
 
 def sanitize_arrangement(data):
@@ -44,6 +44,11 @@ def sanitize_arrangement(data):
             active = 0
         panels[name] = {"active": active, "tabs": tabs}
     result["panels"] = panels
+    # Absent in saves from before this was remembered: then nothing is changed on restore.
+    if isinstance(data.get("collapsed"), list):
+        result["collapsed"] = [
+            name for name in data["collapsed"] if isinstance(name, str) and name
+        ]
     result["layout"] = _sanitize_layout(data.get("layout"))
     result["sizes"] = _sanitize_sizes(data.get("sizes"))
     return result

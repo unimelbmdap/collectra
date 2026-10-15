@@ -4,7 +4,8 @@ version = "0.1.0"
 description = "Builds pipelines to extract data from collection images."
 authors = [
     {name = "Robert Turnbull", email = "robert.turnbull@unimelb.edu.au"},
-    {name = "James Quang", email = "james.quang@unimelb.edu.au"},
+    {name = "Natalia Orel"},
+    {name = "James Quang"},
 ]
 license = "Apache-2.0"
 readme = "README.rst"
