@@ -31,7 +31,6 @@ dependencies = [
     "pandas (>=2.3.3)",
     "h5py (>=3.15.1)",
     "editdistance (>=0.6.0)",
-    "ensemble-boxes (>=1.0.9)",
     "llmloader (>=0.1.10)",
     "iterative-stratification (>=0.1.9)",
     "plotly (>=5.0.0)",
@@ -39,6 +38,10 @@ dependencies = [
     "tifffile (>=2024.8.30)",
     "pillow (>=10.0.0)",
     "numpy (>=1.26.0)",
+    # Chroma also uses ONNX Runtime independently of Torch.
+    # 1.24+ drops Intel macOS; only 1.25.1+ has Python 3.14 wheels.
+    "onnxruntime (==1.23.2) ; python_version < '3.14'",
+    "onnxruntime (>=1.25.1) ; python_version >= '3.14'",
     "cappa (>=0.32.2)",
     "opencv-python-headless (>=4.8.0)",
     "pywebview (>=6.1)",
@@ -51,14 +54,12 @@ dependencies = [
 
 [project.optional-dependencies]
 ml = [
+    "ensemble-boxes (>=1.0.9)",
     "torch (==2.9.0)",
     "torchvision (==0.24.0)",
     "transformers (>=4.46.0)",
     "timm (>=1.0.9)",
     "rfdetr[train,loggers] (>=1.6.5.post0)",
-    # 1.24+ drops Intel macOS; only 1.25.1+ has Python 3.14 wheels.
-    "onnxruntime (==1.23.2) ; python_version < '3.14'",
-    "onnxruntime (>=1.25.1) ; python_version >= '3.14'",
 ]
 yolo = [
     "ultralytics (>=8.3.166)",

@@ -12,7 +12,7 @@ def test_gui_and_pipeline_discovery_with_ml_backends_unavailable():
         import tempfile
         from pathlib import Path
 
-        blocked = {'torch', 'torchvision', 'timm', 'rfdetr', 'transformers', 'onnxruntime', 'ultralytics'}
+        blocked = {'torch', 'torchvision', 'timm', 'rfdetr', 'transformers', 'onnxruntime', 'ultralytics', 'ensemble_boxes', 'numba', 'llvmlite'}
         class WithoutML(importlib.abc.MetaPathFinder):
             def find_spec(self, fullname, path=None, target=None):
                 if fullname.split('.')[0] in blocked:
@@ -25,6 +25,13 @@ def test_gui_and_pipeline_discovery_with_ml_backends_unavailable():
         from collectra import Collectra
         from collectra.cli import invoke
         from collectra.gui.backend import GUIBackend
+        from collectra.pipelines.ensemble import weighted_boxes_fusion
+        try:
+            weighted_boxes_fusion([], [], [])
+        except ImportError as error:
+            assert 'collectra[ml]' in str(error)
+        else:
+            raise AssertionError('Expected the optional ML dependency message')
 
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

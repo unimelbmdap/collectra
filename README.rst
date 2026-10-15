@@ -49,8 +49,9 @@ Torchvision/Hugging Face classifiers, or the image orienter), install:
 
     pip install "collectra[ml]"
 
-This extra includes Torch, Torchvision, timm, Transformers, RF-DETR and ONNX
-Runtime. Model execution still requires compatible hardware and backend wheels.
+This extra includes Torch, Torchvision, timm, Transformers, RF-DETR and
+``ensemble-boxes`` (with its Numba/llvmlite dependencies) for box fusion.
+Model execution still requires compatible hardware and backend wheels.
 
 YOLO tasks and their annotation previews require the optional ``yolo`` extra:
 

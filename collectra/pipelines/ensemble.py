@@ -30,7 +30,6 @@ from pathlib import Path
 
 import editdistance
 import yaml
-from ensemble_boxes import weighted_boxes_fusion
 from rich.progress import track
 
 from ..types.base import Artefact, ArtefactNode
@@ -40,6 +39,18 @@ from ..types.texts import Text
 # =============================================================================
 # Pure Utility Functions (no class dependencies)
 # =============================================================================
+
+
+def weighted_boxes_fusion(*args, **kwargs):
+    try:
+        from ensemble_boxes import weighted_boxes_fusion as fuse
+    except ModuleNotFoundError as error:
+        if error.name != "ensemble_boxes":
+            raise
+        raise ImportError(
+            'Box fusion requires optional ML dependencies. Install with: pip install "collectra[ml]"'
+        ) from error
+    return fuse(*args, **kwargs)
 
 
 def calculate_iou(box1: list[float], box2: list[float]) -> float:

@@ -99,8 +99,10 @@ def test_default_locked_dependency_graph_excludes_optional_backends():
     excluded = {
         "ultralytics", "ultralytics-thop", "ultralytics-platform", "drawyolo",
         "surya-ocr", "pyqt5", "pyqt6", "pyqt6-webengine", "pyqtwebengine",
-        "torch", "torchvision", "timm", "rfdetr", "transformers", "onnxruntime",
+        "torch", "torchvision", "timm", "rfdetr", "transformers",
+        "ensemble-boxes", "numba", "llvmlite",
     }
     assert not (reachable() & excluded)
     assert {"ultralytics", "drawyolo"} <= reachable(["yolo"])
     assert {"torch", "torchvision", "timm", "rfdetr", "transformers"} <= reachable(["ml"])
+    assert {"ensemble-boxes", "numba", "llvmlite"} <= reachable(["ml"])
