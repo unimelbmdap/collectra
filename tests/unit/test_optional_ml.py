@@ -12,7 +12,7 @@ def test_gui_and_pipeline_discovery_with_ml_backends_unavailable():
         import tempfile
         from pathlib import Path
 
-        blocked = {'torch', 'torchvision', 'timm', 'rfdetr', 'transformers', 'onnxruntime', 'ultralytics', 'ensemble_boxes', 'numba', 'llvmlite'}
+        blocked = {'torch', 'torchvision', 'timm', 'rfdetr', 'transformers', 'onnxruntime', 'ultralytics', 'ensemble_boxes', 'numba', 'llvmlite', 'llmloader', 'langchain_openai'}
         class WithoutML(importlib.abc.MetaPathFinder):
             def find_spec(self, fullname, path=None, target=None):
                 if fullname.split('.')[0] in blocked:
@@ -40,12 +40,20 @@ def test_gui_and_pipeline_discovery_with_ml_backends_unavailable():
                 ('rfdetr', 'ObjectDetectionRFDETR'), ('detr', 'ObjectDetectionDETR'),
                 ('yolo', 'ObjectDetectionYOLO'), ('classifier', 'ImageClassifierTorchvision'),
                 ('huggingface', 'ImageClassifierHuggingFace'), ('orienter', 'ImageOrienter'),
+                ('llm', 'LLM'),
             ]:
                 config[name] = {'type': 'collectra.' + kind, 'model': 'unused.pt'}
             pipeline_path = root / 'pipeline.yaml'
             pipeline_path.write_text(yaml.safe_dump(config))
             pipeline = Collectra.from_file(pipeline_path)
             pipeline._ensure_workflow_connected()
+            from collectra.tasks.llms import LLM
+            try:
+                LLM('test', model='dummy').llm
+            except ImportError as error:
+                assert 'collectra[ml]' in str(error)
+            else:
+                raise AssertionError('Expected the optional LLM dependency message')
             assert pipeline.gui_graph()['nodes']
             try:
                 invoke(pipeline, ['gui', '--help'])

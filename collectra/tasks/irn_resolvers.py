@@ -23,7 +23,6 @@ from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
-from langchain_openai import OpenAIEmbeddings
 
 from collectra.tasks.canonicalisers import LLMCanonicaliser
 from collectra.types.texts import Text
@@ -207,6 +206,8 @@ class IRNResolver(LLMCanonicaliser):
             self.preamble = NO_MATCH_INSTRUCTION
 
         # Build/load one Chroma vector store per filter.
+        from langchain_openai import OpenAIEmbeddings
+
         self._embeddings = OpenAIEmbeddings(model=self.embedding_model)
         self._vector_stores: list[Chroma] = []
         self._build_indices()

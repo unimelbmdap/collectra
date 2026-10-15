@@ -43,7 +43,8 @@ def test_image_content():
     mock_image.get_encoding.return_value = "iiVBORw0KGgoAAAANSUhEUgAAAAUA"
     mock_image.mime.return_value = "image/png"
 
-    with patch("collectra.tasks.llms.llmloader.LLMWrapper.format") as mock_format:
+    with patch("collectra.tasks.llms.get_llmloader") as mock_loader:
+        mock_format = mock_loader.return_value.LLMWrapper.format
         mock_format.return_value = {
             "type": "image",
             "data": "iiVBORw0KGgoAAAANSUhEUgAAAAUA",

@@ -18,12 +18,10 @@ __all__ = ["LLMCanonicaliser"]
 import re
 from pathlib import Path
 
-import llmloader
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
-from langchain_openai import OpenAIEmbeddings
 
 from collectra.tasks.llms import LLM as CollectraLLM
 from collectra.types.texts import Text
@@ -57,6 +55,8 @@ class LLMCanonicaliser(CollectraLLM):
             self.entities = entities_path
 
     def retrieve_entities(self, query_data: str) -> dict:
+        from langchain_openai import OpenAIEmbeddings
+
         index_path = Path(self.entities.stem + "_index.embed")
         embeddings = OpenAIEmbeddings(model=self.embedding_model)
         if index_path.exists() and index_path.is_dir():

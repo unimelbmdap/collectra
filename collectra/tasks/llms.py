@@ -21,7 +21,6 @@ import re
 from functools import cached_property
 from pathlib import Path
 
-import llmloader
 import yaml
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -32,6 +31,18 @@ from collectra.types.images import Image
 from collectra.types.texts import Text
 
 from ..logger import get_logger
+
+
+def get_llmloader():
+    try:
+        import llmloader
+    except ModuleNotFoundError as error:
+        if error.name != "llmloader":
+            raise
+        raise ImportError(
+            'LLM execution requires optional dependencies. Install with: pip install "collectra[ml]"'
+        ) from error
+    return llmloader
 
 load_dotenv()
 
@@ -73,7 +84,7 @@ class LLM(Task):
     @cached_property
     def llm(self):
         """Load the LLM lazily so that it is only instantiated when first needed."""
-        return llmloader.load(
+        return get_llmloader().load(
             self.model, temperature=self.temperature, max_tokens=self.max_tokens
         )
 
@@ -87,7 +98,7 @@ class LLM(Task):
         return prompt, pattern
 
     def image_content(self, image: Image):
-        return llmloader.LLMWrapper.format(
+        return get_llmloader().LLMWrapper.format(
             self.llm,
             data_type="image",
             data={
@@ -162,7 +173,7 @@ class LLM(Task):
 
         # Use context for usage tracking instead of environment variable
         if self.context.usage_file:
-            usage = llmloader.LLMWrapper.get_token_count(response)
+            usage = get_llmloader().LLMWrapper.get_token_count(response)
             usage_file = self.context.usage_file
             data = {f"{self.name}": usage}
             old_data = {}
