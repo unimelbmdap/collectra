@@ -1891,6 +1891,7 @@
     <script src="splitLayout.js"></script>
     <!-- Pure substring-match predicate for the sidebar's page search box, unit tested in tests-js/ -->
     <script src="folderSearch.js"></script>
+    <script src="textAutosave.js"></script>
     <!-- Pure decision logic for what runs once the pywebview API is ready, unit tested in tests-js/ -->
     <script src="startupActions.js"></script>
 </head>
@@ -3045,6 +3046,8 @@
             }
             folderLoading = true;
             try {
+                await Promise.all(Object.values(panelControllers).map((controller) =>
+                    controller.textAutosave?.flush() || controller._pendingTextSave));
                 await loadCollectraFolderInner(index);
             } finally {
                 folderLoading = false;
@@ -3071,6 +3074,7 @@
 
                 items.forEach(item => item.classList.remove('active', 'loading'));
                 currentItem.classList.add('active');
+                currentItem.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 
                 const folderInfoEl = document.getElementById('folderInfo');
                 let infoHtml = `<strong>Path:</strong> ${result.folder_path}<br>`;
@@ -3290,6 +3294,7 @@
             if (!controller) return;
 
             controller.destroyDagTab();
+            controller.stopTextAutosave();
             controller.clearPageArtefact();
             if (controller.easyMDE) { try { controller.easyMDE.toTextArea(); } catch (e) {} }
             if (key === 'top' && cy) { cy.destroy(); cy = null; } // top's DAG is module-level `cy`, not a dagTabEls tab
@@ -3755,7 +3760,7 @@
                     count.textContent = state.text;
                     parts.push(button('\u203A', 'Next', state.nextId), count);
                 }
-                // Delete, Ancestors, Descendants (this tab's own) and Save (editable text only).
+                // Artefact actions and the editable text's autosave status.
                 const available = lineageAvailability(tab.groupKey || tab.nodeId);
                 if (this.textSave) {
                     const status = document.createElement('span');
@@ -3767,12 +3772,10 @@
                     delete: () => deleteNodeWithConfirm(tab.nodeId, ''),
                     ancestors: (b) => openLineageFor(this, 'ancestors', b),
                     descendants: (b) => openLineageFor(this, 'descendants', b),
-                    save: () => this.textSave && this.textSave.onSave(),
                 };
                 nodeActionButtons({
                     hasAncestors: available.ancestors,
                     hasDescendants: available.descendants,
-                    canSave: !!this.textSave,
                 }).forEach((spec) => {
                     const b = document.createElement('button');
                     b.type = 'button';
@@ -3919,6 +3922,8 @@
                 this.syncDagHighlights();
 
                 const request = this._displayRequest = {};
+                await this.stopTextAutosave();
+                if (this._displayRequest !== request) return;
                 const result = await window.pywebview.api.get_artefact_display(nodeId);
                 if (this._displayRequest !== request) return;
                 if (!result.success) {
@@ -4022,6 +4027,7 @@
         }
 
         PanelController.prototype.clearPageArtefact = function() {
+            this.stopTextAutosave();
             this._shiftDrawCleanup?.();
             this._shiftDrawCleanup = null;
             this.displayView = null;
@@ -4084,6 +4090,7 @@
         };
 
         PanelController.prototype.showPageImage = function() {
+            this.stopTextAutosave();
             if (this.el.imageDisplay) this.el.imageDisplay.style.display = 'block';
             if (this.el.textDisplay)  { this.el.textDisplay.style.display = 'none'; this.el.textDisplay.innerHTML = ''; }
             // Clear any leftover content from a previously-selected Text node —
@@ -4104,6 +4111,7 @@
             if (!display || !apiReady || (!imagePath && !view)) return;
 
             this.currentImagePath = imagePath;
+            this.stopTextAutosave();
             if (this.el.textDisplay) this.el.textDisplay.style.display = 'none';
             if (this.easyMDE) { this.easyMDE.toTextArea(); this.easyMDE = null; }
             this.clearPageArtefact();
@@ -4738,6 +4746,7 @@
 
         function onNodeContextMenuOutsideClick(e) {
             const menu = document.getElementById('nodeContextMenu');
+            if (menu?.dataset.owner === 'layout' && document.getElementById('newPanelToolbarBtn').contains(e.target)) return;
             if (menu && !menu.contains(e.target)) closeNodeContextMenu();
         }
 
@@ -5537,6 +5546,39 @@
         wireTabDropOnPanel('bottom', panelControllers.bottom.rootEl);
         wireTabDropOnPanel('top', panelControllers.top.rootEl);
 
+        const originalLayoutPanels = {top: panelControllers.top, bottom: panelControllers.bottom};
+        const originalCollapseEntries = {top: panelCollapseRegistry.top, bottom: panelCollapseRegistry.bottom};
+        const panelLayoutContainer = panelControllers.top.rootEl.parentElement;
+        const originalPanelDivider = document.getElementById('imagePanelResizeHandle');
+        let reusableLayoutPanels = null;
+
+        function resetPanelsForLayout() {
+            reusableLayoutPanels = new Map(Object.entries(panelControllers)
+                .filter(([key]) => key !== 'top' && key !== 'bottom')
+                .map(([key, controller]) => [key, {controller, collapse: panelCollapseRegistry[key]}]));
+            for (const key of Object.keys(panelControllers)) delete panelControllers[key];
+            for (const key of Object.keys(panelCollapseRegistry)) delete panelCollapseRegistry[key];
+            Object.assign(panelControllers, originalLayoutPanels);
+            Object.assign(panelCollapseRegistry, originalCollapseEntries);
+            panelLayoutContainer.replaceChildren(
+                originalLayoutPanels.top.rootEl, originalPanelDivider, originalLayoutPanels.bottom.rootEl
+            );
+            for (const controller of Object.values(originalLayoutPanels)) controller.rootEl.style.flex = '';
+            nextDynamicPanelIndex = 1;
+            focusedPanel = 'bottom';
+            if (!cy && lastDagNodes.length) initCytoscape(lastDagNodes, lastDagEdges);
+        }
+
+        function releaseUnusedLayoutPanels() {
+            for (const {controller} of reusableLayoutPanels?.values() || []) {
+                controller.destroyDagTab();
+                controller.clearPageArtefact();
+                controller.clear();
+                controller.rootEl.remove();
+            }
+            reusableLayoutPanels = null;
+        }
+
         // ── NEW PANEL (split) ───────────────────────────────────────────
 
         let nextDynamicPanelIndex = 1;
@@ -5684,7 +5726,10 @@
 
             const wrapper = document.createElement('div');
             wrapper.className = 'split-wrapper split-' + layout.flexDirection;
-            const newRoot = createDynamicPanelRoot();
+            const reused = reusableLayoutPanels?.get(key);
+            reusableLayoutPanels?.delete(key);
+            const newRoot = reused ? reused.controller.rootEl : createDynamicPanelRoot();
+            newRoot.style.flex = '';
             const resizeHandle = document.createElement('div');
             resizeHandle.className = layout.resizeHandleClass;
 
@@ -5702,11 +5747,14 @@
             }
 
             recordLayoutOp({op: 'split', from: sourceKey, direction, key});
-            const controller = createDynamicPanelController(key, newRoot);
+            const controller = reused ? reused.controller : createDynamicPanelController(key, newRoot);
+            if (reused) panelCollapseRegistry[key] = reused.collapse;
             panelControllers[key] = controller;
             controller.renderTabStripView();
-            wireTabStripBackgroundDnD(key, controller.tabStripEl);
-            wireTabDropOnPanel(key, controller.rootEl);
+            if (!reused) {
+                wireTabStripBackgroundDnD(key, controller.tabStripEl);
+                wireTabDropOnPanel(key, controller.rootEl);
+            }
             updatePanelCloseButtons();
             refreshCollapsedOrientations();
 
@@ -5757,6 +5805,10 @@
 
         async function showSplitViewPopover(mouseEvent) {
             mouseEvent.preventDefault();
+            if (document.getElementById('nodeContextMenu')?.dataset.owner === 'layout') {
+                closeNodeContextMenu();
+                return;
+            }
             buildArrangePopover(mouseEvent.currentTarget, 'Split View', [
                 { title: 'Split Left',  icon: ARRANGE_TILE_OUTLINE + '<rect x="2" y="2" width="8" height="10" rx="1" fill="currentColor"/>',  onSelect: () => createPanel('left') },
                 { title: 'Split Right', icon: ARRANGE_TILE_OUTLINE + '<rect x="10" y="2" width="8" height="10" rx="1" fill="currentColor"/>', onSelect: () => createPanel('right') },
@@ -5764,6 +5816,7 @@
                 { title: 'Split Below', icon: ARRANGE_TILE_OUTLINE + '<rect x="2" y="7" width="16" height="5" rx="1" fill="currentColor"/>',  onSelect: () => createPanel('below') },
             ]);
             const menu = document.getElementById('nodeContextMenu');
+            menu.dataset.owner = 'layout';
             try {
                 const result = await window.pywebview.api.get_layouts();
                 if (!menu.isConnected) return;
@@ -5785,6 +5838,7 @@
                         button.className = 'layout-menu-item';
                         button.textContent = layout.name;
                         button.onclick = () => selectSavedLayout(layout.id);
+                        button.oncontextmenu = (event) => showLayoutContextMenu(event, layout.id);
                         menu.appendChild(button);
                     }
                 }
@@ -5802,15 +5856,43 @@
             }
         }
 
+        function showLayoutContextMenu(event, layoutId) {
+            event.preventDefault();
+            event.stopPropagation();
+            closeNodeContextMenu();
+            const menu = document.createElement('div');
+            menu.id = 'nodeContextMenu';
+            menu.className = 'node-context-menu';
+            const reveal = document.createElement('button');
+            reveal.className = 'node-context-menu-item layout-menu-item';
+            reveal.textContent = 'Show in Finder…';
+            reveal.onclick = async () => {
+                closeNodeContextMenu();
+                try {
+                    const result = await window.pywebview.api.reveal_layout(layoutId);
+                    if (!result.success) throw new Error(result.error);
+                } catch (error) {
+                    alert('Could not show layout: ' + error.message);
+                }
+            };
+            menu.appendChild(reveal);
+            document.body.appendChild(menu);
+            menu.style.left = Math.max(8, Math.min(event.clientX, window.innerWidth - menu.offsetWidth - 8)) + 'px';
+            menu.style.top = Math.max(8, Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 8)) + 'px';
+            document.addEventListener('mousedown', onNodeContextMenuOutsideClick, true);
+            document.addEventListener('keydown', onNodeContextMenuEscape, true);
+            reveal.focus();
+        }
+
         async function selectSavedLayout(id) {
             try {
-                // Rebuild from the same clean panel tree used at startup, including
-                // original panels that the current arrangement may have removed.
+                const result = await window.pywebview.api.load_layout(id);
+                if (!result.success) throw new Error(result.error);
                 clearTimeout(arrangementSaveTimer);
                 arrangementReady = false;
-                const saved = await window.pywebview.api.activate_layout(id, currentFolderIndex);
-                if (!saved.success) throw new Error(saved.error);
-                window.location.reload();
+                closeNodeContextMenu();
+                await restoreArrangement(result.arrangement, true);
+                scheduleArrangementSave();
             } catch (error) {
                 arrangementReady = true;
                 alert('Could not load layout: ' + error.message);
@@ -6053,6 +6135,7 @@
             headerId.textContent   = nodeId;
 
             const mountEditor = (text, tei) => {
+                this.stopTextAutosave();
                 if (this.easyMDE) { try { this.easyMDE.toTextArea(); this.easyMDE = null; } catch (e) {} }
                 // Classes, not ids — this markup can exist in two panels at
                 // once, so a fixed id here would duplicate across the document.
@@ -6086,23 +6169,32 @@
                 // (formatted text only — plain text has none).
                 this.moveEditorToolbar();
                 if (view.format === 'markdown') this.easyMDE.toggleSideBySide();
-                // Save sits with the other buttons at the right of that row, only for
-                // editable text; renderPager draws it from this.
-                this.textSave = (view ? view.editable : true) ? {
+                // Autosave status sits at the right of the row for editable text.
+                const editor = this.easyMDE;
+                const resultsPath = selectedYamlPath;
+                const saveState = this.textSave = (view ? view.editable : true) ? {
                     statusEl: null,
-                    onSave: async () => {
-                        const statusEl = this.textSave && this.textSave.statusEl;
-                        if (statusEl) statusEl.textContent = 'Saving…';
-                        const report = (message, isError) => { if (statusEl) flashStatus(statusEl, message, isError); };
-                        try {
-                            const r = await window.pywebview.api.update_display_text(nodeId, this.easyMDE.value());
-                            if (r && r.success !== false) { report('Saved', false); rerunArtefactSearch(); }
-                            else report('Error: ' + (r?.error || ''), true);
-                        } catch (e) {
-                            report('Error: ' + e.message, true);
-                        }
-                    },
+                    onSave: () => this.textAutosave?.flush(),
                 } : null;
+                if (saveState) {
+                    this.textAutosave = createTextAutosave({
+                        initialValue: editor.value(),
+                        read: () => editor.value(),
+                        write: (value) => window.pywebview.api.update_display_text(nodeId, value, resultsPath),
+                        report: (message, isError) => {
+                            if (saveState.statusEl) flashStatus(saveState.statusEl, message, isError);
+                            if (message === 'Saved') rerunArtefactSearch();
+                            if (isError) console.error('Text autosave failed:', nodeId, message);
+                        },
+                    });
+                    const autosave = this.textAutosave;
+                    const changed = () => autosave.changed();
+                    editor.codemirror.on('change', changed);
+                    this._stopTextAutosave = () => {
+                        editor.codemirror.off('change', changed);
+                        return autosave.dispose();
+                    };
+                }
             };
 
             mountEditor(view.text, isTei);
@@ -6134,7 +6226,16 @@
             if (toolbar) slot.appendChild(toolbar);
         };
 
+        PanelController.prototype.stopTextAutosave = function() {
+            const stop = this._stopTextAutosave;
+            this._stopTextAutosave = null;
+            this.textAutosave = null;
+            if (stop) this._pendingTextSave = stop();
+            return this._pendingTextSave || Promise.resolve();
+        };
+
         PanelController.prototype.clear = function() {
+            this.stopTextAutosave();
             this._displayRequest = {};
             // Deliberately does NOT reset this.selectedNodeId — this is
             // called by clearPageView() on every page switch (sidebar
@@ -6520,37 +6621,52 @@
 
         // Reopens the tabs this user left open last time. A node a page lacks
         // simply leaves its tab blank (see reconcileGroupTabs).
-        async function restoreArrangement() {
+        async function restoreArrangement(savedArrangement = null, replacePanels = false) {
             try {
-                const result = await window.pywebview.api.get_arrangement();
-                const saved = result && result.arrangement;
+                const saved = savedArrangement || (await window.pywebview.api.get_arrangement()).arrangement;
                 if (saved) {
+                    const displayed = new Map(Object.values(panelControllers).map((controller) =>
+                        [controller, controller.panel.getActiveTab()]));
+                    if (replacePanels) resetPanelsForLayout();
                     // Rebuild the panels the user had by redoing their splits and
                     // closes, then put each panel's tabs and size back on it.
                     layoutOps = (saved.layout || []).slice();
                     replayingLayout = true;
                     let keyMap;
+                    const replayedOps = [];
                     try {
                         keyMap = replayLayout(saved.layout, {
                             has: (key) => !!panelControllers[key],
                             split: (from, direction) => {
                                 focusedPanel = from;
                                 createPanel(direction);
+                                replayedOps.push({op: 'split', from, direction, key: focusedPanel});
                                 return focusedPanel;
                             },
-                            remove: (key) => detachPanel(key),
+                            remove: (key) => {
+                                detachPanel(key);
+                                replayedOps.push({op: 'remove', key});
+                            },
                         });
                     } finally {
                         replayingLayout = false;
                     }
+                    layoutOps = replayedOps;
                     Object.entries(saved.panels || {}).forEach(([savedKey, spec]) => {
                         const controller = panelControllers[keyMap[savedKey]];
                         if (!controller) return; // panels that no longer exist are skipped
+                        const previousTabs = controller.panel.tabs.slice();
                         restorePanelTabs(controller.panel, spec, {
                             makeId: () => 'tab' + (nextTabId++),
                             instancesFor: (group) => pageNodeIds.get(group) || [],
                             labelFor: humanizeLabel,
                         });
+                        if (replacePanels) {
+                            for (const tab of controller.panel.tabs) {
+                                const previous = previousTabs.find((old) => old.kind === 'node' && old.groupKey === tab.groupKey);
+                                if (previous && (pageNodeIds.get(tab.groupKey) || []).includes(previous.nodeId)) tab.nodeId = previous.nodeId;
+                            }
+                        }
                         controller.renderTabStripView();
                     });
                     applyPanelSizes(saved.sizes, keyMap);
@@ -6571,13 +6687,23 @@
                         focusedPanel = keyMap[saved.focused];
                     }
                     for (const controller of Object.values(panelControllers)) {
-                        await controller.showActiveTabContent();
+                        const previous = displayed.get(controller);
+                        const current = controller.panel.getActiveTab();
+                        if (replacePanels && previous && current && previous.kind === current.kind
+                            && previous.nodeId === current.nodeId && previous.groupKey === current.groupKey) {
+                            controller.renderPager();
+                            controller.syncDagHighlights();
+                        } else {
+                            await controller.showActiveTabContent();
+                        }
                         onPanelTabsChanged(controller);
                     }
                 }
             } catch (e) {
                 console.error('Error restoring arrangement:', e);
+                if (replacePanels) throw e;
             } finally {
+                if (replacePanels) releaseUnusedLayoutPanels();
                 arrangementReady = true;
             }
         }

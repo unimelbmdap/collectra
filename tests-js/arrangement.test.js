@@ -249,7 +249,7 @@ describe('extra panels in the page', () => {
     });
 
     it('rebuilds the panels before restoring tabs, then puts sizes and focus back', () => {
-        const restore = between('async function restoreArrangement()', 'END REMEMBERED ARRANGEMENT');
+        const restore = between('async function restoreArrangement(', 'END REMEMBERED ARRANGEMENT');
         expect(restore).toContain('replayLayout(saved.layout, {');
         expect(restore.indexOf('replayLayout(')).toBeLessThan(restore.indexOf('restorePanelTabs('));
         expect(restore).toContain('applyPanelSizes(saved.sizes, keyMap);');

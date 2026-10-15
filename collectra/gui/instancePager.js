@@ -30,15 +30,13 @@ function tabTypeTitle(tab, pageNodeTypes, resolveLabel) {
 }
 
 // The buttons to the right of a node's id in the row under its tab, in order.
-// Ancestors/Descendants are greyed out when the node has none; Save only exists
-// for editable text.
-function nodeActionButtons({hasAncestors, hasDescendants, canSave}) {
+// Ancestors/Descendants are greyed out when the node has none.
+function nodeActionButtons({hasAncestors, hasDescendants}) {
     const buttons = [
         {id: 'delete', title: 'Delete artefact', disabled: false},
         {id: 'ancestors', title: 'Ancestors', disabled: !hasAncestors},
         {id: 'descendants', title: 'Descendants', disabled: !hasDescendants},
     ];
-    if (canSave) buttons.push({id: 'save', title: 'Save changes', disabled: false, primary: true});
     return buttons;
 }
 

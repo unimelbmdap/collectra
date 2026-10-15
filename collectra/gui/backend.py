@@ -52,6 +52,7 @@ class GUIBackend:
         All values are initially None until load_yaml() is called.
         """
         self._git_lock = threading.Lock()
+        self._text_save_lock = threading.Lock()
         self._pipeline = pipeline
         self._collectra_file: CollectraFile | None = None
         self._graph: CollectraGraph | None = None
@@ -100,6 +101,7 @@ class GUIBackend:
     def _restore_folder_session(self):
         if self._session_cache is None:
             return None
+        self._collectra_folders = []
         seen = set()
         for value in self._session_cache.read():
             try:
@@ -199,6 +201,13 @@ class GUIBackend:
                 return {"success": False, "error": "This layout is missing or invalid."}
         return {"success": False, "error": "Layout not found."}
 
+    def reveal_layout(self, layout_id: str) -> dict:
+        """Reveal a workflow or custom layout in the system file manager."""
+        for key, _, _, path in self._available_layouts():
+            if key == layout_id:
+                return self.reveal_in_folder(str(path.resolve()))
+        return {"success": False, "error": "Layout not found."}
+
     def save_named_layout(self, name: str, arrangement: dict) -> dict:
         from .arrangement import sanitize_arrangement
 
@@ -211,8 +220,8 @@ class GUIBackend:
             return {"success": False, "error": str(error)}
         return {"success": True}
 
-    def activate_layout(self, layout_id: str, active_index: int = 0) -> dict:
-        """Persist a chosen layout and retain the open results for the UI rebuild."""
+    def activate_layout(self, layout_id: str) -> dict:
+        """Persist a chosen layout without touching the loaded results."""
         result = self.load_layout(layout_id)
         if not result["success"] or self._arrangement is None:
             return result if not result["success"] else {"success": False, "error": "No pipeline open."}
@@ -222,9 +231,6 @@ class GUIBackend:
             )
         except OSError as error:
             return {"success": False, "error": str(error)}
-        self._initial_items = self._restore_folder_session()
-        if self._initial_items and type(active_index) is int:
-            self._initial_items["active_index"] = active_index
         return {"success": True}
 
     def get_initial_items(self) -> dict:
@@ -728,25 +734,58 @@ class GUIBackend:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def update_display_text(self, node_id: str, content: str) -> dict:
+    def update_display_text(
+        self, node_id: str, content: str, results_path: str | None = None
+    ) -> dict:
+        """Save changed text to its captured page, even after navigation."""
         try:
-            context = self._display_context()
-            item = context.artefact(self._graph.resolve_id(node_id))
-            view = item.display(context)
-            if view.get("kind") != "text" or not view.get("editable"):
-                raise ValueError("This artefact does not expose editable text")
-            target_id = view["target_id"]
-            path = context.text_path(target_id)
-            if path:
-                path.write_text(content, encoding="utf-8")
-            else:
-                self._graph.set_data(target_id, content)
-                self._save_collectra_file()
-            return {"success": True}
+            from collectra.display import DisplayContext
+
+            with self._text_save_lock:
+                target = Path(results_path or self._yaml_path).resolve()
+                if target.name != "results.yaml":
+                    raise ValueError("Text edits must target a results.yaml file")
+                if self._yaml_path and target == Path(self._yaml_path).resolve():
+                    graph, collectra_file = self._graph, self._collectra_file
+                else:
+                    collectra_file = CollectraFile.from_data(target.parent)
+                    graph = CollectraGraph.from_collectra_file(collectra_file)
+                records = {
+                    key: {**graph.get_node(key).model_dump(), "label": graph.get_node(key).label}
+                    for key in graph.nodes if graph.get_node(key)
+                }
+                context = DisplayContext(records, target.parent)
+                item = context.artefact(graph.resolve_id(node_id))
+                view = item.display(context)
+                if view.get("kind") != "text" or not view.get("editable"):
+                    raise ValueError("This artefact does not expose editable text")
+                target_id = view["target_id"]
+                path = context.text_path(target_id)
+                if path:
+                    if path.read_text(encoding="utf-8") == content:
+                        return {"success": True, "changed": False}
+                    path.write_text(content, encoding="utf-8")
+                else:
+                    if graph.get_data(target_id) == content:
+                        return {"success": True, "changed": False}
+                    previous = graph.get_data(target_id)
+                    graph.set_data(target_id, content)
+                    try:
+                        collectra_file.data = graph.to_data()
+                        collectra_file.save()
+                    except Exception:
+                        graph.set_data(target_id, previous)
+                        collectra_file.data = graph.to_data()
+                        raise
+                return {"success": True, "changed": True}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
     def load_yaml(self, path: str) -> dict:
+        with self._text_save_lock:
+            return self._load_yaml(path)
+
+    def _load_yaml(self, path: str) -> dict:
         """
         Load a YAML file and build the annotation graph.
 

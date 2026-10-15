@@ -95,7 +95,7 @@ describe('2. which panels are collapsed is remembered, and one always stays open
     });
 
     it('and puts it back after the panels are rebuilt, then makes sure one panel is open', () => {
-        const restore = between('async function restoreArrangement()', 'END REMEMBERED ARRANGEMENT');
+        const restore = between('async function restoreArrangement(', 'END REMEMBERED ARRANGEMENT');
         expect(restore.indexOf('applyPanelSizes(saved.sizes, keyMap);')).toBeLessThan(restore.indexOf('saved.collapsed'));
         expect(restore).toContain('Array.isArray(saved.collapsed)');
         expect(restore).toContain('keepOneExpanded(');

@@ -62,11 +62,41 @@ def test_activation_persists_chosen_layout_and_preserves_workflow_file(api):
     assert api.get_arrangement()["arrangement"] == LAYOUT
 
 
+def test_repeated_layout_changes_do_not_duplicate_sidebar_folders(api, tmp_path):
+    page = tmp_path / "Page198.collectra"
+    page.mkdir()
+    (page / "results.yaml").write_text("text: {type: collectra.Text, id: text, data: hello}")
+    api._load_input_paths([page])
+    # Simulate an old session that already contains repeated paths, too.
+    api._session_cache.write([str(page)] * 5)
+    for _ in range(5):
+        restored = api._restore_folder_session()
+        assert api.activate_layout("pipeline:0")["success"]
+        assert [item["path"] for item in api._collectra_folders] == [str(page)]
+        assert len(restored["folders"]) == 1
+        assert api._session_cache.read() == [str(page)]
+
+
 def test_invalid_missing_and_arbitrary_paths_are_refused(api):
     assert not api.load_layout("custom:../../outside.yaml")["success"]
     assert not api.load_layout("pipeline:2")["success"]
     (api._pipeline.path / "default.yaml").write_text("version: 99")
     assert not api.activate_layout("pipeline:0")["success"]
+
+
+def test_reveal_uses_registered_pipeline_and_custom_paths(api, monkeypatch):
+    from unittest.mock import Mock
+
+    reveal = Mock(return_value={"success": True})
+    monkeypatch.setattr(api, "reveal_in_folder", reveal)
+    assert api.reveal_layout("pipeline:0")["success"]
+    reveal.assert_called_with(str((api._pipeline.path / "default.yaml").resolve()))
+    api.save_named_layout("Review", LAYOUT)
+    assert api.reveal_layout("custom:Review.yaml")["success"]
+    reveal.assert_called_with(str((api._arrangement.path.parent / "Review.yaml").resolve()))
+    reveal.reset_mock()
+    assert not api.reveal_layout("custom:../../outside.yaml")["success"]
+    reveal.assert_not_called()
 
 
 def test_failed_save_reports_error(api, monkeypatch):
@@ -75,3 +105,15 @@ def test_failed_save_reports_error(api, monkeypatch):
     monkeypatch.setattr(api._arrangement, "_write_file", fail)
     assert api.save_named_layout("Review", LAYOUT) == {"success": False, "error": "Disk full"}
     assert not api.activate_layout("pipeline:0")["success"]
+
+
+def test_layout_selection_never_restores_or_scans_result_data(api, monkeypatch):
+    def unexpected(*args, **kwargs):
+        pytest.fail("Layout selection must not reload result data")
+    monkeypatch.setattr(api, "_restore_folder_session", unexpected)
+    monkeypatch.setattr(api, "_scan_collectra_folder", unexpected)
+    monkeypatch.setattr(api, "_folder_list_result", unexpected)
+    folders = api._collectra_folders
+    assert api.load_layout("pipeline:0")["success"]
+    assert api.activate_layout("pipeline:0")["success"]
+    assert api._collectra_folders is folders

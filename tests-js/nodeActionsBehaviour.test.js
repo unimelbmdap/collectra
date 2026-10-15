@@ -51,11 +51,11 @@ describe('the row under a tab', () => {
     const textTab = { kind: 'node', nodeId: 'locality-1', groupKey: 'locality' };
     const buttons = (pagerEl) => pagerEl.children.filter((c) => c.className.startsWith('node-action-btn'));
 
-    it('shows the id, then Delete, Ancestors, Descendants and Save for editable text', () => {
+    it('shows the id and artefact actions for editable text', () => {
         const { pagerEl } = setup({ tab: textTab, textSave: { onSave: vi.fn() } });
         expect(pagerEl.hidden).toBe(false);
         expect(pagerEl.children.find((c) => c.className === 'pager-name').textContent).toBe('locality-1');
-        expect(buttons(pagerEl).map((b) => b.title)).toEqual(['Delete artefact', 'Ancestors', 'Descendants', 'Save changes']);
+        expect(buttons(pagerEl).map((b) => b.title)).toEqual(['Delete artefact', 'Ancestors', 'Descendants']);
     });
 
     it('has no Save for anything that is not editable text', () => {
@@ -64,9 +64,9 @@ describe('the row under a tab', () => {
         expect(pagerEl.children.find((c) => c.className === 'node-save-status')).toBeUndefined();
     });
 
-    it('Save is the filled button, the others are plain', () => {
+    it('the remaining actions are plain buttons', () => {
         const { pagerEl } = setup({ tab: textTab, textSave: { onSave: vi.fn() } });
-        expect(buttons(pagerEl).map((b) => b.className.includes('primary'))).toEqual([false, false, false, true]);
+        expect(buttons(pagerEl).map((b) => b.className.includes('primary'))).toEqual([false, false, false]);
     });
 
     it('greys out Ancestors or Descendants for a node that has none', () => {
@@ -94,12 +94,10 @@ describe('the row under a tab', () => {
         expect(calls.lineage).toEqual([[controller, 'ancestors', anc], [controller, 'descendants', desc]]);
     });
 
-    it('Save saves, and gets a status line beside it to report on', () => {
+    it('keeps the autosave status line without a Save button', () => {
         const textSave = { onSave: vi.fn(), statusEl: null };
         const { pagerEl } = setup({ tab: textTab, textSave });
-        const save = buttons(pagerEl)[3];
-        save.click();
-        expect(textSave.onSave).toHaveBeenCalled();
+        expect(buttons(pagerEl).some((b) => b.title === 'Save changes')).toBe(false);
         expect(textSave.statusEl).toBe(pagerEl.children.find((c) => c.className === 'node-save-status'));
     });
 
@@ -234,8 +232,8 @@ describe('the text-editing tools', () => {
 describe('Save', () => {
     it('saves the editor\'s text for this artefact and reports on the status line', () => {
         const save = slice('this.textSave = (view ? view.editable : true)', 'mountEditor(view.text, isTei);');
-        expect(save).toContain('window.pywebview.api.update_display_text(nodeId, this.easyMDE.value())');
-        expect(save).toContain("report('Saved', false)");
-        expect(save).toContain("report('Error: '");
+        expect(save).toContain('onSave: () => this.textAutosave?.flush()');
+        expect(save).toContain('window.pywebview.api.update_display_text(nodeId, value, resultsPath)');
+        expect(save).toContain('flashStatus(saveState.statusEl, message, isError)');
     });
 });

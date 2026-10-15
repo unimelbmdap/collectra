@@ -159,16 +159,55 @@ def test_file_text_display_and_save_preserves_reference(backend, suffix, format)
     path = Path(backend._yaml_path).parent / ("custom-name" + suffix)
     path.write_text("old text")
     backend._graph.set_data("text", path.name)
+    backend._save_collectra_file()
     assert view(backend, "text")["format"] == format
     assert view(backend, "text")["text"] == "old text"
     assert backend.update_display_text("text", "new text")["success"]
     assert path.read_text() == "new text"
     assert backend._graph.get_data("text") == path.name
+    saved = yaml.safe_load(Path(backend._yaml_path).read_text())
+    assert saved["text"]["data"] == path.name
+    backend.load_yaml(backend._yaml_path)
+    assert view(backend, "text")["text"] == "new text"
 
 
 def test_inline_text_named_markdown_is_plain(backend):
     backend._graph.rename_id("text", "markdown")
     assert view(backend, "markdown")["format"] == "plain"
+
+
+def test_unchanged_text_does_not_rewrite_results(backend):
+    content = view(backend, "text")["text"]
+    path = Path(backend._yaml_path)
+    before = path.stat().st_mtime_ns
+    assert backend.update_display_text("text", content) == {"success": True, "changed": False}
+    assert path.stat().st_mtime_ns == before
+
+
+def test_failed_inline_save_can_be_retried(backend, monkeypatch):
+    original = backend._collectra_file.__class__.save
+    def fail(*args, **kwargs):
+        raise OSError("Disk full")
+    monkeypatch.setattr(backend._collectra_file.__class__, "save", fail)
+    assert not backend.update_display_text("text", "retry this")["success"]
+    monkeypatch.setattr(backend._collectra_file.__class__, "save", original)
+    assert backend.update_display_text("text", "retry this")["changed"]
+    saved = yaml.safe_load(Path(backend._yaml_path).read_text())
+    assert saved["text"]["data"] == "retry this"
+
+
+def test_delayed_autosave_targets_original_page(backend, tmp_path):
+    original = Path(backend._yaml_path)
+    other = tmp_path / "other.collectra"
+    other.mkdir()
+    (other / "results.yaml").write_text(yaml.safe_dump({
+        "text": {"type": "collectra.Text", "id": "text", "data": "other page"},
+    }))
+    assert backend.load_yaml(str(other / "results.yaml"))["success"]
+    assert backend.update_display_text("text", "saved old page", str(original))["success"]
+    assert yaml.safe_load(original.read_text())["text"]["data"] == "saved old page"
+    assert yaml.safe_load((other / "results.yaml").read_text())["text"]["data"] == "other page"
+    assert view(backend, "text")["text"] == "other page"
 
 
 def test_link_cycle_reports_error(backend):

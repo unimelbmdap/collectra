@@ -86,6 +86,18 @@ For example, reinstall with ``install-app --name "My Pipeline" --force``.
 The replacement is built before the existing app is replaced. Writing to ``/Applications`` requires write access;
 the default ``~/Applications`` is the user's Applications folder.
 
+Text editing
+------------
+
+Editable text, Markdown, and TEI fields autosave after half a second without
+typing. Unchanged content is not written again. Pending edits are also saved
+when leaving the editor, and page navigation waits for pending text saves.
+Save status and any errors appear in the editor's header. Further edits retry
+a failed save.
+
+Inline text is written to ``results.yaml``. File-backed Markdown, TEI, and text
+are written to their linked files, preserving the references in ``results.yaml``.
+
 Workflow layouts
 ----------------
 
@@ -121,8 +133,9 @@ The Customize Layout menu also lists named YAML files from the pipeline's
 user layout directory under ``Custom Layouts``. Choose ``Save current layout…``
 to save a named copy of the current arrangement. Existing names are preserved;
 choose a different name to save another copy. Selecting a layout makes it the
-current user arrangement and refreshes the viewer, retaining the open results
-and selected page. Workflow layout files are never overwritten by this action.
+current user arrangement and updates the panels in place, retaining the loaded
+results, sidebar filter, and selected page. Workflow layout files are never
+overwritten by this action.
 
 Sidebar and folder actions
 ---------------------------

@@ -6,7 +6,7 @@ const end = html.indexOf('// Collapse the sidebar', start);
 const source = html.slice(start, end);
 
 function pageContext({carry = null, activeTab = null} = {}) {
-    const item = {classList: {add: vi.fn(), remove: vi.fn()}};
+    const item = {classList: {add: vi.fn(), remove: vi.fn()}, scrollIntoView: vi.fn()};
     const elements = {folderInfo: {}, yamlPath: {}};
     const bottom = {
         panel: {getActiveTab: () => activeTab},
@@ -27,13 +27,13 @@ function pageContext({carry = null, activeTab = null} = {}) {
         cy: {nodes: () => ({roots: () => [{id: () => 'image'}]})}, lastDagNodes: [],
         showResult: vi.fn(), formatLabelCounts: vi.fn(), rerunArtefactSearch: vi.fn(),
     };
-    return {context, bottom, other};
+    return {context, bottom, other, item};
 }
 
 const run = (context) => vm.runInNewContext(`${source}\nloadCollectraFolderInner(0)`, context);
 
 it.each([null, 'crop'])('renders only the final selected artefact when carrying %s', async carry => {
-    const {context, bottom, other} = pageContext({carry});
+    const {context, bottom, other, item} = pageContext({carry});
     await run(context);
     expect(bottom.renderPageArtefact).not.toHaveBeenCalled();
     expect(bottom.showActiveTabContent).not.toHaveBeenCalled();
@@ -45,6 +45,7 @@ it.each([null, 'crop'])('renders only the final selected artefact when carrying 
     expect(other.reconcileTabs).toHaveBeenCalledWith({preferFirst: true});
     expect(context.showResult).not.toHaveBeenCalled();
     expect(context.rerunArtefactSearch).toHaveBeenCalledTimes(1);
+    expect(item.scrollIntoView).toHaveBeenCalledWith({block: 'nearest', inline: 'nearest'});
 });
 
 describe('switching page keeps the tabs the user has open', () => {

@@ -12,8 +12,8 @@ const rule = (selector) => {
 describe('nodeActionButtons', () => {
     const all = { hasAncestors: true, hasDescendants: true, canSave: true };
 
-    it('is Delete, Ancestors, Descendants and then Save, in that order', () => {
-        expect(nodeActionButtons(all).map((b) => b.id)).toEqual(['delete', 'ancestors', 'descendants', 'save']);
+    it('is Delete, Ancestors, Descendants, in that order', () => {
+        expect(nodeActionButtons(all).map((b) => b.id)).toEqual(['delete', 'ancestors', 'descendants']);
     });
 
     it('says what each one does when you hover it', () => {
@@ -22,11 +22,10 @@ describe('nodeActionButtons', () => {
             delete: 'Delete artefact',
             ancestors: 'Ancestors',
             descendants: 'Descendants',
-            save: 'Save changes',
         });
     });
 
-    it('has no Save unless the artefact is editable text', () => {
+    it('has no Save button for text fields', () => {
         expect(nodeActionButtons({ ...all, canSave: false }).map((b) => b.id)).toEqual(['delete', 'ancestors', 'descendants']);
     });
 
@@ -37,8 +36,8 @@ describe('nodeActionButtons', () => {
         expect(buttons.find((b) => b.id === 'delete').disabled).toBe(false);
     });
 
-    it('marks only Save as the primary action', () => {
-        expect(nodeActionButtons(all).filter((b) => b.primary).map((b) => b.id)).toEqual(['save']);
+    it('has no primary save action', () => {
+        expect(nodeActionButtons(all).filter((b) => b.primary)).toEqual([]);
     });
 });
 
