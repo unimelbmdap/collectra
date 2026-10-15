@@ -2,6 +2,7 @@
 
 import hashlib
 import plistlib
+import platform
 import shlex
 import shutil
 import sys
@@ -49,6 +50,11 @@ def install_app(
         "gui",
     ]
     arguments.extend(str(Path(value).expanduser().resolve()) for value in inputs)
+    # Finder/LaunchServices can otherwise choose a different slice of a
+    # universal Python executable than the terminal used during installation.
+    architecture = platform.machine()
+    if platform.system() == "Darwin" and architecture in {"arm64", "x86_64"}:
+        arguments = ["/usr/bin/arch", f"-{architecture}", *arguments]
     identifier = hashlib.sha256(str(pipeline_path).encode()).hexdigest()[:16]
     destination.mkdir(parents=True, exist_ok=True)
     # Build first so failed icon conversion leaves the installed app intact.

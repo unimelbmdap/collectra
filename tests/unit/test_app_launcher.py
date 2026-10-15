@@ -77,6 +77,22 @@ def test_defaults_and_custom_icon(tmp_path, pipeline_file, monkeypatch):
     assert (bundle / "Contents/Resources/AppIcon.icns").read_bytes() == b"custom icon"
 
 
+@pytest.mark.parametrize("architecture", ["arm64", "x86_64"])
+def test_app_pins_installing_python_architecture(tmp_path, pipeline_file, monkeypatch, architecture):
+    import shlex
+    from collectra.pipelines import app_launcher
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(app_launcher.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(app_launcher.platform, "machine", lambda: architecture)
+    monkeypatch.setattr(sys, "executable", "/Python Environment/bin/python")
+    bundle = install_app(pipeline_file, app_dir=tmp_path)
+    lines = (bundle / "Contents/MacOS/collectra").read_text().splitlines()
+    assert shlex.split(lines[-1])[:4] == [
+        "exec", "/usr/bin/arch", f"-{architecture}", "/Python Environment/bin/python",
+    ]
+
+
 @pytest.mark.parametrize("name", ["", " ", "..", "../bad", "bad:name", "bad\\name"])
 def test_invalid_name(tmp_path, pipeline_file, monkeypatch, name):
     monkeypatch.setattr(sys, "platform", "darwin")
