@@ -1565,6 +1565,19 @@
             flex: 1;
             min-height: 0;
         }
+        /* Keep the source and preview within the panel's available size. */
+        .page-text-display .EasyMDEContainer.sided--no-fullscreen {
+            flex-direction: row;
+            flex-wrap: nowrap;
+            min-width: 0;
+            overflow: hidden;
+        }
+        .page-text-display .EasyMDEContainer.sided--no-fullscreen .CodeMirror-sided,
+        .page-text-display .EasyMDEContainer.sided--no-fullscreen .editor-preview-active-side {
+            flex: 1 1 0;
+            min-width: 0;
+            min-height: 0;
+        }
         /* EasyMDE's toolbar buttons rely on inheriting the ambient text color
            (it never sets its own `color`), same as everything else in the app —
            but the app's global `button { color: #f5f5f5; ... }` rule (for the
@@ -5958,6 +5971,7 @@
                     spellChecker: false,
                     autofocus: false,
                     status: false,
+                    sideBySideFullscreen: false,
                     // EasyMDE defaults minHeight to "300px" and applies it as an
                     // inline min-height directly on .CodeMirror-scroll, which
                     // fights our flex-based sizing (forces the scroller taller
@@ -5977,6 +5991,7 @@
                 // The formatting tools go to the left of the row under the tabs
                 // (formatted text only — plain text has none).
                 this.moveEditorToolbar();
+                if (view.format === 'markdown') this.easyMDE.toggleSideBySide();
                 // Save sits with the other buttons at the right of that row, only for
                 // editable text; renderPager draws it from this.
                 this.textSave = (view ? view.editable : true) ? {
