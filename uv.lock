@@ -15,12 +15,12 @@ resolution-markers = [
     "python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.12.*' and sys_platform == 'darwin'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform == 'win32'",
-    "python_full_version < '3.11.5' and sys_platform == 'win32'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform == 'emscripten'",
-    "python_full_version < '3.11.5' and sys_platform == 'emscripten'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version < '3.11.5' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform == 'darwin'",
+    "python_full_version < '3.11.5' and sys_platform == 'win32'",
+    "python_full_version < '3.11.5' and sys_platform == 'emscripten'",
+    "python_full_version < '3.11.5' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.11.5' and sys_platform == 'darwin'",
     "python_version < '0'",
 ]
@@ -966,10 +966,10 @@ dependencies = [
     { name = "markdown" },
     { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "networkx", version = "3.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "onnxruntime", version = "1.23.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
-    { name = "onnxruntime", version = "1.30.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "numpy" },
     { name = "opencv-python-headless" },
     { name = "pandas" },
+    { name = "pillow" },
     { name = "platformdirs" },
     { name = "plotly" },
     { name = "pydantic" },
@@ -977,20 +977,24 @@ dependencies = [
     { name = "pytz" },
     { name = "pywebview" },
     { name = "pyyaml" },
-    { name = "rfdetr", extra = ["loggers", "train"] },
     { name = "rich" },
     { name = "supervision" },
     { name = "tifffile", version = "2026.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "tifffile", version = "2026.9.20", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "timm" },
-    { name = "torch" },
-    { name = "torchvision" },
-    { name = "transformers" },
     { name = "typer" },
     { name = "wandb" },
 ]
 
 [package.optional-dependencies]
+ml = [
+    { name = "onnxruntime", version = "1.23.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
+    { name = "onnxruntime", version = "1.30.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "rfdetr", extra = ["loggers", "train"] },
+    { name = "timm" },
+    { name = "torch" },
+    { name = "torchvision" },
+    { name = "transformers" },
+]
 yolo = [
     { name = "drawyolo" },
     { name = "ultralytics" },
@@ -1030,10 +1034,12 @@ requires-dist = [
     { name = "llmloader", specifier = ">=0.1.10" },
     { name = "markdown", specifier = ">=3.9" },
     { name = "networkx", specifier = ">=3.6.1" },
-    { name = "onnxruntime", marker = "python_full_version < '3.14'", specifier = "==1.23.2" },
-    { name = "onnxruntime", marker = "python_full_version >= '3.14'", specifier = ">=1.25.1" },
+    { name = "numpy", specifier = ">=1.26.0" },
+    { name = "onnxruntime", marker = "python_full_version >= '3.14' and extra == 'ml'", specifier = ">=1.25.1" },
+    { name = "onnxruntime", marker = "python_full_version < '3.14' and extra == 'ml'", specifier = "==1.23.2" },
     { name = "opencv-python-headless", specifier = ">=4.8.0" },
     { name = "pandas", specifier = ">=2.3.3" },
+    { name = "pillow", specifier = ">=10.0.0" },
     { name = "platformdirs", specifier = ">=4.0.0" },
     { name = "plotly", specifier = ">=5.0.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
@@ -1041,19 +1047,19 @@ requires-dist = [
     { name = "pytz", specifier = ">=2025.2" },
     { name = "pywebview", specifier = ">=6.1" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "rfdetr", extras = ["train", "loggers"], specifier = ">=1.6.5.post0" },
+    { name = "rfdetr", extras = ["train", "loggers"], marker = "extra == 'ml'", specifier = ">=1.6.5.post0" },
     { name = "rich", specifier = ">=14.2.0" },
     { name = "supervision", specifier = ">=0.18.0" },
     { name = "tifffile", specifier = ">=2024.8.30" },
-    { name = "timm", specifier = ">=1.0.9" },
-    { name = "torch", specifier = "==2.9.0" },
-    { name = "torchvision", specifier = "==0.24.0" },
-    { name = "transformers", specifier = ">=4.46.0" },
+    { name = "timm", marker = "extra == 'ml'", specifier = ">=1.0.9" },
+    { name = "torch", marker = "extra == 'ml'", specifier = "==2.9.0" },
+    { name = "torchvision", marker = "extra == 'ml'", specifier = "==0.24.0" },
+    { name = "transformers", marker = "extra == 'ml'", specifier = ">=4.46.0" },
     { name = "typer", specifier = ">=0.21.1" },
     { name = "ultralytics", marker = "extra == 'yolo'", specifier = ">=8.3.166" },
     { name = "wandb", specifier = ">=0.21.1" },
 ]
-provides-extras = ["yolo"]
+provides-extras = ["ml", "yolo"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -3767,12 +3773,12 @@ version = "3.6.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform == 'win32'",
-    "python_full_version < '3.11.5' and sys_platform == 'win32'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform == 'emscripten'",
-    "python_full_version < '3.11.5' and sys_platform == 'emscripten'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version < '3.11.5' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform == 'darwin'",
+    "python_full_version < '3.11.5' and sys_platform == 'win32'",
+    "python_full_version < '3.11.5' and sys_platform == 'emscripten'",
+    "python_full_version < '3.11.5' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.11.5' and sys_platform == 'darwin'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/6a/51/63fe664f3908c97be9d2e4f1158eb633317598cfa6e1fc14af5383f17512/networkx-3.6.1.tar.gz", hash = "sha256:26b7c357accc0c8cde558ad486283728b65b6a95d85ee1cd66bafab4c8168509", size = 2517025, upload-time = "2025-12-08T17:02:39.908Z" }
@@ -4090,12 +4096,12 @@ resolution-markers = [
     "python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.12.*' and sys_platform == 'darwin'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform == 'win32'",
-    "python_full_version < '3.11.5' and sys_platform == 'win32'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform == 'emscripten'",
-    "python_full_version < '3.11.5' and sys_platform == 'emscripten'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version < '3.11.5' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform == 'darwin'",
+    "python_full_version < '3.11.5' and sys_platform == 'win32'",
+    "python_full_version < '3.11.5' and sys_platform == 'emscripten'",
+    "python_full_version < '3.11.5' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.11.5' and sys_platform == 'darwin'",
 ]
 dependencies = [
@@ -6307,12 +6313,12 @@ version = "9.0.4"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform == 'win32'",
-    "python_full_version < '3.11.5' and sys_platform == 'win32'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform == 'emscripten'",
-    "python_full_version < '3.11.5' and sys_platform == 'emscripten'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version < '3.11.5' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform == 'darwin'",
+    "python_full_version < '3.11.5' and sys_platform == 'win32'",
+    "python_full_version < '3.11.5' and sys_platform == 'emscripten'",
+    "python_full_version < '3.11.5' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.11.5' and sys_platform == 'darwin'",
 ]
 dependencies = [
@@ -6677,12 +6683,12 @@ version = "2026.3.3"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform == 'win32'",
-    "python_full_version < '3.11.5' and sys_platform == 'win32'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform == 'emscripten'",
-    "python_full_version < '3.11.5' and sys_platform == 'emscripten'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version < '3.11.5' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12' and sys_platform == 'darwin'",
+    "python_full_version < '3.11.5' and sys_platform == 'win32'",
+    "python_full_version < '3.11.5' and sys_platform == 'emscripten'",
+    "python_full_version < '3.11.5' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.11.5' and sys_platform == 'darwin'",
 ]
 dependencies = [

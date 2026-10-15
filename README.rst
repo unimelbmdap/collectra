@@ -40,13 +40,25 @@ Use Python 3.11–3.14. Create a virtual environment and install from PyPI:
 
 On Windows, activate the environment with ``.venv\Scripts\activate`` instead.
 
+The default install supports the GUI without Torch. You can inspect existing
+results, edit text, and view pipelines containing ML tasks without installing
+their model backends. To run Torch-based inference or training (RF-DETR, DETR,
+Torchvision/Hugging Face classifiers, or the image orienter), install:
+
+.. code-block:: bash
+
+    pip install "collectra[ml]"
+
+This extra includes Torch, Torchvision, timm, Transformers, RF-DETR and ONNX
+Runtime. Model execution still requires compatible hardware and backend wheels.
+
 YOLO tasks and their annotation previews require the optional ``yolo`` extra:
 
 .. code-block:: bash
 
     pip install "collectra[yolo]"
 
-The default installation excludes Ultralytics and drawyolo. The YOLO extra
+The default installation excludes Torch, Ultralytics and drawyolo. The YOLO extra
 installs both; Ultralytics is AGPL-licensed and its terms apply where relevant
 to combined applications. Making it optional does not remove those obligations.
 Other backends and the RLSA line detector do not require this extra.
@@ -57,10 +69,11 @@ and the GUI backend selected by pywebview. See the
 `licensing guide <https://unimelbmdap.github.io/collectra/licensing.html>`_
 before distributing a pipeline or bundled application.
 
-For a source checkout, use ``uv sync --extra yolo`` and
-``uv run --extra yolo collectra ...`` to enable YOLO. To run the complete test
-suite, use ``uv sync --group dev --extra yolo`` followed by
-``uv run --extra yolo pytest``.
+For a source checkout, ``uv sync`` and ``uv run collectra ...`` use the default
+installation without Torch. Add ``--extra ml`` for the Torch backends or
+``--extra yolo`` for YOLO. To run the complete test suite, use
+``uv sync --group dev --extra ml --extra yolo`` followed by
+``uv run --extra ml --extra yolo pytest``.
 
 Alternatively, install the development version directly from GitHub:
 

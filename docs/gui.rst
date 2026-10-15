@@ -7,6 +7,14 @@ controls are bundled locally, so the GUI itself works offline. It requires
 pywebview, a supported native
 webview backend, and a desktop session.
 
+The default Collectra installation supports the GUI without Torch or the ML
+backends. Install with ``pip install collectra`` (or ``uv sync`` in a source
+checkout). Existing results and pipeline graphs remain viewable even when the
+pipeline contains model tasks. Executing those tasks requires the appropriate
+extra: ``collectra[ml]`` for the Torch/RF-DETR/Transformers stack, or
+``collectra[yolo]`` for Ultralytics. A pipeline's own custom dependencies must
+also avoid requiring Torch if it is to run on a machine without Torch.
+
 Backend licences differ: PyQt is GPLv3 or commercially licensed, even though
 pywebview itself is BSD-licensed. See :doc:`licensing` before choosing a backend
 for a distributed application.
