@@ -45,6 +45,13 @@ def group(
 
 def _cli_members(obj: Any):
     for member_name in dir(obj):
+        # Properties can load models or optional backends. Only bind members
+        # after confirming that their static definition is a CLI command.
+        definition = inspect.getattr_static(obj, member_name)
+        if isinstance(definition, (staticmethod, classmethod)):
+            definition = definition.__func__
+        if not getattr(definition, CLI_KIND, None):
+            continue
         member = getattr(obj, member_name)
         kind = getattr(member, CLI_KIND, None)
         if callable(member) and kind:

@@ -270,6 +270,27 @@ def test_installed_pipeline_launcher_delegates_to_main(tmp_path, monkeypatch, sp
     assert all(name in result.stdout for name in ("run", "install", "task", "artefact"))
 
 
+def test_command_discovery_never_evaluates_model_properties(capsys):
+    from functools import cached_property
+
+    class ModelTask:
+        @property
+        def chain(self):
+            raise AssertionError("Command discovery must not load the LLM chain")
+
+        @cached_property
+        def model(self):
+            raise AssertionError("Command discovery must not load model weights")
+
+        @command
+        def run(self, text: str):
+            """Run this task."""
+
+    help_text = help_for(RuntimeApplication({"model": ModelTask()}), ["--help"], capsys)
+    assert "task" in help_text
+    assert "TEXT" in help_for(ModelTask(), ["run", "--help"], capsys)
+
+
 def test_pipeline_exposes_commands_for_artefact_types(tmp_path, capsys):
     image_path = tmp_path / "source.jpg"
     from PIL import Image as PillowImage

@@ -51,6 +51,8 @@ Torchvision/Hugging Face classifiers, or the image orienter), install:
 
 This extra includes Torch, Torchvision, timm, Transformers, RF-DETR and
 ``ensemble-boxes`` (with its Numba/llvmlite dependencies) for box fusion.
+It also includes ``llmloader`` and its provider integrations for executing LLM
+tasks. Viewing a pipeline containing LLM tasks does not require ``llmloader``.
 Model execution still requires compatible hardware and backend wheels.
 
 YOLO tasks and their annotation previews require the optional ``yolo`` extra:
