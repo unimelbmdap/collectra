@@ -61,6 +61,7 @@ def test_percentage_partition_parent_directory_and_reproducible_seed(dataset):
         "20%",
         "--seed",
         "17",
+        "--force",
     ]
     invoke(pipeline, command, name="htr")
     first = assignments(parent)
@@ -75,7 +76,17 @@ def test_fractional_partitions_and_val_label(dataset):
     pipeline, parent = dataset
     invoke(
         pipeline,
-        ["partition", str(parent), "--train", "0.6", "--val", "0.2", "--test", "0.2"],
+        [
+            "partition",
+            str(parent),
+            "--train",
+            "0.6",
+            "--val",
+            "0.2",
+            "--test",
+            "0.2",
+            "--force",
+        ],
     )
     assert Counter(assignments(parent).values()) == {"train": 6, "val": 2, "test": 2}
 
@@ -91,6 +102,7 @@ def test_custom_count_partitions_and_leftover_results(dataset):
             "training=3",
             "--partition",
             "heldout=2",
+            "--force",
         ],
     )
     assert Counter(assignments(parent).values()) == {
@@ -105,7 +117,14 @@ def test_individual_results_yaml_and_duplicate_inputs(dataset):
     folder = parent / "page-00.htr"
     invoke(
         pipeline,
-        ["partition", str(folder), str(folder / "results.yaml"), "--test", "1"],
+        [
+            "partition",
+            str(folder),
+            str(folder / "results.yaml"),
+            "--test",
+            "1",
+            "--force",
+        ],
     )
     assert Counter(assignments(parent).values()) == {"test": 1, "original": 9}
 
@@ -118,6 +137,7 @@ def test_individual_results_yaml_and_duplicate_inputs(dataset):
         ["--partition", "bad"],
         ["--train", "1", "--partition", "train=2"],
         ["--train", "abc"],
+        ["--train", "80%"],
     ],
 )
 def test_invalid_partitions_leave_files_unchanged(dataset, options):

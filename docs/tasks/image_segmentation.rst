@@ -275,10 +275,59 @@ The adapter uses the installed upstream Roboflow image-training template,
 enables segmentation in the model, dataset and collator, and adds mask focal and
 Dice losses. Generated configuration is saved as ``sam3-training.yaml`` in the
 output directory. Without validation images, the trainer uses ``train_only``;
-training images are not reused as validation. After training, the final
+training images are not reused as validation. After training, the best
 checkpoint is copied into the pipeline directory and the task's ``model`` is
 updated in ``pipeline.yaml``. The task can load both official full checkpoints
 and fine-tuned image-only checkpoints.
+
+Metrics, W&B and model selection
+----------------------------------
+
+Add ``--wandb`` to send epoch metrics to Weights & Biases. Without this flag,
+training does not initialize W&B; local CSV reporting is always enabled.
+Authenticate with ``wandb login`` beforehand, or configure your site's
+``WANDB_API_KEY``. For example:
+
+.. code-block:: bash
+
+    export WANDB_PROJECT=htr-segmentation
+    htr task region_segmentor train /path/to/results \
+        --output /path/to/sam-training \
+        --validation validation --exclude test --wandb
+
+The default W&B project is ``collectra`` and the run name is the task name.
+On a cluster without network access, set ``WANDB_MODE=offline`` before training
+and sync the W&B run directory afterward.
+
+``OUTPUT/metrics.csv`` contains one row per epoch. Training and validation
+metrics merge into the same row; validation columns are empty for epochs without
+validation. W&B receives the same metrics, using the one-based ``epoch`` as its
+chart axis. Native trainer metrics are included alongside ``train/loss`` and
+``val/mask_iou``.
+
+``val/mask_iou`` measures foreground-mask intersection over union. For each
+image/concept query, predictions are filtered using the task's ``threshold``
+(including SAM's presence score), mask logits are resized to the validation mask
+size and thresholded at zero, and instance masks are combined into foreground.
+Intersections and unions are summed across validation queries and GPUs before
+division. False foreground on empty images is penalized. Queries with missing
+ground-truth masks are omitted. An entirely empty foreground prediction and
+target score 1; no evaluated queries is an error for best-model selection.
+This measures pixel coverage, not instance matching or instance-segmentation AP.
+
+Validation runs after every epoch, including the first and last. When validation
+IoU strictly improves, ``OUTPUT/training/checkpoints/best.pt`` is replaced
+atomically with the model's raw state dictionary. ``best.json`` records its epoch,
+selection metric and value. No optimizer, scheduler or scaler state is saved,
+and native periodic/last-epoch checkpoints are disabled. After training, Collectra
+copies these best weights into the pipeline and updates the task's ``model``.
+
+Without validation images, selection falls back to the lowest training loss and
+is recorded as ``train/loss`` in ``best.json``. These weights support inference
+and further fine-tuning, but do not resume optimizer state. ``--reuse-data``
+continues to mean reuse prepared images/masks; an old optimizer checkpoint in
+the output directory is not resumed. ``--no-keep-log`` removes the local CSV and
+training directory after the chosen weights have been copied into the pipeline.
 
 Upstream references: `training guide
 <https://github.com/facebookresearch/sam3/blob/main/README_TRAIN.md>`_,

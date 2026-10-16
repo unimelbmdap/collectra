@@ -434,6 +434,7 @@ class ImageSegmentationSam3(Task):
         num_gpus: int = 1,
         keep_log: bool = True,
         reuse_data: bool = False,
+        wandb: bool = False,
     ) -> Path:
         """Prepare instance masks and fine-tune using Meta's image trainer.
 
@@ -478,6 +479,9 @@ class ImageSegmentationSam3(Task):
             epochs=epochs,
             batch=batch,
             num_gpus=num_gpus,
+            wandb=wandb,
+            run_name=self.name,
+            confidence_threshold=self.threshold,
         )
         config_path = output / "sam3-training.yaml"
         config_path.write_text(
@@ -500,7 +504,7 @@ class ImageSegmentationSam3(Task):
             env={**os.environ, "PYTHONUNBUFFERED": "1"},
         )
         training_progress("SAM trainer exited successfully; checking its checkpoint")
-        checkpoint = output / "training" / "checkpoints" / "checkpoint.pt"
+        checkpoint = output / "training" / "checkpoints" / "best.pt"
         if not checkpoint.is_file():
             raise FileNotFoundError(
                 f"SAM training produced no checkpoint at {checkpoint}"

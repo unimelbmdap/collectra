@@ -6,7 +6,8 @@ from types import MethodType, SimpleNamespace
 import yaml
 
 
-def training_config(dataset, output, checkpoint, *, epochs, batch, num_gpus):
+def training_config(dataset, output, checkpoint, *, epochs, batch, num_gpus,
+                    wandb=False, run_name=None, confidence_threshold=0.5):
     from .sam3 import _sam3
 
     package = Path(_sam3().__file__).parent
@@ -50,7 +51,12 @@ def training_config(dataset, output, checkpoint, *, epochs, batch, num_gpus):
         num_val_workers=0,
     )
     trainer = config["trainer"]
-    trainer.update(max_epochs=epochs, skip_saving_ckpts=False, val_epoch_freq=1)
+    trainer.update(
+        _target_="collectra.tasks.image_segmentation.sam3_metrics.create_trainer",
+        max_epochs=epochs, skip_saving_ckpts=True, val_epoch_freq=1, skip_first_val=False,
+        collectra_output=str(output), collectra_wandb=wandb,
+        collectra_run_name=run_name,
+    )
     trainer["model"] = {
         "_target_": "collectra.tasks.image_segmentation.sam3_training.build_training_model",
         "checkpoint": str(checkpoint),
@@ -72,6 +78,10 @@ def training_config(dataset, output, checkpoint, *, epochs, batch, num_gpus):
             "pred_file_evaluators"
         ][0]
         evaluator["gt_path"] = str(dataset / "valid/_annotations.coco.json")
+        trainer["meters"]["val"]["roboflow100"]["mask_iou"] = {
+            "_target_": "collectra.tasks.image_segmentation.sam3_metrics.MaskIoU",
+            "confidence_threshold": confidence_threshold,
+        }
     else:
         # Training without held-out images must not silently evaluate on training data.
         trainer["data"].pop("val", None)

@@ -1,10 +1,17 @@
+from collections.abc import Iterator, Sequence
 from pathlib import Path
+
+from rich.progress import Progress
 
 from .commons.files import CollectraFile
 
 
-def partition_results(inputs, ext, partitions, seed=42):
-    """Resolve pipeline results, then use the existing partitioning engine."""
+def partition_results(inputs, ext, partitions, seed=42, force=False):
+    """Resolve pipeline results, then use the existing partitioning engine.
+
+    Raises:
+        ValueError: If any result already has a partition and ``force`` is False.
+    """
     from collectra.utils import resolve_files
 
     if not partitions:
@@ -21,10 +28,34 @@ def partition_results(inputs, ext, partitions, seed=42):
     files = sorted(set(files))
     if not files:
         raise ValueError(f"No .{ext} results found in the supplied inputs")
-    # Validate all results before any partition metadata is changed.
-    for path in files:
-        CollectraFile.from_data(path)
-    process_partitions(files, partitions, seed)
+    # A single Progress renders its tasks as one table, so the bars line up.
+    with Progress() as progress:
+        # Validate all results before any partition metadata is changed.
+        already_partitioned = [
+            path
+            for path in _track(progress, files, "Checking results")
+            if CollectraFile.from_data(path).collectra_results_metadata.partition
+            is not None
+        ]
+        if already_partitioned and not force:
+            raise ValueError(
+                f"{len(already_partitioned)} of {len(files)} results already have a partition. "
+                "Use --force to override the current partitions."
+            )
+        process_partitions(files, partitions, seed, progress=progress)
+
+
+def _track(
+    progress: Progress | None, items: Sequence[Path], description: str
+) -> Iterator[Path]:
+    """Yields items, advancing a task on the shared progress display when one is given."""
+    if progress is None:
+        yield from items
+        return
+    task = progress.add_task(description, total=len(items))
+    for item in items:
+        yield item
+        progress.advance(task)
 
 
 def get_files(args: list[str]) -> tuple[list[Path], list[str]]:
@@ -197,7 +228,7 @@ def validate_partition_sum(
             raise ValueError(f"Unknown value type: {value_type}")
 
 
-def assign_partition_label(file: Path, label: str):
+def assign_partition_label(file: Path, label: str | None):
     """Assigns the specified partition label to the given file by updating its metadata.
 
     Args:
@@ -210,28 +241,34 @@ def assign_partition_label(file: Path, label: str):
     collectra_file.save()
 
 
-def assign_partition_label_to_files(files: list[Path], label: str):
+def assign_partition_label_to_files(
+    files: list[Path], label: str, progress: Progress | None = None
+):
     """Assigns the specified partition label to the given list of files by updating their metadata.
 
     Args:
         files (list[Path]): The list of files to which the partition label will be assigned.
         label (str): The partition label to be assigned to the files.
+        progress (Progress | None): Shared progress display to report on, if any.
 
     Raises:
         Exception: If there is an error in assigning the partition label to any of the files, reverts any changes made to the files before the error occurred to maintain consistency.
 
     """
-    old_labels = list()
+    old_labels: list[tuple[Path, str | None]] = []
     try:
-        for file in files:
-            old_labels.append({"file": file, "label": label})
-            assign_partition_label(file, label)
+        for file in _track(
+            progress, files, f"Partition '{label}' ({len(files)} files)"
+        ):
+            collectra_file = CollectraFile.from_data(file)
+            metadata = collectra_file.collectra_results_metadata
+            old_labels.append((file, metadata.partition))
+            metadata.partition = label
+            collectra_file.save()
     except Exception as e:
         # Revert any changes made to files in case of an error
-        for item in old_labels:
-            file = item["file"]
-            label = item["label"]
-            assign_partition_label(file, label)
+        for file, old_label in old_labels:
+            assign_partition_label(file, old_label)
         raise e
 
 
@@ -240,6 +277,7 @@ def partition_files(
     partitions: dict[str, int | float],
     value_type: str | None,
     seed: int,
+    progress: Progress | None = None,
 ):
     """Partitions the list of files based on the specified partition values and their type. It shuffles the files using the provided random seed to ensure reproducibility.
 
@@ -248,6 +286,7 @@ def partition_files(
         partitions (dict[str, int | float]): The dictionary of partition labels and their corresponding values.
         value_type (str | None): The type of the partition values ("percentage", "integer", or "float").
         seed (int): The random seed for shuffling the files.
+        progress (Progress | None): Shared progress display to report on, if any.
 
     Raises:
         ValueError: If the value type is not determined before partitioning.
@@ -275,12 +314,14 @@ def partition_files(
                 raise ValueError(f"Unknown value type: {value_type}")
         partition_files = files[:num_files]
         files = files[num_files:]
-        print(f"Partition '{label}': {len(partition_files)} files")
-        assign_partition_label_to_files(partition_files, label)
+        assign_partition_label_to_files(partition_files, label, progress=progress)
 
 
 def process_partitions(
-    files: list[Path], partitions: dict[str, str | int | float], seed: int
+    files: list[Path],
+    partitions: dict[str, str | int | float],
+    seed: int,
+    progress: Progress | None = None,
 ):
     """Processes the partition specifications by validating their values, ensuring they sum up appropriately, and then partitioning the files accordingly.
 
@@ -288,6 +329,7 @@ def process_partitions(
         files (list[Path]): The list of files to be partitioned.
         partitions (dict[str, str | int | float]): The dictionary of partition labels and their corresponding values (as strings, integers, or floats).
         seed (int): The random seed for shuffling the files.
+        progress (Progress | None): Shared progress display to report on, if any.
 
     Raises:
         ValueError: If there is an error in processing any of the partition specifications.
@@ -303,4 +345,4 @@ def process_partitions(
         except ValueError as e:
             raise ValueError(f"Error processing partition {label}: {e}")
     validate_partition_sum(validated_partitions, value_type, files)
-    partition_files(files, validated_partitions, value_type, seed)
+    partition_files(files, validated_partitions, value_type, seed, progress=progress)

@@ -28,7 +28,9 @@ import stat
 import sys
 import time
 from pathlib import Path
+from typing import Annotated
 
+from cappa import Arg
 import graphviz
 import networkx as nx
 import yaml
@@ -168,18 +170,46 @@ class Collectra:
     @command(name="partition")
     def cli_partition(
         self,
-        inputs: list[str],
-        train: str = "",
-        validation: str = "",
-        val: str = "",
-        test: str = "",
-        seed: int = 42,
-        partition: list[str] | None = None,
+        inputs: Annotated[
+            list[str],
+            Arg(help="Result folders, results.yaml files, or parent directories."),
+        ],
+        train: Annotated[
+            str,
+            Arg(help="Share of results labelled 'train' (e.g. 80%, 0.8, or 100)."),
+        ] = "",
+        validation: Annotated[
+            str,
+            Arg(help="Share of results labelled 'validation' (e.g. 20%, 0.2, or 25)."),
+        ] = "",
+        val: Annotated[
+            str, Arg(help="Share of results labelled 'val' (e.g. 20%, 0.2, or 25).")
+        ] = "",
+        test: Annotated[
+            str, Arg(help="Share of results labelled 'test' (e.g. 10%, 0.1, or 10).")
+        ] = "",
+        seed: Annotated[
+            int, Arg(help="Random seed used to shuffle results before splitting.")
+        ] = 42,
+        partition: Annotated[
+            list[str] | None,
+            Arg(
+                help="Custom partition as NAME=VALUE (e.g. holdout=5%); may be repeated."
+            ),
+        ] = None,
+        force: Annotated[
+            bool,
+            Arg(
+                help="Override existing partitions instead of refusing to change them."
+            ),
+        ] = False,
     ) -> None:
         """Assign result partitions using percentages, fractions, or file counts.
 
         For example: partition results --train 80% --validation 20%.
         Use repeated --partition NAME=VALUE options for custom labels.
+        All values must use the same form (percentages, fractions, or counts).
+        Fails if any result already has a partition unless --force is given.
         Unassigned results retain their existing partition.
         """
         from collectra.partition import partition_results
@@ -201,7 +231,7 @@ class Collectra:
             if label in partitions:
                 raise ValueError(f"Partition {label!r} was specified more than once")
             partitions[label] = value
-        partition_results(inputs, self.ext, partitions, seed)
+        partition_results(inputs, self.ext, partitions, seed, force=force)
 
     @command(name="install")
     def cli_install(self, name: str, bin_dir: Path | None = None) -> None:

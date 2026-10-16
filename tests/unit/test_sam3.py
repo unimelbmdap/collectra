@@ -489,8 +489,33 @@ def test_training_configuration_enables_real_mask_losses(image, tmp_path, sam_pa
     }
     assert config["trainer"]["mode"] == "train_only"
     assert "val" not in config["trainer"]["data"]
-    assert not config["trainer"]["skip_saving_ckpts"]
+    assert config["trainer"]["skip_saving_ckpts"]
     assert config["trainer"]["max_epochs"] == 2
+
+
+def test_validation_configuration_installs_iou_and_reporting(image, tmp_path, sam_package):
+    from collectra.tasks.image_segmentation.sam3_training import training_config
+
+    dataset = export_dataset(
+        [SegmentationSample(image, [instance(image, tmp_path)]),
+         SegmentationSample(image, [instance(image, tmp_path, partition="validation")])],
+        tmp_path / "dataset", validation="validation",
+    )
+    config = training_config(dataset, tmp_path, tmp_path / "initial.pt",
+                             epochs=3, batch=1, num_gpus=2, wandb=True,
+                             run_name="region_segmentor", confidence_threshold=0.7)
+    trainer = config["trainer"]
+    assert trainer["_target_"].endswith("sam3_metrics.create_trainer")
+    assert trainer["skip_saving_ckpts"] is True
+    assert trainer["skip_first_val"] is False
+    assert trainer["val_epoch_freq"] == 1
+    assert trainer["collectra_wandb"] is True
+    assert trainer["collectra_run_name"] == "region_segmentor"
+    assert "val" in trainer["data"]
+    assert trainer["meters"]["val"]["roboflow100"]["mask_iou"] == {
+        "_target_": "collectra.tasks.image_segmentation.sam3_metrics.MaskIoU",
+        "confidence_threshold": 0.7,
+    }
 
 
 @pytest.mark.parametrize("explicit_output", [True, False])
@@ -519,14 +544,15 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
         assert "-u" in command
         assert kwargs["env"]["PYTHONUNBUFFERED"] == "1"
         config = yaml.safe_load(Path(command[-1]).read_text())
+        assert config["trainer"]["collectra_wandb"] is True
         checkpoint = (
-            Path(config["paths"]["experiment_log_dir"]) / "checkpoints/checkpoint.pt"
+            Path(config["paths"]["experiment_log_dir"]) / "checkpoints/best.pt"
         )
         checkpoint.parent.mkdir(parents=True)
         checkpoint.write_bytes(b"fake weights")
 
     monkeypatch.setattr(sam3.subprocess, "run", train)
-    arguments = ["train", "--validation", "validation", "results", "--epochs", "1"]
+    arguments = ["train", "--validation", "validation", "results", "--epochs", "1", "--wandb"]
     output = tmp_path / ("output" if explicit_output else "20261016_140000")
     if explicit_output:
         arguments.extend(["--output", str(output)])
@@ -569,7 +595,7 @@ def test_train_reuses_output_dataset_without_source_checks(
     def train(command, **kwargs):
         config = yaml.safe_load(Path(command[-1]).read_text())
         assert config['trainer']['data']['train']['dataset']['img_folder'] == str(dataset / 'train')
-        checkpoint = output / 'training/checkpoints/checkpoint.pt'
+        checkpoint = output / 'training/checkpoints/best.pt'
         checkpoint.parent.mkdir(parents=True)
         checkpoint.write_bytes(b'reused-data-model')
 
