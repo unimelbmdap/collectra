@@ -165,6 +165,44 @@ class Collectra:
         self._ensure_workflow_connected()
         start(pipeline=self, debug=debug, inputs=inputs)
 
+    @command(name="partition")
+    def cli_partition(
+        self,
+        inputs: list[str],
+        train: str = "",
+        validation: str = "",
+        val: str = "",
+        test: str = "",
+        seed: int = 42,
+        partition: list[str] | None = None,
+    ) -> None:
+        """Assign result partitions using percentages, fractions, or file counts.
+
+        For example: partition results --train 80% --validation 20%.
+        Use repeated --partition NAME=VALUE options for custom labels.
+        Unassigned results retain their existing partition.
+        """
+        from collectra.partition import partition_results
+
+        partitions = {
+            label: value
+            for label, value in (
+                ("train", train),
+                ("validation", validation),
+                ("val", val),
+                ("test", test),
+            )
+            if value != ""
+        }
+        for specification in partition or []:
+            label, separator, value = specification.partition("=")
+            if not separator or not label.strip() or not value.strip():
+                raise ValueError("Custom partitions must use NAME=VALUE")
+            if label in partitions:
+                raise ValueError(f"Partition {label!r} was specified more than once")
+            partitions[label] = value
+        partition_results(inputs, self.ext, partitions, seed)
+
     @command(name="install")
     def cli_install(self, name: str, bin_dir: Path | None = None) -> None:
         """Install this pipeline as a standalone command."""
