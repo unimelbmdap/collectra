@@ -1,5 +1,6 @@
 import csv
 import json
+import math
 import sys
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -69,6 +70,23 @@ def test_mask_iou_reduces_global_counts(monkeypatch):
     meter = MaskIoU()
     meter.intersection, meter.union, meter.queries = 1, 3, 1
     assert meter.compute_synced()["iou"] == pytest.approx(3 / 8)
+    assert meter.compute()["iou"] == pytest.approx(1 / 3)
+
+
+@pytest.mark.parametrize("counts, expected", [((1, 3, 1), 1 / 3), ((0, 0, 1), 1.0), ((0, 0, 0), None)])
+def test_mask_iou_progress_compute_needs_no_backend_or_collectives(monkeypatch, counts, expected):
+    # SAM3's ProgressMeter calls compute().items() and formats scalar values.
+    # Progress can be displayed on just one rank, so it must never all-reduce.
+    monkeypatch.setitem(sys.modules, "torch", None)
+    meter = MaskIoU()
+    meter.intersection, meter.union, meter.queries = counts
+    values = meter.compute()
+    if expected is None:
+        assert math.isnan(values["iou"])
+    else:
+        assert values["iou"] == pytest.approx(expected)
+    assert all(isinstance(f"{name}: {value:.4f}", str) for name, value in values.items())
+    assert (meter.intersection, meter.union, meter.queries) == counts
 
 
 def test_mask_iou_uses_packed_target_offsets_for_multiple_queries():

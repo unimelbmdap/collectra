@@ -70,6 +70,14 @@ class MaskIoU:
                     self.union += int((predicted | truth).sum())
                     self.queries += 1
 
+    def compute(self):
+        """Local progress value; never synchronize from a progress callback."""
+        return {
+            "iou": self.intersection / self.union
+            if self.union
+            else (1.0 if self.queries else float("nan"))
+        }
+
     def compute_synced(self):
         import torch
         import torch.distributed as dist
