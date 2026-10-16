@@ -1,10 +1,18 @@
 // Source-aligned instance masks, coloured with their pipeline DAG label.
+function setSegmentationHovered(controller, id) {
+    controller._hoveredSegmentationId = id;
+    for (const canvas of controller._segmentationOverlays || []) {
+        canvas.style.opacity = canvas._artefactId === id ? '0.65' : '0.35';
+    }
+}
+
 function mountSegmentationHover(controller, rows, {token, imgW, imgH}) {
     const element = controller.el?.imageDisplay;
     if (!element) return () => {};
     const candidates = rows.filter(row => row.mask_region);
     let hovered = null;
     const hide = () => {
+        setSegmentationHovered(controller, null);
         if (!hovered) return;
         const tooltip = getBoxTooltip();
         cancelHoverHide(tooltip);
@@ -17,21 +25,13 @@ function mountSegmentationHover(controller, rows, {token, imgW, imgH}) {
             hide();
             return;
         }
-        const viewer = controller.pageViewer;
-        const item = viewer?.world.getItemAt(0);
-        if (!item) return;
-        const rect = viewer.container.getBoundingClientRect();
-        const pixel = new OpenSeadragon.Point(event.clientX - rect.left, event.clientY - rect.top);
-        const point = item.viewportToImageCoordinates(viewer.viewport.pointFromPixel(pixel, true));
-        const x = point.x / imgW, y = point.y / imgH;
         // Prefer the smallest box when neighbouring or nested instances overlap.
-        const match = candidates.filter(({mask_region: r}) =>
-            x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height
-        ).sort((a, b) => a.mask_region.width * a.mask_region.height - b.mask_region.width * b.mask_region.height)[0];
+        const match = childImageAtPointer(controller, candidates, event, imgW, imgH);
         if (!match) { hide(); return; }
         const tooltip = getBoxTooltip();
         if (hovered !== match) {
             hovered = match;
+            setSegmentationHovered(controller, match.id);
             tooltip.textContent = match.name || match.id;
             tooltip.style.display = 'block';
             scheduleHoverHide(tooltip);
@@ -39,11 +39,13 @@ function mountSegmentationHover(controller, rows, {token, imgW, imgH}) {
         tooltip.style.left = (event.clientX + 14) + 'px';
         tooltip.style.top = (event.clientY + 14) + 'px';
     };
+    const stopNavigation = mountChildImageNavigation(controller, rows, {token, imgW, imgH});
     element.addEventListener('pointermove', move);
     element.addEventListener('pointerleave', hide);
     return () => {
         element.removeEventListener('pointermove', move);
         element.removeEventListener('pointerleave', hide);
+        stopNavigation();
         hide();
     };
 }
@@ -62,7 +64,8 @@ async function renderSegmentationOverlays(controller, rows, {token, refreshToken
                 context.globalCompositeOperation = 'source-in';
                 context.fillStyle = nodeColor(r.label || r.id);
                 context.fillRect(0, 0, canvas.width, canvas.height);
-                canvas.style.opacity = '0.35';
+                canvas._artefactId = r.id;
+                canvas.style.opacity = controller._hoveredSegmentationId === r.id ? '0.65' : '0.35';
                 canvas.style.pointerEvents = 'none';
                 const region = r.mask_region;
                 const item = controller.pageViewer.world.getItemAt(0);

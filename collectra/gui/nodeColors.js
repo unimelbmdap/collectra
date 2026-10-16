@@ -12,12 +12,13 @@ function cropAnnotationStyle(annotation, state) {
     const body = annotation.bodies?.[0] || {};
     const color = nodeColor(body.label || body.id?.replace(/-[^-]+$/, '') || '');
     const selected = !!state?.selected;
+    const active = selected || !!state?.hovered;
     return {
         fill: color,
-        fillOpacity: selected ? 0.35 : 0.08,
+        fillOpacity: active ? 0.35 : 0.08,
         stroke: color,
-        strokeOpacity: selected ? 1 : 0.85,
-        strokeWidth: selected ? 4 : 1.5,
+        strokeOpacity: active ? 1 : 0.85,
+        strokeWidth: active ? 4 : 1.5,
     };
 }
 

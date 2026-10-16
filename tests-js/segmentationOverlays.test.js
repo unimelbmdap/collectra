@@ -14,6 +14,7 @@ function viewer(decode = async () => {}) {
         document: {createElement: () => canvas},
     };
     vm.createContext(context);
+    vm.runInContext(fs.readFileSync(require.resolve('../collectra/gui/displays/imageInteractions.js'), 'utf8'), context);
     vm.runInContext(fs.readFileSync(require.resolve('../collectra/gui/displays/imageSegmentation.js'), 'utf8') + source, context);
     const controller = new context.PanelController();
     Object.assign(controller, {
@@ -60,9 +61,12 @@ function hoverViewer(rows) {
         OpenSeadragon: {Point: class {constructor(x, y) {this.x = x; this.y = y;}}},
     };
     vm.createContext(context);
+    vm.runInContext(fs.readFileSync(require.resolve('../collectra/gui/displays/imageInteractions.js'), 'utf8'), context);
     vm.runInContext(fs.readFileSync(require.resolve('../collectra/gui/displays/imageSegmentation.js'), 'utf8'), context);
     const controller = {
         _artefactToken: {},
+        openInNewTab: vi.fn(),
+        _segmentationOverlays: [{_artefactId: 'line1', style: {opacity: '0.35'}}],
         el: {imageDisplay: {
             addEventListener: (name, callback) => {handlers[name] = callback;},
             removeEventListener: (name) => {delete handlers[name];},
@@ -112,4 +116,43 @@ it('hides the tooltip over a dialog or after navigation', () => {
     controller._artefactToken = {};
     handlers.pointermove({clientX: 40, clientY: 45});
     expect(tooltip.style.display).toBe('none');
+});
+
+it('strengthens only the hovered segmentation and restores its colour on leaving', () => {
+    const {controller, handlers, cleanup} = hoverViewer([row]);
+    const overlay = controller._segmentationOverlays[0];
+    handlers.pointermove({clientX: 40, clientY: 45});
+    expect(overlay.style.opacity).toBe('0.65');
+    handlers.pointerleave();
+    expect(overlay.style.opacity).toBe('0.35');
+    handlers.pointermove({clientX: 40, clientY: 45});
+    cleanup();
+    expect(overlay.style.opacity).toBe('0.35');
+});
+
+it.each(['segmentation', 'crop'])('opens the precise %s instance in a tab on double click', kind => {
+    const child = kind === 'crop'
+        ? {id: 'crop-123', crop_region: {x_center: 0.25, y_center: 0.4, width_relative: 0.3, height_relative: 0.4}}
+        : row;
+    const {controller, handlers, cleanup} = hoverViewer([child]);
+    const event = {clientX: 40, clientY: 45, button: 0, preventDefault: vi.fn(), stopPropagation: vi.fn()};
+    handlers.dblclick(event);
+    expect(controller.openInNewTab).toHaveBeenCalledWith(child.id);
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(event.stopPropagation).toHaveBeenCalled();
+    cleanup();
+    expect(handlers.dblclick).toBeUndefined();
+});
+
+it('does not open tabs outside child bounds, while drawing, or over a modal', () => {
+    const {context, controller, handlers} = hoverViewer([row]);
+    const event = {clientX: 110, clientY: 75, button: 0, preventDefault: vi.fn(), stopPropagation: vi.fn()};
+    handlers.dblclick(event);
+    event.clientX = 40; event.clientY = 45;
+    controller.pageAnno = {isDrawingEnabled: () => true};
+    handlers.dblclick(event);
+    controller.pageAnno = null;
+    context.document.querySelector = () => ({});
+    handlers.dblclick(event);
+    expect(controller.openInNewTab).not.toHaveBeenCalled();
 });

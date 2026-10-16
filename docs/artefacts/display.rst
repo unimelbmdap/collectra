@@ -106,6 +106,7 @@ loading and cleanup. Built-in implementations live in ``collectra/gui/displays``
 * ``image.js``: image viewer, zoom, rotation, annotation lifecycle.
 * ``imageCrop.js``: crop geometry and drawing controls.
 * ``imageSegmentation.js``: coloured instance mask overlays.
+* ``imageInteractions.js``: shared child hit testing and double-click navigation.
 * ``text.js``: plain text, Markdown and XML editors, toolbar and autosave.
 * ``properties.js``: structured property display.
 
