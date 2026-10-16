@@ -1,7 +1,7 @@
 """Adapt Meta's installed image-training template for mask-supervised COCO data."""
 
 from pathlib import Path
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 
 import yaml
 
@@ -108,6 +108,26 @@ def load_image_state(model, state):
     model.load_state_dict(state, strict=True)
 
 
+def _training_mlp_forward(self, x):
+    """SAM3 ViT MLP with ordinary autograd-capable PyTorch operations."""
+    x = self.act(self.fc1(x))
+    x = self.drop1(x)
+    x = self.norm(x)
+    x = self.fc2(x)
+    return self.drop2(x)
+
+
+def enable_training_mlps(model):
+    from sam3.model.vitdet import Mlp
+
+    # Upstream Mlp.forward uses addmm_act, an inference-only fused kernel.
+    # Bind only this model's MLPs; keep parameter names/checkpoints intact and
+    # leave SAM3's inference implementation untouched.
+    for module in model.modules():
+        if isinstance(module, Mlp):
+            module.forward = MethodType(_training_mlp_forward, module)
+
+
 def build_training_model(checkpoint, bpe_path):
     import torch
     from sam3.model_builder import build_sam3_image_model
@@ -122,6 +142,7 @@ def build_training_model(checkpoint, bpe_path):
         eval_mode=False,
     )
     load_image_state(model, state)
+    enable_training_mlps(model)
     return model
 
 

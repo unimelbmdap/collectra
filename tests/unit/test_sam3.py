@@ -207,6 +207,55 @@ def test_sam31_weights_preserve_image_features_and_roundtrip(monkeypatch, full_c
         load_image_state(unsupported, state)
 
 
+def test_training_model_mlps_support_backprop_without_changing_inference(monkeypatch):
+    import sys
+    from types import ModuleType
+    torch = pytest.importorskip("torch")
+    from collectra.tasks.image_segmentation.sam3_training import build_training_model
+
+    class Mlp(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.fc1 = torch.nn.Linear(4, 8)
+            self.act = torch.nn.GELU()
+            self.drop1 = torch.nn.Dropout(0.1)
+            self.norm = torch.nn.LayerNorm(8)
+            self.fc2 = torch.nn.Linear(8, 4)
+            self.drop2 = torch.nn.Dropout(0.1)
+
+        def forward(self, x):
+            raise ValueError("Expected grad to be disabled.")
+
+    for name in ("sam3", "sam3.model", "sam3.model.vitdet", "sam3.model_builder"):
+        monkeypatch.setitem(sys.modules, name, ModuleType(name))
+    sys.modules["sam3.model.vitdet"].Mlp = Mlp
+    model = torch.nn.Sequential(Mlp())
+    state = {key: value.clone() for key, value in model.state_dict().items()}
+    builder = Mock(return_value=model)
+    sys.modules["sam3.model_builder"].build_sam3_image_model = builder
+    monkeypatch.setattr(torch, "load", Mock(return_value={"model": state}))
+    pixels = torch.randn(2, 3, 4, requires_grad=True)
+    with pytest.raises(ValueError, match="Expected grad"):
+        model(pixels)
+    trained = build_training_model("checkpoint.pt", "vocabulary.gz")
+    assert builder.call_args.kwargs["eval_mode"] is False
+    trained(pixels).square().mean().backward()
+    assert pixels.grad is not None and pixels.grad.abs().sum() > 0
+    for parameter in trained.parameters():
+        assert parameter.grad is not None and torch.isfinite(parameter.grad).all()
+        assert parameter.grad.abs().sum() > 0
+    assert set(trained.state_dict()) == set(state)
+    for key, value in trained.state_dict().items():
+        torch.testing.assert_close(value, state[key])
+    # Validation uses the same activation, normalization and dropout modules.
+    trained.eval()
+    mlp = trained[0]
+    expected = mlp.fc2(mlp.norm(mlp.act(mlp.fc1(pixels))))
+    torch.testing.assert_close(trained(pixels), expected)
+    with pytest.raises(ValueError, match="Expected grad"):
+        Mlp()(pixels)
+
+
 def test_export_preserves_instances_holes_labels_and_partitions(image, tmp_path):
     train = instance(image, tmp_path)
     validation = instance(image, tmp_path, name="other", partition="val")
