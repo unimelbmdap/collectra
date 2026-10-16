@@ -1,5 +1,4 @@
-const fs = require('node:fs');
-const html = fs.readFileSync(require.resolve('../collectra/gui/index.html'), 'utf8');
+const html = require('./displaySources.js');
 const between = (from, to) => html.slice(html.indexOf(from), html.indexOf(to, html.indexOf(from)));
 
 describe('no hover cards over a dialog', () => {

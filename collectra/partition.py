@@ -3,6 +3,30 @@ from pathlib import Path
 from .commons.files import CollectraFile
 
 
+def partition_results(inputs, ext, partitions, seed=42):
+    """Resolve pipeline results, then use the existing partitioning engine."""
+    from collectra.utils import resolve_files
+
+    if not partitions:
+        raise ValueError("Specify partitions, for example --train 80% --validation 20%")
+    files = []
+    for value in inputs:
+        path = Path(value).expanduser().resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"Input does not exist: {path}")
+        if path.is_file() and path.name == "results.yaml":
+            files.append(path.parent)
+        else:
+            files.extend(resolve_files([path], [f".{ext.lower()}"]))
+    files = sorted(set(files))
+    if not files:
+        raise ValueError(f"No .{ext} results found in the supplied inputs")
+    # Validate all results before any partition metadata is changed.
+    for path in files:
+        CollectraFile.from_data(path)
+    process_partitions(files, partitions, seed)
+
+
 def get_files(args: list[str]) -> tuple[list[Path], list[str]]:
     """Gets the list of files from the command-line arguments. It also returns a reduced list of arguments that excludes the file paths, which can be used for further processing,
 

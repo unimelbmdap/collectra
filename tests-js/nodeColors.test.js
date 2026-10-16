@@ -14,3 +14,12 @@ it('uses the graph label for every crop of that type', () => {
     expect(second.strokeWidth).toBeGreaterThan(first.strokeWidth);
     expect(cropAnnotationStyle({bodies: [{label: 'apparatus_image'}]}, {}).stroke).not.toBe(first.stroke);
 });
+
+it('strengthens a hovered crop without changing its DAG colour', () => {
+    const annotation = {bodies: [{label: 'line_image'}]};
+    const normal = cropAnnotationStyle(annotation, {});
+    const hovered = cropAnnotationStyle(annotation, {hovered: true});
+    expect(hovered.fill).toBe(normal.fill);
+    expect(hovered.fillOpacity).toBeGreaterThan(normal.fillOpacity);
+    expect(hovered.strokeWidth).toBeGreaterThan(normal.strokeWidth);
+});

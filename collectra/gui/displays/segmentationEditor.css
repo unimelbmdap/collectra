@@ -1,0 +1,31 @@
+.segmentation-editor-tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px;
+    margin: 6px;
+    background: var(--app-secondary, #073642);
+    color: var(--app-secondary-fg, #eee);
+    border-radius: 4px;
+    font-size: 12px;
+}
+.segmentation-editor-tools input {
+    font: inherit;
+}
+.segmentation-editor-tools input { width: 5em; }
+.segmentation-editor-tools [role="status"] { max-width: 24em; }
+.segmentation-brush-cursor {
+    position: absolute;
+    display: none;
+    pointer-events: none;
+    z-index: 30;
+    border: 1px solid white;
+    box-shadow: 0 0 0 1px black;
+    box-sizing: border-box;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+}
+.segmentation-eraser-cursor {
+    border: 2px solid #ff3b30;
+    background: transparent;
+}

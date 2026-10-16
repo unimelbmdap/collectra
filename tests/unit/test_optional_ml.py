@@ -12,7 +12,7 @@ def test_gui_and_pipeline_discovery_with_ml_backends_unavailable():
         import tempfile
         from pathlib import Path
 
-        blocked = {'torch', 'torchvision', 'timm', 'rfdetr', 'transformers', 'onnxruntime', 'ultralytics', 'ensemble_boxes', 'numba', 'llvmlite', 'llmloader', 'langchain_openai'}
+        blocked = {'torch', 'torchvision', 'timm', 'rfdetr', 'transformers', 'onnxruntime', 'ultralytics', 'ensemble_boxes', 'numba', 'llvmlite', 'llmloader', 'langchain_openai', 'sam3'}
         class WithoutML(importlib.abc.MetaPathFinder):
             def find_spec(self, fullname, path=None, target=None):
                 if fullname.split('.')[0] in blocked:
@@ -41,6 +41,7 @@ def test_gui_and_pipeline_discovery_with_ml_backends_unavailable():
                 ('yolo', 'ObjectDetectionYOLO'), ('classifier', 'ImageClassifierTorchvision'),
                 ('huggingface', 'ImageClassifierHuggingFace'), ('orienter', 'ImageOrienter'),
                 ('llm', 'LLM'),
+                ('sam3', 'ImageSegmentationSam3'),
             ]:
                 config[name] = {'type': 'collectra.' + kind, 'model': 'unused.pt'}
             pipeline_path = root / 'pipeline.yaml'

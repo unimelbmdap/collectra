@@ -22,6 +22,7 @@ individual crop ID or the class name ``ImageCrop``.
    image_segmentation
    text
    link
+   display
 
 Command overview
 ----------------

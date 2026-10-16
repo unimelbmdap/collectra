@@ -31,7 +31,12 @@ jobs:
         uv sync --locked --python ${{ matrix.python-version }} --group dev
         uv run --locked --python ${{ matrix.python-version }} python -c "import importlib.util; assert all(importlib.util.find_spec(name) is None for name in ('torch', 'torchvision', 'timm', 'rfdetr', 'transformers', 'ultralytics', 'drawyolo', 'ensemble_boxes', 'numba', 'llvmlite', 'llmloader'))"
         uv run --locked --python ${{ matrix.python-version }} pytest tests/unit/test_optional_ml.py tests/unit/test_optional_yolo.py tests/unit/test_line_detector_rlsa.py
-    - name: Install dependencies for Python ${{ matrix.python-version }}
+    - name: Check built wheel outside the checkout
+      # Validate the distributable outside the checkout before installing ML extras.
+      run: |
+        uv build --wheel --out-dir dist
+        uv run --locked --python ${{ matrix.python-version }} python tests/packaging/check_wheel.py dist/*.whl
+    - name: Install ML dependencies for Python ${{ matrix.python-version }}
       run: uv sync --python ${{ matrix.python-version }} --group dev --extra ml --extra yolo
     - name: Run Tests
       run: uv run --extra ml --extra yolo --python ${{ matrix.python-version }} pytest

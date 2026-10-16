@@ -1,7 +1,6 @@
-const fs = require('node:fs');
 const vm = require('node:vm');
 const { nodeActionButtons } = require('../collectra/gui/instancePager.js');
-const html = fs.readFileSync(require.resolve('../collectra/gui/index.html'), 'utf8');
+const html = require('./displaySources.js');
 const between = (from, to) => html.slice(html.indexOf(from), html.indexOf(to, html.indexOf(from)));
 const rule = (selector) => {
     const start = html.indexOf(`        ${selector} {`);

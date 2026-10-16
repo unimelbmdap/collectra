@@ -23,6 +23,32 @@ commands expose their own help, including backend-specific training options::
 
 See :doc:`quickstart` for complete pipeline and training examples.
 
+Partitioning results
+--------------------
+
+Installed pipeline commands expose ``partition`` directly::
+
+    htr partition results --train 80% --validation 20% --seed 42
+    htr partition results --train 0.8 --val 0.1 --test 0.1
+    htr partition results --partition training=80% --partition heldout=20%
+
+The equivalent generic command is::
+
+    collectra --pipeline pipeline.yaml partition results --train 80% --validation 20%
+
+Inputs may be individual result folders, ``results.yaml`` files, or parent
+directories. Parent directories are searched recursively using the pipeline's
+result extension. Duplicate results are handled once. Values may be percentages,
+fractions or integer counts; use one format throughout, with a total of at most
+100%, 1 or the number of results respectively. At least one partition is required.
+``--val`` assigns the label ``val``; ``--validation`` assigns ``validation``.
+Custom labels use repeated ``--partition NAME=VALUE`` options.
+
+The command updates ``collectra_results_metadata.partition`` in each selected
+result. Results left over after the specified allocations keep their existing
+partition. Inputs are sorted before shuffling, so a fixed seed reproduces the
+same assignment for the same set of results.
+
 Opening results in the GUI
 --------------------------
 

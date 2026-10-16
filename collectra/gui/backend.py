@@ -780,6 +780,35 @@ class GUIBackend:
                 node.orientation = previous
             return {"success": False, "error": str(error)}
 
+    def update_segmentation_mask(
+        self, node_id: str, strokes: list, results_path: str, orientation: str
+    ) -> dict:
+        """Save strokes to their original results page, even after navigation."""
+        from collectra.display import DisplayContext
+        from collectra.displays.image_segmentation import segmentation
+        from collectra.gui.segmentation import paint_mask
+        from collectra.types.links import Link
+
+        try:
+            with self._text_save_lock:
+                target = Path(results_path).resolve()
+                if target.name != "results.yaml" or not target.is_file():
+                    raise ValueError("Mask edits must target a results.yaml file")
+                collectra_file = CollectraFile.from_data(target.parent)
+                graph = CollectraGraph.from_collectra_file(collectra_file)
+                records = {
+                    key: {**graph.get_node(key).model_dump(), "label": graph.get_node(key).label}
+                    for key in graph.nodes if graph.get_node(key)
+                }
+                context = DisplayContext(records, target.parent)
+                item = context.artefact(graph.resolve_id(node_id))
+                if isinstance(item, Link):
+                    item = item.resolve()
+                changed = paint_mask(item, strokes, orientation)
+                return {"success": True, "changed": changed, "segmentation": segmentation(context, item)}
+        except Exception as error:
+            return {"success": False, "error": str(error)}
+
     def get_display_annotations(self, node_id: str) -> dict:
         try:
             context = self._display_context()

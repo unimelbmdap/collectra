@@ -1,9 +1,8 @@
 // Runs the page's real row-building, popover and toolbar code against stand-in elements.
-const fs = require('node:fs');
 const vm = require('node:vm');
 const { nodeActionButtons, pagerState } = require('../collectra/gui/instancePager.js');
 const { IconPopover } = require('../collectra/gui/iconPopover.js');
-const html = fs.readFileSync(require.resolve('../collectra/gui/index.html'), 'utf8');
+const html = require('./displaySources.js');
 
 const slice = (from, to) => html.slice(html.indexOf(from), html.indexOf(to, html.indexOf(from)));
 
@@ -190,7 +189,7 @@ describe('Ancestors and Descendants popovers', () => {
 });
 
 describe('the text-editing tools', () => {
-    const source = slice('PanelController.prototype.nodeToolsEl = function', 'PanelController.prototype.clear = ');
+    const source = slice('PanelController.prototype.nodeToolsEl = function', 'PanelController.prototype.stopTextAutosave = ');
 
     function setup({ toolbar }) {
         const slot = fakeElement();

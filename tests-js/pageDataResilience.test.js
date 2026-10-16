@@ -1,10 +1,9 @@
 // What the page does when its own record of a page's artefacts is missing or out of step
 // with what the backend knows (it must not leave tabs nameless or buttons greyed out).
-const fs = require('node:fs');
 const vm = require('node:vm');
 const { nodeActionButtons, pagerState } = require('../collectra/gui/instancePager.js');
 const { lineageNeighbors } = require('../collectra/gui/lineage.js');
-const html = fs.readFileSync(require.resolve('../collectra/gui/index.html'), 'utf8');
+const html = require('./displaySources.js');
 const between = (from, to) => html.slice(html.indexOf(from), html.indexOf(to, html.indexOf(from)));
 
 describe('opening an artefact with a pipeline label from the backend (search hits)', () => {

@@ -91,3 +91,13 @@ describe('opening the page at start-up', () => {
         expect(loaded).toEqual([2]);
     });
 });
+
+it('loads and opens the pipeline graph without loading result data', async () => {
+    const panel = {openDagKindTab: vi.fn()};
+    const context = {loadAndRenderDag: vi.fn(), openingPanel: () => panel};
+    vm.createContext(context);
+    vm.runInContext(fn('showPipelineWithoutResults', 'async'), context);
+    await context.showPipelineWithoutResults();
+    expect(context.loadAndRenderDag).toHaveBeenCalledOnce();
+    expect(panel.openDagKindTab).toHaveBeenCalledOnce();
+});
