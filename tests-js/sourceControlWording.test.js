@@ -72,3 +72,50 @@ describe('History and Changes dialog fonts', () => {
         expect(message).toContain('font-size: 13px;');
     });
 });
+
+describe('History and Changes dialog buttons', () => {
+    const start = html.indexOf('        .git-actions button, #gitCommitModal .modal-buttons button {');
+    const rule = html.slice(start, html.indexOf('}', start));
+    const item = html.slice(html.indexOf('        .sidebar-item {'), html.indexOf('}', html.indexOf('        .sidebar-item {')));
+
+    it('have the same corners and spacing as the page list on the left', () => {
+        expect(start).toBeGreaterThan(-1);
+        const take = (css, name) => css.match(new RegExp(`${name}:\\s*([^;]+);`))[1];
+        expect(take(rule, 'border-radius')).toBe(take(item, 'border-radius'));
+        expect(take(rule, 'padding')).toBe(take(item, 'padding'));
+    });
+
+    it('leave the buttons in other dialogs as they were', () => {
+        const shared = html.slice(html.indexOf('        .modal-buttons button {'), html.indexOf('}', html.indexOf('        .modal-buttons button {')));
+        expect(shared).toContain('border-radius: 2px;');
+        expect(shared).toContain('padding: 5px 14px;');
+    });
+});
+
+describe('History and Changes close button', () => {
+    const block = (selector) => {
+        const start = html.indexOf(`        ${selector} {`);
+        expect(start, selector).toBeGreaterThan(-1);
+        return html.slice(start, html.indexOf('}', start));
+    };
+    const take = (css, name) => css.match(new RegExp(`${name}:\\s*([^;]+);`))[1];
+
+    it('looks like the toolbar icons: same size, corners and colour, no outline box', () => {
+        const close = block('#gitClose');
+        const icon = block('.panel-toolbar-btn');
+        for (const name of ['width', 'height', 'border-radius', 'color', 'background', 'border'])
+            expect(take(close, name), name).toBe(take(icon, name));
+    });
+
+    it('lights up on hover like the toolbar icons', () => {
+        const hover = block('#gitClose:hover');
+        expect(hover).toContain('background: rgba(var(--app-secondary-rgb, 108, 117, 125), 0.2);');
+    });
+
+    it('leaves the close buttons of the other dialogs alone', () => {
+        const shared = block('.modal-close');
+        expect(shared).toContain('font-size: 18px;');
+        expect(shared).toContain('background: none;');
+    });
+});
+
