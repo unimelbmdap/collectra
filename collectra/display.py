@@ -120,7 +120,7 @@ class DisplayContext:
         return dict(x_center=x, y_center=y, width_relative=w, height_relative=h)
 
     def annotations(self, image):
-        from collectra.types.images import ImageCrop
+        from collectra.types.images import ImageCrop, ImageSegmentation
 
         rows = []
         for node_id, record in self.records.items():
@@ -129,15 +129,48 @@ class DisplayContext:
             if image.id not in parents:
                 continue
             try:
-                if not issubclass(load_class_from_string(record["type"]), ImageCrop):
+                if not issubclass(
+                    load_class_from_string(record["type"]),
+                    (ImageCrop, ImageSegmentation),
+                ):
                     continue
             except (ImportError, AttributeError):
                 continue
             child = self.artefact(node_id)
             if (
-                not isinstance(child, ImageCrop)
+                not isinstance(child, (ImageCrop, ImageSegmentation))
                 or child.get_path().resolve() != image.get_path().resolve()
             ):
+                continue
+            if isinstance(child, ImageSegmentation):
+                from PIL import Image as PILImage, ImageChops
+
+                alpha = child._mask_image()
+                if isinstance(image, ImageSegmentation):
+                    alpha = ImageChops.multiply(alpha, image._mask_image())
+                alpha = alpha.crop(image.display_bounds()).rotate(
+                    image.orientation.to_degree(), expand=True
+                )
+                bounds = alpha.getbbox()
+                if bounds is None:
+                    continue
+                left, top, right, bottom = bounds
+                overlay = PILImage.new("RGBA", (right - left, bottom - top), "white")
+                overlay.putalpha(alpha.crop(bounds))
+                rows.append(
+                    {
+                        "id": node_id,
+                        "type": record["type"],
+                        "label": record.get("label", ""),
+                        "mask_source": self.publish_image(overlay),
+                        "mask_region": {
+                            "x": left / alpha.width,
+                            "y": top / alpha.height,
+                            "width": (right - left) / alpha.width,
+                            "height": (bottom - top) / alpha.height,
+                        },
+                    }
+                )
                 continue
             region = {
                 key: getattr(child, key)

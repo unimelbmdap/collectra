@@ -4037,6 +4037,7 @@
             this._artefactToken = {}; // invalidate any renderPageArtefact still mid-await for this panel
             if (this.pageAnno)   { try { this.pageAnno.destroy(); }   catch (e) {} this.pageAnno = null; }
             if (this.pageViewer) { try { this.pageViewer.destroy(); } catch (e) {} this.pageViewer = null; }
+            this._segmentationOverlays = [];
             if (this.el.imageDisplay) { this.el.imageDisplay.style.display = 'none'; this.el.imageDisplay.innerHTML = ''; }
             this.drawBoxBtn = null; // owned by the viewer's ButtonGroup, destroyed by pageViewer.destroy() above
             const tooltip = document.getElementById('pageBoxTooltip'); // shared across panels
@@ -4351,25 +4352,50 @@
             }
         };
 
-        // Redraws every ImageCrop row as an annotation on this panel's own
+        // Redraws child crop boxes and segmentation masks on this panel's own
         // image — shared by the initial load and every create/update/
         // delete refresh, so they can't drift out of sync with each other.
         PanelController.prototype.refreshPageAnnotations = async function(rows, initialAnnotations = null) {
             if (!this.pageAnno || !this.pageViewer || !this.displayView) return;
             const token = this._artefactToken;
+            const refreshToken = (this._maskRefreshToken = {});
             const result = initialAnnotations !== null
                 ? {success: true, rows: initialAnnotations}
                 : this.displayView.can_create_crop
                     ? await window.pywebview.api.get_display_annotations(this.displayView.target_id)
                     : {success: true, rows: this.displayView.annotations || []};
-            if (token !== this._artefactToken || !result.success || !this.pageAnno) return;
+            if (token !== this._artefactToken || refreshToken !== this._maskRefreshToken || !result.success || !this.pageAnno) return;
             const imgW = this.pageViewer.world._contentSize.x;
             const imgH = this.pageViewer.world._contentSize.y;
             this.pageAnno.clearAnnotations();
+            for (const element of this._segmentationOverlays || []) this.pageViewer.removeOverlay(element);
+            this._segmentationOverlays = [];
             result.rows.forEach(r => {
                 const geom = calculateGeometryFromCropRegion(r.crop_region, imgW, imgH);
                 if (geom) this.pageAnno.addAnnotation(createAnnotation(geom, r));
             });
+            await Promise.all(result.rows.filter(r => r.mask_source).map(async r => {
+                const mask = new Image();
+                mask.src = r.mask_source;
+                await mask.decode();
+                if (token !== this._artefactToken || refreshToken !== this._maskRefreshToken) return;
+                const canvas = document.createElement('canvas');
+                canvas.width = mask.naturalWidth;
+                canvas.height = mask.naturalHeight;
+                const context = canvas.getContext('2d');
+                context.drawImage(mask, 0, 0);
+                context.globalCompositeOperation = 'source-in';
+                context.fillStyle = nodeColor(r.label || r.id);
+                context.fillRect(0, 0, canvas.width, canvas.height);
+                canvas.style.opacity = '0.35';
+                canvas.style.pointerEvents = 'none';
+                const region = r.mask_region;
+                const item = this.pageViewer.world.getItemAt(0);
+                this.pageViewer.addOverlay({element: canvas, location: item.imageToViewportRectangle(
+                    region.x * imgW, region.y * imgH, region.width * imgW, region.height * imgH
+                ), checkResize: false});
+                this._segmentationOverlays.push(canvas);
+            }));
         };
 
         function calculateGeometryFromCropRegion(cropRegion, imgWidth, imgHeight) {
