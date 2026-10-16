@@ -117,6 +117,10 @@ collectra = "collectra.main:main"
 utils = "utils.main:app"
 
 [tool.poetry]
+packages = [
+    { include = "collectra" },
+    { include = "utils" },
+]
 include = [
     { path = "collectra/gui/vendor", format = ["sdist", "wheel"] },
     { path = "collectra/gui/openseadragon", format = ["sdist", "wheel"] },
