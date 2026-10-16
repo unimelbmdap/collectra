@@ -56,8 +56,9 @@ Images and annotations
 
 ImageCrop inherits Image.display and overrides only ``display_bounds()``.
 The bounds are in original-image pixels. The shared display crops and rotates
-the preview, and shows only immediate child ImageCrop instances referencing the
-same source file. Stored crop coordinates remain relative to the original image;
+the preview, and shows immediate child ImageCrop and ImageSegmentation instances
+referencing the same source file. Segmentation masks appear as translucent
+overlays using their DAG label colours. Stored crop coordinates remain relative to the original image;
 the backend converts coordinates when displaying, creating, and editing boxes.
 A newly drawn box belongs to the displayed image/crop.
 
@@ -88,8 +89,9 @@ The GUI retains extra serialized fields of custom artefacts when saving edits.
 New browser widgets
 -------------------
 
-New Python types can reuse the standard views without JavaScript. A new kind of
-interactive widget additionally needs a loaded JavaScript renderer registered
-with ``registerArtefactRenderer(kind, renderer)``. The renderer receives the
-panel controller, view descriptor, and artefact identity. Automatic discovery
-of JavaScript packages is not provided by this interface.
+New Python types can reuse the standard views without JavaScript. For a new
+interactive widget, return ``renderer: context.renderer(module_path)`` in the
+view descriptor. Collectra loads the JavaScript ES module from the artefact
+package and mounts it in the panel. No changes to ``index.html`` or manual
+script registration are needed. See :doc:`artefacts/display` for an example,
+the renderer lifecycle contract, and the built-in display module structure.

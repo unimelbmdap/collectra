@@ -206,7 +206,8 @@ Inspect and edit artefacts
 --------------------------
 
 Select an item and a node in its graph to inspect the corresponding artefacts.
-Images and crops display their source imagery and child boxes. Text artefacts
+Images and crops display their source imagery, child boxes and coloured child
+segmentation masks. Text artefacts
 use the relevant text editor, and Links display their referenced targets.
 Image views support box creation and editing. Hold Shift and drag on an image
 to draw a new crop using the annotation popup. Ordinary dragging pans the

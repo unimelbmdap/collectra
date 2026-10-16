@@ -37,6 +37,7 @@ def test_child_mask_matches_parent_display(tmp_path, parent_type, orientation):
             type="collectra.ImageSegmentation",
             id="child",
             label="lines",
+            name="First line",
             data="page.png",
             mask="child.png",
             parents="page",
@@ -56,6 +57,7 @@ def test_child_mask_matches_parent_display(tmp_path, parent_type, orientation):
     row = rows[0]
     assert row["id"] == "child"
     assert row["label"] == "lines"
+    assert row["name"] == "First line"
     overlay = Image.open(io.BytesIO(base64.b64decode(row["mask_source"].split(",")[1])))
     expected = Image.fromarray(mask * 255)
     if parent_type == "ImageSegmentation":

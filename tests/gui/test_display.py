@@ -467,3 +467,57 @@ def test_active_node_ids_reuse_loaded_page_graph(backend, monkeypatch):
     assert result["success"]
     assert "image" in result["active_ids"]
     assert result["node_ids"]["crop"] == ["crop"]
+
+def test_external_artefact_publishes_renderer_beside_python_module(
+    tmp_path, monkeypatch
+):
+    """An installed/importable package supplies both its class and its viewer."""
+    package = tmp_path / "external_view_example"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    source = (
+        "export default function({element, view}) { element.textContent = view.value; }"
+    )
+    (package / "measurement.js").write_text(source)
+    (package / "measurement.py").write_text("""
+from dataclasses import dataclass
+from pathlib import Path
+from collectra.types.base import Artefact
+
+@dataclass
+class Measurement(Artefact):
+    value: float = 0
+
+    def __call__(self):
+        return self.value
+
+    def display(self, context):
+        return {"kind": "external-measurement", "value": self.value,
+                "renderer": context.renderer(Path(__file__).with_suffix(".js"))}
+""")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    results = tmp_path / "results"
+    results.mkdir()
+    (results / "results.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "measurement": record(
+                    "external_view_example.measurement.Measurement", "example", value=42
+                )
+            }
+        )
+    )
+    backend = GUIBackend(SimpleNamespace(ext="collectra"))
+    assert backend.load_yaml(str(results))["success"]
+    descriptor = view(backend, "example")
+    assert descriptor["kind"] == "external-measurement"
+    assert descriptor["value"] == 42
+    assert descriptor["renderer"].startswith("data:text/javascript;base64,")
+    assert base64.b64decode(descriptor["renderer"].split(",", 1)[1]).decode() == source
+    # A changed module produces a new URL instead of silently serving old code.
+    (package / "measurement.js").write_text(source + "\n// updated")
+    assert view(backend, "example")["renderer"] != descriptor["renderer"]
+    (package / "measurement.js").unlink()
+    error = backend.get_artefact_display("example")
+    assert not error["success"]
+    assert "measurement.js" in error["error"]

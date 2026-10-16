@@ -95,8 +95,10 @@ class Artefact(BaseEntity):
     def display(self, context) -> dict:
         """Describe this artefact using the display protocol (see collectra.display).
 
-        Override to return an image, text, or properties view. The context
-        resolves related artefacts and publishes previews without altering data.
+        Override to return an image, text, or properties view, or supply a
+        custom JavaScript module using ``context.renderer(module_path)``.
+        The context resolves related artefacts and publishes previews without
+        altering data. See docs/artefacts/display.rst for the renderer contract.
         """
         return {"kind": "properties", "data": self.serialize()}
 
