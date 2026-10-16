@@ -36,7 +36,7 @@ describe('the row under a tab', () => {
         };
         const context = {
             pagerState, nodeActionButtons,
-            NODE_ACTION_ICONS: { delete: 'D', ancestors: 'A', descendants: 'E', save: 'S' },
+            NODE_ACTION_ICONS: { delete: 'D', ancestors: 'A', descendants: 'E' },
             document: { createElement: fakeElement },
             lineageAvailability: () => lineage,
             deleteNodeWithConfirm: (...a) => calls.del.push(a),

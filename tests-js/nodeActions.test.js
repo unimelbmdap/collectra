@@ -10,7 +10,7 @@ const rule = (selector) => {
 };
 
 describe('nodeActionButtons', () => {
-    const all = { hasAncestors: true, hasDescendants: true, canSave: true };
+    const all = { hasAncestors: true, hasDescendants: true };
 
     it('is Delete, Ancestors, Descendants, in that order', () => {
         expect(nodeActionButtons(all).map((b) => b.id)).toEqual(['delete', 'ancestors', 'descendants']);
@@ -25,19 +25,11 @@ describe('nodeActionButtons', () => {
         });
     });
 
-    it('has no Save button for text fields', () => {
-        expect(nodeActionButtons({ ...all, canSave: false }).map((b) => b.id)).toEqual(['delete', 'ancestors', 'descendants']);
-    });
-
     it('greys out Ancestors or Descendants when the artefact has none', () => {
-        const buttons = nodeActionButtons({ hasAncestors: false, hasDescendants: true, canSave: false });
+        const buttons = nodeActionButtons({ hasAncestors: false, hasDescendants: true });
         expect(buttons.find((b) => b.id === 'ancestors').disabled).toBe(true);
         expect(buttons.find((b) => b.id === 'descendants').disabled).toBe(false);
         expect(buttons.find((b) => b.id === 'delete').disabled).toBe(false);
-    });
-
-    it('has no primary save action', () => {
-        expect(nodeActionButtons(all).filter((b) => b.primary)).toEqual([]);
     });
 });
 
@@ -76,11 +68,12 @@ describe('the action buttons', () => {
         expect(render).not.toContain('`Delete ${state.name}`');
     });
 
-    it('all look alike: 26px square icon buttons, with Save filled', () => {
+    it('all look alike: 26px square icon buttons, none filled', () => {
         const btn = rule('.node-action-btn');
         expect(btn).toContain('width: 26px;');
         expect(btn).toContain('height: 26px;');
-        expect(rule('.node-action-btn.primary')).toContain('background: var(--app-primary');
+        expect(html).not.toContain('.node-action-btn.primary');
+        expect(html).not.toContain('spec.primary');
     });
 
     it('Ancestors and Descendants are gone from the top toolbar', () => {
@@ -104,8 +97,9 @@ describe('Ancestors and Descendants belong to each tab', () => {
         expect(at).toBeGreaterThan(-1);
         expect(at).toBeLessThan(html.indexOf('class PanelController'));
         const icons = between('const NODE_ACTION_ICONS', '\n        };');
-        for (const id of ['delete', 'ancestors', 'descendants', 'save']) expect(icons).toContain(`${id}:`);
+        for (const id of ['delete', 'ancestors', 'descendants']) expect(icons).toContain(`${id}:`);
         expect(icons).toContain('fa-trash-can');
-        expect(icons).toContain('fa-floppy-disk');
+        expect(icons).not.toContain('save:');
+        expect(icons).not.toContain('fa-floppy-disk');
     });
 });

@@ -1,4 +1,4 @@
-// Source control viewer: fixed operations exposed by the Python bridge.
+// History and Changes viewer: fixed operations exposed by the Python bridge.
 (function () {
     function setupSourceControl(document, api) {
         const viewer = document.getElementById('gitModal');
@@ -13,6 +13,15 @@
         let busy = false;
         let opener;
 
+        function showRepository(path) {
+            repositoryLabel.textContent = `Project folder: ${path}`;
+        }
+
+        function showSaveError(text) {
+            commitError.textContent = text;
+            commitError.hidden = !text;
+        }
+
         function setBusy(value) {
             busy = value;
             buttons.forEach(button => { button.disabled = value; });
@@ -25,21 +34,23 @@
         async function run(action, commitMessage = '') {
             if (busy) return;
             setBusy(true);
-            output.textContent = `Running git ${action}…`;
+            output.textContent = 'Working…';
             try {
                 const result = await api().git_action(action, commitMessage, repository);
                 if (result.repository) {
                     repository = result.repository;
-                    repositoryLabel.textContent = repository;
+                    showRepository(repository);
+                } else if (!repository) {
+                    showRepository('not found');
                 }
-                output.textContent = result.success ? result.output : (result.error || 'Git failed');
-                if (action === 'commit') {
-                    commitError.textContent = result.success ? '' : output.textContent;
+                output.textContent = result.success ? result.output : (result.error || 'Something went wrong.');
+                if (action === 'save') {
+                    showSaveError(result.success ? '' : output.textContent);
                     if (result.success) closeCommit();
                 }
             } catch (error) {
                 output.textContent = String(error);
-                if (action === 'commit') commitError.textContent = String(error);
+                if (action === 'save') showSaveError(String(error));
             } finally {
                 setBusy(false);
             }
@@ -47,13 +58,13 @@
 
         function closeCommit() {
             commit.classList.remove('visible');
-            buttons.find(button => button.dataset.gitAction === 'commit').focus();
+            buttons.find(button => button.dataset.gitAction === 'save').focus();
         }
 
         document.getElementById('gitToolbarBtn').addEventListener('click', () => {
             opener = document.activeElement;
             repository = '';
-            repositoryLabel.textContent = 'Active results repository';
+            showRepository('…');
             viewer.classList.add('visible');
             document.getElementById('gitClose').focus();
             run('status');
@@ -64,9 +75,9 @@
         });
         buttons.forEach(button => button.addEventListener('click', () => {
             const action = button.dataset.gitAction;
-            if (action === 'commit') {
+            if (action === 'save') {
                 message.value = '';
-                commitError.textContent = '';
+                showSaveError('');
                 confirm.disabled = true;
                 commit.classList.add('visible');
                 message.focus();
@@ -75,7 +86,7 @@
             }
         }));
         message.addEventListener('input', () => { confirm.disabled = busy || !message.value.trim(); });
-        confirm.addEventListener('click', () => run('commit', message.value));
+        confirm.addEventListener('click', () => run('save', message.value));
         document.getElementById('gitCommitCancel').addEventListener('click', closeCommit);
         document.addEventListener('keydown', event => {
             if (event.key !== 'Escape') return;

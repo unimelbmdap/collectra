@@ -6,8 +6,8 @@ const button = html.slice(html.lastIndexOf('<button', at), html.indexOf('</butto
 describe('Source control button uses the VS Code source-control icon', () => {
     it('keeps its id, title and label', () => {
         expect(button).toContain('id="gitToolbarBtn"');
-        expect(button).toContain('title="Source control"');
-        expect(button).toContain('aria-label="Source control"');
+        expect(button).toContain('title="History and Changes"');
+        expect(button).toContain('aria-label="History and Changes"');
     });
 
     it('draws three circles joined by lines, not the git diamond', () => {

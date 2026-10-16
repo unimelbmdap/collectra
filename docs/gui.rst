@@ -103,7 +103,7 @@ The desktop menu bar provides the same actions as the viewer controls:
 * ``Navigate``: previous/next file, file search, artefact search, and search matches.
 * ``Panels``: sidebar, graph, artefact/task lists, fit views, split, collapse, and remove panels.
 * ``Layouts``: open the live layout chooser or save the current layout.
-* ``Tools``: source control, statistics, and load details.
+* ``Tools``: history and changes, statistics, and load details.
 
 Panel actions target the last focused panel. macOS retains its standard
 application, Edit, and View menus. Restart the GUI to pick up menu changes.
@@ -183,24 +183,27 @@ search box above the list to filter folders by name.
 Right-click a folder to reveal its ``results.yaml`` in the OS file manager
 (Finder on macOS, Explorer on Windows), selected within its result folder.
 
-Source control
---------------
+History and Changes
+-------------------
 
-Click the Git icon in the top-right toolbar to open source control. It shows
-status and the repository path for the currently open results folder. Git finds
-the repository in that folder or an ancestor; linked worktrees are supported.
-Open a results folder before using these actions.
+Click the History and Changes icon in the top-right toolbar (or choose
+**Tools > History and Changes**) to open it. It shows which project you are in and
+what has changed since your last save. Open a results folder before using it.
 
-* **Status** shows ``git status``.
-* **Pull** runs ``git pull --no-edit`` using the configured remote and branch.
-* **Add** runs ``git add .`` from the repository root, staging all changes there.
-* **Commit** opens a message popup and commits staged changes with that message.
-* **Push** runs ``git push`` using the configured remote and branch.
+* **What's changed** lists files that are edited, new or deleted and have not
+  been saved yet, and says if saved versions are waiting to be shared or if
+  updates are waiting to be received.
+* **Get updates** brings in the changes other people have shared. If their
+  changes and yours are in the same place, nothing is changed and you are asked
+  to get help.
+* **Save changes** asks for a message that describes your changes, then saves
+  everything that has changed in the project.
+* **Share my changes** sends your saved versions to the shared copy.
 
-Command output and errors appear in the viewer. Actions run one at a time.
-Git must be installed, and remote authentication must already be configured;
-terminal credential prompts are disabled. After pulling changes, reopen the
-results folder to load the updated files into the viewer.
+Messages appear in plain words in the viewer. Actions run one at a time.
+Git must be installed, and signing in to the shared copy must already be set
+up; sign-in prompts are disabled. After getting updates, reopen the results
+folder to load the updated files into the viewer.
 
 Inspect and edit artefacts
 --------------------------

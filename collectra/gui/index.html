@@ -707,10 +707,11 @@
             overflow-y: auto;
         }
         .modal-popup.git-viewer { width: min(760px, 90vw); max-width: 90vw; min-width: 0; }
-        .git-repository { overflow-wrap: anywhere; font-size: 12px; opacity: 0.8; }
+        .git-repository { overflow-wrap: anywhere; font-size: 13px; opacity: 0.8; }
+        .git-save-note { margin: 0 0 14px; font-size: 13px; opacity: 0.8; }
         .git-actions { justify-content: flex-start; flex-wrap: wrap; }
-        .git-output { margin-top: 16px; max-height: 55vh; min-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--app-fg-bright, #e6e6e6); }
-        .git-message { width: 100%; box-sizing: border-box; background: var(--app-bg, #1a1a1a); color: var(--app-fg-bright, #e6e6e6); border: 1px solid var(--app-border, #3c3c3c); padding: 8px; }
+        .git-output { margin: 16px 0 0; max-height: 55vh; min-height: 160px; overflow: auto; font: inherit; font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--app-fg-bright, #e6e6e6); }
+        .git-message { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; background: var(--app-bg, #1a1a1a); color: var(--app-fg-bright, #e6e6e6); border: 1px solid var(--app-border, #3c3c3c); padding: 8px; }
         #gitCommitModal { z-index: 1001; }
         .modal-popup.wide {
             min-width: 320px;
@@ -1444,15 +1445,6 @@
             opacity: 0.35;
             cursor: default;
         }
-        .node-action-btn.primary {
-            background: var(--app-primary, #F09226);
-            border-color: var(--app-primary, #F09226);
-            color: var(--app-primary-fg, #fff);
-        }
-        .node-action-btn.primary:hover:not(:disabled) {
-            filter: brightness(1.1);
-            background: var(--app-primary, #F09226);
-        }
         .node-save-status {
             font-size: 11px;
             color: var(--app-fg-muted, #586e75);
@@ -1969,7 +1961,7 @@
                         <path d="M6.5 8H14"/>
                     </svg>
                 </button>
-                <button class="panel-toolbar-btn" id="gitToolbarBtn" title="Source control" aria-label="Source control">
+                <button class="panel-toolbar-btn" id="gitToolbarBtn" title="History and Changes" aria-label="History and Changes">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true">
                         <circle cx="4" cy="3" r="1.7"/>
                         <circle cx="4" cy="13" r="1.7"/>
@@ -2069,29 +2061,29 @@
     <div id="gitModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="gitTitle">
         <div class="modal-popup git-viewer">
             <div class="modal-header">
-                <h3 id="gitTitle">Source control</h3>
-                <button class="modal-close" id="gitClose" aria-label="Close source control">×</button>
+                <h3 id="gitTitle">History and Changes</h3>
+                <button class="modal-close" id="gitClose" aria-label="Close history and changes">×</button>
             </div>
             <div id="gitRepository" class="git-repository"></div>
             <div class="modal-buttons git-actions">
-                <button class="btn-cancel" data-git-action="status">Status</button>
-                <button class="btn-cancel" data-git-action="pull">Pull</button>
-                <button class="btn-cancel" data-git-action="add">Add</button>
-                <button class="btn-cancel" data-git-action="commit">Commit</button>
-                <button class="btn-cancel" data-git-action="push">Push</button>
+                <button class="btn-cancel" data-git-action="status">What's changed</button>
+                <button class="btn-cancel" data-git-action="pull">Get updates</button>
+                <button class="btn-cancel" data-git-action="save">Save changes</button>
+                <button class="btn-cancel" data-git-action="push">Share my changes</button>
             </div>
             <pre id="gitOutput" class="git-output" role="status" aria-live="polite"></pre>
         </div>
     </div>
     <div id="gitCommitModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="gitCommitTitle">
         <div class="modal-popup">
-            <h3 id="gitCommitTitle">Commit changes</h3>
+            <h3 id="gitCommitTitle">Save changes</h3>
+            <p class="git-save-note">All your changes in this folder will be saved.</p>
             <label class="modal-field-label" for="gitCommitMessage">Message</label>
-            <textarea id="gitCommitMessage" class="git-message" rows="4" placeholder="Describe your changes"></textarea>
-            <div id="gitCommitError" class="modal-field-error" role="alert"></div>
+            <textarea id="gitCommitMessage" class="git-message" rows="4" placeholder="Describe your changes (required)"></textarea>
+            <div id="gitCommitError" class="modal-field-error" role="alert" hidden></div>
             <div class="modal-buttons">
                 <button class="btn-cancel" id="gitCommitCancel">Cancel</button>
-                <button class="btn-confirm" id="gitCommitConfirm" disabled>Commit</button>
+                <button class="btn-confirm" id="gitCommitConfirm" disabled>Save</button>
             </div>
         </div>
     </div>
@@ -3647,7 +3639,6 @@
             delete: '<i class="fa-solid fa-trash-can" aria-hidden="true"></i>',
             ancestors: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M8 10V2M8 2L5 5M8 2l3 3"/><rect x="2" y="12" width="12" height="2.2" rx="0.5"/></svg>',
             descendants: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="2" y="1.8" width="12" height="2.2" rx="0.5"/><path d="M8 6v8M8 14l-3-3M8 14l3-3"/></svg>',
-            save: '<i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>',
         };
 
         class PanelController {
@@ -3781,7 +3772,7 @@
                 }).forEach((spec) => {
                     const b = document.createElement('button');
                     b.type = 'button';
-                    b.className = 'node-action-btn' + (spec.primary ? ' primary' : '');
+                    b.className = 'node-action-btn';
                     b.innerHTML = NODE_ACTION_ICONS[spec.id];
                     b.title = spec.title;
                     b.setAttribute('aria-label', spec.title);
