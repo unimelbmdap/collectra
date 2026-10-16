@@ -467,6 +467,9 @@ def test_active_node_ids_reuse_loaded_page_graph(backend, monkeypatch):
     assert result["success"]
     assert "image" in result["active_ids"]
     assert result["node_ids"]["crop"] == ["crop"]
+    assert result["node_parents"]["image"] == []
+    assert result["node_parents"]["crop"] == ["image"]
+    assert result["node_parents"]["child"] == ["crop"]
 
 def test_external_artefact_publishes_renderer_beside_python_module(
     tmp_path, monkeypatch

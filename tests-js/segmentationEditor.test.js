@@ -136,25 +136,25 @@ it('reports save errors and restores the last saved mask', async () => {
     expect(s.brushButton.destroy).toHaveBeenCalled();
 });
 
-it('temporarily uses Shift for brush and backtick for eraser, restoring the selected tool', async () => {
+it('temporarily uses Shift for brush and Option for eraser, restoring the selected tool', async () => {
     const s = await setup();
     s.surface.handlers.pointerenter(s.event());
     s.document.handlers.keydown({key: 'Shift', shiftKey: true});
     expect(s.brush.attrs['aria-pressed']).toBe('true');
-    s.document.handlers.keydown({key: '`', shiftKey: true});
+    s.document.handlers.keydown({key: 'Alt', shiftKey: true, altKey: true});
     expect(s.eraser.attrs['aria-pressed']).toBe('true');
-    s.document.handlers.keyup({key: '`', shiftKey: true});
+    s.document.handlers.keyup({key: 'Alt', shiftKey: true});
     expect(s.brush.attrs['aria-pressed']).toBe('true');
     s.document.handlers.keyup({key: 'Shift'});
     expect(s.editor.isActive()).toBe(false);
     s.brush.onclick();
-    s.document.handlers.keydown({key: '`'});
+    s.document.handlers.keydown({key: 'Alt', altKey: true});
     expect(s.eraser.attrs['aria-pressed']).toBe('true');
-    s.document.handlers.keyup({key: '`'});
+    s.document.handlers.keyup({key: 'Alt'});
     expect(s.brush.attrs['aria-pressed']).toBe('true');
 });
 
-it.each([['Shift', 'shiftKey', 'brush'], ['`', 'shiftKey', 'eraser']])(
+it.each([['Shift', 'shiftKey', 'brush'], ['Alt', 'altKey', 'eraser']])(
     'paints with held %s without clicking a tool button', async (key, modifier, tool) => {
         const s = await setup();
         s.document.handlers.keydown({key, [modifier]: true});
@@ -174,7 +174,7 @@ it('ignores modifier shortcuts away from the image or while editing a field', as
     expect(s.editor.isActive()).toBe(false);
     s.surface.handlers.pointerenter(s.event());
     s.document.activeElement = {closest: () => ({})};
-    s.document.handlers.keydown({key: '`'});
+    s.document.handlers.keydown({key: 'Alt', altKey: true});
     expect(s.editor.isActive()).toBe(false);
 });
 
@@ -184,8 +184,8 @@ it('restores the prior mode on pointer leave and window blur and removes keyboar
     expect(s.editor.isActive()).toBe(true);
     s.surface.handlers.pointerleave();
     expect(s.editor.isActive()).toBe(false);
-    s.document.handlers.keydown({key: '`'});
-    s.surface.handlers.pointerenter(s.event());
+    s.document.handlers.keydown({key: 'Alt', altKey: true});
+    s.surface.handlers.pointerenter(s.event({altKey: true}));
     expect(s.eraser.attrs['aria-pressed']).toBe('true');
     s.window.handlers.blur();
     expect(s.editor.isActive()).toBe(false);
@@ -201,10 +201,10 @@ it('uses a hollow red cursor for erasing, keeps the button icon, and no longer a
     s.surface.handlers.pointerenter(s.event());
     s.document.handlers.keydown({key: 'Control', ctrlKey: true});
     expect(s.editor.isActive()).toBe(false);
-    s.document.handlers.keydown({key: '`', code: 'Backquote'});
+    s.document.handlers.keydown({key: 'Alt', altKey: true});
     expect(s.surface.children[0].className).toContain('segmentation-eraser-cursor');
     expect(s.eraserButton.options.srcRest).toBe(icon);
-    s.document.handlers.keyup({key: '`', code: 'Backquote'});
+    s.document.handlers.keyup({key: 'Alt'});
     expect(s.surface.children[0].className).not.toContain('segmentation-eraser-cursor');
     const css = require('node:fs').readFileSync(require.resolve('../collectra/gui/displays/segmentationEditor.css'), 'utf8');
     expect(css).toContain('border: 2px solid #ff3b30');

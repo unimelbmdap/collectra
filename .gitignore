@@ -213,3 +213,4 @@ docs/rfdetr_multichannel_review.md
 adapt-rfdetr.py
 adapt-rfdetr-feature-fusion.py
 adapt-yolo-feature-fusion.py
+build-htr.sh

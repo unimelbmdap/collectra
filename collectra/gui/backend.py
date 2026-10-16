@@ -638,6 +638,8 @@ class GUIBackend:
         collectra.ObjectDetectionYOLO) declares one output label in the
         pipeline but can produce any number of real instances per page
         (one per detected object), all sharing that same label.
+        node_parents supplies each instance's actual direct parent ids so
+        lineage lists do not include unrelated instances of the same label.
         """
         if not self._collectra_folders:
             return {"success": False, "error": "No folders loaded."}
@@ -671,6 +673,10 @@ class GUIBackend:
                 "active_ids": list(node_types.keys()),
                 "node_types": node_types,
                 "node_ids": node_ids,
+                "node_parents": {
+                    node_id: graph.parents(node_id)
+                    for node_id in graph.nodes if graph.get_node(node_id)
+                },
                 "crop_labels": sorted(crop_labels),
             }
         except Exception as e:

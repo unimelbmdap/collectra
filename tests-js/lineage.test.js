@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const vm = require('node:vm');
-const { lineageNeighbors } = require('../collectra/gui/lineage.js');
+const { lineageNeighbors, artefactLineageNeighbors, lineageTargets } = require('../collectra/gui/lineage.js');
 const html = fs.readFileSync(require.resolve('../collectra/gui/index.html'), 'utf8');
 const between = (from, to) => html.slice(html.indexOf(from), html.indexOf(to, html.indexOf(from)));
 
@@ -64,7 +64,8 @@ describe('Ancestors and Descendants do not depend on any panel being open', () =
 
     function page({withGraph}) {
         const context = {
-            lineageNeighbors, resolveDagLabel: (id) => id.replace(/\d+$/, ''), PAGE_NODE_RE: /^Page/,
+            lineageNeighbors, lineageTargets, pageNodeIds: new Map(), pageNodeParents: null,
+            resolveDagLabel: (id) => id.replace(/\d+$/, ''), PAGE_NODE_RE: /^Page/,
             lastDagNodes: nodes, lastDagEdges: edges,
             // The drawn graph of the top DAG panel: gone (that panel was removed).
             cy: withGraph ? {} : null,
@@ -93,8 +94,9 @@ describe('Ancestors and Descendants do not depend on any panel being open', () =
 
     it('the lists in the popovers come from the same data, never from the drawn graph', () => {
         const render = between('function renderLineage(', '\n        }\n');
-        expect(render).toContain("lineageNeighbors(resolveDagLabel(nodeId), 'ancestors'");
-        expect(render).toContain("lineageNeighbors(resolveDagLabel(nodeId), 'descendants'");
+        expect(render).toContain('lineageTargets(nodeId, direction');
+        expect(render).toContain("targets('ancestors')");
+        expect(render).toContain("targets('descendants')");
         expect(render).not.toContain('cy.');
         expect(render).not.toContain('!cy');
         expect(source).not.toContain('cy.');
@@ -115,4 +117,49 @@ describe('the buttons catch up when the pipeline data arrives', () => {
         const loaded = between('lastDagEdges = edges;', 'initCytoscape(');
         expect(loaded).toContain('Object.values(panelControllers).forEach((c) => c.renderPager());');
     });
+});
+
+const instanceParents = new Map([
+    ['page', []], ['region-a', ['page']], ['region-b', ['page']],
+    ['line-a1', ['region-a']], ['line-a2', ['region-a']], ['line-b1', ['region-b']],
+    ['text-a1', ['line-a1']],
+]);
+
+it('follows the selected line instance parents, excluding sibling regions and lines', () => {
+    expect(artefactLineageNeighbors('line-a1', 'ancestors', instanceParents)).toEqual(['region-a', 'page']);
+    expect(artefactLineageNeighbors('text-a1', 'ancestors', instanceParents)).toEqual(['line-a1', 'region-a', 'page']);
+    expect(artefactLineageNeighbors('region-a', 'descendants', instanceParents)).toEqual(['line-a1', 'line-a2', 'text-a1']);
+});
+
+it('does not expand an instance ancestor category to all of that category instances', () => {
+    const ids = new Map([['crop', ['region-a', 'region-b']], ['text', ['line-a1', 'line-b1']]]);
+    const resolve = id => id.startsWith('line') ? 'text' : 'crop';
+    expect(lineageTargets('line-a1', 'ancestors', nodes, edges, ids, instanceParents, resolve)).toEqual(['region-a', 'page']);
+});
+
+it('handles shared ancestors, dangling parents and cycles without including the selected instance', () => {
+    const parents = new Map([['a', ['b', 'c']], ['b', ['root']], ['c', ['root', 'missing']], ['root', ['a']]]);
+    expect(artefactLineageNeighbors('a', 'ancestors', parents)).toEqual(['b', 'c', 'root']);
+    expect(artefactLineageNeighbors('missing', 'ancestors', parents)).toEqual([]);
+});
+
+it('renders only the selected instance lineage and updates when the selected instance changes', () => {
+    const lists = {parentsList: {}, childrenList: {}};
+    const context = {
+        document: {getElementById: id => lists[id]},
+        PAGE_NODE_RE: /^Page/, activeNodeIds: null, lastDagNodes: nodes, lastDagEdges: edges,
+        pageNodeIds: new Map(), pageNodeParents: instanceParents, lineageTargets,
+        resolveDagLabel: id => id, truncateId: id => id, escapeHtml: id => id,
+        repositionLineagePopovers() {},
+    };
+    vm.createContext(context);
+    vm.runInContext(between('function renderLineage(', '\n        }\n') + '\n        }', context);
+    context.renderLineage('line-a1');
+    expect(lists.parentsList.innerHTML).toContain('region-a');
+    expect(lists.parentsList.innerHTML).toContain('page');
+    expect(lists.parentsList.innerHTML).not.toContain('region-b');
+    expect(lists.parentsList.innerHTML).not.toContain('line-a2');
+    context.renderLineage('line-b1');
+    expect(lists.parentsList.innerHTML).toContain('region-b');
+    expect(lists.parentsList.innerHTML).not.toContain('region-a');
 });

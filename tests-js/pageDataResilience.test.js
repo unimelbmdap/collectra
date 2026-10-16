@@ -55,8 +55,8 @@ describe('opening an artefact with a pipeline label from the backend (search hit
     });
 });
 
-describe('Ancestors and Descendants follow the tab\'s own pipeline label', () => {
-    it('the row\'s buttons are worked out from the tab\'s label, not the instance id', () => {
+describe('Ancestors and Descendants follow the tab\'s selected instance', () => {
+    it('the row\'s buttons use its selected instance rather than its whole category', () => {
         const source = between('renderPager() {', 'reconcileTabs(options)');
         const asked = [];
         const pagerEl = { hidden: true, children: [], replaceChildren(...k) { this.children = k; } };
@@ -74,11 +74,11 @@ describe('Ancestors and Descendants follow the tab\'s own pipeline label', () =>
         vm.createContext(context);
         vm.runInContext(`var holder = { ${source} };`, context);
         context.holder.renderPager.call(controller);
-        expect(asked).toEqual(['locality']);
+        expect(asked).toEqual(['locality-18925dcf']);
     });
 
     it('so does the list in the popovers', () => {
-        expect(html).toContain('renderLineage(tab.groupKey || tab.nodeId);');
+        expect(html).toContain('renderLineage(tab.nodeId || tab.groupKey);');
     });
 
     it('a label the pipeline knows has lineage even when no instance of it is on the page record', () => {
