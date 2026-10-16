@@ -16,7 +16,9 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Annotated
 
+from cappa import Arg
 import numpy as np
 import yaml
 from PIL import Image as PILImage
@@ -427,7 +429,7 @@ class ImageSegmentationSam3(Task):
     @command
     def train(
         self,
-        inputs: list[str],
+        inputs: Annotated[list[str], Arg(required=False, default=[])],
         output: Path | None = None,
         validation: str = "",
         exclude: str = "",
@@ -435,10 +437,19 @@ class ImageSegmentationSam3(Task):
         batch: int = 1,
         num_gpus: int = 1,
         keep_log: bool = True,
+        reuse_data: bool = False,
     ) -> Path:
-        """Prepare instance masks and fine-tune using Meta's image trainer."""
+        """Prepare instance masks and fine-tune using Meta's image trainer.
+
+        --reuse-data uses OUTPUT/dataset directly, skipping source checks and
+        export. It requires --output; input paths can then be omitted.
+        """
         if min(epochs, batch, num_gpus) < 1:
             raise ValueError("epochs, batch and num_gpus must be positive")
+        if reuse_data and output is None:
+            raise ValueError("--reuse-data requires --output pointing to the existing training directory")
+        if not reuse_data and not inputs:
+            raise ValueError("Supply training inputs, or use --reuse-data with --output")
         output = (
             Path(output).expanduser().resolve()
             if output is not None
@@ -449,10 +460,15 @@ class ImageSegmentationSam3(Task):
         training_progress(
             f"Training {self.name}: output={output}, epochs={epochs}, batch={batch}, GPUs={num_gpus}"
         )
-        training_progress("Preparing the dataset before GPU training starts")
-        dataset = self.prepare_training_data(
-            inputs, output / "dataset", validation, exclude
-        )
+        if reuse_data:
+            dataset = output / "dataset"
+            training_progress(f"Reusing prepared dataset directly: {dataset}")
+            training_progress("Skipping source checks and export; using existing train/validation splits")
+        else:
+            training_progress("Preparing the dataset before GPU training starts")
+            dataset = self.prepare_training_data(
+                inputs, output / "dataset", validation, exclude
+            )
         from .sam3_training import training_config
 
         training_progress("Resolving the SAM checkpoint (a download may be needed)")

@@ -34,6 +34,38 @@ function lineageNeighbors(nodeId, direction, nodes, edges, skip = () => false) {
     return found;
 }
 
+// Actual result instances have their own parent edges. Category-level DAG
+// reachability must never expand those edges to unrelated sibling instances.
+function artefactLineageNeighbors(nodeId, direction, parents) {
+    if (!parents?.has(nodeId)) return [];
+    const children = new Map();
+    if (direction === 'descendants') {
+        for (const [id, parentIds] of parents) {
+            for (const parent of parentIds) {
+                if (!children.has(parent)) children.set(parent, []);
+                children.get(parent).push(id);
+            }
+        }
+    }
+    const seen = new Set([nodeId]), queue = [nodeId], found = [];
+    while (queue.length) {
+        const id = queue.shift();
+        for (const next of (direction === 'ancestors' ? parents.get(id) : children.get(id)) || []) {
+            if (seen.has(next) || !parents.has(next)) continue;
+            seen.add(next); found.push(next); queue.push(next);
+        }
+    }
+    return found;
+}
+
+function lineageTargets(nodeId, direction, nodes, edges, nodeIds, parents, resolveLabel, skip) {
+    if (!nodeId) return [];
+    if (parents?.has(nodeId)) return artefactLineageNeighbors(nodeId, direction, parents);
+    // Task selections and views without results still use the pipeline DAG.
+    return lineageNeighbors(resolveLabel(nodeId), direction, nodes, edges, skip)
+        .flatMap(label => nodeIds.get(label)?.length ? nodeIds.get(label) : [label]);
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {lineageNeighbors};
+    module.exports = {lineageNeighbors, artefactLineageNeighbors, lineageTargets};
 }

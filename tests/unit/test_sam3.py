@@ -372,3 +372,44 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
     assert "Starting SAM trainer" in progress
     assert "Saved trained checkpoint:" in progress
     assert "Training complete" in progress
+
+
+@pytest.mark.parametrize('inputs', [[], ['nonexistent-source-directory']])
+def test_train_reuses_output_dataset_without_source_checks(
+    image, tmp_path, sam_package, monkeypatch, capsys, inputs
+):
+    from collectra.tasks.image_segmentation import sam3
+
+    output = tmp_path / 'existing-training'
+    dataset = export_dataset(
+        [SegmentationSample(image, [instance(image, tmp_path)])], output / 'dataset'
+    )
+    before = {path: path.read_bytes() for path in dataset.rglob('*') if path.is_file()}
+    task = ImageSegmentationSam3('segment', model='initial.pt')
+    task.pipeline = SimpleNamespace(path=tmp_path, data={'segment': {}}, save=Mock())
+    prepare = Mock(side_effect=AssertionError('Must not prepare or check source data'))
+    monkeypatch.setattr(task, 'prepare_training_data', prepare)
+    monkeypatch.setattr(task, '_checkpoint', lambda: tmp_path / 'initial.pt')
+
+    def train(command, **kwargs):
+        config = yaml.safe_load(Path(command[-1]).read_text())
+        assert config['trainer']['data']['train']['dataset']['img_folder'] == str(dataset / 'train')
+        checkpoint = output / 'training/checkpoints/checkpoint.pt'
+        checkpoint.parent.mkdir(parents=True)
+        checkpoint.write_bytes(b'reused-data-model')
+
+    monkeypatch.setattr(sam3.subprocess, 'run', train)
+    trained = invoke(task, ['train', *inputs, '--output', str(output), '--reuse-data',
+                            '--validation', 'ignored-new-partition', '--exclude', 'ignored'])
+    prepare.assert_not_called()
+    assert trained.read_bytes() == b'reused-data-model'
+    assert all(path.read_bytes() == content for path, content in before.items())
+    assert 'Skipping source checks and export' in capsys.readouterr().out
+
+
+def test_reuse_data_requires_output_and_normal_training_requires_inputs():
+    task = ImageSegmentationSam3('segment')
+    with pytest.raises(ValueError, match='--reuse-data requires --output'):
+        invoke(task, ['train', '--reuse-data'])
+    with pytest.raises(ValueError, match='Supply training inputs'):
+        invoke(task, ['train'])

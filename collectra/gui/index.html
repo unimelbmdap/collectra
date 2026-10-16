@@ -3571,7 +3571,7 @@
                     parts.push(button('\u203A', 'Next', state.nextId), count);
                 }
                 // Artefact actions and the editable text's autosave status.
-                const available = lineageAvailability(tab.groupKey || tab.nodeId);
+                const available = lineageAvailability(tab.nodeId || tab.groupKey);
                 if (this.textSave) {
                     const status = document.createElement('span');
                     status.className = 'node-save-status';
@@ -3842,6 +3842,7 @@
         // instances per page (e.g. multiple detected objects), all sharing
         // that label.
         let pageNodeIds = new Map();
+        let pageNodeParents = null;
 
         // Same data loadCollectraFolder populates on page switch — call after
         // create/delete/rename too, or the DAG/Artefacts lists go stale.
@@ -3858,6 +3859,7 @@
             pageNodeTypes = new Map(Object.entries(activeResult.node_types || {}));
             pageCropLabels = new Set(activeResult.crop_labels || []);
             pageNodeIds = new Map(Object.entries(activeResult.node_ids || {}));
+            pageNodeParents = activeResult.node_parents ? new Map(Object.entries(activeResult.node_parents)) : null;
             populateTabs(lastDagNodes);
             setActive(activeResult.active_ids);
         }
@@ -3963,7 +3965,7 @@
             const controller = panelControllers[focusedPanel];
             const tab = controller ? controller.panel.getActiveTab() : null;
             if (tab && tab.kind === 'node') {
-                renderLineage(tab.groupKey || tab.nodeId);
+                renderLineage(tab.nodeId || tab.groupKey);
                 highlightLists(tab.nodeId);
             } else {
                 renderLineage(null);
@@ -4328,6 +4330,7 @@
             pageNodeTypes = new Map();
             pageCropLabels = new Set();
             pageNodeIds = new Map();
+            pageNodeParents = null;
         }
 
         // Builds one fully-wired Cytoscape DAG instance into `cyDiv`, using
@@ -5459,11 +5462,11 @@
             if (panelControllers[focusedPanel] === this) renderLineage(null);
         };
 
-        // Whether a node has any ancestors / descendants, for greying out its buttons. From
-        // the pipeline's data, so it holds whatever panels (including the DAG panel) are open.
+        // Use the selected instance's result links for artefacts, and pipeline
+        // links for tasks. Neither requires an open DAG panel.
         function lineageAvailability(nodeId) {
-            const label = nodeId ? resolveDagLabel(nodeId) : null;
-            const neighbors = (direction) => lineageNeighbors(label, direction, lastDagNodes, lastDagEdges, (id) => PAGE_NODE_RE.test(id));
+            const neighbors = (direction) => lineageTargets(nodeId, direction, lastDagNodes, lastDagEdges,
+                pageNodeIds, pageNodeParents, resolveDagLabel, (id) => PAGE_NODE_RE.test(id));
             return {
                 ancestors: neighbors('ancestors').length > 0,
                 descendants: neighbors('descendants').length > 0,
@@ -5519,30 +5522,22 @@
 
             const skipPageNodes = (id) => PAGE_NODE_RE.test(id);
 
-            function renderList(labels, listEl) {
-                if (!labels.length) { listEl.innerHTML = '<span class="lineage-empty">—</span>'; return; }
-                listEl.innerHTML = labels
-                    .map((labelId) => {
-                        const isActive = !activeNodeIds || activeNodeIds.has(labelId);
-                        // One item per real instance under this label — a
-                        // detector-type ancestor/descendant can have any
-                        // number of real instances per page, same as in
-                        // the Artefacts list, and all of them belong here,
-                        // not just one arbitrarily picked one.
-                        const ids = pageNodeIds.get(labelId);
-                        const realIds = (ids && ids.length) ? ids : [labelId];
-                        return realIds.map(id => {
-                            const displayId = escapeHtml(truncateId(id));
-                            return isActive
-                                ? `<div class="lineage-item" draggable="true" title="${escapeHtml(id)}" ondragstart="onNodeDragStart(event, '${id}')" onclick="openNodeInNewTab('${id}')" oncontextmenu="showNodeContextMenu(event, '${id}')">${displayId}</div>`
-                                : `<div class="lineage-item dimmed" title="Not part of this page">${displayId}</div>`;
-                        }).join('');
-                    })
+            function renderList(ids, listEl) {
+                if (!ids.length) { listEl.innerHTML = '<span class="lineage-empty">—</span>'; return; }
+                listEl.innerHTML = ids.map(id => {
+                    const isActive = !activeNodeIds || activeNodeIds.has(resolveDagLabel(id));
+                    const displayId = escapeHtml(truncateId(id));
+                    return isActive
+                        ? `<div class="lineage-item" draggable="true" title="${escapeHtml(id)}" ondragstart="onNodeDragStart(event, '${id}')" onclick="openNodeInNewTab('${id}')" oncontextmenu="showNodeContextMenu(event, '${id}')">${displayId}</div>`
+                        : `<div class="lineage-item dimmed" title="Not part of this page">${displayId}</div>`;
+                })
                     .join('');
             }
 
-            renderList(lineageNeighbors(resolveDagLabel(nodeId), 'ancestors', lastDagNodes, lastDagEdges, skipPageNodes), parentsList);
-            renderList(lineageNeighbors(resolveDagLabel(nodeId), 'descendants', lastDagNodes, lastDagEdges, skipPageNodes), childrenList);
+            const targets = direction => lineageTargets(nodeId, direction, lastDagNodes, lastDagEdges,
+                pageNodeIds, pageNodeParents, resolveDagLabel, skipPageNodes);
+            renderList(targets('ancestors'), parentsList);
+            renderList(targets('descendants'), childrenList);
             repositionLineagePopovers();
         }
 

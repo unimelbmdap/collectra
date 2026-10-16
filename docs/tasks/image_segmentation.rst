@@ -92,6 +92,17 @@ starts. Checkpoint resolution, configuration output and trainer startup are
 reported separately. Progress is flushed immediately and the trainer runs with
 unbuffered output so these messages also appear in redirected cluster logs.
 
+To use an already prepared dataset directly, without scanning source results,
+checking for changes or rebuilding images and masks::
+
+    htr task region_segmentor train --output /tmp/htr --reuse-data
+
+``--reuse-data`` requires ``--output`` and uses its existing ``dataset/train``
+and ``dataset/valid`` exports. Input paths can be omitted; any supplied input
+paths and ``--validation``/``--exclude`` settings are ignored because the
+existing dataset already defines the splits. The export must have completed
+successfully. Normal training without this flag still prepares the dataset.
+
 The adapter uses the installed upstream Roboflow image-training template,
 enables segmentation in the model, dataset and collator, and adds mask focal and
 Dice losses. Generated configuration is saved as ``sam3-training.yaml`` in the

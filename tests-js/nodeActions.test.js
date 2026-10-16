@@ -71,7 +71,7 @@ describe('the action buttons', () => {
     it('are drawn from the shared definition, not hand-written text', () => {
         const render = between('renderPager() {', 'reconcileTabs(options)');
         expect(render).toContain('nodeActionButtons(');
-        expect(render).toContain('lineageAvailability(tab.groupKey || tab.nodeId)');
+        expect(render).toContain('lineageAvailability(tab.nodeId || tab.groupKey)');
         expect(render).not.toContain('`Delete ${state.name}`');
     });
 
