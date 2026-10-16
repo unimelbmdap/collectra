@@ -51,7 +51,16 @@ Python 3.12+, PyTorch 2.7+, and a CUDA GPU as prerequisites.
 
 .. code-block:: bash
 
-    pip install "sam3[train] @ git+https://github.com/facebookresearch/sam3.git"
+    git clone https://github.com/facebookresearch/sam3.git sam3-source
+    python -m pip install -e "./sam3-source[train]" "setuptools<82" einops
+
+Keep the source checkout in place: the editable installation provides training
+YAML templates omitted from the packaged installation. Use the Python interpreter
+from your Collectra environment for installation.
+
+SAM3.1 checkpoints include tracking branches that the image task does not use.
+Collectra extracts the image weights and adapts the unused fourth feature level
+of the image builder, while strictly checking all remaining checkpoint weights.
 
 Importing the task, opening its pipeline in the GUI, and preparing training data
 do not import SAM or Torch. Inference and training require the model backend.

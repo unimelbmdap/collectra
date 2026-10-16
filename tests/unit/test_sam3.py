@@ -154,14 +154,57 @@ def test_model_loading_handles_official_and_finetuned_checkpoints(
     task.pipeline = SimpleNamespace(path=tmp_path)
     task._init_model()
     assert builder.call_args.kwargs["load_from_HF"] is False
-    assert builder.call_args.kwargs["checkpoint_path"] == (
-        str(checkpoint) if full_checkpoint else None
-    )
-    if full_checkpoint:
-        model.load_state_dict.assert_not_called()
-    else:
-        model.load_state_dict.assert_called_once_with(state, strict=True)
+    assert builder.call_args.kwargs["checkpoint_path"] is None
+    model.load_state_dict.assert_called_once_with({"layer": "weights"}, strict=True)
     processor.assert_called_once_with(model, device="cuda", confidence_threshold=0.7)
+
+
+@pytest.mark.parametrize("full_checkpoint", [False, True])
+def test_sam31_weights_preserve_image_features_and_roundtrip(monkeypatch, full_checkpoint):
+    torch = pytest.importorskip("torch")
+    from collectra.tasks.image_segmentation.sam3_training import load_image_state
+
+    def image_model():
+        model = torch.nn.Module()
+        model.backbone = torch.nn.Module()
+        model.backbone.scalp = 1
+        neck = model.backbone.vision_backbone = torch.nn.Module()
+        neck.scale_factors = (4.0, 2.0, 1.0, 0.5)
+        neck.convs = torch.nn.ModuleList()
+        for _ in neck.scale_factors:
+            layer = torch.nn.Sequential()
+            layer.add_module("conv_1x1", torch.nn.Conv2d(2, 2, 1))
+            layer.add_module("conv_3x3", torch.nn.Conv2d(2, 2, 3, padding=1))
+            neck.convs.append(layer)
+        return model
+
+    source = image_model()
+    prefix = "backbone.vision_backbone."
+    state = {k: v for k, v in source.state_dict().items() if not k.startswith(prefix + "convs.3.")}
+    for branch in ("interactive_convs", "propagation_convs"):
+        state.update({k.replace("convs.", branch + "."): v for k, v in list(state.items())
+                      if k.startswith(prefix + "convs.")})
+    if full_checkpoint:
+        state = {"detector." + k: v for k, v in state.items()}
+        state["tracker.unused"] = torch.zeros(1)
+    target = image_model()
+    load_image_state(target, state)
+    pixels = torch.randn(1, 2, 8, 8)
+    for original, loaded in zip(source.backbone.vision_backbone.convs[:3],
+                                target.backbone.vision_backbone.convs[:3]):
+        torch.testing.assert_close(original(pixels), loaded(pixels))
+    # Fine-tuned image-only checkpoints remain strictly loadable.
+    restored = image_model()
+    load_image_state(restored, target.state_dict())
+    broken = dict(state)
+    first = ("detector." if full_checkpoint else "") + prefix + "convs.0.conv_1x1.weight"
+    del broken[first]
+    with pytest.raises(RuntimeError, match="Missing key"):
+        load_image_state(image_model(), broken)
+    unsupported = image_model()
+    unsupported.backbone.scalp = 0
+    with pytest.raises(ValueError, match="Unsupported"):
+        load_image_state(unsupported, state)
 
 
 def test_export_preserves_instances_holes_labels_and_partitions(image, tmp_path):

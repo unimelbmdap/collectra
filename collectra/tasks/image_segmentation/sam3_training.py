@@ -82,18 +82,38 @@ def training_config(dataset, output, checkpoint, *, epochs, batch, num_gpus):
     return config
 
 
-def build_training_model(checkpoint, bpe_path):
-    import torch
-    from sam3.model_builder import build_sam3_image_model
-
-    state = torch.load(checkpoint, map_location="cpu", weights_only=True)
-    state = state.get("model", state)
+def load_image_state(model, state):
+    """Load image weights, adapting SAM3.1's three-level detection neck."""
     if any(key.startswith("detector.") for key in state):
         state = {
             key.removeprefix("detector."): value
             for key, value in state.items()
             if key.startswith("detector.")
         }
+    prefix = "backbone.vision_backbone."
+    tracking = (prefix + "interactive_convs.", prefix + "propagation_convs.")
+    if any(key.startswith(tracking) for key in state):
+        state = {key: value for key, value in state.items() if not key.startswith(tracking)}
+        # SAM3.1 stores three detection scales. The image builder creates four,
+        # then SAM3VLBackbone(scalp=1) discards the fourth. Initialize only that
+        # unused scale from the equivalent stride-1 convolutions; never tolerate
+        # missing weights in any feature level actually consumed by the model.
+        neck = model.backbone.vision_backbone
+        if model.backbone.scalp != 1 or tuple(neck.scale_factors) != (4.0, 2.0, 1.0, 0.5):
+            raise ValueError("Unsupported SAM3 image backbone for SAM3.1 checkpoint")
+        for suffix in ("conv_1x1.weight", "conv_1x1.bias", "conv_3x3.weight", "conv_3x3.bias"):
+            target = prefix + "convs.3." + suffix
+            if target not in state:
+                state[target] = state[prefix + "convs.2." + suffix].clone()
+    model.load_state_dict(state, strict=True)
+
+
+def build_training_model(checkpoint, bpe_path):
+    import torch
+    from sam3.model_builder import build_sam3_image_model
+
+    state = torch.load(checkpoint, map_location="cpu", weights_only=True)
+    state = state.get("model", state)
     model = build_sam3_image_model(
         bpe_path=bpe_path,
         load_from_HF=False,
@@ -101,7 +121,7 @@ def build_training_model(checkpoint, bpe_path):
         device="cpu",
         eval_mode=False,
     )
-    model.load_state_dict(state, strict=True)
+    load_image_state(model, state)
     return model
 
 

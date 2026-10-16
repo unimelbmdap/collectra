@@ -304,19 +304,15 @@ class ImageSegmentationSam3(Task):
         checkpoint = self._checkpoint()
         state = torch.load(checkpoint, map_location="cpu", weights_only=True)
         state = state.get("model", state)
-        # Official full checkpoints prefix image weights with detector.; fine-
-        # tuned image-only checkpoints have raw image-model keys instead.
-        full_checkpoint = any(key.startswith("detector.") for key in state)
-        if full_checkpoint:
-            del state  # the upstream builder reads it; avoid keeping two large copies
+        from .sam3_training import load_image_state
+
         model = build_sam3_image_model(
-            checkpoint_path=str(checkpoint) if full_checkpoint else None,
+            checkpoint_path=None,
             load_from_HF=False,
             device=self.device,
             enable_segmentation=True,
         )
-        if not full_checkpoint:
-            model.load_state_dict(state, strict=True)
+        load_image_state(model, state)
         model.to(self.device).eval()
         self._processor = Sam3Processor(
             model, device=self.device, confidence_threshold=self.threshold
