@@ -208,7 +208,7 @@ def test_cli_and_public_exports_need_no_sam_backend(capsys):
 
 
 @pytest.mark.parametrize("input_kind", ["parent", "page", "yaml"])
-def test_pipeline_training_export_without_model_installation(tmp_path, input_kind):
+def test_pipeline_training_export_without_model_installation(tmp_path, input_kind, capsys):
     page = tmp_path / "page.collectra"
     page.mkdir()
     image_path = page / "source.png"
@@ -251,6 +251,11 @@ def test_pipeline_training_export_without_model_installation(tmp_path, input_kin
         input_kind
     ]
     directory = task.prepare_training_data([str(source)], tmp_path / "dataset")
+    progress = capsys.readouterr().out
+    assert "Load 1/1:" in progress
+    assert "Loaded 1 labelled images and 1 masks" in progress
+    assert "Export 1/1 [train]" in progress
+    assert "Dataset export complete" in progress
     assert (
         len(
             json.loads((directory / "train/_annotations.coco.json").read_text())[
@@ -319,7 +324,7 @@ def test_training_configuration_enables_real_mask_losses(image, tmp_path, sam_pa
 @pytest.mark.parametrize("explicit_output", [True, False])
 @pytest.mark.parametrize("keep_log", [True, False])
 def test_train_adopts_checkpoint_and_updates_pipeline_config(
-    image, tmp_path, sam_package, monkeypatch, explicit_output, keep_log
+    image, tmp_path, sam_package, monkeypatch, explicit_output, keep_log, capsys
 ):
     from collectra.tasks.image_segmentation import sam3
 
@@ -338,6 +343,8 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
 
     def train(command, **kwargs):
         assert kwargs["check"]
+        assert "-u" in command
+        assert kwargs["env"]["PYTHONUNBUFFERED"] == "1"
         config = yaml.safe_load(Path(command[-1]).read_text())
         checkpoint = (
             Path(config["paths"]["experiment_log_dir"]) / "checkpoints/checkpoint.pt"
@@ -358,3 +365,10 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
     assert task.pipeline.data["segment"]["model"] == trained.name
     task.pipeline.save.assert_called_once_with("segment")
     assert output.exists() == keep_log
+    progress = capsys.readouterr().out
+    assert f"output={output}" in progress
+    assert "Resolving the SAM checkpoint" in progress
+    assert "Configuration saved:" in progress
+    assert "Starting SAM trainer" in progress
+    assert "Saved trained checkpoint:" in progress
+    assert "Training complete" in progress

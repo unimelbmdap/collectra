@@ -26,7 +26,7 @@ initially zoomed to the region. Zoom out to see and paint beyond its current
 boundary. Choose **Brush** to add pixels or **Eraser** to remove them; click the
 active tool again to return to panning. Both tools use circular brushes. The
 Shift key temporarily activates the brush while the pointer is over the image;
-Backtick (`` ` ``) temporarily activates the eraser. Releasing the key restores the
+Option (Alt) temporarily activates the eraser. Releasing the key restores the
 previous tool. If both keys are held, the eraser takes priority.
 The **Size** control sets the diameter in source-image pixels. Hold Shift while
 scrolling or using a zoom gesture to increase or decrease it. Normal zooming

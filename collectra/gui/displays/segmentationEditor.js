@@ -36,7 +36,7 @@ async function mountSegmentationEditor(controller, view, {token, resultsPath, on
     const context = shade.getContext('2d');
     let saved = size, disposed = false, mode = null, radius = 10, stroke = null, saving = false;
     let maskRequest = 0, maskUpdating = false;
-    let lastPointer = null, selectedMode = null, pointerInside = false, shift = false, backtick = false, eraserHeld = false;
+    let lastPointer = null, selectedMode = null, pointerInside = false, shift = false, option = false;
     const current = () => !disposed && controller._artefactToken === token;
     async function setMask(data) {
         const request = ++maskRequest;
@@ -67,7 +67,7 @@ async function mountSegmentationEditor(controller, view, {token, resultsPath, on
         const images = maskToolImages(tool, false);
         const name = tool === 'brush' ? 'Brush' : 'Eraser';
         const button = new OpenSeadragon.Button({
-            tooltip: name + (tool === 'brush' ? ' — hold Shift' : ' — hold `') + '; click again to pan; Shift + scroll to resize',
+            tooltip: name + (tool === 'brush' ? ' — hold Shift' : ' — hold Option (Alt)') + '; click again to pan; Shift + scroll to resize',
             srcRest: images.rest, srcGroup: images.group, srcHover: images.hover, srcDown: images.down,
             onClick: () => choose(tool),
         });
@@ -107,7 +107,7 @@ async function mountSegmentationEditor(controller, view, {token, resultsPath, on
             left: (lastPointer.clientX - rect.left) + 'px', top: (lastPointer.clientY - rect.top) + 'px'});
     };
     function applyMode() {
-        const next = backtick ? 'eraser' : shift ? 'brush' : selectedMode;
+        const next = option ? 'eraser' : shift ? 'brush' : selectedMode;
         if (mode === next) return;
         if (stroke) finish();
         mode = next;
@@ -137,20 +137,19 @@ async function mountSegmentationEditor(controller, view, {token, resultsPath, on
         const allowed = current() && !document.querySelector('.modal-overlay.visible')
             && !document.activeElement?.closest?.('input, textarea, select, [contenteditable="true"]');
         shift = allowed && !!event.shiftKey;
-        backtick = allowed && eraserHeld;
+        option = allowed && !!event.altKey;
         applyMode();
     }
     const enter = event => { pointerInside = true; modifiers(event); };
-    const key = (event, pressed) => {
-        const eraserKey = event.key === '`' || event.code === 'Backquote';
-        if (eraserKey) eraserHeld = pressed;
+    const key = event => {
+        const eraserKey = event.key === 'Alt';
         if ((event.key === 'Shift' || eraserKey) && (pointerInside || stroke)) modifiers(event);
     };
-    const keydown = event => key(event, true);
-    const keyup = event => key(event, false);
+    const keydown = event => key(event);
+    const keyup = event => key(event);
     const blur = () => {
         if (stroke) finish();
-        pointerInside = false; shift = backtick = eraserHeld = false; lastPointer = null; applyMode(); updateRing();
+        pointerInside = false; shift = option = false; lastPointer = null; applyMode(); updateRing();
     };
     input.onchange = () => {
         const diameter = Number(input.value);
@@ -234,11 +233,11 @@ async function mountSegmentationEditor(controller, view, {token, resultsPath, on
     }
     const up = event => {
         if (stroke && event.pointerId === stroke.pointerId) {suppress(event); finish();}
-        if (!pointerInside) {shift = backtick = false; applyMode();}
+        if (!pointerInside) {shift = option = false; applyMode();}
     };
     const leave = () => {
         pointerInside = false; lastPointer = null; ring.style.display = 'none';
-        if (!stroke) {shift = backtick = false; applyMode();}
+        if (!stroke) {shift = option = false; applyMode();}
     };
     const wheel = event => {
         if (!mode || !event.shiftKey || !event.deltaY || !current()) return;

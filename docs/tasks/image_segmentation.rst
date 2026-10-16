@@ -86,6 +86,11 @@ timestamped directory in the current working directory. Supply a custom
 directory with ``--output PATH``; positional paths are training inputs.
 Logs and prepared data are retained by default. ``--no-keep-log`` removes the
 training directory after the trained checkpoint has been saved to the pipeline.
+Preparation prints result-file counts, the current file, image/mask export
+counts, split totals and elapsed times. It runs on the CPU before GPU training
+starts. Checkpoint resolution, configuration output and trainer startup are
+reported separately. Progress is flushed immediately and the trainer runs with
+unbuffered output so these messages also appear in redirected cluster logs.
 
 The adapter uses the installed upstream Roboflow image-training template,
 enables segmentation in the model, dataset and collator, and adds mask focal and

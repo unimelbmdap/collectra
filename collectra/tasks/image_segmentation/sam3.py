@@ -7,9 +7,11 @@ Dataset preparation requires only Collectra's ordinary image dependencies.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -23,6 +25,11 @@ from collectra.cli import command
 from collectra.tasks.base import Task
 from collectra.types.images import Image, ImageSegmentation
 from collectra.utils import threading_locked
+
+
+def training_progress(message):
+    """Keep progress visible in terminals and redirected cluster job logs."""
+    print(f"[SAM3] {message}", flush=True)
 
 
 def _sam3():
@@ -127,6 +134,7 @@ def prepare_segmentation_inputs(
 def export_dataset(
     samples, directory: Path, *, prompts=None, validation="", exclude=""
 ):
+    started = time.monotonic()
     directory = Path(directory).resolve()
     selected = []
     for sample in samples:
@@ -151,6 +159,12 @@ def export_dataset(
         for index, label in enumerate(labels)
     ]
     label_ids = {label: index + 1 for index, label in enumerate(labels)}
+    training_progress(
+        f"Exporting {len(selected)} images and "
+        f"{sum(len(sample.instances) for sample, _ in selected)} masks to {directory} "
+        f"({sum(split == 'train' for _, split in selected)} train, "
+        f"{sum(split == 'valid' for _, split in selected)} validation images)"
+    )
     datasets = {
         split: {"images": [], "annotations": [], "categories": categories}
         for split in ("train", "valid")
@@ -158,6 +172,10 @@ def export_dataset(
     for split in datasets:
         (directory / split).mkdir(parents=True, exist_ok=True)
     for image_id, (sample, split) in enumerate(selected, 1):
+        training_progress(
+            f"Export {image_id}/{len(selected)} [{split}]: {sample.image.id} "
+            f"({len(sample.instances)} masks; {time.monotonic() - started:.1f}s elapsed)"
+        )
         image = sample.image.pil().convert("RGB")
         filename = f"{image_id:08d}.png"
         image.save(directory / split / filename)
@@ -170,7 +188,7 @@ def export_dataset(
                 "height": image.height,
             }
         )
-        for instance in sample.instances:
+        for mask_index, instance in enumerate(sample.instances, 1):
             mask = np.asarray(mask_in_view(sample.image, instance._mask_image())) != 0
             ys, xs = np.nonzero(mask)
             if not len(xs):
@@ -197,10 +215,20 @@ def export_dataset(
                     "segmentation": encode_rle(mask),
                 }
             )
+            if mask_index % 25 == 0:
+                training_progress(
+                    f"  Image {image_id}/{len(selected)}: encoded mask "
+                    f"{mask_index}/{len(sample.instances)}"
+                )
     for split, data in datasets.items():
+        training_progress(
+            f"Writing {split} annotations: {len(data['images'])} images, "
+            f"{len(data['annotations'])} masks"
+        )
         (directory / split / "_annotations.coco.json").write_text(
             json.dumps(data), encoding="utf-8"
         )
+    training_progress(f"Dataset export complete ({time.monotonic() - started:.1f}s): {directory}")
     return directory
 
 
@@ -344,11 +372,14 @@ class ImageSegmentationSam3(Task):
             raise RuntimeError(
                 "Attach the task to a pipeline before preparing training data"
             )
+        started = time.monotonic()
+        training_progress("Discovering training result files (CPU/I/O preparation)")
         self.pipeline._ensure_workflow_connected()
         node = self.pipeline.node_manager.resolve_node(self.name)
         files = []
         for value in inputs:
             path = Path(value).expanduser().resolve()
+            training_progress(f"Scanning {path}")
             if path.name == "results.yaml" and path.is_file():
                 path = path.parent
             if path.is_dir() and (path / "results.yaml").is_file():
@@ -356,7 +387,13 @@ class ImageSegmentationSam3(Task):
             else:
                 files.extend(_training_files(self, [str(path)]))
         samples = []
-        for path in dict.fromkeys(files):
+        files = list(dict.fromkeys(files))
+        training_progress(f"Found {len(files)} result files; loading images and validating masks")
+        for index, path in enumerate(files, 1):
+            training_progress(
+                f"Load {index}/{len(files)}: {path} "
+                f"({time.monotonic() - started:.1f}s elapsed)"
+            )
             # Read each results directory independently. Different datasets can
             # have the same page basename and even the same artefact ids.
             targets, target_maps = _prepare_data(
@@ -368,6 +405,11 @@ class ImageSegmentationSam3(Task):
             samples.extend(
                 prepare_segmentation_inputs(targets, parents, target_maps, parent_maps)
             )
+        training_progress(
+            f"Loaded {len(samples)} labelled images and "
+            f"{sum(len(sample.instances) for sample in samples)} masks "
+            f"({time.monotonic() - started:.1f}s)"
+        )
         return samples
 
     def prepare_training_data(
@@ -403,15 +445,24 @@ class ImageSegmentationSam3(Task):
             else Path.cwd() / datetime.now().strftime("%Y%m%d_%H%M%S")
         )
         output.mkdir(parents=True, exist_ok=True)
+        started = time.monotonic()
+        training_progress(
+            f"Training {self.name}: output={output}, epochs={epochs}, batch={batch}, GPUs={num_gpus}"
+        )
+        training_progress("Preparing the dataset before GPU training starts")
         dataset = self.prepare_training_data(
             inputs, output / "dataset", validation, exclude
         )
         from .sam3_training import training_config
 
+        training_progress("Resolving the SAM checkpoint (a download may be needed)")
+        initial_checkpoint = self._checkpoint()
+        training_progress(f"Using checkpoint: {initial_checkpoint}")
+        training_progress("Building the SAM training configuration")
         config = training_config(
             dataset,
             output,
-            self._checkpoint(),
+            initial_checkpoint,
             epochs=epochs,
             batch=batch,
             num_gpus=num_gpus,
@@ -420,15 +471,23 @@ class ImageSegmentationSam3(Task):
         config_path.write_text(
             yaml.safe_dump(config, sort_keys=False), encoding="utf-8"
         )
+        training_progress(f"Configuration saved: {config_path}")
+        training_progress(
+            f"Starting SAM trainer ({time.monotonic() - started:.1f}s preparation); "
+            "trainer output follows"
+        )
         subprocess.run(
             [
                 sys.executable,
+                "-u",
                 "-c",
                 "from collectra.tasks.image_segmentation.sam3_training import launch; import sys; launch(sys.argv[1])",
                 str(config_path),
             ],
             check=True,
+            env={**os.environ, "PYTHONUNBUFFERED": "1"},
         )
+        training_progress("SAM trainer exited successfully; checking its checkpoint")
         checkpoint = output / "training" / "checkpoints" / "checkpoint.pt"
         if not checkpoint.is_file():
             raise FileNotFoundError(
@@ -440,6 +499,9 @@ class ImageSegmentationSam3(Task):
         self._processor = None
         self.pipeline.data[self.name]["model"] = destination.name
         self.pipeline.save(self.name)
+        training_progress(f"Saved trained checkpoint: {destination}")
         if not keep_log:
             shutil.rmtree(output, ignore_errors=True)
+            training_progress(f"Removed training directory: {output}")
+        training_progress(f"Training complete ({time.monotonic() - started:.1f}s)")
         return destination
