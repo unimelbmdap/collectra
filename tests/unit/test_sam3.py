@@ -351,6 +351,17 @@ def test_export_preserves_instances_holes_labels_and_partitions(image, tmp_path)
     )
 
 
+@pytest.mark.parametrize("exclude,expected_train", [("test", 2), ("", 3)])
+def test_export_excludes_requested_partitions(image, tmp_path, exclude, expected_train):
+    samples = [SegmentationSample(image, [instance(image, tmp_path, partition=partition)])
+               for partition in ("", "validation", "test", "holdout")]
+    dataset = export_dataset(samples, tmp_path / "dataset", validation="validation", exclude=exclude)
+    train = json.loads((dataset / "train/_annotations.coco.json").read_text())
+    valid = json.loads((dataset / "valid/_annotations.coco.json").read_text())
+    assert len(train["images"]) == expected_train
+    assert len(valid["images"]) == 1
+
+
 def test_preparation_requires_parent_and_matching_image(image, tmp_path):
     target = instance(image, tmp_path)
     args = ([target], [image], {"page": [target]}, {"page": [image]})
@@ -484,8 +495,9 @@ def test_training_configuration_enables_real_mask_losses(image, tmp_path, sam_pa
 
 @pytest.mark.parametrize("explicit_output", [True, False])
 @pytest.mark.parametrize("keep_log", [True, False])
+@pytest.mark.parametrize("excluded", ["", "test"])
 def test_train_adopts_checkpoint_and_updates_pipeline_config(
-    image, tmp_path, sam_package, monkeypatch, explicit_output, keep_log, capsys
+    image, tmp_path, sam_package, monkeypatch, explicit_output, keep_log, capsys, excluded
 ):
     from collectra.tasks.image_segmentation import sam3
 
@@ -520,8 +532,10 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
         arguments.extend(["--output", str(output)])
     if not keep_log:
         arguments.append("--no-keep-log")
+    if excluded:
+        arguments.extend(["--exclude", excluded])
     trained = invoke(task, arguments)
-    prepare.assert_called_once_with(["results"], output / "dataset", "validation", "")
+    prepare.assert_called_once_with(["results"], output / "dataset", "validation", excluded)
     assert trained.read_bytes() == b"fake weights"
     assert task.pipeline.data["segment"]["model"] == trained.name
     task.pipeline.save.assert_called_once_with("segment")
