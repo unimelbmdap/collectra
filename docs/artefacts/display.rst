@@ -107,6 +107,8 @@ loading and cleanup. Built-in implementations live in ``collectra/gui/displays``
 * ``imageCrop.js``: crop geometry and drawing controls.
 * ``imageSegmentation.js``: coloured instance mask overlays.
 * ``imageInteractions.js``: shared child hit testing and double-click navigation.
+* ``segmentationEditor.js`` and ``segmentationEditor.css``: dimmed context,
+  circular mask brushes and autosave.
 * ``text.js``: plain text, Markdown and XML editors, toolbar and autosave.
 * ``properties.js``: structured property display.
 
@@ -116,3 +118,6 @@ to know about an extension's artefact type or view kind.
 Python's shared ``DisplayContext`` delegates built-in descriptor construction
 to ``collectra/displays/images.py`` and ``collectra/displays/texts.py``. The
 context's public methods remain available to custom artefact types.
+``collectra/displays/image_segmentation.py`` supplies mask-editing descriptors;
+``collectra/gui/segmentation.py`` validates strokes and writes binary masks
+atomically.

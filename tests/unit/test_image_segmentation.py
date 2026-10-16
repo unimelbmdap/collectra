@@ -71,7 +71,10 @@ def test_serialization_loader_and_display(files, monkeypatch):
     context = DisplayContext({"region": record}, files)
     view = context.artefact("region").display(context)
     preview = PILImage.open(io.BytesIO(base64.b64decode(view["source"].split(",")[1])))
-    assert preview.tobytes() == item.pil().tobytes()
+    # The GUI keeps the full source available and dims it with a separate mask
+    # overlay. Extraction and model inputs still use the cropped transparent image.
+    assert preview.tobytes() == PILImage.open(files / "source.png").tobytes()
+    assert "segmentation" in view
 
 
 def test_save_extract_and_encoding(files):

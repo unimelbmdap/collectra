@@ -21,7 +21,7 @@ function mountSegmentationHover(controller, rows, {token, imgW, imgH}) {
     };
     const move = event => {
         if (controller._artefactToken !== token || document.querySelector('.modal-overlay.visible')
-            || controller.pageAnno?.isDrawingEnabled?.()) {
+            || controller.pageAnno?.isDrawingEnabled?.() || controller._maskEditor?.isActive()) {
             hide();
             return;
         }

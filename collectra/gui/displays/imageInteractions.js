@@ -1,6 +1,7 @@
 // Shared pointer hit testing and tab navigation for child crops and masks.
 function childImageAtPointer(controller, rows, event, imgW, imgH) {
     const viewer = controller.pageViewer;
+    if (viewer?.canvas && event.target && !viewer.canvas.contains(event.target)) return null;
     const item = viewer?.world.getItemAt(0);
     if (!item) return null;
     const rect = viewer.container.getBoundingClientRect();
@@ -23,7 +24,7 @@ function mountChildImageNavigation(controller, rows, {token, imgW, imgH}) {
     const element = controller.el.imageDisplay;
     const open = event => {
         if (controller._artefactToken !== token || document.querySelector('.modal-overlay.visible')
-            || controller.pageAnno?.isDrawingEnabled?.() || event.button !== 0) return;
+            || controller.pageAnno?.isDrawingEnabled?.() || controller._maskEditor?.isActive() || event.button !== 0) return;
         const match = childImageAtPointer(controller, rows, event, imgW, imgH);
         if (!match) return;
         event.preventDefault();

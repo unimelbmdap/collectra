@@ -62,7 +62,9 @@ def test_child_mask_matches_parent_display(tmp_path, parent_type, orientation):
     expected = Image.fromarray(mask * 255)
     if parent_type == "ImageSegmentation":
         expected = Image.fromarray(mask * parent_mask * 255)
-    expected = expected.crop(item.display_bounds()).rotate(
+    from collectra.displays.image_segmentation import display_bounds
+
+    expected = expected.crop(display_bounds(item)).rotate(
         item.orientation.to_degree(), expand=True
     )
     bounds = expected.getbbox()

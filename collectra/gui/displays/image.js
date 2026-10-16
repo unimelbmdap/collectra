@@ -1,6 +1,8 @@
 // Image viewer, zoom, rotation, crop interactions and annotation refresh.
 function installImageDisplay(PanelController) {
         PanelController.prototype.clearImageDisplay = function() {
+            this._maskEditor?.dispose();
+            this._maskEditor = null;
             this._segmentationHoverCleanup?.();
             this._segmentationHoverCleanup = null;
             this._shiftDrawCleanup?.();
@@ -33,7 +35,8 @@ function installImageDisplay(PanelController) {
                 this.zoomToBoxGeometry(match.target.selector.geometry);
             } else {
                 this.pageAnno.cancelSelected?.();
-                if (this.pageViewer) this.pageViewer.viewport.goHome();
+                if (this.displayView?.segmentation) this.zoomToBoxGeometry(this.displayView.segmentation.bounds);
+                else if (this.pageViewer) this.pageViewer.viewport.goHome();
             }
         };
         PanelController.prototype.flushAnnotationUpdate = function() {
@@ -51,7 +54,8 @@ function installImageDisplay(PanelController) {
             // initial load), so drawing isn't blocked speculatively.
             const focused = this.selectedNodeId ? resolveDagLabel(this.selectedNodeId) : null;
             const noValidChildType = !inFullPage && !!focused && cropTypeOptionsForController(this).labels.length === 0;
-            const disabled = inFullPage || noValidChildType || !this.displayView?.can_create_crop;
+            const maskEditing = !!this._maskEditor?.isActive();
+            const disabled = inFullPage || noValidChildType || !this.displayView?.can_create_crop || maskEditing;
             const armed = !disabled && !!(this.pageAnno && this.pageAnno.isDrawingEnabled());
             if (noValidChildType && this.pageAnno && this.pageAnno.isDrawingEnabled()) {
                 this.pageAnno.setDrawingEnabled(false);
@@ -61,7 +65,7 @@ function installImageDisplay(PanelController) {
             // drawingEnabled suppresses it on its own, so a drag while armed was
             // panning the view under the crosshair instead of drawing a box, unlike
             // a dedicated draw tool in an image editor. Suppressed only while armed.
-            if (this.pageViewer) this.pageViewer.gestureSettingsMouse.dragToPan = !armed;
+            if (this.pageViewer) this.pageViewer.gestureSettingsMouse.dragToPan = !armed && !maskEditing;
             const btn = this.drawBoxBtn;
             if (btn) {
                 const set = armed ? drawBoxImages().armed : drawBoxImages().normal;
@@ -170,7 +174,7 @@ function installImageDisplay(PanelController) {
                     element: display, document, window,
                     canDraw: () => {
                         this.syncDrawBoxButton();
-                        return this._artefactToken === token && !drawBoxBtn.element.disabled
+                        return !view.segmentation && this._artefactToken === token && !drawBoxBtn.element.disabled
                             && !imageRotationBusy && !document.querySelector('.modal-overlay.visible');
                     },
                     isDrawing: () => this.pageAnno.isDrawingEnabled(),
@@ -305,6 +309,26 @@ function installImageDisplay(PanelController) {
                 // The display response already contains these annotations.
                 await this.refreshPageAnnotations(null, view.annotations || []);
                 if (this._artefactToken !== token) return;
+
+                if (view.segmentation) {
+                    const editor = await mountSegmentationEditor(this, view, {
+                        token, resultsPath: selectedYamlPath,
+                        onSaved: segmentation => {
+                            this.displayView.segmentation = segmentation;
+                            for (const controller of Object.values(panelControllers)) {
+                                if (controller.displayView?.image_path !== view.image_path) continue;
+                                controller.refreshPageAnnotations(null).catch(console.error);
+                                if (controller !== this && controller.displayView.target_id === view.target_id
+                                    && controller._maskEditor && !controller._maskEditor.isSaving()) {
+                                    controller.displayView.segmentation = segmentation;
+                                    controller._maskEditor.setMask(segmentation).catch(console.error);
+                                }
+                            }
+                        },
+                    });
+                    if (this._artefactToken !== token) { editor?.dispose(); return; }
+                    this._maskEditor = editor;
+                }
 
                 const viewer = this.pageViewer;
                 mountRgbViewControls({

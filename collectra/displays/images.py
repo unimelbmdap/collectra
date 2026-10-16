@@ -2,6 +2,7 @@
 
 from collections import OrderedDict
 from collectra.utils import load_class_from_string
+from .image_segmentation import display_bounds
 
 # Share the few most recent encodings across contexts and panels.
 _PREVIEW_CACHE_SIZE = 6
@@ -10,7 +11,7 @@ _preview_cache = OrderedDict()
 
 def region(context, image, region, inverse=False):
     """Transform source-normalized boxes to/from the rotated crop viewer."""
-    left, top, right, bottom = image.display_bounds()
+    left, top, right, bottom = display_bounds(image)
     width, height = right - left, bottom - top
     if width <= 0 or height <= 0:
         raise ValueError("Cannot display an empty image crop")
@@ -63,7 +64,7 @@ def annotations(context, image):
             alpha = child._mask_image()
             if isinstance(image, ImageSegmentation):
                 alpha = ImageChops.multiply(alpha, image._mask_image())
-            alpha = alpha.crop(image.display_bounds()).rotate(
+            alpha = alpha.crop(display_bounds(image)).rotate(
                 image.orientation.to_degree(), expand=True
             )
             bounds = alpha.getbbox()
@@ -163,12 +164,9 @@ def image(context, item):
             preview = source.convert(
                 "RGBA" if isinstance(item, ImageSegmentation) else "RGB"
             )
-    if isinstance(item, ImageSegmentation):
-        preview = item.masked_pil(preview)
-    else:
-        preview = preview.crop(item.display_bounds()).rotate(
-            item.orientation.to_degree(), expand=True
-        )
+    preview = preview.crop(display_bounds(item)).rotate(
+        item.orientation.to_degree(), expand=True
+    )
     source = context.publish_image(preview)
     if key is not None:
         _preview_cache[key] = (source, view_count)
@@ -199,7 +197,10 @@ def _preview_key(context, item, path):
 
 
 def _image_view(context, item, path, source, view_count):
-    return {
+    from collectra.types.images import ImageSegmentation
+    from .image_segmentation import segmentation
+
+    view = {
         "kind": "image",
         "source": source,
         "image_path": str(path),
@@ -210,3 +211,6 @@ def _image_view(context, item, path, source, view_count):
         "rgb_view_index": context.rgb_view,
         "rgb_view_count": view_count,
     }
+    if isinstance(item, ImageSegmentation):
+        view["segmentation"] = segmentation(context, item)
+    return view
