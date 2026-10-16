@@ -362,6 +362,15 @@ def test_export_excludes_requested_partitions(image, tmp_path, exclude, expected
     assert len(valid["images"]) == 1
 
 
+def test_max_items_caps_combined_splits_after_exclusions(image, tmp_path):
+    samples = [SegmentationSample(image, [instance(image, tmp_path, partition=partition)])
+               for partition in ("test", "", "validation", "", "validation")]
+    dataset = export_dataset(samples, tmp_path / "dataset", validation="validation", exclude="test", max_items=2)
+    train = json.loads((dataset / "train/_annotations.coco.json").read_text())
+    valid = json.loads((dataset / "valid/_annotations.coco.json").read_text())
+    assert len(train["images"]) == len(valid["images"]) == 1
+
+
 def test_preparation_requires_parent_and_matching_image(image, tmp_path):
     target = instance(image, tmp_path)
     args = ([target], [image], {"page": [target]}, {"page": [image]})
@@ -380,7 +389,8 @@ def test_cli_and_public_exports_need_no_sam_backend(capsys):
 
 
 @pytest.mark.parametrize("input_kind", ["parent", "page", "yaml"])
-def test_pipeline_training_export_without_model_installation(tmp_path, input_kind, capsys):
+@pytest.mark.parametrize("max_items", [None, 1])
+def test_pipeline_training_export_without_model_installation(tmp_path, input_kind, capsys, max_items):
     page = tmp_path / "page.collectra"
     page.mkdir()
     image_path = page / "source.png"
@@ -422,9 +432,17 @@ def test_pipeline_training_export_without_model_installation(tmp_path, input_kin
     source = {"parent": tmp_path, "page": page, "yaml": page / "results.yaml"}[
         input_kind
     ]
-    directory = task.prepare_training_data([str(source)], tmp_path / "dataset")
+    inputs = [str(source)]
+    if max_items:
+        bad = tmp_path / "unread.collectra"
+        bad.mkdir()
+        (bad / "results.yaml").write_text("This must never be loaded")
+        inputs.append(str(bad))
+    directory = task.prepare_training_data(inputs, tmp_path / "dataset", max_items=max_items)
     progress = capsys.readouterr().out
-    assert "Load 1/1:" in progress
+    assert f"Load 1/{2 if max_items else 1}:" in progress
+    if max_items:
+        assert "Reached max_items=1" in progress
     assert "Loaded 1 labelled images and 1 masks" in progress
     assert "Export 1/1 [train]" in progress
     assert "Dataset export complete" in progress
@@ -557,13 +575,13 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
     arguments = ["train", "--validation", "validation", "results", "--epochs", "1", "--wandb"]
     output = tmp_path / ("output" if explicit_output else "20261016_140000")
     if explicit_output:
-        arguments.extend(["--output", str(output)])
+        arguments.extend(["--output", str(output), "--max-items", "2"])
     if not keep_log:
         arguments.append("--no-keep-log")
     if excluded:
         arguments.extend(["--exclude", excluded])
     trained = invoke(task, arguments)
-    prepare.assert_called_once_with(["results"], output / "dataset", "validation", excluded)
+    prepare.assert_called_once_with(["results"], output / "dataset", "validation", excluded, max_items=2 if explicit_output else None)
     assert trained.read_bytes() == b"fake weights"
     assert task.pipeline.data["segment"]["model"] == trained.name
     task.pipeline.save.assert_called_once_with("segment")
@@ -578,8 +596,9 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
 
 
 @pytest.mark.parametrize('inputs', [[], ['nonexistent-source-directory']])
+@pytest.mark.parametrize('max_items', [None, 1, 0])
 def test_train_reuses_output_dataset_without_source_checks(
-    image, tmp_path, sam_package, monkeypatch, capsys, inputs
+    image, tmp_path, sam_package, monkeypatch, capsys, inputs, max_items
 ):
     from collectra.tasks.image_segmentation import sam3
 
@@ -602,12 +621,18 @@ def test_train_reuses_output_dataset_without_source_checks(
         checkpoint.write_bytes(b'reused-data-model')
 
     monkeypatch.setattr(sam3.subprocess, 'run', train)
-    trained = invoke(task, ['train', *inputs, '--output', str(output), '--reuse-data',
-                            '--validation', 'ignored-new-partition', '--exclude', 'ignored'])
+    options = ['train', *inputs, '--output', str(output), '--reuse-data',
+               '--validation', 'ignored-new-partition', '--exclude', 'ignored']
+    if max_items is not None:
+        options.extend(['--max-items', str(max_items)])
+    trained = invoke(task, options)
     prepare.assert_not_called()
     assert trained.read_bytes() == b'reused-data-model'
     assert all(path.read_bytes() == content for path, content in before.items())
-    assert 'Skipping source checks and export' in capsys.readouterr().out
+    progress = capsys.readouterr().out
+    assert 'Skipping source checks and export' in progress
+    if max_items is not None:
+        assert 'Ignoring --max-items' in progress
 
 
 def test_reuse_data_requires_output_and_normal_training_requires_inputs():
@@ -616,3 +641,12 @@ def test_reuse_data_requires_output_and_normal_training_requires_inputs():
         invoke(task, ['train', '--reuse-data'])
     with pytest.raises(ValueError, match='Supply training inputs'):
         invoke(task, ['train'])
+
+
+@pytest.mark.parametrize("options, message", [
+    (["--max-items", "0"], "max_items must be positive"),
+    (["--max-items", "-1"], "max_items must be positive"),
+])
+def test_max_items_rejects_invalid_options(options, message):
+    with pytest.raises(ValueError, match=message):
+        invoke(ImageSegmentationSam3("segment"), ["train", "results", *options])

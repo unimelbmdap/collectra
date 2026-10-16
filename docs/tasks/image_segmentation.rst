@@ -248,6 +248,15 @@ For example, reserve validation images and leave test images unused:
 Partition changes take effect when exporting data. Omit ``--reuse-data`` once
 to apply new exclusions to an existing training directory.
 
+Use ``--max-items 100`` for a smaller run. This caps the **combined total** of
+training and validation images after exclusions, retaining every annotated
+instance in each selected image. Images are selected in discovery/input order,
+and source loading stops once the cap is reached. The cap does not reserve a
+validation quota, so a small prefix may contain no validation images. Omit the
+option to use all images. Values must be positive when preparing data.
+``--reuse-data`` takes precedence and ignores ``--max-items``, leaving the
+existing export unchanged. To change the cap, omit ``--reuse-data`` once.
+
 ``--output`` is optional, as with YOLO and RT-DETR. If omitted, training uses a
 timestamped directory in the current working directory. Supply a custom
 directory with ``--output PATH``; positional paths are training inputs.

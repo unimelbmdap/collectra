@@ -133,26 +133,32 @@ def prepare_segmentation_inputs(
     return samples
 
 
+def _sample_partition(sample):
+    partitions = {item.partition for item in sample.instances if item.partition}
+    if sample.image.partition:
+        partitions.add(sample.image.partition)
+    if len(partitions) > 1:
+        raise ValueError("Instances of one image cannot belong to different partitions")
+    return next(iter(partitions), "")
+
+
 def export_dataset(
-    samples, directory: Path, *, prompts=None, validation="", exclude=""
+    samples, directory: Path, *, prompts=None, validation="", exclude="", max_items=None
 ):
+    if max_items is not None and max_items < 1:
+        raise ValueError("max_items must be positive")
     started = time.monotonic()
     directory = Path(directory).resolve()
     selected = []
     for sample in samples:
-        partitions = {item.partition for item in sample.instances if item.partition}
-        if sample.image.partition:
-            partitions.add(sample.image.partition)
-        if len(partitions) > 1:
-            raise ValueError(
-                "Instances of one image cannot belong to different partitions"
-            )
-        partition = next(iter(partitions), "")
+        partition = _sample_partition(sample)
         if exclude and partition == exclude:
             continue
         selected.append(
             (sample, "valid" if validation and partition == validation else "train")
         )
+        if max_items is not None and len(selected) >= max_items:
+            break
     labels = sorted({item.name for sample, _ in selected for item in sample.instances})
     if not labels or not any(split == "train" for _, split in selected):
         raise ValueError("No labelled training instances were found")
@@ -360,7 +366,7 @@ class ImageSegmentationSam3(Task):
                     )
         return results
 
-    def _samples(self, inputs):
+    def _samples(self, inputs, max_items=None, exclude=""):
         from collectra.tasks.machine_learning.training import (
             _training_files,
             _prepare_data,
@@ -400,9 +406,15 @@ class ImageSegmentationSam3(Task):
             parents, parent_maps = _prepare_data(
                 self, [path], self.pipeline.node_manager.get_ancestor_artefacts(node)
             )
-            samples.extend(
-                prepare_segmentation_inputs(targets, parents, target_maps, parent_maps)
-            )
+            for sample in prepare_segmentation_inputs(targets, parents, target_maps, parent_maps):
+                if max_items is not None and exclude and _sample_partition(sample) == exclude:
+                    continue
+                samples.append(sample)
+                if max_items is not None and len(samples) >= max_items:
+                    break
+            if max_items is not None and len(samples) >= max_items:
+                training_progress(f"Reached max_items={max_items}; stopping source loading")
+                break
         training_progress(
             f"Loaded {len(samples)} labelled images and "
             f"{sum(len(sample.instances) for sample in samples)} masks "
@@ -411,30 +423,67 @@ class ImageSegmentationSam3(Task):
         return samples
 
     def prepare_training_data(
-        self, inputs: list[str], output: Path, validation: str = "", exclude: str = ""
+        self, inputs: list[str], output: Path, validation: str = "", exclude: str = "",
+        max_items: int | None = None,
     ) -> Path:
         """Export annotated masks and input images as SAM-compatible COCO datasets."""
         return export_dataset(
-            self._samples(inputs),
+            self._samples(inputs, max_items=max_items, exclude=exclude),
             output,
             prompts=self._prompts(),
             validation=validation,
             exclude=exclude,
+            max_items=max_items,
         )
 
     @command
     def train(
         self,
-        inputs: Annotated[list[str], Arg(required=False, default=[])],
-        output: Path | None = None,
-        validation: str = "",
-        exclude: str = "",
-        epochs: int = 20,
-        batch: int = 1,
-        num_gpus: int = 1,
-        keep_log: bool = True,
-        reuse_data: bool = False,
-        wandb: bool = False,
+        inputs: Annotated[
+            list[str],
+            Arg(
+                required=False,
+                default=[],
+                help="Results YAML files, result directories, or parent directories containing annotated images and masks. May be omitted with --reuse-data.",
+            ),
+        ],
+        output: Annotated[
+            Path | None,
+            Arg(help="Directory for prepared data, metrics.csv, logs and best model weights. Defaults to a timestamped directory; required with --reuse-data."),
+        ] = None,
+        validation: Annotated[
+            str,
+            Arg(help="Partition used for validation and best-model selection by mask IoU. Omit to train without validation. Ignored with --reuse-data."),
+        ] = "",
+        exclude: Annotated[
+            str,
+            Arg(help="Partition excluded from both training and validation during data preparation. Ignored with --reuse-data."),
+        ] = "",
+        epochs: Annotated[
+            int, Arg(help="Number of training epochs; validation runs after every epoch when available."),
+        ] = 20,
+        batch: Annotated[
+            int, Arg(help="Number of training images per batch on each GPU."),
+        ] = 1,
+        num_gpus: Annotated[
+            int, Arg(help="Number of GPUs used for training on this node."),
+        ] = 1,
+        keep_log: Annotated[
+            bool,
+            Arg(help="Keep prepared data, metrics, logs and checkpoints after copying the best weights into the pipeline. --no-keep-log removes the output directory."),
+        ] = True,
+        reuse_data: Annotated[
+            bool,
+            Arg(help="Use OUTPUT/dataset directly without source checks or export. Requires --output and a completed dataset; ignores input paths and partition options. Does not resume optimizer state."),
+        ] = False,
+        wandb: Annotated[
+            bool,
+            Arg(help="Log epoch metrics to Weights & Biases. Project: <pipeline-directory>-<task>; run: output directory name; entity: W&B settings or WANDB_ENTITY."),
+        ] = False,
+        max_items: Annotated[
+            int | None,
+            Arg(help="Maximum total images across training and validation, after exclusions, in input order. Omit for all images. Ignored with --reuse-data."),
+        ] = None,
     ) -> Path:
         """Prepare instance masks and fine-tune using Meta's image trainer.
 
@@ -443,6 +492,8 @@ class ImageSegmentationSam3(Task):
         """
         if min(epochs, batch, num_gpus) < 1:
             raise ValueError("epochs, batch and num_gpus must be positive")
+        if not reuse_data and max_items is not None and max_items < 1:
+            raise ValueError("max_items must be positive")
         if reuse_data and output is None:
             raise ValueError("--reuse-data requires --output pointing to the existing training directory")
         if not reuse_data and not inputs:
@@ -461,10 +512,12 @@ class ImageSegmentationSam3(Task):
             dataset = output / "dataset"
             training_progress(f"Reusing prepared dataset directly: {dataset}")
             training_progress("Skipping source checks and export; using existing train/validation splits")
+            if max_items is not None:
+                training_progress("Ignoring --max-items because --reuse-data uses the existing dataset unchanged")
         else:
             training_progress("Preparing the dataset before GPU training starts")
             dataset = self.prepare_training_data(
-                inputs, output / "dataset", validation, exclude
+                inputs, output / "dataset", validation, exclude, max_items=max_items
             )
         from .sam3_training import training_config
 
