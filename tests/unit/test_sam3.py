@@ -1,0 +1,344 @@
+import json
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import cappa
+import numpy as np
+import pytest
+import yaml
+from PIL import Image as PILImage
+
+from collectra import (
+    Collectra,
+    Image,
+    ImageCrop,
+    ImageSegmentation,
+    ImageSegmentationSam3,
+)
+from collectra.cli import invoke
+from collectra.tasks.image_segmentation.sam3 import (
+    SegmentationSample,
+    encode_rle,
+    export_dataset,
+    mask_in_view,
+    mask_to_source,
+    prepare_segmentation_inputs,
+)
+
+
+@pytest.fixture
+def image(tmp_path):
+    path = tmp_path / "source.png"
+    PILImage.new("RGB", (12, 8), "white").save(path)
+    return Image(name="image", id="image", data=path)
+
+
+def instance(image, tmp_path, name="region", partition="", pixels=None):
+    if pixels is None:
+        pixels = np.zeros((8, 12), dtype="uint8")
+        pixels[2:6, 3:9] = 1
+        pixels[3, 4] = 0  # a hole must survive RLE encoding
+    # Unique annotation paths even when their category labels are identical.
+    import uuid
+
+    path = tmp_path / f"mask-{uuid.uuid4().hex}.png"
+    PILImage.fromarray(pixels).save(path)
+    return ImageSegmentation(
+        name=name,
+        data=image.get_path(),
+        mask=path,
+        parents=[image.id],
+        partition=partition,
+    )
+
+
+def decode_rle(rle):
+    flat = []
+    for value, count in enumerate(rle["counts"]):
+        flat.extend([value % 2] * count)
+    return np.asarray(flat, dtype="uint8").reshape(rle["size"], order="F")
+
+
+@pytest.mark.parametrize("orientation", ["north", "east", "south", "west"])
+@pytest.mark.parametrize("cropped", [False, True])
+def test_view_masks_map_back_to_source_pixels(image, orientation, cropped):
+    if cropped:
+        image = ImageCrop(
+            name="crop",
+            data=image.get_path(),
+            x_center=0.5,
+            y_center=0.5,
+            width_relative=0.5,
+            height_relative=0.5,
+            orientation=orientation,
+        )
+    else:
+        image = Image(name="image", data=image.get_path(), orientation=orientation)
+    local = np.zeros((image.pil().height, image.pil().width), dtype="uint8")
+    local[1:3, 1:3] = 1
+    source = mask_to_source(image, local)
+    assert source.shape == (8, 12)
+    restored = mask_in_view(image, PILImage.fromarray(source))
+    assert np.array_equal(np.asarray(restored), local)
+
+
+def test_segmentation_input_clips_predictions_to_its_region(image, tmp_path):
+    region = instance(image, tmp_path)
+    local = np.ones((region.pil().height, region.pil().width), dtype="uint8")
+    projected = mask_to_source(region, local)
+    assert np.array_equal(projected, np.asarray(PILImage.open(region.mask)))
+
+
+@pytest.mark.parametrize("pixels", [np.zeros((2, 3)), np.ones((2, 3)), np.eye(5)])
+def test_coco_rle_roundtrip(pixels):
+    assert np.array_equal(decode_rle(encode_rle(pixels)), pixels)
+
+
+def test_inference_returns_one_artifact_per_instance(image, tmp_path):
+    task = ImageSegmentationSam3("segment", prompts={"region": "printed region"})
+    task.context.file_path = tmp_path / "output.collectra"
+    mask = np.zeros((2, 1, 8, 12), dtype=bool)
+    mask[0, 0, 1:3, 2:5] = True
+    mask[1, 0, 4:7, 7:10] = True
+    task._processor = Mock()
+    task._processor.set_text_prompt.return_value = {"masks": mask}
+    results = task.run(image)
+    assert len(results) == 2
+    assert all(isinstance(item, ImageSegmentation) for item in results)
+    assert all(item.name == "region" and item.parents == ["image"] for item in results)
+    assert np.array_equal(np.asarray(PILImage.open(results[0].mask)), mask[0, 0])
+    task._processor.set_text_prompt.assert_called_once_with(
+        prompt="printed region", state=task._processor.set_image.return_value
+    )
+
+
+def test_empty_predictions_and_bad_inputs(image, tmp_path):
+    task = ImageSegmentationSam3("segment")
+    task.context.file_path = tmp_path
+    task._processor = Mock()
+    task._processor.set_text_prompt.return_value = {"masks": np.empty((0, 1, 8, 12))}
+    assert task.run(image) == []
+    with pytest.raises(TypeError):
+        task.run("not an image")
+
+
+@pytest.mark.parametrize("full_checkpoint", [False, True])
+def test_model_loading_handles_official_and_finetuned_checkpoints(
+    tmp_path, monkeypatch, full_checkpoint
+):
+    import sys
+    from types import ModuleType
+
+    for name in [
+        "sam3",
+        "sam3.model",
+        "sam3.model_builder",
+        "sam3.model.sam3_image_processor",
+        "torch",
+    ]:
+        monkeypatch.setitem(sys.modules, name, ModuleType(name))
+    checkpoint = tmp_path / "model.pt"
+    checkpoint.touch()
+    state = {"detector.layer" if full_checkpoint else "layer": "weights"}
+    sys.modules["torch"].load = Mock(return_value={"model": state})
+    model = Mock()
+    model.to.return_value = model
+    model.eval.return_value = model
+    builder = sys.modules["sam3.model_builder"].build_sam3_image_model = Mock(
+        return_value=model
+    )
+    processor = sys.modules["sam3.model.sam3_image_processor"].Sam3Processor = Mock()
+    task = ImageSegmentationSam3("segment", model="model.pt", threshold=0.7)
+    task.pipeline = SimpleNamespace(path=tmp_path)
+    task._init_model()
+    assert builder.call_args.kwargs["load_from_HF"] is False
+    assert builder.call_args.kwargs["checkpoint_path"] == (
+        str(checkpoint) if full_checkpoint else None
+    )
+    if full_checkpoint:
+        model.load_state_dict.assert_not_called()
+    else:
+        model.load_state_dict.assert_called_once_with(state, strict=True)
+    processor.assert_called_once_with(model, device="cuda", confidence_threshold=0.7)
+
+
+def test_export_preserves_instances_holes_labels_and_partitions(image, tmp_path):
+    train = instance(image, tmp_path)
+    validation = instance(image, tmp_path, name="other", partition="val")
+    dataset = export_dataset(
+        [
+            SegmentationSample(image, [train, instance(image, tmp_path)]),
+            SegmentationSample(image, [validation]),
+        ],
+        tmp_path / "dataset",
+        prompts={"region": "printed region"},
+        validation="val",
+    )
+    train_data = json.loads((dataset / "train/_annotations.coco.json").read_text())
+    valid_data = json.loads((dataset / "valid/_annotations.coco.json").read_text())
+    assert len(train_data["images"]) == 1
+    assert len(train_data["annotations"]) == 2
+    assert len(valid_data["annotations"]) == 1
+    assert train_data["categories"] == valid_data["categories"]
+    annotation = train_data["annotations"][0]
+    assert annotation["bbox"] == [3, 2, 6, 4]
+    assert annotation["area"] == 23
+    assert np.array_equal(
+        decode_rle(annotation["segmentation"]), np.asarray(PILImage.open(train.mask))
+    )
+
+
+def test_preparation_requires_parent_and_matching_image(image, tmp_path):
+    target = instance(image, tmp_path)
+    args = ([target], [image], {"page": [target]}, {"page": [image]})
+    assert prepare_segmentation_inputs(*args)[0].image is image
+    with pytest.raises(ValueError, match="exactly one"):
+        prepare_segmentation_inputs([target], [], {"page": [target]}, {})
+
+
+def test_cli_and_public_exports_need_no_sam_backend(capsys):
+    task = ImageSegmentationSam3("segment")
+    assert task.input_type() is Image
+    assert task.output_type() is ImageSegmentation
+    with pytest.raises(cappa.HelpExit):
+        invoke(task, ["train", "--help"])
+    assert "epochs" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("input_kind", ["parent", "page", "yaml"])
+def test_pipeline_training_export_without_model_installation(tmp_path, input_kind):
+    page = tmp_path / "page.collectra"
+    page.mkdir()
+    image_path = page / "source.png"
+    PILImage.new("RGB", (12, 8), "white").save(image_path)
+    pixels = np.zeros((8, 12), dtype="uint8")
+    pixels[2:6, 3:9] = 1
+    PILImage.fromarray(pixels).save(page / "mask.png")
+    (page / "results.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "image": {
+                    "type": "collectra.Image",
+                    "id": "image",
+                    "data": "source.png",
+                },
+                "region": {
+                    "type": "collectra.ImageSegmentation",
+                    "id": "region",
+                    "data": "source.png",
+                    "mask": "mask.png",
+                    "parents": "image",
+                },
+            }
+        )
+    )
+    pipeline = Collectra(
+        "SAM",
+        "collectra",
+        "1",
+        path=tmp_path,
+        segment={
+            "type": "collectra.ImageSegmentationSam3",
+            "input": "image",
+            "output": "region",
+        },
+    )
+    pipeline.connect()
+    task = pipeline.node_manager.resolve_node("segment").get_task()
+    source = {"parent": tmp_path, "page": page, "yaml": page / "results.yaml"}[
+        input_kind
+    ]
+    directory = task.prepare_training_data([str(source)], tmp_path / "dataset")
+    assert (
+        len(
+            json.loads((directory / "train/_annotations.coco.json").read_text())[
+                "annotations"
+            ]
+        )
+        == 1
+    )
+
+
+@pytest.fixture
+def sam_package(tmp_path, monkeypatch):
+    from collectra.tasks.image_segmentation import sam3
+
+    package = tmp_path / "sam3"
+    template = (
+        package / "train/configs/roboflow_v100/roboflow_v100_full_ft_100_images.yaml"
+    )
+    template.parent.mkdir(parents=True)
+    # Shape of the installed upstream detection template that our adapter patches.
+    config = {
+        "paths": {},
+        "scratch": {"collate_fn": {"with_seg_masks": "${scratch.enable_segmentation}"}},
+        "roboflow_train": {
+            "loss": {"loss_fns_find": []},
+            "val_transforms": [{"transforms": []}],
+        },
+        "trainer": {
+            "model": {},
+            "data": {"train": {"dataset": {}}, "val": {"dataset": {}}},
+            "meters": {
+                "val": {"roboflow100": {"detection": {"pred_file_evaluators": [{}]}}}
+            },
+        },
+        "launcher": {},
+        "submitit": {},
+    }
+    template.write_text(yaml.safe_dump(config))
+    monkeypatch.setattr(
+        sam3, "_sam3", lambda: SimpleNamespace(__file__=str(package / "__init__.py"))
+    )
+    return package
+
+
+def test_training_configuration_enables_real_mask_losses(image, tmp_path, sam_package):
+    from collectra.tasks.image_segmentation.sam3_training import training_config
+
+    dataset = export_dataset(
+        [SegmentationSample(image, [instance(image, tmp_path)])], tmp_path / "dataset"
+    )
+    config = training_config(
+        dataset, tmp_path, tmp_path / "checkpoint.pt", epochs=2, batch=3, num_gpus=1
+    )
+    assert config["scratch"]["enable_segmentation"]
+    assert config["trainer"]["data"]["train"]["dataset"]["load_segmentation"]
+    assert config["roboflow_train"]["loss"]["loss_fns_find"][-1]["weight_dict"] == {
+        "loss_mask": 200.0,
+        "loss_dice": 10.0,
+    }
+    assert config["trainer"]["mode"] == "train_only"
+    assert "val" not in config["trainer"]["data"]
+    assert not config["trainer"]["skip_saving_ckpts"]
+    assert config["trainer"]["max_epochs"] == 2
+
+
+def test_train_adopts_checkpoint_and_updates_pipeline_config(
+    image, tmp_path, sam_package, monkeypatch
+):
+    from collectra.tasks.image_segmentation import sam3
+
+    task = ImageSegmentationSam3("segment", model="initial.pt")
+    task.pipeline = SimpleNamespace(path=tmp_path, data={"segment": {}}, save=Mock())
+    dataset = export_dataset(
+        [SegmentationSample(image, [instance(image, tmp_path)])], tmp_path / "dataset"
+    )
+    monkeypatch.setattr(task, "prepare_training_data", lambda *args: dataset)
+    monkeypatch.setattr(task, "_checkpoint", lambda: tmp_path / "initial.pt")
+
+    def train(command, **kwargs):
+        assert kwargs["check"]
+        config = yaml.safe_load(Path(command[-1]).read_text())
+        checkpoint = (
+            Path(config["paths"]["experiment_log_dir"]) / "checkpoints/checkpoint.pt"
+        )
+        checkpoint.parent.mkdir(parents=True)
+        checkpoint.write_bytes(b"fake weights")
+
+    monkeypatch.setattr(sam3.subprocess, "run", train)
+    trained = task.train(["results"], tmp_path / "output", epochs=1)
+    assert trained.read_bytes() == b"fake weights"
+    assert task.pipeline.data["segment"]["model"] == trained.name
+    task.pipeline.save.assert_called_once_with("segment")

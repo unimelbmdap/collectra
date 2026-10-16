@@ -1,0 +1,102 @@
+Image segmentation
+==================
+
+``ImageSegmentationSam3`` accepts ``Image`` and its subclasses and returns one
+``ImageSegmentation`` artefact for every predicted instance. Each result retains
+its input image as a parent and references a source-sized, binary 0/1 PNG mask.
+Crop and orientation transforms are inverted before writing masks, so masks
+remain aligned with the original source pixels. Segmentation inputs constrain
+predictions to their existing mask.
+
+.. code-block:: yaml
+
+    collectra_pipeline_metadata:
+      name: Segmentation
+      ext: collectra
+      version: "1.0"
+    segment:
+      type: collectra.ImageSegmentationSam3
+      input: page
+      output: region
+      prompt: printed text region
+      version: sam3.1
+      threshold: 0.5
+      device: cuda
+
+SAM is promptable: a text concept identifies which instances to find. Without
+``prompt``, output labels with underscores replaced by spaces become prompts.
+For multiple concepts, supply a mapping of output labels to text prompts:
+
+.. code-block:: yaml
+
+    output: [heading, paragraph]
+    prompts:
+      heading: document heading
+      paragraph: text paragraph
+
+``model`` optionally names a local checkpoint relative to the pipeline directory.
+Without it, the requested version's official checkpoint is downloaded on first
+execution. The default is ``sam3.1``. This uses the image detector/segmenter
+weights from the SAM3.1 checkpoint; it does not use video tracking or Object
+Multiplex. ``sam3`` selects the older checkpoint.
+
+Installation
+------------
+
+Meta's SAM3 sources and checkpoints are installed separately. They are not
+added to Collectra's default install or its general ``ml`` extra. Consult the
+`upstream prerequisites and model access instructions
+<https://github.com/facebookresearch/sam3#installation>`_. Meta currently lists
+Python 3.12+, PyTorch 2.7+, and a CUDA GPU as prerequisites.
+
+.. code-block:: bash
+
+    pip install "sam3[train] @ git+https://github.com/facebookresearch/sam3.git"
+
+Importing the task, opening its pipeline in the GUI, and preparing training data
+do not import SAM or Torch. Inference and training require the model backend.
+
+Mask-supervised training
+------------------------
+
+Yes: Meta's image training loader accepts instance masks. Each ground-truth
+instance should be an ``ImageSegmentation`` in the task's output node, with
+``parents`` referencing its input image and ``data`` referencing the same source
+image. Masks follow Collectra's source-sized 0/1 PNG convention. The output node
+name supplies the category, and the configured prompt supplies its text concept.
+Annotate all instances of each concept in each training image: SAM's COCO loader
+treats these as exhaustive annotations.
+
+Prepare data independently, including on a machine without Torch:
+
+.. code-block:: bash
+
+    collectra --pipeline pipeline.yaml task segment prepare-training-data results --output sam-data --validation validation
+
+The export contains ``train`` and ``valid`` directories, RGB PNG images, and
+``_annotations.coco.json`` files with instance masks encoded as lossless COCO
+RLE. Holes and disconnected regions are retained. The ``partition`` values
+select validation examples; ``--exclude`` omits a partition. All other examples
+are training data. At least one labelled training image is required.
+
+To prepare data and launch Meta's image fine-tuning trainer:
+
+.. code-block:: bash
+
+    collectra --pipeline pipeline.yaml task segment train results --output sam-training --validation validation --epochs 20 --batch 1 --num-gpus 1
+
+The adapter uses the installed upstream Roboflow image-training template,
+enables segmentation in the model, dataset and collator, and adds mask focal and
+Dice losses. Generated configuration is saved as ``sam3-training.yaml`` in the
+output directory. Without validation images, the trainer uses ``train_only``;
+training images are not reused as validation. After training, the final
+checkpoint is copied into the pipeline directory and the task's ``model`` is
+updated in ``pipeline.yaml``. The task can load both official full checkpoints
+and fine-tuned image-only checkpoints.
+
+Upstream references: `training guide
+<https://github.com/facebookresearch/sam3/blob/main/README_TRAIN.md>`_,
+`COCO mask loader
+<https://github.com/facebookresearch/sam3/blob/main/sam3/train/data/coco_json_loaders.py>`_,
+and `image-training configuration
+<https://github.com/facebookresearch/sam3/blob/main/sam3/train/configs/roboflow_v100/roboflow_v100_full_ft_100_images.yaml>`_.

@@ -2959,8 +2959,7 @@
                 const ext = result.ext ? `.${result.ext}` : 'your project';
                 folderInfoEl.innerHTML =
                     `<span class="file-missing">Choose a folder containing your ${ext} project pages.</span>`;
-                const placeholder = document.getElementById('dagPlaceholder');
-                if (placeholder) placeholder.textContent = 'Load a folder with results to view the pipeline graph.';
+                await showPipelineWithoutResults();
                 return;
             }
 
@@ -6738,6 +6737,12 @@
             }
         });
 
+        async function showPipelineWithoutResults() {
+            await loadAndRenderDag();
+            const panel = openingPanel();
+            if (panel) await panel.openDagKindTab();
+        }
+
         window.addEventListener('pywebviewready', async function() {
             apiReady = true;
             document.getElementById('selectCollectraBtn').disabled = false;
@@ -6750,6 +6755,8 @@
                 const initial = await window.pywebview.api.get_initial_items();
                 if (startupActions(initial).handleParentFolderResult) {
                     await handleParentFolderResult(initial);
+                } else {
+                    await showPipelineWithoutResults();
                 }
             } catch (error) {
                 showResult('loadResult', {error: error.message}, true);

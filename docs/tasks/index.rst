@@ -15,6 +15,7 @@ configured name, not the class name:
    :maxdepth: 2
 
    object_detection
+   image_segmentation
    line_detection
    image_classification
    ocr
@@ -38,6 +39,8 @@ Command overview
      - ``run``, ``train``
    * - ObjectDetectionDETR
      - ``run``, ``train``
+   * - ImageSegmentationSam3
+     - ``run``, ``prepare-training-data``, ``train``
    * - LineDetectorRLSA
      - ``run``
    * - LineDetectorSurya
