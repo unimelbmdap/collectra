@@ -545,6 +545,8 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
         assert kwargs["env"]["PYTHONUNBUFFERED"] == "1"
         config = yaml.safe_load(Path(command[-1]).read_text())
         assert config["trainer"]["collectra_wandb"] is True
+        assert config["trainer"]["collectra_project"] == f"{tmp_path.name}-segment"
+        assert config["trainer"]["collectra_run_name"] == output.name
         checkpoint = (
             Path(config["paths"]["experiment_log_dir"]) / "checkpoints/best.pt"
         )

@@ -96,7 +96,7 @@ class MaskIoU:
 class EpochReporter:
     """Keep one CSV row per epoch, merging train and validation reports."""
 
-    def __init__(self, output, *, wandb=False, run_name=None, config=None):
+    def __init__(self, output, *, wandb=False, run_name=None, project=None, config=None):
         self.output = Path(output)
         self.output.mkdir(parents=True, exist_ok=True)
         self.rows = {}
@@ -105,7 +105,7 @@ class EpochReporter:
             import wandb as sdk
 
             self.run = sdk.init(
-                project=os.environ.get("WANDB_PROJECT", "collectra"),
+                project=project or "collectra",
                 name=run_name,
                 dir=str(self.output),
                 config=config,
@@ -148,6 +148,7 @@ class TrainingHooks:
         collectra_output,
         collectra_wandb=False,
         collectra_run_name=None,
+        collectra_project=None,
         **kwargs,
     ):
         self._collectra_best = None
@@ -160,6 +161,7 @@ class TrainingHooks:
                 collectra_output,
                 wandb=collectra_wandb,
                 run_name=collectra_run_name,
+                project=collectra_project,
                 config={
                     "epochs": self.max_epochs,
                     "selection_metric": (

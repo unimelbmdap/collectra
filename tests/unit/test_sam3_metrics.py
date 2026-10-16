@@ -112,8 +112,9 @@ def test_csv_merges_epochs_and_wandb_uses_the_same_metrics(tmp_path, monkeypatch
     run = Mock()
     sdk = SimpleNamespace(init=Mock(return_value=run))
     monkeypatch.setitem(sys.modules, "wandb", sdk)
-    monkeypatch.setenv("WANDB_PROJECT", "test-project")
-    reporter = EpochReporter(tmp_path, wandb=True, run_name="segment")
+    monkeypatch.setenv("WANDB_PROJECT", "unrelated-project")
+    monkeypatch.setenv("WANDB_ENTITY", "my-team")
+    reporter = EpochReporter(tmp_path, wandb=True, run_name="run-output", project="pipeline-segment")
     reporter.record(1, "train", {"loss": 3.0})
     reporter.record(1, "val", {"mask_iou": 0.5, "loss": 2.0})
     reporter.record(2, "train", {"loss": 1.0, "extra": 4.0})
@@ -124,7 +125,9 @@ def test_csv_merges_epochs_and_wandb_uses_the_same_metrics(tmp_path, monkeypatch
     assert rows[0]["val/mask_iou"] == "0.5"
     assert rows[1]["val/mask_iou"] == ""
     assert rows[1]["train/extra"] == "4.0"
-    assert sdk.init.call_args.kwargs["project"] == "test-project"
+    assert sdk.init.call_args.kwargs["project"] == "pipeline-segment"
+    assert sdk.init.call_args.kwargs["name"] == "run-output"
+    assert "entity" not in sdk.init.call_args.kwargs
     assert run.log.call_args_list[1].args[0] == {
         "epoch": 1,
         "val/mask_iou": 0.5,

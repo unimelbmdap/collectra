@@ -7,7 +7,7 @@ import yaml
 
 
 def training_config(dataset, output, checkpoint, *, epochs, batch, num_gpus,
-                    wandb=False, run_name=None, confidence_threshold=0.5):
+                    wandb=False, run_name=None, project=None, confidence_threshold=0.5):
     from .sam3 import _sam3
 
     package = Path(_sam3().__file__).parent
@@ -56,6 +56,7 @@ def training_config(dataset, output, checkpoint, *, epochs, batch, num_gpus,
         max_epochs=epochs, skip_saving_ckpts=True, val_epoch_freq=1, skip_first_val=False,
         collectra_output=str(output), collectra_wandb=wandb,
         collectra_run_name=run_name,
+        collectra_project=project,
     )
     trainer["model"] = {
         "_target_": "collectra.tasks.image_segmentation.sam3_training.build_training_model",

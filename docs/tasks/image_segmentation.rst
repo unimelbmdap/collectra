@@ -290,12 +290,16 @@ Authenticate with ``wandb login`` beforehand, or configure your site's
 
 .. code-block:: bash
 
-    export WANDB_PROJECT=htr-segmentation
+    export WANDB_ENTITY=my-team
     htr task region_segmentor train /path/to/results \
         --output /path/to/sam-training \
         --validation validation --exclude test --wandb
 
-The default W&B project is ``collectra`` and the run name is the task name.
+As with the other training tasks, the W&B project is
+``<pipeline-directory-name>-<task-name>`` (for example,
+``HTR.collectra-region_segmentor``). The run name is the output directory name.
+Entity selection is left to W&B's configured account or ``WANDB_ENTITY``; SAM3
+does not override it. The explicit project takes precedence over ``WANDB_PROJECT``.
 On a cluster without network access, set ``WANDB_MODE=offline`` before training
 and sync the W&B run directory afterward.
 

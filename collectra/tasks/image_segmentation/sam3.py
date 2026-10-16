@@ -480,7 +480,8 @@ class ImageSegmentationSam3(Task):
             batch=batch,
             num_gpus=num_gpus,
             wandb=wandb,
-            run_name=self.name,
+            run_name=output.name,
+            project=f"{self.pipeline.path.name}-{self.name}",
             confidence_threshold=self.threshold,
         )
         config_path = output / "sam3-training.yaml"
