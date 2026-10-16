@@ -254,8 +254,10 @@ instance in each selected image. Images are selected in discovery/input order,
 and source loading stops once the cap is reached. The cap does not reserve a
 validation quota, so a small prefix may contain no validation images. Omit the
 option to use all images. Values must be positive when preparing data.
-``--reuse-data`` takes precedence and ignores ``--max-items``, leaving the
-existing export unchanged. To change the cap, omit ``--reuse-data`` once.
+When an export exists, ``--reuse-data`` takes precedence and ignores
+``--max-items``, leaving the existing export unchanged. To change the cap, omit
+``--reuse-data`` once. When the export is missing, preparation uses the supplied
+cap and partition options normally.
 
 ``--output`` is optional, as with YOLO and RT-DETR. If omitted, training uses a
 timestamped directory in the current working directory. Supply a custom
@@ -274,11 +276,14 @@ checking for changes or rebuilding images and masks::
     collectra --pipeline /path/to/pipeline.yaml task segment train \
         --output /path/to/sam-training --reuse-data
 
-``--reuse-data`` requires ``--output`` and uses its existing ``dataset/train``
-and ``dataset/valid`` exports. Input paths can be omitted; any supplied input
-paths and ``--validation``/``--exclude`` settings are ignored because the
-existing dataset already defines the splits. The export must have completed
-successfully. Normal training without this flag still prepares the dataset.
+``--reuse-data`` requires ``--output``. If both ``dataset/train`` and
+``dataset/valid`` contain ``_annotations.coco.json``, it uses that export directly
+without source/freshness checks. Input paths can then be omitted; supplied input
+paths, partition settings and ``--max-items`` are ignored. If either annotation
+file is missing, it prints a message and prepares the dataset from the supplied
+inputs instead, applying the partition options and cap. With no export and no
+inputs, it reports that input paths are required. Normal training without this
+flag always prepares the dataset.
 
 The adapter uses the installed upstream Roboflow image-training template,
 enables segmentation in the model, dataset and collator, and adds mask focal and

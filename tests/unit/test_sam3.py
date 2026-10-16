@@ -575,7 +575,11 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
     arguments = ["train", "--validation", "validation", "results", "--epochs", "1", "--wandb"]
     output = tmp_path / ("output" if explicit_output else "20261016_140000")
     if explicit_output:
-        arguments.extend(["--output", str(output), "--max-items", "2"])
+        arguments.extend(["--output", str(output), "--max-items", "2", "--reuse-data"])
+        if excluded:
+            partial = output / "dataset/train/_annotations.coco.json"
+            partial.parent.mkdir(parents=True)
+            partial.write_text("{}")
     if not keep_log:
         arguments.append("--no-keep-log")
     if excluded:
@@ -587,6 +591,8 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
     task.pipeline.save.assert_called_once_with("segment")
     assert output.exists() == keep_log
     progress = capsys.readouterr().out
+    if explicit_output:
+        assert "falling back to preparation from inputs" in progress
     assert f"output={output}" in progress
     assert "Resolving the SAM checkpoint" in progress
     assert "Configuration saved:" in progress
@@ -641,6 +647,11 @@ def test_reuse_data_requires_output_and_normal_training_requires_inputs():
         invoke(task, ['train', '--reuse-data'])
     with pytest.raises(ValueError, match='Supply training inputs'):
         invoke(task, ['train'])
+
+
+def test_reuse_missing_dataset_requires_inputs(tmp_path):
+    with pytest.raises(ValueError, match="requires an existing export"):
+        invoke(ImageSegmentationSam3("segment"), ["train", "--reuse-data", "--output", str(tmp_path)])
 
 
 @pytest.mark.parametrize("options, message", [

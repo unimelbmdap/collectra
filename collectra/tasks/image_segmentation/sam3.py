@@ -444,7 +444,7 @@ class ImageSegmentationSam3(Task):
             Arg(
                 required=False,
                 default=[],
-                help="Results YAML files, result directories, or parent directories containing annotated images and masks. May be omitted with --reuse-data.",
+                help="Results YAML files, result directories, or parent directories containing annotated images and masks. May be omitted when reusing an existing export.",
             ),
         ],
         output: Annotated[
@@ -453,11 +453,11 @@ class ImageSegmentationSam3(Task):
         ] = None,
         validation: Annotated[
             str,
-            Arg(help="Partition used for validation and best-model selection by mask IoU. Omit to train without validation. Ignored with --reuse-data."),
+            Arg(help="Partition used for validation and best-model selection by mask IoU. Omit to train without validation. Ignored when reusing an existing export."),
         ] = "",
         exclude: Annotated[
             str,
-            Arg(help="Partition excluded from both training and validation during data preparation. Ignored with --reuse-data."),
+            Arg(help="Partition excluded from both training and validation during data preparation. Ignored when reusing an existing export."),
         ] = "",
         epochs: Annotated[
             int, Arg(help="Number of training epochs; validation runs after every epoch when available."),
@@ -474,7 +474,7 @@ class ImageSegmentationSam3(Task):
         ] = True,
         reuse_data: Annotated[
             bool,
-            Arg(help="Use OUTPUT/dataset directly without source checks or export. Requires --output and a completed dataset; ignores input paths and partition options. Does not resume optimizer state."),
+            Arg(help="Reuse OUTPUT/dataset when both split annotation files exist; otherwise prepare it from the input paths. Requires --output. Reuse ignores input paths, partitions and --max-items. Does not resume optimizer state."),
         ] = False,
         wandb: Annotated[
             bool,
@@ -482,39 +482,48 @@ class ImageSegmentationSam3(Task):
         ] = False,
         max_items: Annotated[
             int | None,
-            Arg(help="Maximum total images across training and validation, after exclusions, in input order. Omit for all images. Ignored with --reuse-data."),
+            Arg(help="Maximum total images across training and validation, after exclusions, in input order. Omit for all images. Ignored when reusing an existing export."),
         ] = None,
     ) -> Path:
         """Prepare instance masks and fine-tune using Meta's image trainer.
 
-        --reuse-data uses OUTPUT/dataset directly, skipping source checks and
-        export. It requires --output; input paths can then be omitted.
+        --reuse-data uses OUTPUT/dataset directly when present, otherwise
+        prepares it from inputs. It requires --output.
         """
         if min(epochs, batch, num_gpus) < 1:
             raise ValueError("epochs, batch and num_gpus must be positive")
-        if not reuse_data and max_items is not None and max_items < 1:
-            raise ValueError("max_items must be positive")
         if reuse_data and output is None:
-            raise ValueError("--reuse-data requires --output pointing to the existing training directory")
-        if not reuse_data and not inputs:
-            raise ValueError("Supply training inputs, or use --reuse-data with --output")
+            raise ValueError("--reuse-data requires --output")
         output = (
             Path(output).expanduser().resolve()
             if output is not None
             else Path.cwd() / datetime.now().strftime("%Y%m%d_%H%M%S")
         )
+        reuse_prepared = reuse_data and all(
+            (output / "dataset" / split / "_annotations.coco.json").is_file()
+            for split in ("train", "valid")
+        )
+        if not reuse_prepared and max_items is not None and max_items < 1:
+            raise ValueError("max_items must be positive")
+        if not reuse_prepared and not inputs:
+            raise ValueError(
+                "Supply training inputs to prepare the dataset; --reuse-data without "
+                f"inputs requires an existing export at {output / 'dataset'}"
+            )
         output.mkdir(parents=True, exist_ok=True)
         started = time.monotonic()
         training_progress(
             f"Training {self.name}: output={output}, epochs={epochs}, batch={batch}, GPUs={num_gpus}"
         )
-        if reuse_data:
+        if reuse_prepared:
             dataset = output / "dataset"
             training_progress(f"Reusing prepared dataset directly: {dataset}")
             training_progress("Skipping source checks and export; using existing train/validation splits")
             if max_items is not None:
                 training_progress("Ignoring --max-items because --reuse-data uses the existing dataset unchanged")
         else:
+            if reuse_data:
+                training_progress("Prepared dataset is missing or incomplete; falling back to preparation from inputs")
             training_progress("Preparing the dataset before GPU training starts")
             dataset = self.prepare_training_data(
                 inputs, output / "dataset", validation, exclude, max_items=max_items
