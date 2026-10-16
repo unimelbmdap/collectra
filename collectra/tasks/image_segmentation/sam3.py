@@ -12,6 +12,7 @@ import subprocess
 import sys
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -385,17 +386,22 @@ class ImageSegmentationSam3(Task):
     def train(
         self,
         inputs: list[str],
-        output: Path,
+        output: Path | None = None,
         validation: str = "",
         exclude: str = "",
         epochs: int = 20,
         batch: int = 1,
         num_gpus: int = 1,
+        keep_log: bool = True,
     ) -> Path:
         """Prepare instance masks and fine-tune using Meta's image trainer."""
         if min(epochs, batch, num_gpus) < 1:
             raise ValueError("epochs, batch and num_gpus must be positive")
-        output = Path(output).resolve()
+        output = (
+            Path(output).expanduser().resolve()
+            if output is not None
+            else Path.cwd() / datetime.now().strftime("%Y%m%d_%H%M%S")
+        )
         output.mkdir(parents=True, exist_ok=True)
         dataset = self.prepare_training_data(
             inputs, output / "dataset", validation, exclude
@@ -434,4 +440,6 @@ class ImageSegmentationSam3(Task):
         self._processor = None
         self.pipeline.data[self.name]["model"] = destination.name
         self.pipeline.save(self.name)
+        if not keep_log:
+            shutil.rmtree(output, ignore_errors=True)
         return destination

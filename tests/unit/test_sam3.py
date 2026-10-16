@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -315,17 +316,24 @@ def test_training_configuration_enables_real_mask_losses(image, tmp_path, sam_pa
     assert config["trainer"]["max_epochs"] == 2
 
 
+@pytest.mark.parametrize("explicit_output", [True, False])
+@pytest.mark.parametrize("keep_log", [True, False])
 def test_train_adopts_checkpoint_and_updates_pipeline_config(
-    image, tmp_path, sam_package, monkeypatch
+    image, tmp_path, sam_package, monkeypatch, explicit_output, keep_log
 ):
     from collectra.tasks.image_segmentation import sam3
 
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sam3, "datetime", SimpleNamespace(now=lambda: datetime(2026, 10, 16, 14))
+    )
     task = ImageSegmentationSam3("segment", model="initial.pt")
     task.pipeline = SimpleNamespace(path=tmp_path, data={"segment": {}}, save=Mock())
     dataset = export_dataset(
         [SegmentationSample(image, [instance(image, tmp_path)])], tmp_path / "dataset"
     )
-    monkeypatch.setattr(task, "prepare_training_data", lambda *args: dataset)
+    prepare = Mock(return_value=dataset)
+    monkeypatch.setattr(task, "prepare_training_data", prepare)
     monkeypatch.setattr(task, "_checkpoint", lambda: tmp_path / "initial.pt")
 
     def train(command, **kwargs):
@@ -338,7 +346,15 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
         checkpoint.write_bytes(b"fake weights")
 
     monkeypatch.setattr(sam3.subprocess, "run", train)
-    trained = task.train(["results"], tmp_path / "output", epochs=1)
+    arguments = ["train", "--validation", "validation", "results", "--epochs", "1"]
+    output = tmp_path / ("output" if explicit_output else "20261016_140000")
+    if explicit_output:
+        arguments.extend(["--output", str(output)])
+    if not keep_log:
+        arguments.append("--no-keep-log")
+    trained = invoke(task, arguments)
+    prepare.assert_called_once_with(["results"], output / "dataset", "validation", "")
     assert trained.read_bytes() == b"fake weights"
     assert task.pipeline.data["segment"]["model"] == trained.name
     task.pipeline.save.assert_called_once_with("segment")
+    assert output.exists() == keep_log

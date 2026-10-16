@@ -81,6 +81,12 @@ To prepare data and launch Meta's image fine-tuning trainer:
 
     collectra --pipeline pipeline.yaml task segment train results --output sam-training --validation validation --epochs 20 --batch 1 --num-gpus 1
 
+``--output`` is optional, as with YOLO and RT-DETR. If omitted, training uses a
+timestamped directory in the current working directory. Supply a custom
+directory with ``--output PATH``; positional paths are training inputs.
+Logs and prepared data are retained by default. ``--no-keep-log`` removes the
+training directory after the trained checkpoint has been saved to the pipeline.
+
 The adapter uses the installed upstream Roboflow image-training template,
 enables segmentation in the model, dataset and collator, and adds mask focal and
 Dice losses. Generated configuration is saved as ``sam3-training.yaml`` in the
