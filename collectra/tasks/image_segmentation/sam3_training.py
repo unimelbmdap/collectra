@@ -128,6 +128,17 @@ def enable_training_mlps(model):
             module.forward = MethodType(_training_mlp_forward, module)
 
 
+def freeze_unused_semantic_head(model):
+    """Instance-mask losses do not supervise the separate semantic output."""
+    segmentation = getattr(model, "segmentation_head", None)
+    semantic = getattr(segmentation, "semantic_seg_head", None)
+    if semantic is not None:
+        # DDP sees this head in forward's outputs, so find_unused_parameters
+        # cannot detect that the loss never consumes it. Freeze its parameters
+        # before DDP/optimizer construction, preserving checkpoint compatibility.
+        semantic.requires_grad_(False)
+
+
 def build_training_model(checkpoint, bpe_path):
     import torch
     from sam3.model_builder import build_sam3_image_model
@@ -143,6 +154,7 @@ def build_training_model(checkpoint, bpe_path):
     )
     load_image_state(model, state)
     enable_training_mlps(model)
+    freeze_unused_semantic_head(model)
     return model
 
 

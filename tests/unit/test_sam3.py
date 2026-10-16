@@ -256,6 +256,75 @@ def test_training_model_mlps_support_backprop_without_changing_inference(monkeyp
         Mlp()(pixels)
 
 
+@pytest.mark.parametrize("freeze_semantic", [False, True])
+def test_instance_training_ddp_handles_unsupervised_semantic_output(tmp_path, freeze_semantic):
+    from contextlib import nullcontext
+    torch = pytest.importorskip("torch")
+    import torch.distributed as dist
+    from collectra.tasks.image_segmentation.sam3_training import freeze_unused_semantic_head
+
+    if not dist.is_available() or not dist.is_gloo_available() or dist.is_initialized():
+        pytest.skip("Requires an independent CPU/Gloo process group")
+
+    class StageOutputs(list):
+        # SAM3Output iterates over separate storage. Unlike a plain list/dict,
+        # this container is opaque to DDP's output pytree reconstruction.
+        def __init__(self, outputs):
+            self.outputs = outputs
+
+        def __iter__(self):
+            return iter(self.outputs)
+
+        def __len__(self):
+            return len(self.outputs)
+
+        def __getitem__(self, index):
+            return self.outputs[index]
+
+    class InstanceModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.backbone = torch.nn.Linear(4, 4)
+            self.segmentation_head = torch.nn.Module()
+            self.segmentation_head.instance_seg_head = torch.nn.Linear(4, 1)
+            self.segmentation_head.semantic_seg_head = torch.nn.Linear(4, 1)
+
+        def forward(self, x):
+            features = self.backbone(x)
+            return StageOutputs([{
+                "pred_masks": self.segmentation_head.instance_seg_head(features),
+                "semantic_seg": self.segmentation_head.semantic_seg_head(features),
+            }])
+
+    model = InstanceModel()
+    before = {key: value.clone() for key, value in model.state_dict().items()}
+    if freeze_semantic:
+        freeze_unused_semantic_head(model)
+    dist.init_process_group("gloo", init_method=(tmp_path / "rendezvous").as_uri(),
+                            rank=0, world_size=1)
+    try:
+        parallel = torch.nn.parallel.DistributedDataParallel(model, find_unused_parameters=True)
+        optimizer = torch.optim.SGD((p for p in model.parameters() if p.requires_grad), lr=0.1)
+        expectation = nullcontext() if freeze_semantic else pytest.raises(RuntimeError, match="Expected to have finished reduction")
+        with expectation:
+            for _ in range(3):
+                optimizer.zero_grad()
+                outputs = parallel(torch.ones(2, 4))
+                outputs[0]["pred_masks"].sum().backward()
+                optimizer.step()
+        if freeze_semantic:
+            assert model.backbone.weight.grad is not None
+            assert model.segmentation_head.instance_seg_head.weight.grad is not None
+            assert set(model.state_dict()) == set(before)
+            for name, value in model.state_dict().items():
+                if "semantic_seg_head" in name:
+                    torch.testing.assert_close(value, before[name])
+                else:
+                    assert not torch.equal(value, before[name])
+    finally:
+        dist.destroy_process_group()
+
+
 def test_export_preserves_instances_holes_labels_and_partitions(image, tmp_path):
     train = instance(image, tmp_path)
     validation = instance(image, tmp_path, name="other", partition="val")
