@@ -369,7 +369,6 @@ class ImageSegmentationSam3(Task):
             )
         return samples
 
-    @command
     def prepare_training_data(
         self, inputs: list[str], output: Path, validation: str = "", exclude: str = ""
     ) -> Path:

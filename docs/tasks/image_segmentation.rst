@@ -67,12 +67,8 @@ name supplies the category, and the configured prompt supplies its text concept.
 Annotate all instances of each concept in each training image: SAM's COCO loader
 treats these as exhaustive annotations.
 
-Prepare data independently, including on a machine without Torch:
-
-.. code-block:: bash
-
-    collectra --pipeline pipeline.yaml task segment prepare-training-data results --output sam-data --validation validation
-
+``train`` automatically prepares its dataset under ``OUTPUT/dataset`` before
+launching training; no separate preparation command is needed.
 The export contains ``train`` and ``valid`` directories, RGB PNG images, and
 ``_annotations.coco.json`` files with instance masks encoded as lossless COCO
 RLE. Holes and disconnected regions are retained. The ``partition`` values

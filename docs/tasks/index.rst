@@ -40,7 +40,7 @@ Command overview
    * - ObjectDetectionDETR
      - ``run``, ``train``
    * - ImageSegmentationSam3
-     - ``run``, ``prepare-training-data``, ``train``
+     - ``run``, ``train``
    * - LineDetectorRLSA
      - ``run``
    * - LineDetectorSurya

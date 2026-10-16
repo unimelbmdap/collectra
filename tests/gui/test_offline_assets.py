@@ -51,10 +51,16 @@ def test_gui_asset_dependency_closure_is_local():
 
 def test_editor_and_image_controls_do_not_download_assets():
     html = (ROOT / "index.html").read_text()
-    assert "autoDownloadFontAwesome: false" in html
-    assert "spellChecker: false" in html
-    assert 'prefixUrl: "openseadragon/images/"' in html
-    assert 'prefixUrl: "https://' not in html
+    assets = Assets()
+    assets.feed(html)
+    assert "displays/text.js" in assets.references
+    assert "displays/image.js" in assets.references
+    editor = (ROOT / "displays/text.js").read_text()
+    image = (ROOT / "displays/image.js").read_text()
+    assert "autoDownloadFontAwesome: false" in editor
+    assert "spellChecker: false" in editor
+    assert 'prefixUrl: "openseadragon/images/"' in image
+    assert 'prefixUrl: "https://' not in html + image
     for name in ["zoomin", "zoomout", "home", "fullpage"]:
         for state in ["rest", "grouphover", "hover", "pressed"]:
             assert (ROOT / f"openseadragon/images/{name}_{state}.png").is_file()
