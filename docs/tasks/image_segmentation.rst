@@ -1,7 +1,7 @@
 Image segmentation
 ==================
 
-``ImageSegmentationSam3`` accepts ``Image`` and its subclasses and returns one
+``ImageSegmentationSam3`` and ``ImageSegmentationRFDETR`` accept ``Image`` and its subclasses and return one
 ``ImageSegmentation`` artefact for every predicted instance. Each result retains
 its input image as a parent and references a source-sized, binary 0/1 PNG mask.
 Crop and orientation transforms are inverted before writing masks, so masks
@@ -398,3 +398,92 @@ above, ``nvidia-smi`` output, and the Collectra and SAM3 revisions (run
 ``git -C /path/to/checkout rev-parse HEAD`` for each). This distinguishes
 installation, checkpoint, GPU and training-code problems without guessing from
 the final wrapper error.
+
+RF-DETR segmentation
+--------------------
+
+``ImageSegmentationRFDETR`` uses the same inputs, mask annotations and output
+artefacts as SAM3. Change the task type and select an RF-DETR segmentation model:
+
+.. code-block:: yaml
+
+    region_segmenter:
+      type: collectra.ImageSegmentationRFDETR
+      input: page
+      output: region
+      model: small
+      threshold: 0.5
+      device: cuda
+
+Keep the existing input/output node names from your pipeline. ``model`` accepts
+``nano``, ``small`` (the default), ``medium``, ``large``, ``xlarge`` or
+``2xlarge``, their package class names such as ``RFDETRSegSmall``, or a trained
+RF-DETR segmentation checkpoint. Relative checkpoint paths resolve against the
+pipeline directory. Optional ``resolution`` overrides the model's input size;
+RF-DETR validates its compatibility with the chosen architecture.
+
+RF-DETR learns fixed classes from annotation names; it is not text-prompted.
+SAM's ``prompt``, ``prompts`` and ``version`` settings may be removed. They are
+accepted when migrating a YAML, but do not control RF-DETR's predictions.
+Replace any SAM checkpoint in ``model`` with an RF-DETR model; the weights are
+not interchangeable. For multiple classes, list their artefact names in
+``output``; only configured output classes are returned.
+
+Installation and training
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use Collectra's ``ml`` extra with a current RF-DETR training installation
+(the Lightning training API). SAM3 and its source checkout are not needed.
+For example, from your Collectra checkout with a Python 3.12 venv:
+
+.. code-block:: bash
+
+    uv pip install --python .venv/bin/python -e '.[ml]'
+    uv pip install --python .venv/bin/python --upgrade 'rfdetr[train,loggers]>=1.10.1'
+    .venv/bin/python -c 'from rfdetr import RFDETRSegSmall; import rfdetr.training; print("RF-DETR ready")'
+
+Install a PyTorch/CUDA build compatible with your allocated GPU, as for other
+Collectra ML tasks. The first run can download pretrained weights. The GUI and
+mask dataset preparation remain usable without the ML dependencies.
+
+The SAM3 training flags also work here:
+
+.. code-block:: bash
+
+    htr task region_segmenter train \
+      --validation validation --exclude test \
+      --output /tmp/htr-rfdetr --wandb \
+      /path/to/HTR-data/V
+
+``--epochs``, ``--batch``, ``--num-gpus``, ``--max-items``, ``--reuse-data`` and
+``--no-keep-log`` have the same meanings as for SAM3. Output directories are
+created with parents. ``--reuse-data`` uses both existing COCO split annotation
+files in ``OUTPUT/dataset`` directly, ignoring source paths, partitions and
+``--max-items``. If either split file is missing, the dataset is rebuilt from
+the supplied inputs. Reuse does not resume optimizer state. SAM3 exports use
+the same lossless mask format and can also be reused; retain the corresponding
+``prompts`` mapping if it renamed multiple output categories in that export.
+
+Training writes ``metrics.csv`` with one row per epoch, including native RF-DETR
+loss and COCO metrics and ``val/mask_iou``. IoU combines foreground pixels for
+each class and image, filters predictions using ``threshold``, and sums
+intersection and union across the validation set and distributed workers.
+It measures class-aware foreground overlap rather than instance matching;
+the native segmentation mAP metrics measure instance quality alongside it.
+
+Only the best ``best.pt`` is kept, selected by validation mask IoU, or training
+loss when no validation images exist. It contains model weights and the
+architecture/class metadata needed for reloading, without optimizer state.
+``best.json`` records the selected epoch and metric. EMA is disabled so the
+validation score and saved weights refer to the same model. After training,
+Collectra copies the best checkpoint into the pipeline directory and updates
+the task's ``model`` entry automatically.
+
+``--wandb`` uses the project ``<pipeline-directory>-<task-name>`` and the output
+directory name as the run name. W&B settings or ``WANDB_ENTITY`` choose the
+entity. All epoch metrics, including IoU, go through RF-DETR's native logger.
+
+See the `RF-DETR segmentation models
+<https://rfdetr.roboflow.com/latest/learn/run/segmentation/>`_ and
+`training documentation <https://rfdetr.roboflow.com/latest/learn/train/>`_
+for upstream model and hardware details.

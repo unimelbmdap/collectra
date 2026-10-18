@@ -17,6 +17,7 @@ _EXPORTS = {
     "ObjectDetectionRFDETR": "collectra.tasks.object_detection.rfdetr",
     "ImageOrienter": "collectra.tasks.machine_learning.orienters",
     "ImageSegmentationSam3": "collectra.tasks.image_segmentation.sam3",
+    "ImageSegmentationRFDETR": "collectra.tasks.image_segmentation.rfdetr",
     "LLM": "collectra.tasks.llms",
     "LLMCanonicaliser": "collectra.tasks.canonicalisers",
     "IRNResolver": "collectra.tasks.irn_resolvers",

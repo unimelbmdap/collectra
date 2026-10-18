@@ -42,6 +42,7 @@ def test_gui_and_pipeline_discovery_with_ml_backends_unavailable():
                 ('huggingface', 'ImageClassifierHuggingFace'), ('orienter', 'ImageOrienter'),
                 ('llm', 'LLM'),
                 ('sam3', 'ImageSegmentationSam3'),
+                ('seg_rfdetr', 'ImageSegmentationRFDETR'),
             ]:
                 config[name] = {'type': 'collectra.' + kind, 'model': 'unused.pt'}
             pipeline_path = root / 'pipeline.yaml'
