@@ -1,7 +1,8 @@
 Image segmentation
 ==================
 
-``ImageSegmentationSam3`` and ``ImageSegmentationRFDETR`` accept ``Image`` and its subclasses and return one
+``ImageSegmentationSam3``, ``ImageSegmentationRFDETR`` and
+``ImageSegmentationYOLO`` accept ``Image`` and its subclasses and return one
 ``ImageSegmentation`` artefact for every predicted instance. Each result retains
 its input image as a parent and references a source-sized, binary 0/1 PNG mask.
 Crop and orientation transforms are inverted before writing masks, so masks
@@ -487,3 +488,93 @@ See the `RF-DETR segmentation models
 <https://rfdetr.roboflow.com/latest/learn/run/segmentation/>`_ and
 `training documentation <https://rfdetr.roboflow.com/latest/learn/train/>`_
 for upstream model and hardware details.
+
+YOLO segmentation
+-----------------
+
+``ImageSegmentationYOLO`` offers the same Collectra mask inputs, outputs and
+training flags using an Ultralytics instance segmentation model:
+
+.. code-block:: yaml
+
+    region_segmenter:
+      type: collectra.ImageSegmentationYOLO
+      input: page
+      output: region
+      model: yolo11n-seg.pt
+      threshold: 0.5
+      device: cuda
+      resolution: 640
+
+Use your pipeline's existing input/output names. ``model`` defaults to
+``yolo11n-seg.pt`` and accepts other Ultralytics segmentation model names,
+architecture YAML files, or trained segmentation checkpoints. Relative local
+checkpoint paths resolve against the pipeline directory. Detection-only models
+are rejected. The first execution of an official pretrained model may download
+its weights. ``resolution`` optionally controls inference/training image size;
+training defaults to 640 pixels. Like RF-DETR, YOLO learns annotation classes
+rather than using SAM text prompts.
+
+Install the YOLO extra into the environment used by your pipeline launcher:
+
+.. code-block:: bash
+
+    uv pip install --python .venv/bin/python -e '.[yolo]'
+    .venv/bin/python -c 'from ultralytics import YOLO; print("YOLO ready")'
+
+Collectra requires Ultralytics 8.4.160 or later for the bitmap training adapter.
+The ``yolo`` extra installs this dependency; SAM3 and RF-DETR are not needed.
+The GUI and COCO mask export work without YOLO or Torch installed.
+
+.. code-block:: bash
+
+    htr task region_segmenter train \
+      --validation validation --exclude test \
+      --output /tmp/htr-yolo --wandb \
+      /path/to/HTR-data/V
+
+All the shared segmentation flags apply: ``--epochs``, ``--batch`` (per GPU),
+``--num-gpus``, ``--max-items``, ``--reuse-data`` and ``--no-keep-log``.
+``device`` accepts ``cuda``, ``cuda:N``, ``cpu`` or ``mps``. Multiple GPUs use
+consecutive CUDA devices starting at the configured index. GPU/DDP operation
+requires a compatible PyTorch/CUDA installation.
+
+Training reads the same ``OUTPUT/dataset`` COCO bitmap exports used by SAM3 and
+RF-DETR, so existing exports can be reused directly. Reuse ignores source paths,
+partitions and ``--max-items``; missing split annotation files trigger export
+from the supplied inputs. It never resumes optimizer state. Preserve a SAM
+``prompts`` mapping if it renamed multiple categories in a reused export.
+
+The custom loader keeps masks as bitmaps, retaining holes and disconnected
+parts of each instance instead of converting them to YOLO polygons. It resizes
+and pads images and masks together and uses horizontal flips during training.
+Polygon-based mosaic, mixup and perspective augmentation are bypassed. As with
+any model input resize, features smaller than the training pixel grid can be
+lost; increase ``resolution`` when fine mask detail matters.
+
+``metrics.csv`` contains one row per epoch with training losses, native box/mask
+mAP metrics and ``val/mask_iou``. The IoU definition matches RF-DETR above.
+Only ``weights/best.pt`` is saved, selected by validation IoU, or training loss
+when there are no validation images. It contains the Ultralytics model weights
+and architecture/class metadata without optimizer or scaler state. ``best.json``
+records the selected epoch and metric. After training, Collectra copies this
+checkpoint into the pipeline directory and updates the task's ``model``.
+
+``--wandb`` logs the epoch metrics to ``<pipeline-directory>-<task-name>``, using
+the output directory name as the run name and W&B settings or ``WANDB_ENTITY``
+for the entity. Native Ultralytics logging is disabled to avoid duplicate runs.
+
+To generate predictions, use the same task command as the other segmenters:
+
+.. code-block:: bash
+
+    htr task region_segmenter run --help
+
+Prediction requests full-resolution instance masks and writes one source-sized
+binary PNG per instance, preserving parents, orientation and partition. Crop
+and rotation transforms are inverted and segmentation parents constrain the
+predicted pixels. Only configured output classes are returned.
+
+See the `Ultralytics segmentation documentation
+<https://docs.ultralytics.com/tasks/segment/>`_ for model variants and upstream
+training details.

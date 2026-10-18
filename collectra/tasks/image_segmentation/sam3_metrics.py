@@ -127,7 +127,7 @@ class EpochReporter:
             if hasattr(value, "item"):
                 value = value.item()
             if isinstance(value, (int, float)) and math.isfinite(value):
-                values[f"{phase}/{key}"] = value
+                values[f"{phase}/{key}" if phase else key] = value
         row = self.rows.setdefault(epoch, {"epoch": epoch})
         row.update(values)
         columns = ["epoch"] + sorted(

@@ -2,5 +2,6 @@
 
 from .sam3 import ImageSegmentationSam3
 from .rfdetr import ImageSegmentationRFDETR
+from .yolo import ImageSegmentationYOLO
 
-__all__ = ["ImageSegmentationSam3", "ImageSegmentationRFDETR"]
+__all__ = ["ImageSegmentationSam3", "ImageSegmentationRFDETR", "ImageSegmentationYOLO"]

@@ -62,7 +62,7 @@ ml = [
     "rfdetr[train,loggers] (>=1.6.5.post0)",
 ]
 yolo = [
-    "ultralytics (>=8.3.166)",
+    "ultralytics (>=8.4.160)",
     "drawyolo (>=0.1.3)",
 ]
 

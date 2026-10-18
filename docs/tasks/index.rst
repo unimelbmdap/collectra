@@ -43,6 +43,8 @@ Command overview
      - ``run``, ``train``
    * - ImageSegmentationRFDETR
      - ``run``, ``train``
+   * - ImageSegmentationYOLO
+     - ``run``, ``train``
    * - LineDetectorRLSA
      - ``run``
    * - LineDetectorSurya
