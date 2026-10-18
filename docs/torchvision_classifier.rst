@@ -62,7 +62,9 @@ Neither flip augmentation is applied during validation or inference.
 
 By default all model parameters are fine-tuned using AdamW. ``--freeze-backbone``
 trains only the final projection and freezes the rest of the model, including
-batch-normalization statistics. ``--learning-rate``, ``--weight-decay``,
+batch-normalization statistics. With RGB-view fusion enabled, it trains the
+attention modules and final projection while freezing the shared encoder.
+``--learning-rate``, ``--weight-decay``,
 ``--early-stop``, ``--device``, and ``--workers`` control training. Each CLI option
 has a description in ``train --help``.
 
@@ -123,14 +125,61 @@ are scaled by their dtype maximum (255 for uint8, 65535 for uint16); floating-po
 and signed integer values are cast to float32 without rescaling. Resizing, center
 cropping, and optional flips preserve all channels.
 
-RGB mean/std statistics are not repeated across spectral bands. When a model's
-preprocessing contains three-channel statistics but the dataset has a different
-channel count, training uses identity normalization and records the channel count
-and normalization in the checkpoint. Matching per-channel statistics, or one
-shared mean/std value, are applied when present in the preprocessing configuration.
-Ordinary RGB inputs retain their existing preprocessing.
+For channel counts divisible by three, RGB mean/std statistics repeat in channel
+order, treating the input as stacked RGB views. Other channel counts use identity
+normalization when only RGB statistics are available. Matching per-channel
+statistics, or one shared mean/std value, are applied when present. The actual
+channel count and normalization are recorded in the checkpoint. Ordinary RGB
+inputs retain their existing preprocessing.
 
 All exported training and validation images must have the same channel count.
 Mixed counts produce an error listing the affected filenames and counts.
-The model and its checkpoint reconstruction must already support the input channel
-count; this data-handling support does not adapt model input layers.
+By default, supported ResNet and ConvNeXt models adapt the first convolution by
+repeating and averaging its RGB weights across the views. The subsequent model
+processes the combined features normally. This remains the default with
+``fusion: false``.
+
+Attention fusion of RGB views
+-------------------------------
+
+Set the task's ``fusion`` attribute to ``true`` to combine views after shared
+feature extraction instead of combining channels in the first convolution:
+
+.. code-block:: yaml
+
+    specimen_classifier:
+      type: collectra.ImageClassifierTorchvision
+      input: [specimen]
+      output: [Pollen, Spore]
+      model: resnet18
+      fusion: true
+
+Input channels must be ordered ``R1,G1,B1,R2,G2,B2,...`` and their count must be a
+positive multiple of three. The number of views is inferred from the dataset:
+15 channels means five RGB views; 75 channels means 25. All views receive the
+same spatial crop and augmentation, and each RGB triplet uses the model's RGB
+normalization statistics.
+
+The views are reshaped into a single batch and passed through **one shared RGB
+encoder**. Learned, reference-conditioned softmax attention combines their
+feature vectors immediately before the final linear classification projection.
+The input convolution stays three-channel; encoder weights are shared across
+views. A residual gate starts at zero, preserving the first RGB view's prediction
+in evaluation mode initially, and learns how much the other views contribute.
+
+This follows the view-attention approach used by Collectra's YOLO and RF-DETR
+fusion models. Those detectors fuse spatial features before their detection
+heads; the classifier fuses feature vectors before its final class prediction.
+Training cost grows with the number of views, so choose batch size accordingly.
+
+Fusion supports torchvision classifiers with a final linear projection,
+including ResNet and ConvNeXt. Convolutional-only heads such as SqueezeNet's are
+not supported in fusion mode. Start from an RGB architecture/checkpoint; a
+checkpoint whose first convolution was already expanded to multiple views
+cannot be converted to this architecture by toggling the flag.
+
+Saved checkpoints contain the view count, attention configuration and all fusion
+weights. Loading a fusion checkpoint reconstructs it automatically, even when
+``fusion`` is omitted from the task YAML. Fine-tuning preserves its attention
+weights; changing classes replaces only the final projection. A dataset with a
+different view count is rejected rather than silently discarding learned views.

@@ -32,9 +32,11 @@ class Task(BaseEntity, Generic[T]):
         input (list[str]): List of input parameter names.
         output (list[str]): List of output names.
         context (TaskContext): Runtime context for task execution.
+        fusion (bool): Opt-in feature fusion for task types that support it.
     """
 
     collective: bool = False
+    fusion: bool = False
 
     def __init__(self, name: str, **kwargs) -> None:
         super().__init__(name)

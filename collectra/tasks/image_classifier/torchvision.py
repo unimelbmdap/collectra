@@ -159,8 +159,12 @@ class ImageClassifierTorchvision(TorchClassifierTask):
 
     prepare_training_inputs = staticmethod(prepare_classification_inputs)
 
-    def __init__(self, name: str, model: str | Path = "resnet18", **kwargs):
-        super().__init__(name, model=model, **kwargs)
+    def __init__(
+        self, name: str, model: str | Path = "resnet18", fusion: bool = False, **kwargs
+    ):
+        if not isinstance(fusion, bool):
+            raise ValueError("fusion must be a YAML boolean (true or false)")
+        super().__init__(name, model=model, fusion=fusion, **kwargs)
         self.original_model_path: Path | None = None
         self._categories: list[str] = []
         self._architecture = ""
@@ -239,6 +243,20 @@ class ImageClassifierTorchvision(TorchClassifierTask):
                 f"Inconsistent input channel counts in classifier dataset: {details}"
             )
         channels = next(iter(detected.values()))
+        if self.fusion:
+            if channels < 3 or channels % 3:
+                raise ValueError(
+                    "fusion requires stacked RGB views with a channel count divisible by 3"
+                )
+            from .torchvision_fusion import RGBViewFusionClassifier
+
+            if (
+                isinstance(self.model, RGBViewFusionClassifier)
+                and self.model.input_channels != channels
+            ):
+                raise ValueError(
+                    f"Fusion checkpoint expects {self.model.input_channels} channels; dataset has {channels}"
+                )
         self._preprocessing["channels"] = channels
         self._input_channels = channels
         if (
@@ -299,8 +317,14 @@ class ImageClassifierTorchvision(TorchClassifierTask):
                 self._architecture, weights=None, **self._model_kwargs
             )
             self._input_channels = checkpoint.get("input_channels", 3)
+            fusion_spec = checkpoint.get("fusion")
 
-            if self._input_channels != 3:
+            if self._input_channels != 3 and not fusion_spec:
+                if self.fusion:
+                    raise ValueError(
+                        "Cannot enable fusion on a first-layer-adapted checkpoint; "
+                        "start from an RGB model or a fusion checkpoint"
+                    )
                 _ensure_supported_multichannel_architecture(
                     self._architecture, self._input_channels
                 )
@@ -311,6 +335,11 @@ class ImageClassifierTorchvision(TorchClassifierTask):
 
             _disable_auxiliary_heads(model)
             _replace_head(model, len(self._categories))
+            if fusion_spec:
+                from .torchvision_fusion import restore_fusion
+
+                model = restore_fusion(model, self._input_channels, fusion_spec)
+                self.fusion = True
             model.load_state_dict(checkpoint["state_dict"])
             self.original_model_path = path.resolve()
         else:
@@ -526,6 +555,7 @@ class ImageClassifierTorchvision(TorchClassifierTask):
             "architecture": self._architecture,
             "model_kwargs": self._model_kwargs,
             "input_channels": self._input_channels,
+            "fusion": self.model.fusion_spec if self.fusion else None,
             "classes": self._categories,
             "preprocessing": self._preprocessing,
             "state_dict": {
@@ -541,7 +571,14 @@ class ImageClassifierTorchvision(TorchClassifierTask):
 
         self._load(pretrained=pretrained)
 
-        if self._input_channels != 3:
+        if self.fusion:
+            from .torchvision_fusion import RGBViewFusionClassifier
+
+            if not isinstance(self.model, RGBViewFusionClassifier):
+                self.model = RGBViewFusionClassifier(self.model, self._input_channels)
+            elif self.model.input_channels != self._input_channels:
+                raise ValueError("Fusion checkpoint channel count differs from training inputs")
+        elif self._input_channels != 3:
             _ensure_supported_multichannel_architecture(
                 self._architecture,
                 self._input_channels,
@@ -557,6 +594,10 @@ class ImageClassifierTorchvision(TorchClassifierTask):
         self._categories = classes
         self.model.to(self._device)
         self.model.requires_grad_(not freeze)
+        if freeze and self.fusion:
+            self.model.attention.requires_grad_(True)
+            self.model.view_bias.requires_grad_(True)
+            self.model.gate.requires_grad_(True)
         if freeze:
             for name in ("fc", "classifier", "heads", "head"):
                 head = getattr(self.model, name, None)
