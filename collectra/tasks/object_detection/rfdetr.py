@@ -582,9 +582,12 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
 
         from .rfdetr_channels import multichannel_checkpoints
         from .rfdetr_data import multichannel_datasets
+        from .rfdetr_curves import wandb_detection_curves
 
         model = self.model
-        with multichannel_datasets(), multichannel_checkpoints():
+        with multichannel_datasets(), multichannel_checkpoints(), wandb_detection_curves(
+            params["wandb"] and bool(val_samples), log, classes
+        ):
             model.train(
                 dataset_dir=str(dataset_dir),
                 **params,

@@ -1,5 +1,5 @@
 ObjectDetectionRFDETR
-=====================
+=======================
 
 Uses RF-DETR to detect objects and return labelled image crops. Select a
 pretrained variant or a checkpoint trained for your collection:
@@ -13,7 +13,7 @@ pretrained variant or a checkpoint trained for your collection:
       output: [label]
 
 Commands
---------
+----------
 
 * ``run INPUTS...``: run the configured detector with the shared run options.
 * ``train INPUTS...``: fine-tune on annotated result directories. ``--model``
@@ -31,11 +31,38 @@ Commands
 Variant availability depends on the installed RF-DETR package. Some variants
 require its optional packages. Add ``--no-wandb`` to disable W&B logging.
 
+Validation curves in W&B
+--------------------------
+
+With ``--wandb`` and a validation partition, each evaluated validation epoch
+logs interactive Recall-Confidence, Precision-Recall, Precision-Confidence and
+F1-Confidence curves under ``curves/`` in the existing W&B run. Each plot has
+per-class lines and a mean across classes with validation ground truth.
+
+.. code-block:: bash
+
+    collectra --pipeline pipeline.yaml task detect_labels train training-data \
+        --model nano --epochs 20 --validation validation --wandb
+
+Curves reuse RF-DETR's native validation matches at box IoU 0.5, including its
+duplicate-detection and crowd/ignore handling. Confidence is swept from 0 to 1
+in increments of 0.01. Precision-recall uses an interpolated precision envelope
+on a shared recall grid before averaging classes. The curves follow the same
+prediction track used by RF-DETR's native validation F1 metric, without running
+inference again or opening a separate W&B run. Validation sanity checks and
+test/training splits do not produce these plots.
+
+Underlying values are also saved to ``OUTPUT/curves/epoch-NNNN.json``. Only rank
+zero writes files and logs plots; detections are gathered across training ranks.
+No curves are generated without validation data or when W&B is disabled. This
+integration uses RF-DETR's Lightning validation callback and matching utilities;
+use a current installation of ``rfdetr[train,loggers]``.
+
 See :doc:`../licensing` when choosing checkpoints; RF-DETR Plus components
 have different terms from the Apache-designated models.
 
 Multiview feature fusion
------------------------
+--------------------------
 
 For spatially aligned RGB views, the task command ``adapt-feature-fusion`` creates a
 checkpoint that applies a shared pretrained RGB encoder to each view and learns
@@ -65,7 +92,7 @@ modules and current weights. Training uses torchvision augmentation with
 is not supported. Compute and activation memory increase with the view count.
 
 Input-channel expansion
------------------------
+-------------------------
 
 The ``adapt-input-channels`` task command repeats pretrained RGB filters across
 registered views and divides their weights by the view count. Repeating the
