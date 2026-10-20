@@ -57,6 +57,8 @@ Command overview
      - ``run``, ``train``
    * - OCRSuraya
      - ``run``
+   * - OCRHuggingFace
+     - ``run``, ``train``
    * - LLM
      - ``run``
    * - LLMCanonicaliser

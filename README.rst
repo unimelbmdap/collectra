@@ -313,6 +313,8 @@ Built-in task types include:
 * ``collectra.LineDetectorRLSA``: detect printed-text lines using image processing.
 * ``collectra.LineDetectorSurya``: detect text lines with Surya models.
 * ``collectra.OCRSuraya``: recognize text in images or crops.
+* ``collectra.OCRHuggingFace``: recognize text with Transformers image-to-text
+  models such as DeepSeek-OCR-2 or PaddleOCR-VL, with fine-tuning.
 * ``collectra.ConcatenateText``: combine text artefacts.
 * ``collectra.ObjectDetectionYOLO``, ``collectra.ObjectDetectionDETR``, and
   ``collectra.ObjectDetectionRFDETR``: produce labelled object crops.

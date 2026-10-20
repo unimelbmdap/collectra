@@ -25,6 +25,7 @@ _EXPORTS = {
     "normalise_column_name": "collectra.tasks.irn_resolvers",
     "render_card": "collectra.tasks.irn_resolvers",
     "OCRSuraya": "collectra.tasks.ocr",
+    "OCRHuggingFace": "collectra.tasks.ocr_huggingface",
     "LineDetectorSurya": "collectra.tasks.ocr",
     "LineDetectorRLSA": "collectra.tasks.line_detection",
     "ConcatenateText": "collectra.tasks.text",
