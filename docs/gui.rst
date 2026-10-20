@@ -33,6 +33,13 @@ Open results
     collectra --pipeline pipeline.yaml gui results/page001.collectra/results.yaml
     collectra --pipeline pipeline.yaml gui results
     collectra --pipeline pipeline.yaml gui --help
+    collectra --pipeline pipeline.yaml gui --max-pixels 2048
+
+Image and mask previews default to at most 4096 pixels on their longest edge.
+``--max-pixels`` sets this limit for the session, including mask editing previews.
+It must be a positive integer. The original images and masks stay at full
+resolution, and brush positions and sizes are mapped back to source pixels.
+The setting is preserved when using the GUI's restart action.
 
 Without paths, select a results folder in the GUI. You can supply multiple
 result paths or parent directories. Result directories must use the extension

@@ -15,13 +15,20 @@ from collectra.utils import load_class_from_string
 
 
 class DisplayContext:
-    def __init__(self, records: dict, directory: Path, rgb_view: int = 0):
+    def __init__(self, records: dict, directory: Path, rgb_view: int = 0, max_pixels: int | None = None):
+        from collectra.displays.preview import MAX_PREVIEW_EDGE
+
+        if max_pixels is None:
+            max_pixels = MAX_PREVIEW_EDGE
+        if type(max_pixels) is not int or max_pixels < 1:
+            raise ValueError("max_pixels must be a positive integer")
         if type(rgb_view) is not int or rgb_view < 0:
             raise ValueError("RGB view index must be a non-negative integer")
         self.records = records
         self.directory = Path(directory).resolve()
         self.instances = {}
         self.rgb_view = rgb_view
+        self.max_pixels = max_pixels
 
     def path(self, value):
         path = Path(value)

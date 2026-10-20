@@ -44,13 +44,16 @@ class GUIBackend:
         window.pywebview.api.methodName(args)
     """
 
-    def __init__(self, pipeline: "Collectra", inputs=()):
+    def __init__(self, pipeline: "Collectra", inputs=(), max_pixels: int = 4096):
         """
         Initialize the API instance.
 
         Sets up the annotation graph, YAML path, and window reference.
         All values are initially None until load_yaml() is called.
         """
+        if type(max_pixels) is not int or max_pixels < 1:
+            raise ValueError("max_pixels must be a positive integer")
+        self._max_pixels = max_pixels
         self._git_lock = threading.Lock()
         self._text_save_lock = threading.Lock()
         self._update_lock = threading.Lock()
@@ -719,7 +722,7 @@ class GUIBackend:
             for node_id in self._graph.nodes
             if self._graph.get_node(node_id)
         }
-        return DisplayContext(records, Path(self._yaml_path).parent, rgb_view=rgb_view)
+        return DisplayContext(records, Path(self._yaml_path).parent, rgb_view=rgb_view, max_pixels=self._max_pixels)
 
     def get_artefact_display(self, node_id: str = "", rgb_view: int = 0) -> dict:
         """Ask the actual artefact class how it should be presented."""
@@ -806,7 +809,7 @@ class GUIBackend:
                     key: {**graph.get_node(key).model_dump(), "label": graph.get_node(key).label}
                     for key in graph.nodes if graph.get_node(key)
                 }
-                context = DisplayContext(records, target.parent)
+                context = DisplayContext(records, target.parent, max_pixels=self._max_pixels)
                 item = context.artefact(graph.resolve_id(node_id))
                 if isinstance(item, Link):
                     item = item.resolve()
@@ -847,7 +850,7 @@ class GUIBackend:
                     key: {**graph.get_node(key).model_dump(), "label": graph.get_node(key).label}
                     for key in graph.nodes if graph.get_node(key)
                 }
-                context = DisplayContext(records, target.parent)
+                context = DisplayContext(records, target.parent, max_pixels=self._max_pixels)
                 item = context.artefact(graph.resolve_id(node_id))
                 view = item.display(context)
                 if view.get("kind") != "text" or not view.get("editable"):
@@ -1789,6 +1792,7 @@ def start(
     pipeline: "Collectra",
     debug: bool = False,
     inputs=(),
+    max_pixels: int = 4096,
 ):
     """
     Create and start the pywebview window with the API.
@@ -1797,9 +1801,10 @@ def start(
         pipeline: The live pipeline whose graph the GUI displays.
         debug: Enable developer tools
         inputs: Optional result files/folders to populate the sidebar at startup.
+        max_pixels: Maximum image/mask preview dimension in pixels.
     """
     _set_macos_app_name(pipeline.name)
-    api = GUIBackend(pipeline, inputs=inputs)
+    api = GUIBackend(pipeline, inputs=inputs, max_pixels=max_pixels)
     html_path = get_resource_path("index.html")
     window = webview.create_window(
         title=pipeline.name,
@@ -1826,6 +1831,7 @@ def start(
                      str(Path(pipeline.path).resolve() / "pipeline.yaml"), "gui"]
         if debug:
             arguments.append("--debug")
+        arguments.extend(["--max-pixels", str(max_pixels)])
         # Reuse the environment and process. Startup restores saved results,
         # the selected page, and layout rather than the original launch inputs.
         os.execv(sys.executable, arguments)

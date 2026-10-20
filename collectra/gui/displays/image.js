@@ -35,7 +35,7 @@ function installImageDisplay(PanelController) {
                 this.zoomToBoxGeometry(match.target.selector.geometry);
             } else {
                 this.pageAnno.cancelSelected?.();
-                if (this.displayView?.segmentation) this.zoomToBoxGeometry(this.displayView.segmentation.bounds);
+                if (this.displayView?.segmentation) this.zoomToBoxGeometry(segmentationBoundsInPreview(this, this.displayView.segmentation));
                 else if (this.pageViewer) this.pageViewer.viewport.goHome();
             }
         };

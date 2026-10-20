@@ -160,12 +160,17 @@ class Collectra:
         )
 
     @command(name="gui")
-    def launch_gui(self, *inputs: Path, debug: bool = False) -> None:
+    def launch_gui(
+        self, *inputs: Path, debug: bool = False,
+        max_pixels: Annotated[int, Arg(help="Maximum image and mask preview dimension in pixels (longest edge). Originals remain full resolution.")] = 4096,
+    ) -> None:
         """Open the GUI with optional result folders, results.yaml files, or parent directories."""
         from collectra.gui.backend import start
 
+        if max_pixels < 1:
+            raise ValueError("--max-pixels must be positive")
         self._ensure_workflow_connected()
-        start(pipeline=self, debug=debug, inputs=inputs)
+        start(pipeline=self, debug=debug, inputs=inputs, max_pixels=max_pixels)
 
     @command(name="partition")
     def cli_partition(

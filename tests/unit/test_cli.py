@@ -525,8 +525,9 @@ def test_concrete_model_tasks_own_typed_train_commands(capsys):
 
 @pytest.mark.parametrize("debug", [False, True])
 @pytest.mark.parametrize("with_inputs", [False, True])
+@pytest.mark.parametrize("max_pixels", [None, 2048])
 def test_pipeline_gui_opens_selected_workflow(
-    tmp_path, monkeypatch, debug, with_inputs
+    tmp_path, monkeypatch, debug, with_inputs, max_pixels
 ):
     from unittest.mock import MagicMock
 
@@ -562,11 +563,13 @@ def test_pipeline_gui_opens_selected_workflow(
             "gui",
             *inputs,
             *(["--debug"] if debug else []),
+            *(["--max-pixels", str(max_pixels)] if max_pixels else []),
         ]
     )
 
     create_window.assert_called_once()
     api = create_window.call_args.kwargs["js_api"]
+    assert api._max_pixels == (max_pixels or 4096)
     assert api._pipeline.path == pipeline_dir.resolve()
     assert api._extension == "example"
     initial = api.get_initial_items()

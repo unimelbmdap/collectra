@@ -664,10 +664,19 @@ class ImageSegmentation(Image):
                 raise ValueError("ImageSegmentation mask must be a PNG file")
             if mask.size != (self.raw_width, self.raw_height):
                 raise ValueError("Mask dimensions must match the source image")
-            pixels = np.asarray(mask)
-            if pixels.ndim != 2 or not np.isin(pixels, [0, 1]).all():
-                raise ValueError("Mask must contain only single-channel 0 and 1 pixels")
-            alpha = ImagePil.fromarray(pixels.astype("uint8") * 255)
+            if mask.mode in {"L", "P"}:
+                # A histogram validates binary values without large temporary
+                # NumPy arrays for every full-resolution mask in the viewer.
+                if any(mask.histogram()[2:]):
+                    raise ValueError("Mask must contain only single-channel 0 and 1 pixels")
+                alpha = mask.point([0, 255] + [0] * 254, mode="L")
+            elif mask.mode == "1":
+                alpha = mask.convert("L")
+            else:
+                pixels = np.asarray(mask)
+                if pixels.ndim != 2 or not np.isin(pixels, [0, 1]).all():
+                    raise ValueError("Mask must contain only single-channel 0 and 1 pixels")
+                alpha = ImagePil.fromarray(pixels.astype("uint8") * 255)
         if alpha.getbbox() is None:
             raise ValueError("ImageSegmentation mask is empty")
         return alpha

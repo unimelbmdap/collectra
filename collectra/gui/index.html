@@ -417,6 +417,12 @@
         .image-panel:has(> .collapsed) > :not(.collapsed):not(.image-panel-resize-handle) {
             flex: 1 1 0 !important;
         }
+        /* A promoted or restored final panel can retain a saved 50% basis.
+           With no sibling, fill the workspace regardless of that old split. */
+        .image-panel > :only-child,
+        .split-wrapper > :only-child {
+            flex: 1 1 0 !important;
+        }
         /* The button at the left of each tab row that collapses and expands the panel. */
         .panel-collapse-btn {
             display: flex;
