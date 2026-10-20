@@ -95,3 +95,6 @@ last epoch is kept. For large models, ``--lora`` trains low-rank adapters
 (requires ``peft``) and merges them into the saved model;
 ``--gradient-checkpointing``, ``--freeze-vision`` and ``--accumulate`` reduce
 memory use further.
+``--wandb`` logs each epoch's training loss, validation loss and character
+error rate to Weights & Biases in project ``<pipeline-directory>-<task>``, with
+the output directory name as the run name.

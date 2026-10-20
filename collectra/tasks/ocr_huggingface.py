@@ -492,6 +492,12 @@ class OCRHuggingFace(Task):
         seed: Annotated[
             int, Arg(help="Random seed for shuffling and initialization.")
         ] = 0,
+        wandb: Annotated[
+            bool,
+            Arg(
+                help="Log epoch metrics to Weights & Biases. Project: <pipeline-directory>-<task>; run: output directory name; entity: W&B settings or WANDB_ENTITY."
+            ),
+        ] = False,
     ) -> Path:
         """Fine-tune the model on transcribed images and save the best model to the pipeline."""
         import torch
@@ -581,58 +587,96 @@ class OCRHuggingFace(Task):
         metrics_path.write_text("epoch,train_loss,val_loss,cer\n")
         best_cer, stale, best_adapters = float("inf"), 0, None
         started = time.monotonic()
-        for epoch in range(1, epochs + 1):
-            network.train()
-            order = list(range(len(train_set)))
-            random.shuffle(order)
-            total, count = 0.0, 0
-            optimizer.zero_grad()
-            batches = [order[i : i + batch] for i in range(0, len(order), batch)]
-            for step, indices in enumerate(
-                track(batches, description=f"Epoch {epoch}/{epochs}"), 1
-            ):
-                images, texts = zip(*(train_set[i] for i in indices))
-                inputs_ = self._to_device(
-                    self._training_batch(list(images), list(texts))
-                )
-                loss = network(**inputs_).loss
-                (loss / accumulate).backward()
-                total, count = total + loss.item(), count + 1
-                if step % accumulate == 0 or step == len(batches):
-                    optimizer.step()
-                    scheduler.step()
-                    optimizer.zero_grad()
-            metrics = {"train_loss": total / count}
-            if len(val_set):
-                metrics |= self._evaluate(val_set, batch)
-            training_progress(
-                f"Epoch {epoch}: "
-                + ", ".join(f"{name}={value:.4f}" for name, value in metrics.items())
+        run = None
+        if wandb:
+            try:
+                import wandb as sdk
+            except ModuleNotFoundError as error:
+                raise ImportError("--wandb requires wandb: pip install wandb") from error
+            run = sdk.init(
+                project=f"{self.pipeline.path.name}-{self.name}",
+                name=output.name,
+                dir=str(output),
+                config={
+                    "model": str(model or self.model),
+                    "prompt": self.prompt,
+                    "train_images": len(train_set),
+                    "validation_images": len(val_set),
+                    "epochs": epochs,
+                    "batch": batch,
+                    "accumulate": accumulate,
+                    "learning_rate": learning_rate,
+                    "weight_decay": weight_decay,
+                    "lora": lora,
+                    "lora_rank": lora_rank if lora else None,
+                    "freeze_vision": freeze_vision,
+                    "gradient_checkpointing": gradient_checkpointing,
+                    "seed": seed,
+                },
             )
-            with open(metrics_path, "a") as stream:
-                stream.write(
-                    f"{epoch},{metrics['train_loss']},{metrics.get('val_loss', '')},{metrics.get('cer', '')}\n"
+            run.define_metric("epoch")
+            run.define_metric("*", step_metric="epoch")
+        try:
+            for epoch in range(1, epochs + 1):
+                network.train()
+                order = list(range(len(train_set)))
+                random.shuffle(order)
+                total, count = 0.0, 0
+                optimizer.zero_grad()
+                batches = [order[i : i + batch] for i in range(0, len(order), batch)]
+                for step, indices in enumerate(
+                    track(batches, description=f"Epoch {epoch}/{epochs}"), 1
+                ):
+                    images, texts = zip(*(train_set[i] for i in indices))
+                    inputs_ = self._to_device(
+                        self._training_batch(list(images), list(texts))
+                    )
+                    loss = network(**inputs_).loss
+                    (loss / accumulate).backward()
+                    total, count = total + loss.item(), count + 1
+                    if step % accumulate == 0 or step == len(batches):
+                        optimizer.step()
+                        scheduler.step()
+                        optimizer.zero_grad()
+                metrics = {"train_loss": total / count}
+                if len(val_set):
+                    metrics |= self._evaluate(val_set, batch)
+                training_progress(
+                    f"Epoch {epoch}: "
+                    + ", ".join(f"{name}={value:.4f}" for name, value in metrics.items())
                 )
-            # Without validation the latest epoch is kept.
-            cer = metrics.get("cer", -epoch)
-            if cer < best_cer:
-                best_cer, stale = cer, 0
-                if best_dir.exists():
-                    shutil.rmtree(best_dir)
-                if lora:
-                    # Adapters are small: keep the best in memory and merge once at the end.
-                    best_adapters = {
-                        name: value.detach().cpu().clone()
-                        for name, value in get_peft_model_state_dict(network).items()
-                    }
+                if run is not None:
+                    run.log({"epoch": epoch, **metrics})
+                with open(metrics_path, "a") as stream:
+                    stream.write(
+                        f"{epoch},{metrics['train_loss']},{metrics.get('val_loss', '')},{metrics.get('cer', '')}\n"
+                    )
+                # Without validation the latest epoch is kept.
+                cer = metrics.get("cer", -epoch)
+                if cer < best_cer:
+                    best_cer, stale = cer, 0
+                    if run is not None and "cer" in metrics:
+                        run.summary["best_cer"] = cer
+                        run.summary["best_epoch"] = epoch
+                    if best_dir.exists():
+                        shutil.rmtree(best_dir)
+                    if lora:
+                        # Adapters are small: keep the best in memory and merge once at the end.
+                        best_adapters = {
+                            name: value.detach().cpu().clone()
+                            for name, value in get_peft_model_state_dict(network).items()
+                        }
+                    else:
+                        network.save_pretrained(best_dir)
+                        self._processor.save_pretrained(best_dir)
                 else:
-                    network.save_pretrained(best_dir)
-                    self._processor.save_pretrained(best_dir)
-            else:
-                stale += 1
-                if early_stop and stale >= early_stop:
-                    training_progress(f"Stopping early after {epoch} epochs")
-                    break
+                    stale += 1
+                    if early_stop and stale >= early_stop:
+                        training_progress(f"Stopping early after {epoch} epochs")
+                        break
+        finally:
+            if run is not None:
+                run.finish()
 
         if lora:
             set_peft_model_state_dict(network, best_adapters)

@@ -208,3 +208,51 @@ def test_lora_adapters_are_merged_into_saved_model(tiny_model, tmp_path):
     assert not (tmp_path / "run").exists()
     with safe_open(destination / "model.safetensors", "pt") as weights:
         assert not any("lora" in name for name in weights.keys())
+
+
+def test_wandb_logs_epoch_metrics(tiny_model, tmp_path, monkeypatch):
+    import sys
+    import types
+
+    from collectra import Collectra
+
+    class FakeRun:
+        def __init__(self, **kwargs):
+            self.init, self.logged, self.summary = kwargs, [], {}
+            self.finished = False
+
+        def define_metric(self, *args, **kwargs):
+            pass
+
+        def log(self, metrics):
+            self.logged.append(metrics)
+
+        def finish(self):
+            self.finished = True
+
+    runs = []
+    fake = types.ModuleType("wandb")
+    fake.init = lambda **kwargs: runs.append(FakeRun(**kwargs)) or runs[-1]
+    monkeypatch.setitem(sys.modules, "wandb", fake)
+
+    pipeline_file, data_dir = make_pipeline(tmp_path, tiny_model)
+    pipeline = Collectra.from_file(pipeline_file)
+    pipeline.connect()
+    task = pipeline.node_manager.resolve_node("line_reader").get_task()
+    task.train(
+        [str(data_dir)],
+        output=tmp_path / "run",
+        validation="validation",
+        epochs=2,
+        batch=2,
+        early_stop=0,
+        wandb=True,
+    )
+    (run,) = runs
+    assert run.init["project"] == "pipeline-line_reader"
+    assert run.init["name"] == "run"
+    assert run.init["config"]["epochs"] == 2
+    assert [metrics["epoch"] for metrics in run.logged] == [1, 2]
+    assert {"train_loss", "val_loss", "cer"} <= set(run.logged[0])
+    assert "best_cer" in run.summary
+    assert run.finished
