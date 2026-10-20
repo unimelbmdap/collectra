@@ -104,6 +104,9 @@ def training_hooks(output, threshold, has_validation):
 
     RF-DETR's train() constructs its own callbacks. Scope the extension to this
     training process, leaving its COCO evaluation and W&B/CSV loggers intact.
+    RF-DETR's CSV logger is moved to OUTPUT/lightning: it also writes
+    metrics.csv, and rereads that file whenever new metric keys appear, so
+    sharing Collectra's per-epoch OUTPUT/metrics.csv crashes training.
     """
     import rfdetr.training.trainer as native
     from pytorch_lightning.callbacks import ModelCheckpoint
@@ -125,13 +128,20 @@ def training_hooks(output, threshold, has_validation):
             kwargs["limit_val_batches"] = 0
         return original_builder(*args, **kwargs)
 
+    original_csv_logger = native.CSVLogger
+
+    def csv_logger(save_dir, *args, **kwargs):
+        return original_csv_logger(Path(save_dir) / "lightning", *args, **kwargs)
+
     native._append_training_callbacks = append
     training.build_trainer = build
+    native.CSVLogger = csv_logger
     try:
         yield
     finally:
         native._append_training_callbacks = original
         training.build_trainer = original_builder
+        native.CSVLogger = original_csv_logger
 
 
 def launch(config_path):

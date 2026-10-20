@@ -477,6 +477,8 @@ each class and image, filters predictions using ``threshold``, and sums
 intersection and union across the validation set and distributed workers.
 It measures class-aware foreground overlap rather than instance matching;
 the native segmentation mAP metrics measure instance quality alongside it.
+RF-DETR's own step-level Lightning log is kept separately in
+``OUTPUT/lightning/metrics.csv``.
 
 Only the best ``best.pt`` is kept, selected by validation mask IoU, or training
 loss when no validation images exist. It contains model weights and the

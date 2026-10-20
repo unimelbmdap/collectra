@@ -262,6 +262,31 @@ def test_native_trainer_hooks_disable_optimizer_checkpoints(tmp_path):
     assert training.build_trainer is original
 
 
+def test_native_csv_logger_does_not_share_collectra_metrics_csv(tmp_path):
+    pytest.importorskip("rfdetr")
+    pytest.importorskip("pytorch_lightning")
+    import rfdetr.training as training
+    import rfdetr.training.trainer as native
+    from pytorch_lightning.loggers import CSVLogger
+    from rfdetr.config import RFDETRSegSmallConfig, SegmentationTrainConfig
+    from collectra.tasks.image_segmentation.rfdetr_training import training_hooks
+
+    original = native.CSVLogger
+    config = SegmentationTrainConfig(dataset_dir=str(tmp_path), output_dir=str(tmp_path), epochs=1, use_ema=False,
+                                     tensorboard=False, wandb=False, progress_bar=None)
+    with training_hooks(tmp_path, .5, True):
+        trainer = training.build_trainer(config, RFDETRSegSmallConfig(), accelerator="cpu", devices=1)
+    assert native.CSVLogger is original
+    (logger,) = [item for item in trainer.loggers if isinstance(item, CSVLogger)]
+    assert Path(logger.log_dir) == tmp_path / "lightning"
+    # Collectra's own per-epoch file has columns the native logger never logged.
+    (tmp_path / "metrics.csv").write_text("epoch,loss_cls,mask_dice\n1,0.5,0.2\n")
+    for metrics in ({"train/loss": 1.0}, {"train/loss": 0.9, "train/lr": 0.001}):
+        logger.log_metrics(metrics)
+        logger.save()
+    assert (tmp_path / "metrics.csv").read_text().startswith("epoch,loss_cls,mask_dice")
+
+
 @pytest.mark.parametrize("has_validation", [True, False])
 def test_cpu_epoch_loop_reports_metrics_and_saves_reloadable_weights(tmp_path, has_validation):
     import csv
