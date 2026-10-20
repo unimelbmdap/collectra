@@ -465,6 +465,12 @@ the supplied inputs. Reuse does not resume optimizer state. SAM3 exports use
 the same lossless mask format and can also be reused; retain the corresponding
 ``prompts`` mapping if it renamed multiple output categories in that export.
 
+``--model`` chooses the starting weights for this run without editing the YAML:
+a variant such as ``--model medium``, its class name, or a checkpoint path
+relative to the pipeline directory. It defaults to the configured ``model``.
+Unknown variants and missing checkpoints fail before data preparation. The
+trained weights replace the configured ``model`` either way.
+
 Training writes ``metrics.csv`` with one row per epoch, including native RF-DETR
 loss and COCO metrics and ``val/mask_iou``. IoU combines foreground pixels for
 each class and image, filters predictions using ``threshold``, and sums

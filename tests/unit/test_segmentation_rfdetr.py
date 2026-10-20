@@ -155,6 +155,30 @@ def test_training_cli_flags_and_model_adoption(pipeline, sample, tmp_path, monke
     assert pipeline.data["segment"]["model"] == task.model.name
 
 
+def test_training_model_override(pipeline, sample, tmp_path, monkeypatch):
+    task = pipeline.cli_tasks()["segment"]
+    monkeypatch.setattr(task, "_samples", Mock(return_value=[sample]))
+    fake_training(monkeypatch)
+    output = tmp_path / "run"
+    invoke(pipeline, ["task", "segment", "train", "--output", str(output), "--model", "medium", str(tmp_path)])
+    assert json.loads((output / "rfdetr-training.json").read_text())["model"] == "medium"
+    # The trained weights still replace the configured model.
+    assert pipeline.data["segment"]["model"] == task.model.name
+
+    (tmp_path / "start.pt").write_bytes(b"weights")
+    task.train([str(tmp_path)], output=tmp_path / "run2", model="start.pt")
+    config = json.loads((tmp_path / "run2" / "rfdetr-training.json").read_text())
+    assert config["model"] == str((tmp_path / "start.pt").resolve())
+
+
+def test_missing_model_override_fails_before_preparation(pipeline, sample, tmp_path, monkeypatch):
+    task = pipeline.cli_tasks()["segment"]
+    monkeypatch.setattr(task, "_samples", Mock(return_value=[sample]))
+    with pytest.raises(FileNotFoundError, match="nano, small"):
+        task.train([str(tmp_path)], output=tmp_path / "run", model="mediun")
+    task._samples.assert_not_called()
+
+
 def test_reuse_overrides_loading_and_max_items(pipeline, sample, tmp_path, monkeypatch):
     task = pipeline.cli_tasks()["segment"]
     monkeypatch.setattr(task, "_samples", Mock(return_value=[sample]))

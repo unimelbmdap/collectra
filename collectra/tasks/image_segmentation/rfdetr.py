@@ -163,6 +163,10 @@ class ImageSegmentationRFDETR(SegmentationTrainingData, Task):
             Path | None,
             Arg(help="Directory for prepared data, metrics.csv, logs and best model weights. Defaults to a timestamped directory; required with --reuse-data."),
         ] = None,
+        model: Annotated[
+            str,
+            Arg(help="Model to fine-tune: a variant (nano, small, medium, large, xlarge or 2xlarge), its class name such as RFDETRSegMedium, or an RF-DETR segmentation checkpoint relative to the pipeline directory. Omit to use the configured model. The trained weights replace the configured model either way."),
+        ] = "",
         validation: Annotated[
             str,
             Arg(help="Partition used for validation and best-model selection by mask IoU. Omit to train without validation. Ignored when reusing an existing export."),
@@ -204,6 +208,16 @@ class ImageSegmentationRFDETR(SegmentationTrainingData, Task):
             raise RuntimeError("Attach the task to a pipeline before training")
         if reuse_data and output is None:
             raise ValueError("--reuse-data requires --output")
+        # Resolve the starting weights before any data preparation so typos fail fast.
+        model = str(model or self.model)
+        if model not in VARIANTS and model not in VARIANTS.values():
+            path = Path(model).expanduser()
+            path = path.resolve() if path.is_absolute() else (self.pipeline.path / path).resolve()
+            if not path.is_file():
+                raise FileNotFoundError(
+                    f"RF-DETR model must be one of {', '.join(VARIANTS)} or a checkpoint file: {path}"
+                )
+            model = str(path)
         output = (Path(output).expanduser().resolve() if output is not None
                   else Path.cwd() / datetime.now().strftime("%Y%m%d_%H%M%S"))
         dataset = output / "dataset"
@@ -229,10 +243,6 @@ class ImageSegmentationRFDETR(SegmentationTrainingData, Task):
         has_validation = bool(json.loads(
             (dataset / "valid" / "_annotations.coco.json").read_text()
         )["images"])
-        model = str(self.model)
-        if model not in VARIANTS and model not in VARIANTS.values():
-            path = Path(model).expanduser()
-            model = str((self.pipeline.path / path).resolve() if not path.is_absolute() else path.resolve())
         config = {
             "model": model, "device": self.device, "resolution": self.resolution,
             "threshold": self.threshold, "has_validation": has_validation,
