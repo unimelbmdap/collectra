@@ -226,6 +226,9 @@ RLE. Holes and disconnected regions are retained. The ``partition`` values
 select validation examples; ``--exclude NAME`` omits one partition from both
 training and validation, matching the other training tasks. All other examples
 are training data. At least one labelled training image is required.
+Masks with no pixels inside their input image (for example, a line annotated
+outside its parent region) are skipped with a warning, and an image is left out
+when none of its masks remain, rather than being exported as having no instances.
 
 To prepare data and launch Meta's image fine-tuning trainer:
 

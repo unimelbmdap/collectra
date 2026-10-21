@@ -150,38 +150,33 @@ def export_dataset(
     }
     for split in datasets:
         (directory / split).mkdir(parents=True, exist_ok=True)
-    for image_id, (sample, split) in enumerate(selected, 1):
+    skipped_masks, skipped_images = [], []
+    image_id = 0
+    for index, (sample, split) in enumerate(selected, 1):
         progress(
-            f"Export {image_id}/{len(selected)} [{split}]: {sample.image.id} "
+            f"Export {index}/{len(selected)} [{split}]: {sample.image.id} "
             f"({len(sample.instances)} masks; {time.monotonic() - started:.1f}s elapsed)"
         )
         image = sample.image.pil().convert("RGB")
-        filename = f"{image_id:08d}.png"
-        image.save(directory / split / filename)
-        data = datasets[split]
-        data["images"].append(
-            {
-                "id": image_id,
-                "file_name": filename,
-                "width": image.width,
-                "height": image.height,
-            }
-        )
+        annotations = []
         for mask_index, instance in enumerate(sample.instances, 1):
             mask = np.asarray(mask_in_view(sample.image, instance._mask_image())) != 0
             ys, xs = np.nonzero(mask)
             if not len(xs):
-                raise ValueError(
-                    f"Mask {instance.id!r} has no pixels inside its input image"
+                # Usually an annotation lying outside its parent region; skip it
+                # rather than abandon the whole export.
+                skipped_masks.append(instance.id)
+                progress(
+                    f"  WARNING: skipping mask {instance.id!r}: no pixels inside "
+                    f"its input image {sample.image.id!r}"
                 )
+                continue
             if mask.shape != (image.height, image.width):
                 raise ValueError(
                     "Image subclass crop differs from its declared display bounds"
                 )
-            data["annotations"].append(
+            annotations.append(
                 {
-                    "id": len(data["annotations"]) + 1,
-                    "image_id": image_id,
                     "category_id": label_ids[instance.name],
                     "iscrowd": 0,
                     "bbox": [
@@ -196,9 +191,40 @@ def export_dataset(
             )
             if mask_index % 25 == 0:
                 progress(
-                    f"  Image {image_id}/{len(selected)}: encoded mask "
+                    f"  Image {index}/{len(selected)}: encoded mask "
                     f"{mask_index}/{len(sample.instances)}"
                 )
+        if sample.instances and not annotations:
+            # Without its masks the image would wrongly teach that it has no instances.
+            skipped_images.append(sample.image.id)
+            progress(
+                f"  WARNING: skipping image {sample.image.id!r}: none of its "
+                f"{len(sample.instances)} masks lie inside it"
+            )
+            continue
+        image_id += 1
+        filename = f"{image_id:08d}.png"
+        image.save(directory / split / filename)
+        data = datasets[split]
+        data["images"].append(
+            {
+                "id": image_id,
+                "file_name": filename,
+                "width": image.width,
+                "height": image.height,
+            }
+        )
+        for annotation in annotations:
+            data["annotations"].append(
+                {"id": len(data["annotations"]) + 1, "image_id": image_id, **annotation}
+            )
+    if skipped_masks:
+        progress(
+            f"WARNING: skipped {len(skipped_masks)} masks with no pixels inside their "
+            f"input images and {len(skipped_images)} images left without masks"
+        )
+    if not datasets["train"]["images"]:
+        raise ValueError("No labelled training instances remain after skipping empty masks")
     for split, data in datasets.items():
         progress(
             f"Writing {split} annotations: {len(data['images'])} images, "

@@ -351,6 +351,44 @@ def test_export_preserves_instances_holes_labels_and_partitions(image, tmp_path)
     )
 
 
+def test_export_skips_masks_outside_their_input_image(image, tmp_path):
+    # The left half of the 12x8 source; masks on the right lie outside it.
+    crop = ImageCrop(name="crop", id="crop", data=image.get_path(), x_center=0.25,
+                     y_center=0.5, width_relative=0.5, height_relative=1.0)
+    inside = np.zeros((8, 12), dtype="uint8")
+    inside[2:6, 1:5] = 1
+    outside = np.zeros((8, 12), dtype="uint8")
+    outside[2:6, 8:11] = 1
+    kept = instance(crop, tmp_path, pixels=inside)
+    messages = []
+    dataset = export_dataset(
+        [
+            SegmentationSample(crop, [kept, instance(crop, tmp_path, pixels=outside)]),
+            SegmentationSample(crop, [instance(crop, tmp_path, pixels=outside)]),
+        ],
+        tmp_path / "dataset",
+        progress=messages.append,
+    )
+    train = json.loads((dataset / "train/_annotations.coco.json").read_text())
+    # The image whose only mask is outside it is left out, not exported as empty.
+    assert [item["id"] for item in train["images"]] == [1]
+    assert [item["image_id"] for item in train["annotations"]] == [1]
+    assert train["annotations"][0]["bbox"] == [1, 2, 4, 4]
+    assert sorted(path.name for path in (dataset / "train").glob("*.png")) == ["00000001.png"]
+    assert sum("WARNING: skipping mask" in message for message in messages) == 2
+    assert any("skipped 2 masks" in message and "1 images" in message for message in messages)
+
+
+def test_export_fails_when_every_training_mask_is_outside(image, tmp_path):
+    crop = ImageCrop(name="crop", id="crop", data=image.get_path(), x_center=0.25,
+                     y_center=0.5, width_relative=0.5, height_relative=1.0)
+    outside = np.zeros((8, 12), dtype="uint8")
+    outside[2:6, 8:11] = 1
+    with pytest.raises(ValueError, match="No labelled training instances remain"):
+        export_dataset([SegmentationSample(crop, [instance(crop, tmp_path, pixels=outside)])],
+                       tmp_path / "dataset", progress=lambda message: None)
+
+
 @pytest.mark.parametrize("exclude,expected_train", [("test", 2), ("", 3)])
 def test_export_excludes_requested_partitions(image, tmp_path, exclude, expected_train):
     samples = [SegmentationSample(image, [instance(image, tmp_path, partition=partition)])
