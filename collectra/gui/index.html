@@ -1559,6 +1559,50 @@
             background: rgba(var(--app-primary-rgb, 240, 146, 38), 0.2);
             border-color: transparent;
         }
+        /* Text size: scales the source and the Markdown preview (see text.js).
+           EasyMDE's own ".EasyMDEContainer .CodeMirror { font: inherit }" loads
+           after this sheet, so the editor selectors need the container class
+           too to outrank it. */
+        .page-text-display .EasyMDEContainer .CodeMirror,
+        .page-text-display .editor-preview,
+        .page-text-display .editor-preview-side,
+        .node-content-display .EasyMDEContainer .CodeMirror,
+        .node-content-display .editor-preview,
+        .node-content-display .editor-preview-side {
+            font-size: calc(var(--text-zoom, 1) * 1em);
+        }
+        /* EasyMDE sizes source-view headings in rem/vw, which ignore the
+           editor's font size; scale its sizes by the same factor. */
+        .EasyMDEContainer .cm-s-easymde .cm-header-1 { font-size: calc(var(--text-zoom, 1) * (1.375rem + 1.5vw)); }
+        .EasyMDEContainer .cm-s-easymde .cm-header-2 { font-size: calc(var(--text-zoom, 1) * (1.325rem + .9vw)); }
+        .EasyMDEContainer .cm-s-easymde .cm-header-3 { font-size: calc(var(--text-zoom, 1) * (1.3rem + .6vw)); }
+        .EasyMDEContainer .cm-s-easymde .cm-header-4 { font-size: calc(var(--text-zoom, 1) * (1.275rem + .3vw)); }
+        .EasyMDEContainer .cm-s-easymde .cm-header-5 { font-size: calc(var(--text-zoom, 1) * 1.25rem); }
+        .EasyMDEContainer .cm-s-easymde .cm-header-6 { font-size: calc(var(--text-zoom, 1) * 1rem); }
+        .node-tools .text-zoom {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            margin-left: 8px;
+            flex-shrink: 0;
+        }
+        .node-tools .text-zoom button {
+            color: inherit;
+            background: transparent;
+            min-width: 26px;
+            height: 26px;
+            padding: 0 4px;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .node-tools .text-zoom button:hover {
+            background: rgba(var(--app-primary-rgb, 240, 146, 38), 0.2);
+        }
+        .node-tools .text-zoom .text-zoom-level {
+            min-width: 40px;
+            font-variant-numeric: tabular-nums;
+        }
         .node-tools .editor-toolbar i.separator {
             border-left: 1px solid var(--app-divider, #2a2a2a);
             border-right: none;

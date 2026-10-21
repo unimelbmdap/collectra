@@ -1,4 +1,33 @@
 // Text, Markdown and XML editors, autosave and editor toolbar lifecycle.
+
+// Text size is one app-wide setting: a CSS variable on the document scales
+// the source and preview in every panel, and is remembered between sessions.
+const TEXT_ZOOM = {min: 0.6, max: 2.5, step: 0.1, key: 'collectra.textZoom'};
+
+function stepTextZoom(current, direction) {
+    const next = Math.round((current + direction * TEXT_ZOOM.step) * 10) / 10;
+    return Math.min(TEXT_ZOOM.max, Math.max(TEXT_ZOOM.min, next));
+}
+
+function storedTextZoom() {
+    try {
+        const value = parseFloat(localStorage.getItem(TEXT_ZOOM.key));
+        return Number.isFinite(value) ? Math.min(TEXT_ZOOM.max, Math.max(TEXT_ZOOM.min, value)) : 1;
+    } catch (e) {
+        return 1;
+    }
+}
+
+function applyTextZoom(zoom) {
+    document.documentElement.style.setProperty('--text-zoom', zoom);
+    try { localStorage.setItem(TEXT_ZOOM.key, String(zoom)); } catch (e) {}
+    for (const label of document.querySelectorAll('.text-zoom-level')) {
+        label.textContent = `${Math.round(zoom * 100)}%`;
+    }
+    // CodeMirror measures line heights, so it must re-measure after a font change.
+    for (const element of document.querySelectorAll('.CodeMirror')) element.CodeMirror?.refresh();
+}
+
 function installTextDisplay(PanelController) {
         PanelController.prototype.renderTextNodeAsPage = async function(nodeId, detail, view) {
             const { placeholder, imageDisplay, contentDiv, headerId, textDisplay } = this.el;
@@ -47,6 +76,7 @@ function installTextDisplay(PanelController) {
                 // The formatting tools go to the left of the row under the tabs
                 // (formatted text only — plain text has none).
                 this.moveEditorToolbar();
+                this.mountTextZoom();
                 if (view.format === 'markdown') this.easyMDE.toggleSideBySide();
                 // Autosave status sits at the right of the row for editable text.
                 const editor = this.easyMDE;
@@ -105,6 +135,33 @@ function installTextDisplay(PanelController) {
             if (toolbar) slot.appendChild(toolbar);
         };
 
+        // A−/A+ text-size buttons after the formatting tools, for every text format.
+        PanelController.prototype.mountTextZoom = function() {
+            const slot = this.nodeToolsEl();
+            if (!slot) return;
+            const group = document.createElement('span');
+            group.className = 'text-zoom';
+            group.setAttribute('role', 'group');
+            group.setAttribute('aria-label', 'Text size');
+            const button = (label, title, direction) => {
+                const element = document.createElement('button');
+                element.type = 'button';
+                element.textContent = label;
+                element.title = title;
+                element.setAttribute('aria-label', title);
+                element.addEventListener('click', () => {
+                    const current = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--text-zoom')) || 1;
+                    applyTextZoom(direction ? stepTextZoom(current, direction) : 1);
+                });
+                return element;
+            };
+            const level = button('', 'Reset text size', 0);
+            level.classList.add('text-zoom-level');
+            group.append(button('A−', 'Decrease text size', -1), level, button('A+', 'Increase text size', 1));
+            slot.appendChild(group);
+            applyTextZoom(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--text-zoom')) || storedTextZoom());
+        };
+
         PanelController.prototype.stopTextAutosave = function() {
             const stop = this._stopTextAutosave;
             this._stopTextAutosave = null;
@@ -121,7 +178,7 @@ async function renderTextArtefact(controller, view, result) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-    module.exports = {installTextDisplay, renderTextArtefact};
+    module.exports = {installTextDisplay, renderTextArtefact, stepTextZoom, TEXT_ZOOM};
 } else {
     registerArtefactRenderer("text", renderTextArtefact);
 }
