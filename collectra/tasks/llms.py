@@ -60,6 +60,7 @@ class LLM(Task):
         name (str): Name identifier for the LLM task.
         model (str): Model identifier or path for the LLM.
         template (str | Path): Prompt template string or path to template file.
+            ``prompt`` is accepted as an alias, matching other tasks' option name.
         temperature (float): Sampling temperature for generation (0.0 to 1.0).
         max_tokens (int): Maximum number of tokens to generate.
         variables (dict): Additional variables for template substitution.
@@ -67,7 +68,11 @@ class LLM(Task):
 
     def __init__(self, name: str, model: str, **kwargs):
         super().__init__(name, **kwargs)
-        self.template: str = kwargs.get("template", "")
+        if kwargs.get("template") and kwargs.get("prompt"):
+            raise ValueError(
+                f"LLM task {name!r} sets both template and prompt; use only one"
+            )
+        self.template: str = kwargs.get("template") or kwargs.get("prompt", "")
         self.preamble: str = kwargs.get("preamble", "")
         self.temperature = kwargs.get("temperature", 0.8)
         self.max_tokens = kwargs.get("max_tokens", None)
@@ -94,6 +99,11 @@ class LLM(Task):
 
     def get_pattern_matches(self) -> tuple:
         prompt = f"{self.preamble}\n\n{self.template}".strip()
+        if not prompt:
+            raise ValueError(
+                f"LLM task {self.name!r} has no prompt; set template: (or prompt:) "
+                "in its pipeline.yaml entry"
+            )
         pattern = r"\{(.*?)\}"
         return prompt, pattern
 

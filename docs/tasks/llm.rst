@@ -16,7 +16,8 @@ installation and the credentials required by its provider.
       temperature: 0.2
 
 Replace ``YOUR_MODEL_IDENTIFIER`` before using this example. Template
-placeholders refer to input artefact names. For image inputs, the selected
+placeholders refer to input artefact names. ``prompt`` is accepted in place of
+``template``, as in other tasks; set only one of them. For image inputs, the selected
 model must support images. ``system``, ``preamble``, and ``max_tokens`` can also
 be configured in YAML.
 

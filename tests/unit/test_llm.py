@@ -80,6 +80,18 @@ def test_get_pattern_matches():
     assert pattern == r"\{(.*?)\}"
 
 
+def test_prompt_is_an_alias_for_template():
+    assert LLM("reader", model="m", prompt="Read {image}").template == "Read {image}"
+    assert LLM("reader", model="m", template="Read {image}").template == "Read {image}"
+    with pytest.raises(ValueError, match="both template and prompt"):
+        LLM("reader", model="m", template="a", prompt="b")
+
+
+def test_empty_prompt_is_reported_clearly():
+    with pytest.raises(ValueError, match="has no prompt; set template:"):
+        LLM("reader", model="m").get_pattern_matches()
+
+
 def test_pre_run():
     mock_self = MagicMock(spec=LLM)
     mock_self.messages = [MagicMock(), MagicMock(), MagicMock()]  # system + extras
