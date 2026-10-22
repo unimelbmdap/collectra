@@ -60,6 +60,27 @@ def test_prediction_inverts_crop_and_preserves_parent(sample, tmp_path):
     assert task._predictor.predict.call_args.kwargs == {"threshold": .7}
 
 
+def test_pipeline_run_stores_mask_paths_relative_to_results(pipeline, tmp_path, monkeypatch):
+    import yaml
+
+    page = tmp_path / "pages" / "page.png"
+    page.parent.mkdir()
+    PILImage.new("RGB", (12, 8), "white").save(page)
+    local = np.zeros((8, 12), dtype=bool)
+    local[1:6, 2:10] = True
+
+    def init_model(task):
+        task._predictor = predictor([local])
+
+    monkeypatch.setattr(ImageSegmentationRFDETR, "_init_model", init_model)
+    pipeline.cli_run([str(page)], output=tmp_path / "out")
+    folder = tmp_path / "out" / "page.htr"
+    record = yaml.safe_load((folder / "results.yaml").read_text())["text_region"]
+    assert not Path(record["mask"]).is_absolute()
+    assert record["mask"].startswith("masks/")
+    assert (folder / record["mask"]).is_file()
+
+
 def test_segmentation_input_constrains_prediction(sample, tmp_path):
     task = ImageSegmentationRFDETR("segment", output="text_region")
     task.context.file_path = tmp_path

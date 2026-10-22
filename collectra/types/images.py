@@ -683,7 +683,16 @@ class ImageSegmentation(Image):
 
     def serialize(self) -> dict:
         serialized = super().serialize()
-        serialized["mask"] = str(self.mask)
+        # Results are serialized from inside their results folder (the working
+        # directory), and loaded from it, so masks there are stored relative
+        # to it and the folder stays portable. Masks elsewhere keep their path.
+        mask = Path(self.mask)
+        if mask.is_absolute():
+            try:
+                mask = self._mask_path.relative_to(Path.cwd().resolve())
+            except ValueError:
+                pass
+        serialized["mask"] = mask.as_posix()
         return serialized
 
     def display_bounds(self):
