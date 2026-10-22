@@ -114,6 +114,28 @@ def test_inference_returns_one_artifact_per_instance(image, tmp_path):
     )
 
 
+def test_inference_runs_under_bfloat16_autocast(image, tmp_path):
+    import torch
+
+    task = ImageSegmentationSam3("segment", prompt="region", device="cpu")
+    task.context.file_path = tmp_path
+    seen = []
+
+    def prompt(**kwargs):
+        seen.append((torch.is_autocast_enabled("cpu"), torch.get_autocast_dtype("cpu"),
+                     torch.is_grad_enabled()))
+        masks = torch.zeros((1, 1, 8, 12), dtype=torch.bfloat16)
+        masks[0, 0, 1:3, 2:5] = 1
+        return {"masks": masks}
+
+    task._processor = Mock()
+    task._processor.set_text_prompt.side_effect = prompt
+    results = task.run(image)
+    assert seen == [(True, torch.bfloat16, False)]
+    # bfloat16 masks are converted before NumPy, which has no bfloat16 type.
+    assert np.asarray(PILImage.open(results[0].mask))[1:3, 2:5].all()
+
+
 def test_empty_predictions_and_bad_inputs(image, tmp_path):
     task = ImageSegmentationSam3("segment")
     task.context.file_path = tmp_path

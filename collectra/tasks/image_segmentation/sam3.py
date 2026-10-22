@@ -150,36 +150,44 @@ class ImageSegmentationSam3(SegmentationTrainingData, Task):
         self._init_model()
         directory = Path(self.context.file_path or Path.cwd()) / "masks"
         directory.mkdir(parents=True, exist_ok=True)
+        import torch
+
         results = []
-        for image in images:
-            state = self._processor.set_image(image.pil().convert("RGB"))
-            for label, prompt in prompts.items():
-                self._processor.reset_all_prompts(state)
-                prediction = self._processor.set_text_prompt(prompt=prompt, state=state)
-                masks = prediction["masks"]
-                if hasattr(masks, "detach"):
-                    masks = masks.detach().cpu().numpy()
-                masks = np.asarray(masks)
-                if masks.ndim == 4 and masks.shape[1] == 1:
-                    masks = masks[:, 0]
-                if masks.ndim != 3:
-                    raise ValueError("SAM returned masks with an unexpected shape")
-                for mask in masks:
-                    pixels = mask_to_source(image, mask > 0.5)
-                    if not pixels.any():
-                        continue
-                    path = directory / f"sam3-{uuid.uuid4().hex}.png"
-                    PILImage.fromarray(pixels).save(path)
-                    results.append(
-                        ImageSegmentation(
-                            name=label,
-                            data=image.get_path(),
-                            mask=path,
-                            parents=[image.id],
-                            orientation=image.orientation,
-                            partition=image.partition,
+        # SAM3's fused ViT MLP kernel (addmm_act) always returns bfloat16, so
+        # the following float32 layers need bfloat16 autocast, as in Meta's
+        # own inference examples; it also requires gradients to be disabled.
+        device_type = torch.device(self.device).type
+        with torch.inference_mode(), torch.autocast(device_type, dtype=torch.bfloat16):
+            for image in images:
+                state = self._processor.set_image(image.pil().convert("RGB"))
+                for label, prompt in prompts.items():
+                    self._processor.reset_all_prompts(state)
+                    prediction = self._processor.set_text_prompt(prompt=prompt, state=state)
+                    masks = prediction["masks"]
+                    if hasattr(masks, "detach"):
+                        # Under autocast masks may be bfloat16, which NumPy lacks.
+                        masks = masks.detach().float().cpu().numpy()
+                    masks = np.asarray(masks)
+                    if masks.ndim == 4 and masks.shape[1] == 1:
+                        masks = masks[:, 0]
+                    if masks.ndim != 3:
+                        raise ValueError("SAM returned masks with an unexpected shape")
+                    for mask in masks:
+                        pixels = mask_to_source(image, mask > 0.5)
+                        if not pixels.any():
+                            continue
+                        path = directory / f"sam3-{uuid.uuid4().hex}.png"
+                        PILImage.fromarray(pixels).save(path)
+                        results.append(
+                            ImageSegmentation(
+                                name=label,
+                                data=image.get_path(),
+                                mask=path,
+                                parents=[image.id],
+                                orientation=image.orientation,
+                                partition=image.partition,
+                            )
                         )
-                    )
         return results
 
     @command
