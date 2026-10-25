@@ -279,7 +279,7 @@ function installImageDisplay(PanelController) {
                 // flushAnnotationUpdate() (Enter/Escape below) can reach this panel.
                 this._updateAnnotationTimer = null;
                 this._updateAnnotationFlush = null;
-                this.pageAnno.on('updateAnnotation', (updated) => {
+                const queueUpdate = (updated, { debounce }) => {
                     if (pendingAnnotation && pendingAnnotation.id === updated.id) return; // still mid-create, nothing to persist
                     if (this._pushingClampedUpdate) return; // our own re-push below, not a new edit
                     this._updateAnnotationFlush = async () => {
@@ -302,8 +302,19 @@ function installImageDisplay(PanelController) {
                         }
                     };
                     clearTimeout(this._updateAnnotationTimer);
-                    this._updateAnnotationTimer = setTimeout(this._updateAnnotationFlush, 250);
-                });
+                    if (debounce) this._updateAnnotationTimer = setTimeout(this._updateAnnotationFlush, 250);
+                };
+                // Annotorious only emits 'updateAnnotation' when the box is deselected, so
+                // watch the store for live edits and commit them on pointerup (no timer —
+                // re-pushing mid-gesture would tear down the box being dragged).
+                this.pageAnno.on('updateAnnotation', (updated) => queueUpdate(updated, { debounce: true }));
+                this.pageAnno.state.store.observe((event) => {
+                    (event.changes.updated || []).forEach(({ oldValue, newValue }) => {
+                        const before = oldValue.target.selector.geometry;
+                        const after = newValue.target.selector.geometry;
+                        if (before && after && JSON.stringify(before) !== JSON.stringify(after)) queueUpdate(newValue, { debounce: false });
+                    });
+                }, { origin: 'LOCAL' });
                 display.addEventListener('pointerup', () => this.flushAnnotationUpdate());
 
                 // The display response already contains these annotations.
