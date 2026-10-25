@@ -69,7 +69,7 @@ def test_tiff_training_uses_supported_backend_and_best_total(tmp_path, monkeypat
     (weights / "checkpoint_best_regular.pth").write_bytes(b"regular")
     (weights / "checkpoint_best_total.pth").write_bytes(b"ema winner")
     task.model = SimpleNamespace(train=lambda **kwargs: captured.update(kwargs))
-    monkeypatch.setattr(task, "_write_coco_dataset", lambda *args: None)
+    monkeypatch.setattr(task, "_write_coco_dataset", lambda *args, **kwargs: None)
     monkeypatch.setattr(task, "_reload", lambda: None)
     task._train_fold([{"image_path": "views.tiff"}], [], ["object"], log,
                      {"augmentation_backend": backend})

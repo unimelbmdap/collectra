@@ -171,8 +171,7 @@ def test_prepared_data_is_copied_without_rgb_conversion(tmp_path):
 def test_convert_to_rgb_unifies_channel_counts(tmp_path):
     from PIL import Image as PILImage
 
-    from collectra.tasks.object_detection.yolo import ObjectDetectionYOLO
-    from collectra.types.images import image_channel_count
+    from collectra.types.images import convert_image_to_rgb, image_channel_count
 
     paths = []
     for mode in ("L", "RGBA", "RGB"):
@@ -182,5 +181,5 @@ def test_convert_to_rgb_unifies_channel_counts(tmp_path):
     assert len({image_channel_count(p) for p in paths}) == 3
 
     for path in paths:
-        ObjectDetectionYOLO._convert_to_rgb(path)
+        convert_image_to_rgb(path)
     assert {image_channel_count(p) for p in paths} == {3}

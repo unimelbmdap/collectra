@@ -12,6 +12,7 @@ from .adaptation_commands import RFDETRAdaptationCommands
 from collectra.types.images import (
     Image,
     ImageCrop,
+    convert_image_to_rgb,
     image_channel_count,
     image_size,
     read_tiff_channels,
@@ -471,6 +472,7 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
         val_samples: list[dict],
         classes: list[str],
         dataset_dir: Path,
+        rgb: bool = False,
     ) -> Path:
         categories = [
             {"id": idx, "name": name, "supercategory": "object"}
@@ -491,6 +493,8 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
                 dest_name = f"{image_id}_{src_path.name}"
                 dest_path = split_dir / dest_name
                 shutil.copy2(src_path, dest_path)
+                if rgb:
+                    convert_image_to_rgb(dest_path)
 
                 w, h = image_size(dest_path)
                 channel_counts[str(src_path)] = image_channel_count(dest_path)
@@ -559,7 +563,13 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
 
         dataset_dir = log / "dataset"
         dataset_dir.mkdir(parents=True, exist_ok=True)
-        self._write_coco_dataset(train_samples, val_samples, classes, dataset_dir)
+        self._write_coco_dataset(
+            train_samples,
+            val_samples,
+            classes,
+            dataset_dir,
+            rgb=kwargs.get("rgb", False),
+        )
 
         params_kwargs = dict(kwargs)
         params_kwargs["log"] = f"{log.name}"
@@ -666,6 +676,12 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
             float,
             Arg(help="Learning rate for training."),
         ] = 1e-4,
+        rgb: Annotated[
+            bool,
+            Arg(
+                help="Convert all prepared training images to 3-channel RGB, so images with differing channel counts (grayscale, RGBA) can be trained together."
+            ),
+        ] = False,
         wandb: Annotated[
             bool,
             Arg(help="Log training metrics to Weights & Biases."),
@@ -788,6 +804,7 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
             batch=batch,
             grad_accum_steps=grad_accum_steps,
             lr=learning_rate,
+            rgb=rgb,
             wandb=wandb,
             early_stopping=early_stopping,
             weight_decay=weight_decay,

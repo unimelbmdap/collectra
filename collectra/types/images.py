@@ -75,6 +75,19 @@ def image_channel_count(path: str | Path) -> int:
         return len(image.getbands())
 
 
+def convert_image_to_rgb(path: str | Path) -> None:
+    """Rewrite an image file in place as 3-channel RGB (no-op if it already is)."""
+    path = Path(path)
+    try:
+        with ImagePil.open(path) as image:
+            if image.mode == "RGB":
+                return
+            converted = image.convert("RGB")
+    except Exception as error:
+        raise ValueError(f"Cannot convert {path.name} to RGB: {error}") from error
+    converted.save(path)
+
+
 def image_size(path: str | Path) -> tuple[int, int]:
     """Return ``(width, height)`` from image metadata; supports multi-channel TIFFs."""
     if Path(path).suffix.lower() in {".tif", ".tiff"}:

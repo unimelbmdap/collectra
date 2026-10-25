@@ -13,6 +13,7 @@ from .adaptation_commands import YOLOAdaptationCommands
 from collectra.types.images import (
     Image,
     ImageCrop,
+    convert_image_to_rgb,
     image_channel_count,
     read_tiff_channels,
 )
@@ -785,20 +786,6 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
                 f"{name_index} {img.x_center:.6f} {img.y_center:.6f} {img.width_relative:.6f} {img.height_relative:.6f}\n"
             )
 
-    @staticmethod
-    def _convert_to_rgb(path: Path) -> None:
-        """Rewrite a prepared (copied) image in place as 3-channel RGB."""
-        from PIL import Image as PILImage
-
-        try:
-            with PILImage.open(path) as image:
-                if image.mode == "RGB":
-                    return
-                converted = image.convert("RGB")
-        except Exception as error:
-            raise ValueError(f"Cannot convert {path.name} to RGB: {error}") from error
-        converted.save(path)
-
     def _prepare_assets(
         self,
         classes: list[str],
@@ -836,7 +823,7 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
                 else:
                     img.save(dst)
                 if rgb:
-                    self._convert_to_rgb(dst)
+                    convert_image_to_rgb(dst)
                 if img.partition == validation_flag:
                     val.append(dst.name)
                 elif not exclude_flag or img.partition != exclude_flag:
