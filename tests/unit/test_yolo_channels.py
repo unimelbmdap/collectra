@@ -166,3 +166,21 @@ def test_prepared_data_is_copied_without_rgb_conversion(tmp_path):
     config = task._prepare_yolo_config(log, ["Palynomorph"], train, val)
     assert yaml.safe_load(config.read_text())["channels"] == 75
     assert (log / train[0]).read_bytes() == source.read_bytes()
+
+
+def test_convert_to_rgb_unifies_channel_counts(tmp_path):
+    from PIL import Image as PILImage
+
+    from collectra.tasks.object_detection.yolo import ObjectDetectionYOLO
+    from collectra.types.images import image_channel_count
+
+    paths = []
+    for mode in ("L", "RGBA", "RGB"):
+        path = tmp_path / f"{mode}.png"
+        PILImage.new(mode, (8, 8)).save(path)
+        paths.append(path)
+    assert len({image_channel_count(p) for p in paths}) == 3
+
+    for path in paths:
+        ObjectDetectionYOLO._convert_to_rgb(path)
+    assert {image_channel_count(p) for p in paths} == {3}

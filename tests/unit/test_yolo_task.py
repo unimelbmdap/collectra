@@ -25,7 +25,7 @@ def test_train_yolo_temp_dir(classes, image, tmp_path, monkeypatch):
     crop = image.make_crop(0.5, 0.5, 0.25, 0.25, name="human")
     crop.add_source_parent(image)
     monkeypatch.setattr(task, "_init_model", lambda: None)
-    monkeypatch.setattr(task, "_prepare_assets", lambda *args: (["train"], ["val"]))
+    monkeypatch.setattr(task, "_prepare_assets", lambda *args, **kwargs: (["train"], ["val"]))
 
     def fake_train_fold(train, validation, output_classes, log, kwargs):
         weights = log / "weights"

@@ -288,6 +288,12 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
                 help="Preview the prepared training images and annotations before training."
             ),
         ] = False,
+        rgb: Annotated[
+            bool,
+            Arg(
+                help="Convert all prepared training images to 3-channel RGB, so images with differing channel counts (grayscale, RGBA) can be trained together."
+            ),
+        ] = False,
         workers: Annotated[
             int,
             Arg(help="Number of data-loading workers per distributed process."),
@@ -531,6 +537,7 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
             imgsz=imgsz,
             early_stop=early_stop,
             preview=preview,
+            rgb=rgb,
             workers=workers,
             pretrained=pretrained,
             optimizer=optimizer,
@@ -609,7 +616,9 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
 
         validation = kwargs.get("validation", "")
         exclude = kwargs.get("exclude", "")
-        train, val = self._prepare_assets(classes, log, validation, exclude, *images)
+        train, val = self._prepare_assets(
+            classes, log, validation, exclude, *images, rgb=kwargs.get("rgb", False)
+        )
         return self._train_fold(train, val, classes, log, kwargs)
 
     def _train_fold(
@@ -776,6 +785,20 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
                 f"{name_index} {img.x_center:.6f} {img.y_center:.6f} {img.width_relative:.6f} {img.height_relative:.6f}\n"
             )
 
+    @staticmethod
+    def _convert_to_rgb(path: Path) -> None:
+        """Rewrite a prepared (copied) image in place as 3-channel RGB."""
+        from PIL import Image as PILImage
+
+        try:
+            with PILImage.open(path) as image:
+                if image.mode == "RGB":
+                    return
+                converted = image.convert("RGB")
+        except Exception as error:
+            raise ValueError(f"Cannot convert {path.name} to RGB: {error}") from error
+        converted.save(path)
+
     def _prepare_assets(
         self,
         classes: list[str],
@@ -783,6 +806,7 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
         validation_flag: str,
         exclude_flag: str,
         *images: ImageCrop,
+        rgb: bool = False,
     ) -> tuple[list[str], list[str]] | tuple[Path, Path]:
         """Prepare assets for YOLO training.
 
@@ -792,6 +816,7 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
             validation_flag (str): The value of the validation flag to identify validation images.
             exclude_flag (str): The value of the exclude flag to identify images to be excluded from training.
             images (ImageCrop): Variable number of ImageCrop instances to be prepared.
+            rgb (bool): Convert each prepared image to 3-channel RGB.
 
         Returns:
             tuple[list[list[int]], list[str], list[str]]: A tuple containing the label matrix for iterative stratification,
@@ -810,6 +835,8 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
                     img.source_parent.save(dst)
                 else:
                     img.save(dst)
+                if rgb:
+                    self._convert_to_rgb(dst)
                 if img.partition == validation_flag:
                     val.append(dst.name)
                 elif not exclude_flag or img.partition != exclude_flag:
