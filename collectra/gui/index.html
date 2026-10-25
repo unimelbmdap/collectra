@@ -2807,6 +2807,17 @@
             });
         });
 
+        // Left/Right move to the previous/next file in the sidebar, like the folder nav buttons.
+        document.addEventListener('keydown', function(e) {
+            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+            if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.defaultPrevented) return;
+            if (document.querySelector('.modal-overlay.visible')) return;
+            const t = e.target;
+            if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.closest('.CodeMirror'))) return;
+            e.preventDefault();
+            if (e.key === 'ArrowRight') goNextFolder(); else goPrevFolder();
+        });
+
         // Commits a pending resize/move now instead of waiting on pointerup or the debounce.
         document.addEventListener('keydown', function(e) {
             if (e.key !== 'Enter' && e.key !== 'Escape') return;
