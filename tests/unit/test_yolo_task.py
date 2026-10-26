@@ -158,3 +158,42 @@ def test_run_cli_model_override(model, imgsz):
             imgsz,
         )
     ]
+
+
+def test_prefetch_batches_the_model_and_run_reuses_results(image, monkeypatch):
+    fake_torchvision = ModuleType("torchvision")
+    fake_ops = ModuleType("torchvision.ops")
+    fake_ops.batched_nms = lambda *args, **kwargs: []
+    fake_torchvision.ops = fake_ops
+    monkeypatch.setitem(sys.modules, "torchvision", fake_torchvision)
+    monkeypatch.setitem(sys.modules, "torchvision.ops", fake_ops)
+
+    calls = []
+
+    class BatchModel(FakeInferenceModel):
+        def __init__(self, path):
+            pass
+
+        def __call__(self, sources, **kwargs):
+            calls.append((len(sources), kwargs.get("batch")))
+            return [
+                SimpleNamespace(boxes=Boxes(), names={0: "human"}) for _ in sources
+            ]
+
+    fake_models = ModuleType("ultralytics.models")
+    fake_models.YOLO = BatchModel
+    monkeypatch.setitem(sys.modules, "ultralytics.models", fake_models)
+    task = ObjectDetectionYOLO(name="label-detector", model="configured.pt")
+    task.batch_size = 2
+    crops = [image.make_crop(0.5, 0.5, w, w) for w in (0.2, 0.3, 0.4)]
+
+    task.prefetch([[crop] for crop in crops])
+    assert calls == [(2, 2), (1, None)]  # 3 images -> batches of 2 and 1
+
+    for crop in crops:
+        assert len(task.run(crop)) == 1
+    assert calls == [(2, 2), (1, None)]  # run() used the cache, no new model calls
+
+    task.clear_prefetch()
+    task.run(crops[0])
+    assert len(calls) == 3  # cache cleared, so the model is called again

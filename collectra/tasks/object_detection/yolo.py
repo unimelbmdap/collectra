@@ -69,6 +69,7 @@ class DetectionResult:
 class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
     singletons: bool = False
     imgsz: int | None = None
+    batch_size: int = 1
 
     @command(name="run")
     def cli_run(
@@ -88,12 +89,21 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
                 help="Inference image size in pixels. Omit to keep the model's setting."
             ),
         ] = None,
+        batch_size: Annotated[
+            int,
+            Arg(
+                help="Number of files to run through the model at once; results are saved after each batch."
+            ),
+        ] = 16,
     ) -> None:
         """Run this object detector for the supplied input files."""
+        if batch_size < 1:
+            raise ValueError("--batch-size must be at least 1")
         if model is not None:
             self.model = model
         if imgsz is not None:
             self.imgsz = imgsz
+        self.batch_size = batch_size
         super().cli_run(
             inputs, output=output, verbose=verbose, usage=usage, render=render
         )
@@ -134,54 +144,11 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
         self._init_model()
         from torchvision.ops import batched_nms
 
-        inference_kwargs = {"iou": 0.7, "conf": 0.25}
         imgsz = imgsz if imgsz is not None else self.imgsz
-        if imgsz is not None:
-            inference_kwargs["imgsz"] = imgsz
-
-        if image.get_path().suffix.lower() in {".tif", ".tiff"}:
-            import numpy as np
-            import torch
-
-            pixels = read_tiff_channels(image.get_path())
-            if isinstance(image, ImageCrop):
-                left, top, right, bottom = image.coordinates()
-                if right <= left or bottom <= top:
-                    raise ValueError(
-                        f"ImageCrop {image.id!r} produces an empty pixel crop"
-                    )
-                pixels = pixels[top:bottom, left:right, :]
-            pixels = np.rot90(pixels, k=image.orientation.to_degree() // 90)
-            first_conv = next(
-                layer
-                for layer in self.model.model.modules()
-                if isinstance(layer, torch.nn.Conv2d)
-            )
-            expected_channels = first_conv.in_channels
-            model_config = getattr(self.model.model, "yaml", {})
-            if "feature_fusion" in model_config:
-                expected_channels = model_config["channels"]
-            if pixels.shape[2] != expected_channels:
-                raise ValueError(
-                    f"{image.get_path()}: {pixels.shape[2]} image channels, "
-                    f"but the detection model expects {expected_channels}"
-                )
-            # Ultralytics expects BGR for three-channel arrays, but preserves
-            # channel order for multispectral arrays. Keep its usual resizing,
-            # normalization, and box scaling relative to the original image.
-            if pixels.shape[2] == 3:
-                pixels = pixels[..., ::-1]
-            results: Results = self.model(
-                np.ascontiguousarray(pixels), **inference_kwargs
-            )[0]
-        elif isinstance(image, ImageCrop):
-            with tempfile.TemporaryDirectory() as temp_dir:
-                img = image.pil()
-                img_path = Path(temp_dir) / f"{Path(image.get_path()).stem}.png"
-                img.save(img_path, format="PNG")
-                results: Results = (self.model(img_path, **inference_kwargs))[0]
-        else:
-            results: Results = (self.model(image.get_path(), **inference_kwargs))[0]
+        prefetched = getattr(self, "_prefetched", {})
+        results: Results | None = prefetched.pop(self._image_key(image, imgsz), None)
+        if results is None:
+            results = self._predict([image], imgsz)[0]
 
         if getattr(self.model.model, "end2end", False) and len(results.boxes):
             keep = batched_nms(
@@ -231,6 +198,117 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
         for name, count in counts.items():
             print(f"\t{name}: {count}")
         return detections
+
+    @staticmethod
+    def _image_key(image: Image, imgsz: int | None) -> tuple:
+        """Identify the pixels and settings a prediction was made for."""
+        parent = getattr(image, "source_parent", None)
+        crop = (
+            (
+                image.x_center,
+                image.y_center,
+                image.width_relative,
+                image.height_relative,
+            )
+            if isinstance(image, ImageCrop)
+            else None
+        )
+        return (
+            str(image.get_path()),
+            crop,
+            image.orientation,
+            (
+                ObjectDetectionYOLO._image_key(parent, None)
+                if parent is not None
+                else None
+            ),
+            imgsz,
+        )
+
+    def _tiff_pixels(self, image: Image):
+        """Decode a TIFF (cropped and rotated as needed) for the model's channels."""
+        import numpy as np
+        import torch
+
+        pixels = read_tiff_channels(image.get_path())
+        if isinstance(image, ImageCrop):
+            left, top, right, bottom = image.coordinates()
+            if right <= left or bottom <= top:
+                raise ValueError(f"ImageCrop {image.id!r} produces an empty pixel crop")
+            pixels = pixels[top:bottom, left:right, :]
+        pixels = np.rot90(pixels, k=image.orientation.to_degree() // 90)
+        first_conv = next(
+            layer
+            for layer in self.model.model.modules()
+            if isinstance(layer, torch.nn.Conv2d)
+        )
+        expected_channels = first_conv.in_channels
+        model_config = getattr(self.model.model, "yaml", {})
+        if "feature_fusion" in model_config:
+            expected_channels = model_config["channels"]
+        if pixels.shape[2] != expected_channels:
+            raise ValueError(
+                f"{image.get_path()}: {pixels.shape[2]} image channels, "
+                f"but the detection model expects {expected_channels}"
+            )
+        # Ultralytics expects BGR for three-channel arrays, but preserves
+        # channel order for multispectral arrays. Keep its usual resizing,
+        # normalization, and box scaling relative to the original image.
+        if pixels.shape[2] == 3:
+            pixels = pixels[..., ::-1]
+        return np.ascontiguousarray(pixels)
+
+    def _predict(self, images: list[Image], imgsz: int | None) -> list[Results]:
+        """Run the model over ``images`` together, returning one result each."""
+        inference_kwargs = {"iou": 0.7, "conf": 0.25}
+        if imgsz is not None:
+            inference_kwargs["imgsz"] = imgsz
+
+        # Ultralytics takes a list of one source type at a time.
+        arrays: dict[int, object] = {}
+        paths: dict[int, Path] = {}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for index, image in enumerate(images):
+                if image.get_path().suffix.lower() in {".tif", ".tiff"}:
+                    arrays[index] = self._tiff_pixels(image)
+                elif isinstance(image, ImageCrop):
+                    img_path = Path(temp_dir) / f"{index}-{Path(image.get_path()).stem}.png"
+                    image.pil().save(img_path, format="PNG")
+                    paths[index] = img_path
+                else:
+                    paths[index] = image.get_path()
+
+            results: list[Results | None] = [None] * len(images)
+            for sources in (arrays, paths):
+                if not sources:
+                    continue
+                indices = list(sources)
+                call_kwargs = dict(inference_kwargs)
+                if len(indices) > 1:
+                    call_kwargs["batch"] = len(indices)
+                predicted = self.model([sources[i] for i in indices], **call_kwargs)
+                for index, result in zip(indices, predicted):
+                    results[index] = result
+        return results
+
+    @threading_locked()
+    def prefetch(self, entries: list[list]) -> None:
+        """Run the model over many images in batches, caching results for ``run``."""
+        self._init_model()
+        imgsz = self.imgsz
+        images = [
+            entry[0]
+            for entry in entries
+            if len(entry) == 1 and isinstance(entry[0], Image)
+        ]
+        self._prefetched = {}
+        for start in range(0, len(images), self.batch_size):
+            batch = images[start : start + self.batch_size]
+            for image, result in zip(batch, self._predict(batch, imgsz)):
+                self._prefetched[self._image_key(image, imgsz)] = result
+
+    def clear_prefetch(self) -> None:
+        self._prefetched = {}
 
     @command
     def train(

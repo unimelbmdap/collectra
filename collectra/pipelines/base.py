@@ -434,22 +434,77 @@ class Collectra:
             starting_nodes: List of nodes to start execution from.
             options: Execution options (single, files, usage, render, output).
         """
-        for file_path in options["files"]:
+        files = options["files"]
+        batch_size = self._starting_batch_size(starting_nodes)
+        for start in range(0, len(files), batch_size):
+            chunk = files[start : start + batch_size]
+            if batch_size > 1:
+                self._prefetch_files(starting_nodes, chunk, options)
             try:
-                self._process_single_file(starting_nodes, file_path, options)
-            except Exception as e:
-                logger.error("Error processing file: %s", e, exc_info=True)
+                for file_path in chunk:
+                    try:
+                        self._process_single_file(starting_nodes, file_path, options)
+                    except Exception as e:
+                        logger.error("Error processing file: %s", e, exc_info=True)
+            finally:
+                self._clear_prefetch(starting_nodes)
 
-    def _process_single_file(
-        self, starting_nodes: list[TaskNode], file_path: str, options: dict
+    def _starting_batch_size(self, starting_nodes: list[TaskNode]) -> int:
+        """Number of files to run through the starting tasks per batch."""
+        sizes = [
+            int(getattr(node.get_task(), "batch_size", 1) or 1)
+            for node in starting_nodes
+            if isinstance(node, TaskNode)
+        ]
+        return max([1, *sizes])
+
+    def _prefetch_files(
+        self, starting_nodes: list[TaskNode], files: list, options: dict
     ):
-        """Process a single file through the workflow.
+        """Let starting tasks batch their model work across ``files`` up front.
 
-        Args:
-            starting_nodes: Nodes to start from.
-            file_path: Path to file to process.
-            options: Execution options.
+        The files are then processed one at a time as usual, with each task
+        reusing what it cached, so results are saved after every batch.
         """
+        gathered: dict[str, list] = {}
+        for file_path in files:
+            try:
+                key, value = self._setup_file(starting_nodes, file_path, options)
+                for node in starting_nodes:
+                    task = node.get_task()
+                    if not isinstance(task, Task) or task.batch_size <= 1:
+                        continue
+                    self._apply_task_run_overrides(task, options["task_overrides"])
+                    parents = self.node_manager.get_parents_artefact(node)
+                    gathered.setdefault(node.name, []).extend(
+                        list(entry) for entry in task.prepare_inputs(parents)
+                    )
+            except Exception as e:
+                logger.warning("Could not prepare %s for batching: %s", file_path, e)
+        for node in starting_nodes:
+            if node.name in gathered:
+                try:
+                    with change_dir(self.path):
+                        node.get_task().prefetch(gathered[node.name])
+                except Exception as e:
+                    logger.warning(
+                        "Batched run of %s failed, running files individually: %s",
+                        node.name,
+                        e,
+                        exc_info=True,
+                    )
+                    node.get_task().clear_prefetch()
+
+    def _clear_prefetch(self, starting_nodes: list[TaskNode]):
+        for node in starting_nodes:
+            task = node.get_task()
+            if isinstance(task, Task):
+                task.clear_prefetch()
+
+    def _setup_file(
+        self, starting_nodes: list[TaskNode], file_path: str, options: dict
+    ) -> tuple[str, str | Path]:
+        """Create the collectra file for ``file_path`` and load it into the graph."""
         key = (
             "file"
             if Path(file_path).suffix == f".{self.ext}"
@@ -472,8 +527,20 @@ class Collectra:
         # Set context for all tasks
         self._set_task_contexts(context)
 
-        input_data = {key: value}
-        self._init_input_data(starting_nodes, **input_data)
+        self._init_input_data(starting_nodes, **{key: value})
+        return key, value
+
+    def _process_single_file(
+        self, starting_nodes: list[TaskNode], file_path: str, options: dict
+    ):
+        """Process a single file through the workflow.
+
+        Args:
+            starting_nodes: Nodes to start from.
+            file_path: Path to file to process.
+            options: Execution options.
+        """
+        key, value = self._setup_file(starting_nodes, file_path, options)
         self.render("workflow_run", file=str(value), render=options["render"])
 
         self._run_nodes(

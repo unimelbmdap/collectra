@@ -37,6 +37,7 @@ class Task(BaseEntity, Generic[T]):
 
     collective: bool = False
     fusion: bool = False
+    batch_size: int = 1
 
     def __init__(self, name: str, **kwargs) -> None:
         super().__init__(name)
@@ -109,6 +110,18 @@ class Task(BaseEntity, Generic[T]):
 
         """
         raise NotImplementedError("Subclasses must implement this method.")
+
+    def prefetch(self, entries: list[list]) -> None:
+        """Optionally compute results for many input entries in one batch.
+
+        The pipeline calls this with the entries of several files (each entry is
+        the list of artefacts a later ``run`` call will receive) when
+        ``batch_size`` is above 1. Tasks that can batch their work override this
+        to cache results for ``run`` to reuse; the default does nothing.
+        """
+
+    def clear_prefetch(self) -> None:
+        """Discard anything cached by ``prefetch``."""
 
     def get_output_name(self) -> str:
         name = (

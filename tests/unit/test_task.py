@@ -44,7 +44,7 @@ def test_object_detection_task(task_data, image, classes, tmp_path, monkeypatch)
     # neural network. External training itself is not a unit-test concern.
     task.model = FakeYOLO()
     monkeypatch.setattr(task, "_init_model", lambda: None)
-    monkeypatch.setattr(task, "_prepare_assets", lambda *args: (["train"], ["val"]))
+    monkeypatch.setattr(task, "_prepare_assets", lambda *args, **kwargs: (["train"], ["val"]))
     seen = {}
 
     def fake_train_fold(train, validation, output_classes, log, kwargs):
