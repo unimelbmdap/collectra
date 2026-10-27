@@ -27,6 +27,7 @@ from ..machine_learning.training import (
     print_distribution_table,
     run_training_command,
 )
+from .batching import image_cache_key
 from .detr import DetectionTrainResult
 
 if TYPE_CHECKING:
@@ -116,6 +117,8 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
 
     model: str | Path | object | None
     original_model_path: str | Path | None = None
+    resolution: int | None = None
+    batch_size: int = 1
 
     def __init__(
         self,
@@ -250,6 +253,93 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
         pixels = scale_tiff_pixels(pixels)
         return torch.from_numpy(np.ascontiguousarray(pixels.transpose(2, 0, 1)))
 
+    @command(name="run")
+    def cli_run(
+        self,
+        inputs: list[str],
+        output: Path | None = None,
+        verbose: bool = False,
+        usage: bool = False,
+        render: bool = False,
+        model: Annotated[
+            Path | None,
+            Arg(help="Model checkpoint path. Omit to keep the configured model."),
+        ] = None,
+        resolution: Annotated[
+            int | None,
+            Arg(
+                help="Inference resolution in pixels. Omit to use the resolution stored in the model."
+            ),
+        ] = None,
+        batch_size: Annotated[
+            int,
+            Arg(
+                help="Number of files to run through the model at once; results are saved after each batch."
+            ),
+        ] = 16,
+    ) -> None:
+        """Run this object detector for the supplied input files."""
+        if batch_size < 1:
+            raise ValueError("--batch-size must be at least 1")
+        if model is not None:
+            self.model = model
+        if resolution is not None:
+            self.resolution = resolution
+        self.batch_size = batch_size
+        super().cli_run(
+            inputs, output=output, verbose=verbose, usage=usage, render=render
+        )
+
+    def _predict(self, images: list[Image]) -> list[tuple]:
+        """Run the model over ``images`` together as ``(detections, width, height)``."""
+        threshold = float(getattr(self, "threshold", 0.5))
+        inputs = []
+        sizes = []
+        for image in images:
+            if image.get_path().suffix.lower() in {".tif", ".tiff"}:
+                model_input = self._tiff_tensor(image)
+                height, width = model_input.shape[1:]
+            else:
+                model_input = image.pil().convert("RGB")
+                width, height = model_input.size
+            inputs.append(model_input)
+            sizes.append((width, height))
+
+        kwargs = {}
+        if self.resolution is not None:
+            kwargs["shape"] = (int(self.resolution), int(self.resolution))
+        detections = self.model.predict(
+            inputs if len(inputs) > 1 else inputs[0],
+            threshold=threshold,
+            include_source_image=False,
+            **kwargs,
+        )
+        if not isinstance(detections, list):
+            detections = [detections]
+        return [(d, w, h) for d, (w, h) in zip(detections, sizes)]
+
+    @threading_locked()
+    def prefetch(self, entries: list[list]) -> None:
+        """Run the model over many images in batches, caching results for ``run``."""
+        self._init_model()
+        images = [
+            entry[0]
+            for entry in entries
+            if len(entry) == 1 and isinstance(entry[0], Image)
+        ]
+        self._prefetched = {}
+        logger.info(
+            "RF-DETR inference resolution: %s",
+            self.resolution or getattr(self.model.model_config, "resolution", "model default"),
+        )
+        for start in range(0, len(images), self.batch_size):
+            batch = images[start : start + self.batch_size]
+            for image, predicted in zip(batch, self._predict(batch)):
+                self._prefetched[image_cache_key(image, self.resolution)] = predicted
+
+    def clear_prefetch(self) -> None:
+        self._prefetched = {}
+
     @threading_locked()
     def run(self, *args: Image) -> list[Image]:
         if len(args) != 1:
@@ -260,17 +350,10 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
         image = args[0]
         self._init_model()
 
-        threshold = float(getattr(self, "threshold", 0.5))
-        if image.get_path().suffix.lower() in {".tif", ".tiff"}:
-            model_input = self._tiff_tensor(image)
-            height, width = model_input.shape[1:]
-        else:
-            model_input = image.pil().convert("RGB")
-            width, height = model_input.size
-
-        detections = self.model.predict(
-            model_input, threshold=threshold, include_source_image=False
+        predicted = getattr(self, "_prefetched", {}).pop(
+            image_cache_key(image, self.resolution), None
         )
+        detections, width, height = predicted or self._predict([image])[0]
 
         results: list[Image] = []
         for i in range(len(detections.xyxy)):

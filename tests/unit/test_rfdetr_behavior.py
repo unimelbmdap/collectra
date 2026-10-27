@@ -346,3 +346,40 @@ def test_load_does_not_warn_when_classes_json_present(
         "Did not expect a missing-classes.json warning when the file is present. "
         f"Got: {[(r.name, r.levelname, r.message) for r in caplog.records]!r}"
     )
+
+
+def test_prefetch_batches_predictions_and_run_reuses_them(
+    patched_rfdetr_base, image, monkeypatch
+):
+    import numpy as np
+
+    calls = []
+
+    class BatchModel(_FakeRFDETR):
+        model_config = MagicMock(resolution=960)
+
+        def predict(self, inputs, threshold=0.5, include_source_image=False, **kwargs):
+            batch = inputs if isinstance(inputs, list) else [inputs]
+            calls.append((len(batch), kwargs.get("shape")))
+            one = MagicMock(
+                xyxy=np.array([[1.0, 1.0, 5.0, 5.0]]), class_id=np.array([0])
+            )
+            return [one for _ in batch] if isinstance(inputs, list) else one
+
+    task = ObjectDetectionRFDETR(name="rfdetr-batch", model=BatchModel())
+    task._categories = ["hourglass"]
+    task.batch_size = 2
+    task.resolution = 960
+    crops = [image.make_crop(0.5, 0.5, w, w) for w in (0.2, 0.3, 0.4)]
+
+    task.prefetch([[crop] for crop in crops])
+    assert calls == [(2, (960, 960)), (1, (960, 960))]
+
+    for crop in crops:
+        found = task.run(crop)
+        assert len(found) == 1 and found[0].name == "hourglass"
+    assert len(calls) == 2  # run() reused the cache
+
+    task.clear_prefetch()
+    task.run(crops[0])
+    assert len(calls) == 3

@@ -26,6 +26,7 @@ from ..machine_learning.training import (
     print_distribution_table,
     run_training_command,
 )
+from .batching import image_cache_key
 from ..machine_learning.yolo import YOLOTask, get_yolo_class
 
 if TYPE_CHECKING:
@@ -146,7 +147,7 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
 
         imgsz = imgsz if imgsz is not None else self.imgsz
         prefetched = getattr(self, "_prefetched", {})
-        results: Results | None = prefetched.pop(self._image_key(image, imgsz), None)
+        results: Results | None = prefetched.pop(image_cache_key(image, imgsz), None)
         if results is None:
             results = self._predict([image], imgsz)[0]
 
@@ -198,32 +199,6 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
         for name, count in counts.items():
             print(f"\t{name}: {count}")
         return detections
-
-    @staticmethod
-    def _image_key(image: Image, imgsz: int | None) -> tuple:
-        """Identify the pixels and settings a prediction was made for."""
-        parent = getattr(image, "source_parent", None)
-        crop = (
-            (
-                image.x_center,
-                image.y_center,
-                image.width_relative,
-                image.height_relative,
-            )
-            if isinstance(image, ImageCrop)
-            else None
-        )
-        return (
-            str(image.get_path()),
-            crop,
-            image.orientation,
-            (
-                ObjectDetectionYOLO._image_key(parent, None)
-                if parent is not None
-                else None
-            ),
-            imgsz,
-        )
 
     def _tiff_pixels(self, image: Image):
         """Decode a TIFF (cropped and rotated as needed) for the model's channels."""
@@ -305,7 +280,7 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
         for start in range(0, len(images), self.batch_size):
             batch = images[start : start + self.batch_size]
             for image, result in zip(batch, self._predict(batch, imgsz)):
-                self._prefetched[self._image_key(image, imgsz)] = result
+                self._prefetched[image_cache_key(image, imgsz)] = result
 
     def clear_prefetch(self) -> None:
         self._prefetched = {}
