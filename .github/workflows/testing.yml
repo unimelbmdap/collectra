@@ -36,7 +36,11 @@ jobs:
       run: |
         uv build --wheel --out-dir dist
         uv run --locked --python ${{ matrix.python-version }} python tests/packaging/check_wheel.py dist/*.whl
+    # torch (and so the ML extras) has no Python 3.15 wheels yet, so 3.15 only
+    # runs the core checks above.
     - name: Install ML dependencies for Python ${{ matrix.python-version }}
+      if: matrix.python-version != '3.15'
       run: uv sync --python ${{ matrix.python-version }} --group dev --extra ml --extra yolo
     - name: Run Tests
+      if: matrix.python-version != '3.15'
       run: uv run --extra ml --extra yolo --python ${{ matrix.python-version }} pytest

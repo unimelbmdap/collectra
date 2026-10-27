@@ -1,7 +1,7 @@
 """IRN (Internal Reference Number) resolver tasks for Collectra workflows.
 
 This module provides an IRN resolver that uses semantic similarity search
-(via Chroma + OpenAI embeddings) plus an LLM verification step to map
+(via an on-disk vector store + OpenAI embeddings) plus an LLM verification step to map
 free-text query inputs to canonical IRN identifiers loaded from an xlsx
 source file.
 
@@ -20,11 +20,10 @@ from pathlib import Path
 
 import pandas as pd
 from dotenv import load_dotenv
-from langchain_chroma import Chroma
-from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
 
 from collectra.tasks.canonicalisers import LLMCanonicaliser
+from collectra.tasks.vector_store import VectorStore
 from collectra.types.texts import Text
 
 from ..logger import get_logger
@@ -149,7 +148,7 @@ def render_card(template: str, row: dict) -> str:
 class IRNResolver(LLMCanonicaliser):
     """Resolve a free-text query to an IRN identifier.
 
-    Builds one Chroma sub-index per entry in ``index_filters`` from rows of
+    Builds one vector sub-index per entry in ``index_filters`` from rows of
     a source xlsx file. At query time, tries each filter in order, retrieves
     the top-``count`` candidates by embedding distance, applies acceptance
     rules (``score_floor`` and optional ``score_gap_eps``), then asks the LLM
@@ -162,7 +161,7 @@ class IRNResolver(LLMCanonicaliser):
         irn_column (str): Name of the IRN column (default "IRN").
         count (int): Number of candidates to retrieve per filter (default 20).
         embedding_model (str): Embedding model name.
-        score_floor (float): Maximum acceptable Chroma distance for top-1.
+        score_floor (float): Maximum acceptable (squared L2) distance for top-1.
         score_gap_eps (float): Minimum gap between top-1 and top-2 distances.
         index_filters (list): Pandas-query strings (or None) - one per sub-index.
     """
@@ -205,11 +204,11 @@ class IRNResolver(LLMCanonicaliser):
         else:
             self.preamble = NO_MATCH_INSTRUCTION
 
-        # Build/load one Chroma vector store per filter.
+        # Build/load one vector store per filter.
         from langchain_openai import OpenAIEmbeddings
 
         self._embeddings = OpenAIEmbeddings(model=self.embedding_model)
-        self._vector_stores: list[Chroma] = []
+        self._vector_stores: list[VectorStore] = []
         self._build_indices()
 
     # ------------------------------------------------------------------
@@ -222,11 +221,6 @@ class IRNResolver(LLMCanonicaliser):
     def _index_path_for(self, i: int) -> Path:
         return self.source.parent / f"{self.source.stem}_irn_index_{i}"
 
-    def _collection_name_for(self, i: int) -> str:
-        # Chroma collection names: 3–512 chars, [a-zA-Z0-9._-], must start/end alnum.
-        safe_stem = re.sub(r"[^a-zA-Z0-9._-]", "_", self.source.stem)
-        return f"{safe_stem}_irn_collection_{i}"
-
     def _build_indices(self) -> None:
         current_hash = self._source_hash()
         df_raw_cache: pd.DataFrame | None = None
@@ -234,11 +228,9 @@ class IRNResolver(LLMCanonicaliser):
         for i, filter_str in enumerate(self.index_filters):
             index_path = self._index_path_for(i)
             sidecar = index_path / ".source_hash"
-            collection_name = self._collection_name_for(i)
 
             reuse = (
-                index_path.exists()
-                and index_path.is_dir()
+                VectorStore.exists(index_path, self.embedding_model)
                 and sidecar.exists()
                 and sidecar.read_text().strip() == current_hash
             )
@@ -249,12 +241,9 @@ class IRNResolver(LLMCanonicaliser):
                     index_path,
                     filter_str,
                 )
-                vector_store = Chroma(
-                    collection_name=collection_name,
-                    embedding_function=self._embeddings,
-                    persist_directory=str(index_path),
+                self._vector_stores.append(
+                    VectorStore.load(index_path, self._embeddings)
                 )
-                self._vector_stores.append(vector_store)
                 continue
 
             # Need to (re)build this index.
@@ -284,7 +273,7 @@ class IRNResolver(LLMCanonicaliser):
                 )
 
             ids: list[str] = []
-            documents: list[Document] = []
+            texts: list[str] = []
             seen: set[str] = set()
             for _, row in df.iterrows():
                 row_dict = row.to_dict()
@@ -298,23 +287,18 @@ class IRNResolver(LLMCanonicaliser):
                 if not card:
                     continue
                 ids.append(irn_str)
-                documents.append(Document(page_content=card))
+                texts.append(card)
                 seen.add(irn_str)
 
-            index_path.mkdir(parents=True, exist_ok=True)
-            vector_store = Chroma(
-                collection_name=collection_name,
-                embedding_function=self._embeddings,
-                persist_directory=str(index_path),
+            vector_store = VectorStore.build(
+                index_path, self._embeddings, texts, ids, self.embedding_model
             )
-            if documents:
-                vector_store.add_documents(documents=documents, ids=ids)
 
             sidecar.write_text(current_hash)
             logger.info(
                 "Built IRN index at %s with %d rows for filter %r",
                 index_path,
-                len(documents),
+                len(texts),
                 filter_str,
             )
             self._vector_stores.append(vector_store)

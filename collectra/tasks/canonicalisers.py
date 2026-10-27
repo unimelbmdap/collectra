@@ -19,11 +19,10 @@ import re
 from pathlib import Path
 
 from dotenv import load_dotenv
-from langchain_chroma import Chroma
-from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
 
 from collectra.tasks.llms import LLM as CollectraLLM
+from collectra.tasks.vector_store import VectorStore
 from collectra.types.texts import Text
 
 load_dotenv()
@@ -59,24 +58,16 @@ class LLMCanonicaliser(CollectraLLM):
 
         index_path = Path(self.entities.stem + "_index.embed")
         embeddings = OpenAIEmbeddings(model=self.embedding_model)
-        if index_path.exists() and index_path.is_dir():
+        if VectorStore.exists(index_path, self.embedding_model):
             print(f"Loading existing vector store from {index_path}")
-            vector_store = Chroma(
-                collection_name=f"{self.entities.stem}_collection",
-                embedding_function=embeddings,
-                persist_directory=str(index_path),
-            )
+            vector_store = VectorStore.load(index_path, embeddings)
         else:
             with open(self.entities, "r") as f:
                 raw_data = [line.strip() for line in f.readlines() if line.strip()]
-                ids = [str(i) for i in range(len(raw_data))]
-                documents = [Document(page_content=content) for content in raw_data]
-            vector_store = Chroma(
-                collection_name=f"{self.entities.stem}_collection",
-                embedding_function=embeddings,
-                persist_directory=str(index_path),
+            ids = [str(i) for i in range(len(raw_data))]
+            vector_store = VectorStore.build(
+                index_path, embeddings, raw_data, ids, self.embedding_model
             )
-            vector_store.add_documents(documents=documents, ids=ids)
 
         entities = dict()
 
