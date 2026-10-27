@@ -467,9 +467,13 @@ class ArtefactNode(Node):
                             "collectra_results_metadata", dict()
                         ).get("partition", None)
                         if key not in results:
-                            raise ValueError(
-                                f"[red]{key}[/red] could not be found in {value}"
+                            # Normal when the task producing this node hasn't run yet.
+                            logger.info(
+                                "No %s yet in %s; it will be created when its task runs.",
+                                key,
+                                value.name,
                             )
+                            return
                         data = results[key]
                         if not data:
                             # Key exists but empty — pipeline processed it, found nothing
