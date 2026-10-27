@@ -85,6 +85,7 @@ class FakeRFDETRModel:
         return SimpleNamespace(
             xyxy=np.array([[2.0, 3.0, 8.0, 9.0]]),
             class_id=np.array([0]),
+            confidence=np.array([0.9]),
         )
 
 
@@ -100,6 +101,7 @@ def test_run_rfdetr(image, monkeypatch):
     assert len(detections) == 1
     assert isinstance(detections[0], ImageCrop)
     assert detections[0].name == "human"
+    assert detections[0].confidence == pytest.approx(0.9)
 
 
 def test_rfdetr_train_forwards_regularization_options(monkeypatch):

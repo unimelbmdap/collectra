@@ -362,7 +362,9 @@ def test_prefetch_batches_predictions_and_run_reuses_them(
             batch = inputs if isinstance(inputs, list) else [inputs]
             calls.append((len(batch), kwargs.get("shape")))
             one = MagicMock(
-                xyxy=np.array([[1.0, 1.0, 5.0, 5.0]]), class_id=np.array([0])
+                xyxy=np.array([[1.0, 1.0, 5.0, 5.0]]),
+                class_id=np.array([0]),
+                confidence=np.array([0.87]),
             )
             return [one for _ in batch] if isinstance(inputs, list) else one
 
@@ -378,6 +380,7 @@ def test_prefetch_batches_predictions_and_run_reuses_them(
     for crop in crops:
         found = task.run(crop)
         assert len(found) == 1 and found[0].name == "hourglass"
+        assert found[0].confidence == pytest.approx(0.87)
     assert len(calls) == 2  # run() reused the cache
 
     task.clear_prefetch()

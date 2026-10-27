@@ -355,6 +355,7 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
         )
         detections, width, height = predicted or self._predict([image])[0]
 
+        confidences = getattr(detections, "confidence", None)
         results: list[Image] = []
         for i in range(len(detections.xyxy)):
             x1, y1, x2, y2 = detections.xyxy[i]
@@ -386,6 +387,9 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
                     y_center=y_center,
                     width_relative=width_relative,
                     height_relative=height_relative,
+                    confidence=(
+                        float(confidences[i]) if confidences is not None else None
+                    ),
                     orientation=image.orientation,
                     name=class_name,
                 )
