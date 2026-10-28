@@ -8,6 +8,7 @@ JavaScript usage:
 """
 
 import base64
+import csv
 import enum
 import platform
 import re
@@ -1501,6 +1502,48 @@ class GUIBackend:
             row["__editable"] = editable
             rows.append(row)
         return {"success": True, "columns": columns, "rows": rows}
+
+    def export_table_csv(self, headers: dict | None = None) -> dict:
+        """
+        Ask where to save, then write the table as a CSV: a "File" column and
+        one column per text artefact, one row per loaded page, with every text
+        in full.
+
+        Args:
+            headers: optional column titles by text artefact label, as the
+                table shows them
+
+        Returns:
+            dict with 'success' and 'path', or 'cancelled' when no file was
+            chosen
+        """
+        if self._window is None:
+            return {"success": False, "error": "Window not initialized"}
+        try:
+            table = self.get_table_data(max_chars=10**12)
+            if not table.get("columns") and not table.get("rows"):
+                return {"success": False, "error": "No files are loaded"}
+            result = self._window.create_file_dialog(
+                dialog_type=webview.FileDialog.SAVE,
+                save_filename="table.csv",
+                file_types=("CSV files (*.csv)",),
+            )
+            if not result:
+                return {"success": False, "cancelled": True}
+            path = Path(result if isinstance(result, (str, Path)) else result[0])
+            if not path.suffix:
+                path = path.with_suffix(".csv")
+            columns = table["columns"]
+            headers = headers or {}
+            # utf-8-sig so that Excel reads non-ASCII text correctly
+            with open(path, "w", encoding="utf-8-sig", newline="") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(["File"] + [headers.get(c) or c for c in columns])
+                for row in table["rows"]:
+                    writer.writerow([row["name"]] + [row.get(c, "") for c in columns])
+            return {"success": True, "path": str(path)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     def set_table_cells(self, edits: list[dict]) -> dict:
         """

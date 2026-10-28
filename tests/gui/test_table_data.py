@@ -146,3 +146,46 @@ class TestSetTableCells:
         assert backend.get_table_data()["rows"][0]["title"] == "Open"
         # ...and it is on disk, not only in the open page
         assert "Open" in (tmp_path / "a.collectra" / "results.yaml").read_text()
+
+
+class TestExportTableCsv:
+    def test_writes_the_table_to_the_chosen_file(
+        self, backend_with_extension, tmp_path, monkeypatch
+    ):
+        backend = backend_with_extension
+        backend._collectra_folders = [
+            make_page(tmp_path, "a", {"title": ["Alpha, \"one\"\nline"], "notes": ["x", "y"]}),
+            make_page(tmp_path, "b", {"title": ["Beta"]}),
+        ]
+        monkeypatch.setattr(backend, "_text_artefact_labels", lambda: ["title", "notes"])
+        target = tmp_path / "out.csv"
+        asked = {}
+
+        class Window:
+            def create_file_dialog(self, **kwargs):
+                asked.update(kwargs)
+                return str(target)
+
+        backend._window = Window()
+
+        result = backend.export_table_csv({"title": "Title"})
+
+        assert result == {"success": True, "path": str(target)}
+        assert asked["save_filename"] == "table.csv"
+        import csv
+
+        with open(target, encoding="utf-8-sig", newline="") as handle:
+            rows = list(csv.reader(handle))
+        assert rows == [
+            ["File", "Title", "notes"],
+            ["a.collectra", "Alpha, \"one\"\nline", "x | y"],
+            ["b.collectra", "Beta", ""],
+        ]
+
+    def test_cancelled_dialog_writes_nothing(self, backend_with_extension, tmp_path, monkeypatch):
+        backend = backend_with_extension
+        backend._collectra_folders = [make_page(tmp_path, "a", {"title": ["A"]})]
+        monkeypatch.setattr(backend, "_text_artefact_labels", lambda: ["title"])
+        backend._window = type("W", (), {"create_file_dialog": lambda self, **k: None})()
+
+        assert backend.export_table_csv() == {"success": False, "cancelled": True}

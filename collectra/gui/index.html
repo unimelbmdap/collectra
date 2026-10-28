@@ -2058,6 +2058,11 @@
                         <path d="M2 6.5h12M2 10h12M6.5 6.5v7"/>
                     </svg>
                 </button>
+                <button class="panel-toolbar-btn" id="exportCsvToolbarBtn" onclick="exportTableCsv()" title="Export table as CSV" aria-label="Export table as CSV">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M8 2v7.5M5 6.8l3 3 3-3M2.5 11v2.5h11V11"/>
+                    </svg>
+                </button>
                 <button class="panel-toolbar-btn" id="artefactsToolbarBtn" onclick="toggleArtefactsPopover()" title="Artefacts" aria-label="Show artefacts" disabled>
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
                         <path d="M6 1.5h4M6.5 1.5v1.8c0 .6-.5 1-1.2 1.5C4.2 5.7 3.5 6.9 3.5 8.9c0 3 2 5.6 4.5 5.6s4.5-2.6 4.5-5.6c0-2-.7-3.2-1.8-4C10 4.3 9.5 3.9 9.5 3.3V1.5"/>
@@ -5019,6 +5024,22 @@
         function openTableTab() {
             const panel = openingPanel();
             if (panel) panel.openTableKindTab();
+        }
+
+        // Toolbar export icon — the native save dialog, then the table as a
+        // CSV, whether or not a table tab is open.
+        async function exportTableCsv() {
+            const status = (text) => Object.values(panelControllers).forEach((c) => c.showTableStatus(text));
+            try {
+                const columns = (await window.pywebview.api.get_table_data(0)).columns || [];
+                const headers = {};
+                columns.forEach((label) => { headers[label] = humanizeLabel(label); });
+                const result = await window.pywebview.api.export_table_csv(headers);
+                if (result.success) status('Exported ' + result.path);
+                else if (!result.cancelled) alert('Export failed: ' + (result.error || 'unknown error'));
+            } catch (e) {
+                alert('Export failed: ' + e);
+            }
         }
 
         // The table's reload button, and for after the pages' text changed:
