@@ -250,7 +250,7 @@ class ImageSegmentationRFDETR(SegmentationTrainingData, Task):
                 "dataset_dir": str(dataset), "output_dir": str(output),
                 "epochs": epochs, "batch_size": batch, "devices": num_gpus,
                 "grad_accum_steps": 1, "device": self.device,
-                "wandb": wandb, "project": f"{self.pipeline.path.name}-{self.name}",
+                "wandb": wandb, "project": f"{self.pipeline.name}-{self.name}",
                 "run": output.name, "use_ema": False, "run_test": False,
                 "eval_interval": 1,
             },

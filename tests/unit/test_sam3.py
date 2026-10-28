@@ -173,7 +173,7 @@ def test_model_loading_handles_official_and_finetuned_checkpoints(
     )
     processor = sys.modules["sam3.model.sam3_image_processor"].Sam3Processor = Mock()
     task = ImageSegmentationSam3("segment", model="model.pt", threshold=0.7)
-    task.pipeline = SimpleNamespace(path=tmp_path)
+    task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path)
     task._init_model()
     assert builder.call_args.kwargs["load_from_HF"] is False
     assert builder.call_args.kwargs["checkpoint_path"] is None
@@ -609,7 +609,7 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
         sam3, "datetime", SimpleNamespace(now=lambda: datetime(2026, 10, 16, 14))
     )
     task = ImageSegmentationSam3("segment", model="initial.pt")
-    task.pipeline = SimpleNamespace(path=tmp_path, data={"segment": {}}, save=Mock())
+    task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path, data={"segment": {}}, save=Mock())
     dataset = export_dataset(
         [SegmentationSample(image, [instance(image, tmp_path)])], tmp_path / "dataset"
     )
@@ -623,7 +623,7 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
         assert kwargs["env"]["PYTHONUNBUFFERED"] == "1"
         config = yaml.safe_load(Path(command[-1]).read_text())
         assert config["trainer"]["collectra_wandb"] is True
-        assert config["trainer"]["collectra_project"] == f"{tmp_path.name}-segment"
+        assert config["trainer"]["collectra_project"] == f"mypipeline-segment"
         assert config["trainer"]["collectra_run_name"] == output.name
         checkpoint = (
             Path(config["paths"]["experiment_log_dir"]) / "checkpoints/best.pt"
@@ -674,7 +674,7 @@ def test_train_reuses_output_dataset_without_source_checks(
     )
     before = {path: path.read_bytes() for path in dataset.rglob('*') if path.is_file()}
     task = ImageSegmentationSam3('segment', model='initial.pt')
-    task.pipeline = SimpleNamespace(path=tmp_path, data={'segment': {}}, save=Mock())
+    task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path, data={'segment': {}}, save=Mock())
     prepare = Mock(side_effect=AssertionError('Must not prepare or check source data'))
     monkeypatch.setattr(task, 'prepare_training_data', prepare)
     monkeypatch.setattr(task, '_checkpoint', lambda: tmp_path / 'initial.pt')

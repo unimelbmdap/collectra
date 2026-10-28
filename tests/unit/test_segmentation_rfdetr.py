@@ -117,7 +117,7 @@ def test_checkpoint_resolves_relative_to_pipeline_and_rejects_detection(monkeypa
     loader = Mock(return_value=loaded)
     monkeypatch.setattr(rfdetr, "_rfdetr", lambda: SimpleNamespace(RFDETR=SimpleNamespace(from_checkpoint=loader)))
     task = ImageSegmentationRFDETR("segment", model="weights.pt")
-    task.pipeline = SimpleNamespace(path=tmp_path)
+    task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path)
     task._init_model()
     loader.assert_called_once_with(str(checkpoint), device="cuda")
     task._predictor = None
@@ -167,7 +167,7 @@ def test_training_cli_flags_and_model_adoption(pipeline, sample, tmp_path, monke
     invoke(pipeline, ["task", "segment", "train", "--output", str(output), "--wandb", "--max-items", "3", "--exclude", "test", str(tmp_path)])
     config = json.loads((output / "rfdetr-training.json").read_text())
     assert config["params"]["wandb"]
-    assert config["params"]["project"] == f"{tmp_path.name}-segment"
+    assert config["params"]["project"] == "Segments-segment"
     assert config["params"]["run"] == "run"
     assert config["params"]["use_ema"] is False
     assert config["has_validation"] is False

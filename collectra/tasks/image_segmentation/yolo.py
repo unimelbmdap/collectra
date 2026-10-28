@@ -221,7 +221,7 @@ class ImageSegmentationYOLO(SegmentationTrainingData, Task):
         config = {
             "model": self._model_path(), "threshold": self.threshold,
             "dataset": str(dataset), "has_validation": has_validation,
-            "wandb": wandb, "project": f"{self.pipeline.path.name}-{self.name}",
+            "wandb": wandb, "project": f"{self.pipeline.name}-{self.name}",
             "run_name": output.name,
             "params": {
                 "data": str(output / "yolo-training.json"),

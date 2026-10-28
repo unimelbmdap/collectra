@@ -291,7 +291,7 @@ def run_training_command(
         trainer,
         prepare_inputs=prepare_inputs,
         include_unlabelled=include_unlabelled,
-        project=f"{pipeline.path.name}-{task.name}",
+        project=f"{pipeline.name}-{task.name}",
         log=log,
         base_folder=Path.cwd(),
         validation=validation,

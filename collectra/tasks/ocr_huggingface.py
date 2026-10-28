@@ -594,7 +594,7 @@ class OCRHuggingFace(Task):
             except ModuleNotFoundError as error:
                 raise ImportError("--wandb requires wandb: pip install wandb") from error
             run = sdk.init(
-                project=f"{self.pipeline.path.name}-{self.name}",
+                project=f"{self.pipeline.name}-{self.name}",
                 name=output.name,
                 dir=str(output),
                 config={

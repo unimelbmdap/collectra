@@ -80,7 +80,7 @@ def test_model_path_and_segmentation_validation(tmp_path, monkeypatch):
     factory = Mock(return_value=SimpleNamespace(task="detect"))
     monkeypatch.setattr(yolo, "get_yolo_class", lambda: factory)
     task = ImageSegmentationYOLO("segment", model="weights.pt")
-    task.pipeline = SimpleNamespace(path=tmp_path)
+    task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path)
     with pytest.raises(ValueError, match="segmentation model"):
         task._init_model()
     factory.assert_called_once_with(str(checkpoint))
@@ -109,7 +109,7 @@ def test_bitmap_dataset_keeps_holes_islands_and_collates(sample, tmp_path):
 
 def test_train_reuses_coco_data_and_adopts_best(sample, tmp_path, monkeypatch):
     task = ImageSegmentationYOLO("segment", output="text_region", device="cuda:1")
-    task.pipeline = SimpleNamespace(path=tmp_path, data={"segment": {}}, save=Mock())
+    task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path, data={"segment": {}}, save=Mock())
     output = tmp_path / "output"
     export_dataset([sample], output / "dataset", prompts={"text_region": "text_region"})
     task.prepare_training_data = Mock(side_effect=AssertionError("must reuse"))
@@ -118,7 +118,7 @@ def test_train_reuses_coco_data_and_adopts_best(sample, tmp_path, monkeypatch):
         config = json.loads(Path(command[-1]).read_text())
         assert config["params"]["device"] == [1, 2]
         assert config["params"]["batch"] == 6
-        assert config["wandb"] and config["project"] == f"{tmp_path.name}-segment"
+        assert config["wandb"] and config["project"] == f"mypipeline-segment"
         (output / "weights").mkdir()
         (output / "weights/best.pt").write_bytes(b"best weights")
 
@@ -131,7 +131,7 @@ def test_train_reuses_coco_data_and_adopts_best(sample, tmp_path, monkeypatch):
 
 def test_missing_reuse_falls_back_to_export(sample, tmp_path, monkeypatch):
     task = ImageSegmentationYOLO("segment", output="text_region", device="cpu")
-    task.pipeline = SimpleNamespace(path=tmp_path, data={"segment": {}}, save=Mock())
+    task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path, data={"segment": {}}, save=Mock())
     task._samples = Mock(return_value=[sample])
     output = tmp_path / "run"
 
