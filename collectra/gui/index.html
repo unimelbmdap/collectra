@@ -225,6 +225,46 @@
             color: var(--app-fg-bright, #e6e6e6);
             background: rgba(var(--app-primary-rgb, 240, 146, 38), 0.2);
         }
+        /* Table view: fills its panel, the refresh button sits in the corner. */
+        .table-tab-content {
+            display: none;
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        .table-tab-grid {
+            width: 100%;
+            height: 100%;
+        }
+        .table-tab-content .dag-fit-btn {
+            top: 4px;
+            right: 4px;
+        }
+        .table-tab-grid .table-cell-in-range {
+            background: rgba(var(--app-primary-rgb, 38, 139, 210), 0.28) !important;
+        }
+        .table-tab-grid .ag-cell:not([aria-readonly="true"]).table-text-cell {
+            cursor: cell;
+        }
+        .table-status {
+            position: absolute;
+            left: 8px;
+            bottom: 6px;
+            z-index: 5;
+            padding: 2px 8px;
+            border-radius: 6px;
+            background: var(--app-surface, #121212);
+            border: 1px solid var(--app-divider, #2a2a2a);
+            color: var(--app-fg-muted, #8a9698);
+            font-size: 11px;
+            pointer-events: none;
+        }
+        .table-status:empty {
+            display: none;
+        }
+        .table-tab-grid .table-file-cell {
+            font-weight: 600;
+        }
         /* Left edge of the toolbar; everything else stays on the right. */
         #sidebarToggleBtn {
             margin-right: auto;
@@ -1915,6 +1955,7 @@
     <link rel="stylesheet" href="vendor/bootswatch/dist/solar/bootstrap.min.css">
     <link rel="stylesheet" href="vendor/easymde/dist/easymde.min.css">
     <script src="vendor/easymde/dist/easymde.min.js"></script>
+    <script src="vendor/ag-grid-community/dist/ag-grid-community.min.js"></script>
     <!-- Pure node-click dispatch logic, unit tested in tests-js/ -->
     <script src="artefactDisplay.js"></script>
     <script src="displays/imageCrop.js"></script>
@@ -1933,6 +1974,7 @@
     <script src="hoverTimer.js"></script>
     <script src="lineage.js"></script>
     <script src="tabContextMenu.js"></script>
+    <script src="tableView.js"></script>
     <script src="shiftDraw.js"></script>
     <script src="sourceControl.js"></script>
     <script src="rgbViewControls.js"></script>
@@ -2010,6 +2052,12 @@
                 <button class="panel-toolbar-btn" id="dagToolbarBtn" onclick="openDagTab()" title="DAG" aria-label="DAG">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19.5 17C19.36 17 19.24 17 19.11 17.04L17.5 13.8C17.95 13.35 18.25 12.71 18.25 12C18.25 10.62 17.13 9.5 15.75 9.5C15.61 9.5 15.5 9.5 15.35 9.54L13.74 6.3C14.21 5.84 14.5 5.21 14.5 4.5C14.5 3.12 13.38 2 12 2S9.5 3.12 9.5 4.5C9.5 5.2 9.79 5.84 10.26 6.29L8.65 9.54C8.5 9.5 8.39 9.5 8.25 9.5C6.87 9.5 5.75 10.62 5.75 12C5.75 12.71 6.04 13.34 6.5 13.79L4.89 17.04C4.76 17 4.64 17 4.5 17C3.12 17 2 18.12 2 19.5C2 20.88 3.12 22 4.5 22S7 20.88 7 19.5C7 18.8 6.71 18.16 6.24 17.71L7.86 14.46C8 14.5 8.12 14.5 8.25 14.5C8.38 14.5 8.5 14.5 8.63 14.46L10.26 17.71C9.79 18.16 9.5 18.8 9.5 19.5C9.5 20.88 10.62 22 12 22S14.5 20.88 14.5 19.5C14.5 18.12 13.38 17 12 17C11.87 17 11.74 17 11.61 17.04L10 13.8C10.45 13.35 10.75 12.71 10.75 12C10.75 11.3 10.46 10.67 10 10.21L11.61 6.96C11.74 7 11.87 7 12 7C12.13 7 12.26 7 12.39 6.96L14 10.21C13.54 10.66 13.25 11.3 13.25 12C13.25 13.38 14.37 14.5 15.75 14.5C15.88 14.5 16 14.5 16.13 14.46L17.76 17.71C17.29 18.16 17 18.8 17 19.5C17 20.88 18.12 22 19.5 22S22 20.88 22 19.5C22 18.12 20.88 17 19.5 17M4.5 20.5C3.95 20.5 3.5 20.05 3.5 19.5S3.95 18.5 4.5 18.5 5.5 18.95 5.5 19.5 5.05 20.5 4.5 20.5M13 19.5C13 20.05 12.55 20.5 12 20.5S11 20.05 11 19.5 11.45 18.5 12 18.5 13 18.95 13 19.5M7.25 12C7.25 11.45 7.7 11 8.25 11S9.25 11.45 9.25 12 8.8 13 8.25 13 7.25 12.55 7.25 12M11 4.5C11 3.95 11.45 3.5 12 3.5S13 3.95 13 4.5 12.55 5.5 12 5.5 11 5.05 11 4.5M14.75 12C14.75 11.45 15.2 11 15.75 11S16.75 11.45 16.75 12 16.3 13 15.75 13 14.75 12.55 14.75 12M19.5 20.5C18.95 20.5 18.5 20.05 18.5 19.5S18.95 18.5 19.5 18.5 20.5 18.95 20.5 19.5 20.05 20.5 19.5 20.5Z"/></svg>
                 </button>
+                <button class="panel-toolbar-btn" id="tableToolbarBtn" onclick="openTableTab()" title="Table" aria-label="Table">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="2" y="2.5" width="12" height="11" rx="1.5"/>
+                        <path d="M2 6.5h12M2 10h12M6.5 6.5v7"/>
+                    </svg>
+                </button>
                 <button class="panel-toolbar-btn" id="artefactsToolbarBtn" onclick="toggleArtefactsPopover()" title="Artefacts" aria-label="Show artefacts" disabled>
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
                         <path d="M6 1.5h4M6.5 1.5v1.8c0 .6-.5 1-1.2 1.5C4.2 5.7 3.5 6.9 3.5 8.9c0 3 2 5.6 4.5 5.6s4.5-2.6 4.5-5.6c0-2-.7-3.2-1.8-4C10 4.3 9.5 3.9 9.5 3.3V1.5"/>
@@ -2079,6 +2127,11 @@
                         </div>
                         <div class="node-content-body" id="topNodeContentBody">
                             <div class="node-content-placeholder" id="topNodeContentPlaceholder">Drag a DAG node, artefact, or task into this panel's tab strip to view it here.</div>
+                            <div class="table-tab-content" id="topTableTabContent">
+                                <button class="dag-fit-btn" onclick="refreshTables()" title="Reload table" aria-label="Reload table"><i class="fa fa-rotate-right" aria-hidden="true"></i></button>
+                                <span class="table-status" aria-live="polite"></span>
+                                <div class="table-tab-grid" id="topTableTabGrid"></div>
+                            </div>
                             <div class="page-artefact-display" id="topPageArtefactDisplay" style="display:none;"></div>
                             <div class="page-text-display" id="topPageTextDisplay" style="display:none;"></div>
                             <div class="node-content-display" id="topNodeContentDisplay" style="display:none;"></div>
@@ -2109,6 +2162,11 @@
                                             <div id="dagTabCy" style="width:100%;height:100%;"></div>
                                             <div id="dagTabTooltip" class="card" style="position:absolute;display:none;max-width:300px;z-index:100;pointer-events:none;background:var(--app-secondary, #073642) !important;border:1px solid var(--app-secondary, #344d5a) !important;box-shadow:0 4px 16px rgba(0,0,0,0.5);color:var(--app-secondary-fg, #93a1a1);font-size:11px;"></div>
                                         </div>
+                                    </div>
+                                    <div class="table-tab-content" id="tableTabContent">
+                                        <button class="dag-fit-btn" onclick="refreshTables()" title="Reload table" aria-label="Reload table"><i class="fa fa-rotate-right" aria-hidden="true"></i></button>
+                                        <span class="table-status" aria-live="polite"></span>
+                                        <div class="table-tab-grid" id="tableTabGrid"></div>
                                     </div>
                                     <div class="page-artefact-display" id="pageArtefactDisplay" style="display:none;"></div>
                                     <div class="page-text-display" id="pageTextDisplay" style="display:none;"></div>
@@ -2252,6 +2310,11 @@
                     <div class="dag-tab-cy" style="width:100%;height:100%;"></div>
                     <div class="dag-tab-tooltip card" style="position:absolute;display:none;max-width:300px;z-index:100;pointer-events:none;background:var(--app-secondary, #073642) !important;border:1px solid var(--app-secondary, #344d5a) !important;box-shadow:0 4px 16px rgba(0,0,0,0.5);color:var(--app-secondary-fg, #93a1a1);font-size:11px;"></div>
                 </div>
+            </div>
+            <div class="table-tab-content">
+                <button class="dag-fit-btn" onclick="refreshTables()" title="Reload table" aria-label="Reload table"><i class="fa fa-rotate-right" aria-hidden="true"></i></button>
+                <span class="table-status" aria-live="polite"></span>
+                <div class="table-tab-grid"></div>
             </div>
             <div class="page-artefact-display" style="display:none;"></div>
             <div class="page-text-display" style="display:none;"></div>
@@ -2813,7 +2876,7 @@
             if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.defaultPrevented) return;
             if (document.querySelector('.modal-overlay.visible')) return;
             const t = e.target;
-            if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.closest('.CodeMirror'))) return;
+            if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.closest('.CodeMirror, .ag-root-wrapper'))) return; // the table moves its own cell focus
             e.preventDefault();
             if (e.key === 'ArrowRight') goNextFolder(); else goPrevFolder();
         });
@@ -3013,6 +3076,7 @@
             populateSidebar(result.folders);
             clearCurrentView();
             updateNavButtons();
+            refreshTables(); // a new set of pages: the table has to be read again
 
             if (result.global_label_counts) {
                 displayGlobalStats(result.global_label_counts, result.global_total);
@@ -3365,6 +3429,7 @@
             if (!controller) return;
 
             controller.destroyDagTab();
+            controller.destroyTableTab();
             controller.stopTextAutosave();
             controller.clearPageArtefact();
             if (controller.easyMDE) { try { controller.easyMDE.toTextArea(); } catch (e) {} }
@@ -3520,7 +3585,7 @@
         };
 
         class PanelController {
-            constructor({ key, windowRef, panel, tabStripEl, contentEl, dagContainerEl, elements, dagTabEls, dagCy }) {
+            constructor({ key, windowRef, panel, tabStripEl, contentEl, dagContainerEl, elements, dagTabEls, dagCy, tableEls }) {
                 this.key = key;
                 this.windowRef = windowRef || null;      // set for Window-backed panels (bottom); null for a plain Panel (top)
                 this._panel = panel || null;              // used only when windowRef is null
@@ -3531,6 +3596,10 @@
                 this.dagTabEls = dagTabEls || null;        // bottom + dynamic panels: { contentEl, containerEl, cyEl, tooltipEl }
                 this._dagTabCy = null;                     // lazily-created DAG cy instance (dagTabEls only); see renderDagTab/destroyDagTab
                 this.dagCy = dagCy || (this.dagTabEls ? () => this._dagTabCy : null); // getter for this panel's DAG cy; null if none
+
+                this.tableEls = tableEls || null;          // every panel: { contentEl, gridEl }
+                this._tableView = null;                    // lazily-created AG Grid; see renderTableTab/destroyTableTab
+                this._tableStale = true;                   // the data is fetched again the next time the table is drawn
 
                 this.selectedNodeId = null;
                 this.easyMDE = null;
@@ -3690,6 +3759,16 @@
                 onPanelTabsChanged(this);
             }
 
+            openTableKindTab() {
+                const existing = this.panel.tabs.find((t) => t.kind === 'table');
+                this._tableStale = true;
+                if (existing) { this.activateTab(existing.id); return; }
+                this.panel.addTab(new Tab({ id: 'tab' + (nextTabId++), nodeId: null, label: 'Table', kind: 'table' }));
+                this.renderTabStripView();
+                this.showActiveTabContent();
+                onPanelTabsChanged(this);
+            }
+
             closeTab(tabId) {
                 const closingTab = this.panel.getTab(tabId);
                 if (this.windowRef) {
@@ -3699,6 +3778,7 @@
                 }
                 this.renderTabStripView();
                 if (closingTab && closingTab.kind === 'dag') this.destroyDagTab();
+                if (closingTab && closingTab.kind === 'table') this.destroyTableTab();
                 this.showActiveTabContent();
                 onPanelTabsChanged(this);
             }
@@ -3706,6 +3786,21 @@
             async showActiveTabContent() {
                 const tab = this.panel.getActiveTab();
                 this.renderPager();
+                if (!tab || tab.kind !== 'table') this.hideTableTab();
+                if (tab && tab.kind === 'table') {
+                    this.clearHeader();
+                    this.selectedNodeId = null;
+                    if (this.dagContainerEl) {
+                        // Top panel: leave the DAG canvas for the node-content root.
+                        this.dagContainerEl.style.display = 'none';
+                        if (this.contentEl) this.contentEl.style.display = 'flex';
+                    } else if (this.dagTabEls) {
+                        this.dagTabEls.contentEl.style.display = 'none';
+                    }
+                    await this.renderTableTab();
+                    this.syncDagHighlights();
+                    return;
+                }
                 if (!tab) {
                     if (this.dagContainerEl) {
                         this.dagContainerEl.style.display = 'none';
@@ -3781,6 +3876,91 @@
                     this._dagTabCy.resize(); // just went display:none -> block, needs real size
                     this._dagTabCy.fit(undefined, DAG_FIT_PADDING);
                 }
+            }
+
+            hideTableTab() {
+                if (this.tableEls) this.tableEls.contentEl.style.display = 'none';
+            }
+
+            // Draws the table: one row per loaded page, the current one
+            // selected. The data is fetched when the grid is first made, when
+            // the tab is opened again and on the reload button; a page switch
+            // only moves the selection.
+            async renderTableTab() {
+                const els = this.tableEls;
+                if (!els) return;
+                if (this.el.placeholder)  this.el.placeholder.style.display  = 'none';
+                if (this.el.imageDisplay) this.el.imageDisplay.style.display = 'none';
+                if (this.el.textDisplay)  this.el.textDisplay.style.display  = 'none';
+                if (this.el.contentDiv)   this.el.contentDiv.style.display   = 'none';
+                els.contentEl.style.display = 'block';
+                if (!this._tableView) {
+                    this._tableView = createTableView({
+                        gridEl: els.gridEl,
+                        humanize: humanizeLabel,
+                        onSelect: (index) => loadCollectraFolder(index),
+                        onEdit: (edits) => this.saveTableEdits(edits),
+                        onStatus: (text) => this.showTableStatus(text),
+                    });
+                    this._tableStale = true;
+                }
+                if (!this._tableStale) {
+                    this._tableView.setCurrent(currentFolderIndex);
+                    return;
+                }
+                this._tableStale = false;
+                const request = this._tableRequest = {};
+                let result;
+                try {
+                    result = await window.pywebview.api.get_table_data();
+                } catch (e) {
+                    result = { success: false, error: e.message };
+                }
+                if (this._tableRequest !== request || !this._tableView) return;
+                if (!result.success) {
+                    console.error('Could not load the table:', result.error);
+                    this._tableStale = true;
+                    return;
+                }
+                this._tableView.setData(result, currentFolderIndex);
+            }
+
+            // Saves text typed or pasted into the table. The text shown for the
+            // open page, and the other tables, are brought up to date.
+            async saveTableEdits(edits) {
+                let result;
+                try {
+                    result = await window.pywebview.api.set_table_cells(edits);
+                } catch (e) {
+                    result = { success: false, error: e.message };
+                }
+                if (!result.success) return { saved: [], skipped: edits };
+                if (result.saved.some((edit) => edit.index === currentFolderIndex)) {
+                    Object.values(panelControllers).forEach((c) => {
+                        const tab = c.panel.getActiveTab();
+                        if (tab && tab.kind === 'node') c.showActiveTabContent();
+                    });
+                }
+                Object.values(panelControllers).forEach((c) => {
+                    if (c === this) return;
+                    c._tableStale = true;
+                    const tab = c.panel.getActiveTab();
+                    if (tab && tab.kind === 'table') c.renderTableTab();
+                });
+                return result;
+            }
+
+            showTableStatus(text) {
+                const el = this.tableEls && this.tableEls.contentEl.querySelector('.table-status');
+                if (!el) return;
+                el.textContent = text;
+                clearTimeout(this._tableStatusTimer);
+                this._tableStatusTimer = setTimeout(() => { el.textContent = ''; }, 6000);
+            }
+
+            destroyTableTab() {
+                this._tableRequest = null;
+                if (this._tableView) { this._tableView.destroy(); this._tableView = null; }
             }
 
             destroyDagTab() {
@@ -4056,6 +4236,10 @@
                     imageDisplay: document.getElementById('pageArtefactDisplay'),
                     textDisplay:  document.getElementById('pageTextDisplay'),
                 },
+                tableEls: {
+                    contentEl: document.getElementById('tableTabContent'),
+                    gridEl:    document.getElementById('tableTabGrid'),
+                },
                 dagTabEls: {
                     contentEl:   document.getElementById('dagTabContent'),
                     containerEl: document.getElementById('dagTabContainer'),
@@ -4078,6 +4262,10 @@
                     textDisplay:  document.getElementById('topPageTextDisplay'),
                 },
                 dagCy: () => cy,
+                tableEls: {
+                    contentEl: document.getElementById('topTableTabContent'),
+                    gridEl:    document.getElementById('topTableTabGrid'),
+                },
             }),
         };
         updatePanelCloseButtons(); // sets each × button's initial disabled state now that panelControllers exists
@@ -4382,7 +4570,7 @@
                 placeholder.style.display = 'block';
             }
             if (cy) { cy.destroy(); cy = null; }
-            Object.values(panelControllers).forEach((c) => c.destroyDagTab()); // else a project switch leaks WebGL contexts
+            Object.values(panelControllers).forEach((c) => { c.destroyDagTab(); c.destroyTableTab(); }); // else a project switch leaks WebGL contexts
             if (cyDiv) cyDiv.style.display = 'none';
             hideDagTooltip();
             // Real reset — the whole DAG is gone, no continuity is possible.
@@ -4826,6 +5014,23 @@
             if (panel) panel.openDagKindTab();
         }
 
+        // Toolbar table icon — opens the table in the focused panel, or
+        // switches to it if already open, same as the DAG icon.
+        function openTableTab() {
+            const panel = openingPanel();
+            if (panel) panel.openTableKindTab();
+        }
+
+        // The table's reload button, and for after the pages' text changed:
+        // fetches the table data again in every panel that shows a table.
+        function refreshTables() {
+            Object.values(panelControllers).forEach((c) => {
+                c._tableStale = true;
+                const tab = c.panel.getActiveTab();
+                if (tab && tab.kind === 'table') c.renderTableTab();
+            });
+        }
+
         // "Reset DAG" — rebuild the tree layout (undoing manual node drags)
         // and fit it to the container. Acts on the focused panel's DAG if it
         // has one; otherwise resets every DAG view so the button is never a
@@ -4952,6 +5157,7 @@
         function releaseUnusedLayoutPanels() {
             for (const {controller} of reusableLayoutPanels?.values() || []) {
                 controller.destroyDagTab();
+                controller.destroyTableTab();
                 controller.clearPageArtefact();
                 controller.clear();
                 controller.rootEl.remove();
@@ -5011,6 +5217,10 @@
                     textDisplay:  rootEl.querySelector('.page-text-display'),
                 },
                 dagTabEls,
+                tableEls: {
+                    contentEl: rootEl.querySelector('.table-tab-content'),
+                    gridEl:    rootEl.querySelector('.table-tab-grid'),
+                },
             });
             controller.rootEl = rootEl;
             controller.region = new CollapsibleRegion();

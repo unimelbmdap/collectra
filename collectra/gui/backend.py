@@ -1379,6 +1379,189 @@ class GUIBackend:
         matches.sort(key=lambda match: ranks.get(match["label"], len(ranks)))
         return {"success": True, "matches": matches}
 
+    def _text_artefact_labels(self) -> list[str]:
+        """The pipeline's text artefact labels, in the order the pipeline reads."""
+        from collectra.types.base import ArtefactNode
+        from collectra.types.texts import Text
+
+        try:
+            self._pipeline._ensure_workflow_connected()  # builds the nodes
+            manager = self._pipeline.node_manager
+            labels = []
+            for name in manager.get_node_names():
+                node = manager.resolve_node(name)
+                if isinstance(node, ArtefactNode) and any(
+                    isinstance(type_, type) and issubclass(type_, Text)
+                    for type_ in node.types
+                ):
+                    labels.append(name)
+        except Exception:
+            return []
+        ranks = self._pipeline_label_ranks()
+        return sorted(labels, key=lambda label: ranks.get(label, len(ranks)))
+
+    def _page_text_nodes(self, graph) -> dict[str, list[str]]:
+        """The ids of a page's text artefacts, by DAG label."""
+        from collectra.types.texts import Text
+        from collectra.utils import load_class_from_string
+
+        nodes: dict[str, list[str]] = {}
+        for node_id in graph.nodes:
+            node = graph.get_node(node_id)
+            if node is None:
+                continue
+            try:
+                if issubclass(load_class_from_string(node.type), Text):
+                    nodes.setdefault(node.label, []).append(node_id)
+            except Exception:
+                continue  # an unknown type is not a text
+        return nodes
+
+    def _page_text_cells(
+        self, graph, directory: Path, limit: int
+    ) -> tuple[dict[str, str], list[str]]:
+        """The text of each text artefact on a page, by DAG label, and the
+        labels that can be edited from the table: those with exactly one
+        artefact, shown in full. A label with several artefacts has them
+        joined with " | "; each is cut at ``limit``."""
+        from collectra.display import DisplayContext
+
+        records = {
+            node_id: {**graph.get_node(node_id).model_dump(), "label": graph.get_node(node_id).label}
+            for node_id in graph.nodes
+            if graph.get_node(node_id)
+        }
+        context = DisplayContext(records, directory, max_pixels=self._max_pixels)
+        cells: dict[str, str] = {}
+        editable = []
+        for label, node_ids in self._page_text_nodes(graph).items():
+            values, whole = [], True
+            for node_id in node_ids:
+                record = records[node_id]
+                try:
+                    path = context.text_path(node_id)
+                    if path:
+                        text = path.read_text(encoding="utf-8")
+                    elif record.get("path"):
+                        text = ""  # its file is missing: show nothing, not its path
+                    else:
+                        text = record.get("data") or ""
+                except Exception:
+                    whole = False  # one unreadable artefact must not blank the table
+                    continue
+                text = str(text)
+                if len(text) > limit:
+                    text = text[:limit] + "\u2026"
+                    whole = False
+                values.append(text)
+            if not values:
+                continue
+            cells[label] = " | ".join(values)
+            if whole and len(node_ids) == 1:
+                editable.append(label)
+        return cells, editable
+
+    def get_table_data(self, max_chars: int = 2000) -> dict:
+        """
+        Return the text artefacts of every loaded page for the table view.
+
+        Returns:
+            dict with 'columns' (the text artefact labels, in pipeline order)
+            and 'rows': one per loaded folder, in sidebar order, each with
+            'index', 'name', the text of each label that page has, and
+            '__editable': the labels whose text set_table_cells can change.
+        """
+        if not self._collectra_folders:
+            return {"success": True, "columns": [], "rows": []}
+        columns = self._text_artefact_labels()
+        rows = []
+        for index, folder in enumerate(self._collectra_folders):
+            row = {"index": index, "name": folder["name"]}
+            try:
+                if (
+                    self._graph is not None
+                    and self._yaml_path is not None
+                    and Path(self._yaml_path).resolve()
+                    == Path(folder["yaml_path"]).resolve()
+                ):
+                    graph = self._graph
+                else:
+                    graph = CollectraGraph.from_collectra_file(
+                        CollectraFile.from_data(Path(folder["path"]))
+                    )
+                cells, editable = self._page_text_cells(
+                    graph, Path(folder["path"]), max_chars
+                )
+            except Exception:
+                cells, editable = {}, []  # a folder that cannot be loaded is still a row
+            for label, text in cells.items():
+                if label not in columns:
+                    columns.append(label)  # made by hand, not in the pipeline
+                row[label] = text
+            row["__editable"] = editable
+            rows.append(row)
+        return {"success": True, "columns": columns, "rows": rows}
+
+    def set_table_cells(self, edits: list[dict]) -> dict:
+        """
+        Save text pasted or typed into the table.
+
+        Args:
+            edits: each {'index': the page's index in the sidebar, 'label': the
+                text artefact's DAG label, 'text': the new text}
+
+        Only a label with exactly one text artefact on its page can be set;
+        the rest are skipped, not created. Every other edit is still saved
+        when one fails.
+
+        Returns:
+            dict with 'saved' (the edits that were written, or already held
+            that text) and 'skipped' (each edit that was not, with a 'reason')
+        """
+        saved, skipped = [], []
+        by_page: dict[int, list[dict]] = {}
+        for edit in edits or []:
+            by_page.setdefault(edit.get("index"), []).append(edit)
+        for index, page_edits in by_page.items():
+            def skip(edit, reason):
+                skipped.append({"index": index, "label": edit.get("label"), "reason": reason})
+
+            if not isinstance(index, int) or not 0 <= index < len(self._collectra_folders):
+                for edit in page_edits:
+                    skip(edit, "No such page")
+                continue
+            folder = self._collectra_folders[index]
+            try:
+                if (
+                    self._graph is not None
+                    and self._yaml_path is not None
+                    and Path(self._yaml_path).resolve()
+                    == Path(folder["yaml_path"]).resolve()
+                ):
+                    graph = self._graph
+                else:
+                    graph = CollectraGraph.from_collectra_file(
+                        CollectraFile.from_data(Path(folder["path"]))
+                    )
+                nodes = self._page_text_nodes(graph)
+            except Exception as e:
+                for edit in page_edits:
+                    skip(edit, str(e))
+                continue
+            for edit in page_edits:
+                node_ids = nodes.get(edit.get("label"), [])
+                if len(node_ids) != 1:
+                    skip(edit, "Needs exactly one text artefact on the page")
+                    continue
+                result = self.update_display_text(
+                    node_ids[0], str(edit.get("text", "")), folder["yaml_path"]
+                )
+                if result.get("success"):
+                    saved.append({"index": index, "label": edit["label"]})
+                else:
+                    skip(edit, result.get("error", "Could not save"))
+        return {"success": True, "saved": saved, "skipped": skipped}
+
     def _pipeline_label_ranks(self) -> dict[str, int]:
         from .pipeline_order import pipeline_label_ranks
 

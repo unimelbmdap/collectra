@@ -94,5 +94,15 @@
       "files/source-sans-pro-latin-700-normal.woff2",
       "source-sans-pro.css"
     ]
+  },
+  {
+    "package": "ag-grid-community",
+    "version": "36.2.0",
+    "license": "MIT",
+    "source": "https://registry.npmjs.org/ag-grid-community/-/ag-grid-community-36.2.0.tgz",
+    "files": [
+      "LICENSE",
+      "dist/ag-grid-community.min.js"
+    ]
   }
 ]
