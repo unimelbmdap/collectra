@@ -489,8 +489,17 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
                 if class_name:
                     val_classes[class_name] += 1
 
+        def image_counts(samples: list[dict]) -> tuple[int, int]:
+            labelled = sum(1 for sample in samples if sample["labels"])
+            return labelled, len(samples) - labelled
+
         print_distribution_table(
-            "Class Distribution", classes, train_classes, val_classes
+            "Class Distribution",
+            classes,
+            train_classes,
+            val_classes,
+            train_images=image_counts(train_samples),
+            validation_images=image_counts(val_samples),
         )
 
     def _prepare_assets(

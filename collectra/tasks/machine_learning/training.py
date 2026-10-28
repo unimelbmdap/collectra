@@ -25,8 +25,15 @@ def print_distribution_table(
     classes: list[str],
     train_counts: dict[str, int],
     validation_counts: dict[str, int],
+    train_images: tuple[int, int] | None = None,
+    validation_images: tuple[int, int] | None = None,
 ) -> None:
-    """Print class counts and each class's held-out validation percentage."""
+    """Print class counts and each class's held-out validation percentage.
+
+    ``train_images`` and ``validation_images`` are optional
+    ``(with objects, background)`` image counts. Background images have no
+    objects but are still used as negative training examples.
+    """
     table = Table(title=title, show_lines=True)
     table.add_column(
         "Class Name", justify="left", style="green", header_style="bold green"
@@ -64,6 +71,22 @@ def print_distribution_table(
         f"{total_percentage:.1f}%",
         style="bold",
     )
+    if train_images is not None and validation_images is not None:
+        rows = [
+            ("Images with objects", train_images[0], validation_images[0]),
+            ("Background images (no objects)", train_images[1], validation_images[1]),
+            ("Total images", sum(train_images), sum(validation_images)),
+        ]
+        for label, train_count, validation_count in rows:
+            total = train_count + validation_count
+            percentage = 100 * validation_count / total if total else 0.0
+            table.add_row(
+                label,
+                str(train_count),
+                str(validation_count),
+                f"{percentage:.1f}%",
+                style="bold" if label == "Total images" else None,
+            )
     Console().print(table)
 
 

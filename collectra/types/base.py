@@ -566,16 +566,17 @@ class ArtefactNode(Node):
                     partition = file_data.get("collectra_results_metadata", dict()).get(
                         "partition", None
                     )
-                all_names_not_found = all(name not in file_data for name in names)
+                # With unlabelled samples allowed, an empty annotation list
+                # means the same as no annotations at all.
+                all_names_not_found = all(
+                    name not in file_data
+                    or (include_unlabelled and not file_data[name])
+                    for name in names
+                )
                 # Object detection can opt into base images with no annotations
                 # as negative samples. Classification must not treat an
                 # unlabelled image as a training example.
                 if all_names_not_found and include_unlabelled:
-                    print(
-                        f"[yellow]No matching labels found in [blue]{item_file}[/blue] "
-                        f"for names: {', '.join(names)}. Using its base image as an "
-                        "unlabelled detection sample."
-                    )
                     found_base = False
                     for name, values in file_data.items():
                         values = values if isinstance(values, list) else [values]
@@ -620,6 +621,8 @@ class ArtefactNode(Node):
                     if name not in file_data:
                         continue
                     value = file_data[name]
+                    if not value and include_unlabelled:
+                        continue
                     if not value:
                         raise Warning(
                             f"Artefact seems to be empty for {name} in {item_file}. Provided: {value}"

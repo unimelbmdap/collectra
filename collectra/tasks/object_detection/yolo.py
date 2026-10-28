@@ -811,6 +811,9 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
 
         train_classes = {name: 0 for name in metadata["classes"]}
         val_classes = {name: 0 for name in metadata["classes"]}
+        # (with objects, background) image counts for train and validation
+        train_images = [0, 0]
+        val_images = [0, 0]
 
         for image_type in Image.image_types():
             for image_file in log.glob(f"*{image_type}"):
@@ -819,6 +822,10 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
                     label_lines = [
                         line.strip() for line in f.readlines() if line.strip()
                     ]
+                if image_file.name in metadata["train"]:
+                    train_images[0 if label_lines else 1] += 1
+                elif image_file.name in metadata["val"]:
+                    val_images[0 if label_lines else 1] += 1
                 for line in label_lines:
                     class_index = int(line.split()[0])
                     class_name = metadata["classes"][class_index]
@@ -828,7 +835,12 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask):
                         val_classes[class_name] += 1
 
         print_distribution_table(
-            "Class Distribution", metadata["classes"], train_classes, val_classes
+            "Class Distribution",
+            metadata["classes"],
+            train_classes,
+            val_classes,
+            train_images=tuple(train_images),
+            validation_images=tuple(val_images),
         )
 
     def _write_yolo_label(self, name_index: int, img: ImageCrop, f):

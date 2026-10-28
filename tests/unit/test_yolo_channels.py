@@ -130,7 +130,12 @@ def test_tif_extensions_and_distribution_are_not_double_counted(tmp_path, monkey
         tmp_path, {"classes": ["Palynomorph"], "train": [train], "val": [val]}
     )
     distribution.assert_called_once_with(
-        "Class Distribution", ["Palynomorph"], {"Palynomorph": 1}, {"Palynomorph": 1}
+        "Class Distribution",
+        ["Palynomorph"],
+        {"Palynomorph": 1},
+        {"Palynomorph": 1},
+        train_images=(1, 0),
+        validation_images=(1, 0),
     )
 
 
