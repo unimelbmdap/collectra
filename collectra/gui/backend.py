@@ -20,6 +20,7 @@ import webview
 
 from collectra.commons.files import CollectraFile
 
+from .scss_theme import compile_theme
 from .data_display import CollectraAnnotationNode, CollectraGraph, NodeDisplayValue
 
 if TYPE_CHECKING:
@@ -1877,6 +1878,16 @@ class GUIBackend:
                     hits = list(directory.rglob(named))
                 except (PermissionError, OSError):
                     hits = []
+                if hits and hits[0].suffix.lower() == ".scss":
+                    try:
+                        return {
+                            "success": True,
+                            "css": compile_theme(hits[0]),
+                            "path": str(hits[0]),
+                        }
+                    except Exception as e:
+                        # A broken theme must not leave the app unstyled
+                        return {**self._default_theme_css(), "warning": str(e)}
                 if hits:
                     try:
                         with open(hits[0], "r") as f:
@@ -1904,7 +1915,10 @@ class GUIBackend:
                 except Exception as e:
                     return {"success": False, "error": str(e)}
 
-        # Fall back to bundled default asset
+        return self._default_theme_css()
+
+    def _default_theme_css(self) -> dict:
+        """The CSS of the bundled default theme."""
         asset_path = Path(get_resource_path("assets/theme.css"))
         if asset_path.is_file():
             try:

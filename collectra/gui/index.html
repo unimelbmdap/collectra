@@ -4479,6 +4479,10 @@
                     }
                     el.textContent = result.css;
                 }
+                if (result.warning) {
+                    console.warn('Theme could not be compiled:', result.warning);
+                    alert('The theme could not be compiled, so the default theme is used instead:\n\n' + result.warning);
+                }
             } catch (e) {
                 console.warn('Could not load theme CSS:', e);
             }
