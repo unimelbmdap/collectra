@@ -755,6 +755,7 @@
         .modal-popup.git-viewer { width: min(760px, 90vw); max-width: 90vw; min-width: 0; }
         .git-repository { overflow-wrap: anywhere; font-size: 12px; opacity: 0.8; }
         .git-actions { justify-content: flex-start; flex-wrap: wrap; }
+        .git-actions[hidden] { display: none; }
         .git-output { margin-top: 16px; max-height: 55vh; min-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--app-fg-bright, #e6e6e6); }
         .git-message { width: 100%; box-sizing: border-box; background: var(--app-bg, #1a1a1a); color: var(--app-fg-bright, #e6e6e6); border: 1px solid var(--app-border, #3c3c3c); padding: 8px; }
         #gitCommitModal { z-index: 1001; }
@@ -2201,6 +2202,11 @@
                 <button class="btn-cancel" data-git-action="add">Add</button>
                 <button class="btn-cancel" data-git-action="commit">Commit</button>
                 <button class="btn-cancel" data-git-action="push">Push</button>
+            </div>
+            <div id="gitPullStrategy" class="modal-buttons git-actions" hidden role="group" aria-label="How to combine local and remote changes">
+                <button class="btn-cancel" data-pull-strategy="merge" title="Keep both histories and add a merge commit">Merge</button>
+                <button class="btn-cancel" data-pull-strategy="rebase" title="Replay your local commits on top of the remote changes">Rebase</button>
+                <button class="btn-cancel" data-pull-strategy="ff-only" title="Only pull if no local commits would need combining">Fast-forward only</button>
             </div>
             <pre id="gitOutput" class="git-output" role="status" aria-live="polite"></pre>
         </div>

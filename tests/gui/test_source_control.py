@@ -114,3 +114,76 @@ def test_linked_worktree_repository(repository, tmp_path):
     result = run_git(worktree / "results/page.collectra", "status")
     assert result["success"]
     assert result["repository"] == str(worktree.resolve())
+
+
+@pytest.fixture
+def diverged(repository, tmp_path):
+    root, folder = repository
+    remote = tmp_path / "remote.git"
+    remote.mkdir()
+    git(remote, "init", "--bare")
+    git(root, "remote", "add", "origin", str(remote))
+    branch = git(root, "branch", "--show-current").strip()
+    git(root, "push", "-u", "origin", branch)
+    other = tmp_path / "other"
+    subprocess.run(
+        ["git", "clone", "--branch", branch, str(remote), str(other)],
+        check=True,
+        capture_output=True,
+    )
+    git(other, "config", "user.email", "test@example.com")
+    git(other, "config", "user.name", "Test")
+    (other / "remote-change.txt").write_text("remote")
+    git(other, "add", ".")
+    git(other, "commit", "-m", "Remote change")
+    git(other, "push")
+    (root / "local-change.txt").write_text("local")
+    git(root, "add", ".")
+    git(root, "commit", "-m", "Local change")
+    return root, folder
+
+
+def test_divergent_pull_asks_for_a_strategy(diverged, monkeypatch):
+    root, folder = diverged
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(root / "no-global-config"))
+    result = run_git(folder, "pull")
+    assert not result["success"]
+    assert result["needs_strategy"]
+    assert not run_git(folder, "status")["needs_strategy"]
+
+
+@pytest.mark.parametrize("strategy", ["merge", "rebase"])
+def test_divergent_pull_with_chosen_strategy(diverged, monkeypatch, strategy):
+    root, folder = diverged
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(root / "no-global-config"))
+    result = run_git(folder, "pull", strategy=strategy)
+    assert result["success"]
+    assert not result["needs_strategy"]
+    assert (root / "remote-change.txt").exists()
+    assert (root / "local-change.txt").exists()
+    merges = git(root, "rev-list", "--merges", "--count", "HEAD").strip()
+    assert merges == ("1" if strategy == "merge" else "0")
+
+
+def test_divergent_pull_fast_forward_only_is_refused(diverged, monkeypatch):
+    root, folder = diverged
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(root / "no-global-config"))
+    result = run_git(folder, "pull", strategy="ff-only")
+    assert not result["success"]
+    assert not result["needs_strategy"]
+    assert not (root / "remote-change.txt").exists()
+
+
+def test_unknown_pull_strategy_and_strategy_on_other_actions(repository):
+    root, folder = repository
+    assert (
+        "Unknown pull strategy" in run_git(folder, "pull", strategy="squash")["error"]
+    )
+    assert run_git(folder, "status", strategy="rebase")["success"]
+
+
+def test_backend_passes_the_pull_strategy(repository):
+    root, folder = repository
+    api = GUIBackend(SimpleNamespace())
+    api._yaml_path = str(folder / "results.yaml")
+    assert "Unknown pull strategy" in api.git_action("pull", strategy="squash")["error"]

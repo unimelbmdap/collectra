@@ -4,13 +4,29 @@ import os
 import subprocess
 from pathlib import Path
 
+PULL_STRATEGIES = {
+    "merge": "--no-rebase",
+    "rebase": "--rebase",
+    "ff-only": "--ff-only",
+}
+DIVERGENT_MESSAGE = "Need to specify how to reconcile divergent branches"
+
 
 def run_git(
-    directory: Path, action: str, message: str = "", repository: str = ""
+    directory: Path,
+    action: str,
+    message: str = "",
+    repository: str = "",
+    strategy: str = "",
 ) -> dict:
+    if action == "pull" and strategy and strategy not in PULL_STRATEGIES:
+        return {"success": False, "error": "Unknown pull strategy"}
+    pull = ["pull", "--no-edit"]
+    if action == "pull" and strategy:
+        pull.append(PULL_STRATEGIES[strategy])
     commands = {
         "status": ["status"],
-        "pull": ["pull", "--no-edit"],
+        "pull": pull,
         "add": ["add", "."],
         "commit": ["commit", "-m", message],
         "push": ["push"],
@@ -57,6 +73,7 @@ def run_git(
             "action": action,
             "output": output or ("Files staged." if action == "add" else "Done."),
             "error": output if result.returncode else "",
+            "needs_strategy": action == "pull" and DIVERGENT_MESSAGE in output,
         }
     except FileNotFoundError:
         return {"success": False, "error": "Git is not installed or cannot be found"}

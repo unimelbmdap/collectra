@@ -14,14 +14,16 @@ function element(dataset = {}) {
 
 function setup() {
     const ids = ['gitModal', 'gitCommitModal', 'gitOutput', 'gitRepository', 'gitCommitMessage',
-        'gitCommitConfirm', 'gitCommitError', 'gitToolbarBtn', 'gitClose', 'gitCommitCancel'];
+        'gitCommitConfirm', 'gitCommitError', 'gitToolbarBtn', 'gitClose', 'gitCommitCancel', 'gitPullStrategy'];
     const nodes = Object.fromEntries(ids.map(id => [id, element()]));
     const buttons = Object.fromEntries(['status', 'pull', 'add', 'commit', 'push'].map(action => [action, element({gitAction: action})]));
-    nodes.gitModal.querySelectorAll = () => Object.values(buttons);
+    const strategies = Object.fromEntries(['merge', 'rebase', 'ff-only'].map(name => [name, element({pullStrategy: name})]));
+    nodes.gitModal.querySelectorAll = selector => Object.values(selector.includes('pull-strategy') ? strategies : buttons);
+    nodes.gitPullStrategy.hidden = true;
     const document = {getElementById: id => nodes[id], addEventListener: vi.fn(), activeElement: element()};
     const api = {git_action: vi.fn().mockResolvedValue({success: true, repository: '/repo', output: 'Ready'})};
     setupSourceControl(document, () => api);
-    return {nodes, buttons, api};
+    return {nodes, buttons, strategies, api};
 }
 
 it('opens with status and pins subsequent operations to the displayed repository', async () => {
@@ -67,4 +69,27 @@ it('blocks duplicate actions while Git is running and displays output as text', 
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(nodes.gitOutput.textContent).toBe('<script>literal output</script>');
     expect(buttons.add.disabled).toBe(false);
+});
+
+it('offers merge, rebase and fast-forward only when pull needs a strategy, then retries with the choice', async () => {
+    const {nodes, buttons, strategies, api} = setup();
+    await nodes.gitToolbarBtn.emit('click');
+    expect(nodes.gitPullStrategy.hidden).toBe(true);
+    api.git_action.mockResolvedValueOnce({success: false, needs_strategy: true, error: 'divergent'});
+    await buttons.pull.emit('click');
+    expect(nodes.gitPullStrategy.hidden).toBe(false);
+    expect(nodes.gitOutput.textContent).toContain('diverged');
+    await strategies.rebase.emit('click');
+    expect(api.git_action).toHaveBeenLastCalledWith('pull', '', '/repo', 'rebase');
+    expect(nodes.gitPullStrategy.hidden).toBe(true);
+});
+
+it('hides the strategy choice again after any other action', async () => {
+    const {nodes, buttons, api} = setup();
+    await nodes.gitToolbarBtn.emit('click');
+    api.git_action.mockResolvedValueOnce({success: false, needs_strategy: true, error: 'divergent'});
+    await buttons.pull.emit('click');
+    expect(nodes.gitPullStrategy.hidden).toBe(false);
+    await buttons.status.emit('click');
+    expect(nodes.gitPullStrategy.hidden).toBe(true);
 });

@@ -9,30 +9,41 @@
         const confirm = document.getElementById('gitCommitConfirm');
         const commitError = document.getElementById('gitCommitError');
         const buttons = [...viewer.querySelectorAll('[data-git-action]')];
+        const strategyChoice = document.getElementById('gitPullStrategy');
+        const strategyButtons = [...viewer.querySelectorAll('[data-pull-strategy]')];
         let repository = '';
         let busy = false;
         let opener;
 
         function setBusy(value) {
             busy = value;
-            buttons.forEach(button => { button.disabled = value; });
+            [...buttons, ...strategyButtons].forEach(button => { button.disabled = value; });
             confirm.disabled = value || !message.value.trim();
             viewer.setAttribute('aria-busy', String(value));
             document.getElementById('gitToolbarBtn').disabled = value;
             message.disabled = value;
         }
 
-        async function run(action, commitMessage = '') {
+        async function run(action, commitMessage = '', strategy = '') {
             if (busy) return;
             setBusy(true);
+            strategyChoice.hidden = true;
             output.textContent = `Running git ${action}…`;
             try {
-                const result = await api().git_action(action, commitMessage, repository);
+                const result = await api().git_action(action, commitMessage, repository, ...(strategy ? [strategy] : []));
                 if (result.repository) {
                     repository = result.repository;
                     repositoryLabel.textContent = repository;
                 }
                 output.textContent = result.success ? result.output : (result.error || 'Git failed');
+                if (result.needs_strategy) {
+                    output.textContent = 'Your local branch and the remote branch have diverged. '
+                        + 'Choose how to combine them:\n'
+                        + '  Merge: keep both histories and add a merge commit.\n'
+                        + '  Rebase: replay your local commits on top of the remote changes.\n'
+                        + '  Fast-forward only: refuse unless no combining is needed.';
+                    strategyChoice.hidden = false;
+                }
                 if (action === 'commit') {
                     commitError.textContent = result.success ? '' : output.textContent;
                     if (result.success) closeCommit();
@@ -74,6 +85,7 @@
                 run(action);
             }
         }));
+        strategyButtons.forEach(button => button.addEventListener('click', () => run('pull', '', button.dataset.pullStrategy)));
         message.addEventListener('input', () => { confirm.disabled = busy || !message.value.trim(); });
         confirm.addEventListener('click', () => run('commit', message.value));
         document.getElementById('gitCommitCancel').addEventListener('click', closeCommit);
