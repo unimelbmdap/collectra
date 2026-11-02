@@ -3,9 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from pydantic import PrivateAttr
+
 from collectra.types.images import Image, ImageCrop, Orientation
 
 from ..base import Task
+from ..object_detection.batching import image_cache_key
 
 if TYPE_CHECKING:
     from torchvision.models import EfficientNet
@@ -16,6 +19,7 @@ __all__ = ["ImageOrienter"]
 class ImageOrienter(Task):
 
     model: Any  # a path or a loaded torchvision EfficientNet
+    _prefetched: dict = PrivateAttr(default_factory=dict)
 
     def __init__(self, name, model: str | Path | EfficientNet, **kwargs):
         super().__init__(name, model=model, **kwargs)
@@ -81,27 +85,48 @@ class ImageOrienter(Task):
         converted_image = image.convert("RGBA")
         background = PILImage.new("RGBA", converted_image.size, (255, 255, 255))
         background.paste(converted_image, mask=converted_image)
-        return background
+        return background.convert("RGB")
+
+    def _predict_batch(self, images: list[Image]) -> list[Orientation]:
+        """The orientation of each image, from one pass of the model over all of them."""
+        import torch
+
+        batch = torch.stack(
+            [self.transforms(self._processed_image(image)) for image in images]
+        ).to(self.device)
+        with torch.no_grad():
+            predicted = torch.max(self.model(batch), 1)[1]
+        return [Orientation(int(index)) for index in predicted]
+
+    @staticmethod
+    def _prefetch_key(image: Image) -> tuple:
+        return image_cache_key(image)
+
+    def prefetch(self, entries: list[list]) -> None:
+        """Orient many images in batches of ``batch_size``, caching the results for ``run``."""
+        self._init_model()
+        images = [
+            entry[0]
+            for entry in entries
+            if len(entry) == 1 and isinstance(entry[0], Image)
+        ]
+        self._prefetched = {}
+        for start in range(0, len(images), self.batch_size):
+            batch = images[start : start + self.batch_size]
+            for image, orientation in zip(batch, self._predict_batch(batch)):
+                self._prefetched[self._prefetch_key(image)] = orientation
+
+    def clear_prefetch(self) -> None:
+        self._prefetched = {}
 
     def run(self, *args: Image) -> Image:
-        import torch
-        from torchvision.models import EfficientNet
-
         if len(args) != 1:
             raise ValueError("This task only supports a single Image input.")
         self._init_model()
         img = args[0]
-        image = self._processed_image(img)
-        input_tensor = self.transforms(image).unsqueeze(0).to(self.device)
-
-        if not isinstance(self.model, EfficientNet):
-            raise ValueError("Model must be an instance of EfficientNet.")
-
-        with torch.no_grad():
-            output = self.model(input_tensor)
-            _, predicted_idx = torch.max(output, 1)
-            predicted_class = predicted_idx.item()
-            orientation = Orientation(predicted_class)
+        orientation = self._prefetched.pop(self._prefetch_key(img), None)
+        if orientation is None:
+            orientation = self._predict_batch([img])[0]
 
         name = self.get_output_name()
 
