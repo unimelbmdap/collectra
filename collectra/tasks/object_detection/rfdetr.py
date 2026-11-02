@@ -339,7 +339,7 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, ObjectDetectionTask):
         )
 
     @threading_locked()
-    def run(self, *args: Image) -> list[Image]:
+    def run(self, *args: Image) -> list[ImageCrop]:
         if len(args) != 1:
             raise ValueError("This task only supports a single Image input.")
         if not isinstance(args[0], Image):
@@ -352,7 +352,7 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, ObjectDetectionTask):
         detections, width, height = predicted or self._predict([image])[0]
 
         confidences = getattr(detections, "confidence", None)
-        results: list[Image] = []
+        results: list[ImageCrop] = []
         for i in range(len(detections.xyxy)):
             x1, y1, x2, y2 = detections.xyxy[i]
             x1 = max(0.0, min(float(width), float(x1)))

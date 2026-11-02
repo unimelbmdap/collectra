@@ -456,6 +456,27 @@ def test_unannotated_detector_output_has_crop_type(tmp_path):
     assert nodes["image"]["detail"] == "collectra.Image"
 
 
+@pytest.mark.parametrize(
+    "task_type", ["ObjectDetectionRFDETR", "ObjectDetectionDETR"]
+)
+def test_unannotated_detector_output_has_crop_type_for_every_detector(
+    tmp_path, task_type
+):
+    from collectra import Pipeline
+
+    pipeline_file = tmp_path / "pipeline.yaml"
+    pipeline_file.write_text(
+        "collectra_pipeline_metadata: {name: test, ext: sandglass, version: '1.0'}\n"
+        "detector:\n"
+        f"  type: collectra.{task_type}\n"
+        "  input: image\n"
+        "  output: sandglass\n"
+    )
+    graph = Pipeline.from_file(pipeline_file).gui_graph()
+    nodes = {node["id"]: node for node in graph["nodes"]}
+    assert nodes["sandglass"]["detail"] == "collectra.ImageCrop"
+
+
 def test_active_node_ids_reuse_loaded_page_graph(backend, monkeypatch):
     backend._collectra_folders = [{"path": str(Path(backend._yaml_path).parent), "yaml_path": backend._yaml_path}]
     def unexpected_reload(*args, **kwargs):
@@ -583,6 +604,87 @@ def test_an_image_view_lists_its_link_children(backend):
     assert view(backend, "crop")["links"] == [{"id": "link", "name": "link"}]
     assert view(backend, "image")["links"] == []
     assert view(backend, "link")["links"] == [{"id": "link", "name": "link"}]
+
+
+def with_classifier(backend, inputs=("crop",), detail="collectra.ImageClassifierTorchvision"):
+    nodes = [
+        {
+            "id": "classify",
+            "detail": detail,
+            "inputs": list(inputs),
+            "outputs": ["link", "printed"],
+        },
+        {"id": "other", "detail": "collectra.ImageClassifierTorchvision", "inputs": ["x"], "outputs": ["a"]},
+    ]
+    backend._pipeline = SimpleNamespace(ext="collectra", gui_graph=lambda: {"nodes": nodes})
+
+
+def test_a_classifier_task_names_the_link_it_sets_and_offers_its_classes(backend):
+    with_classifier(backend)
+    assert view(backend, "crop")["links"] == [
+        {"id": "link", "name": "link", "task": "classify", "options": ["link", "printed"]}
+    ]
+
+
+def test_a_classifier_task_is_offered_even_when_no_link_is_set(backend):
+    with_classifier(backend, inputs=("different",))
+    assert view(backend, "different")["links"] == [
+        {"id": None, "name": None, "task": "classify", "options": ["link", "printed"]}
+    ]
+
+
+def test_a_link_with_another_name_stays_beside_the_classifier_slot(backend):
+    backend.set_link_name("link", "odd")
+    with_classifier(backend)
+    assert view(backend, "crop")["links"] == [
+        {"id": "odd", "name": "odd"},
+        {"id": None, "name": None, "task": "classify", "options": ["link", "printed"]},
+    ]
+
+
+def test_only_classifier_tasks_that_take_the_image_are_offered(backend):
+    with_classifier(backend, detail="collectra.ObjectDetectionYOLO")
+    assert view(backend, "different")["links"] == []
+    with_classifier(backend, inputs=("elsewhere",))
+    assert view(backend, "different")["links"] == []
+
+
+def test_a_pipeline_that_cannot_be_read_adds_no_classifier_slots(backend):
+    def broken():
+        raise RuntimeError("cannot connect")
+
+    backend._pipeline = SimpleNamespace(ext="collectra", gui_graph=broken)
+    assert view(backend, "crop")["links"] == [{"id": "link", "name": "link"}]
+
+
+def test_create_link_adds_a_link_under_the_image_and_saves_it(backend):
+    result = backend.create_link("different", "printed")
+    assert result["success"] and result["id"] == "printed"
+    assert "printed" in backend.get_link_names()["names"]
+    assert view(backend, "different")["links"] == [{"id": "printed", "name": "printed"}]
+    record = saved(backend)["printed"]
+    assert record["type"] == "collectra.Link"
+    assert record["id"] == "printed"
+    assert record["parents"] == "different"
+
+
+def test_create_link_gives_a_new_id_when_the_name_is_taken(backend):
+    first = backend.create_link("different", "printed")["id"]
+    second = backend.create_link("crop", "printed")["id"]
+    assert first == "printed"
+    assert second != "printed" and second.startswith("printed-")
+    assert len(saved(backend)["printed"]) == 2
+
+
+@pytest.mark.parametrize("name", ["", "   ", None])
+def test_create_link_needs_a_name(backend, name):
+    assert not backend.create_link("crop", name)["success"]
+
+
+def test_create_link_reports_a_missing_parent_or_page(backend, tmp_path):
+    assert "not found" in backend.create_link("nope", "x")["error"]
+    empty = GUIBackend(SimpleNamespace(ext="collectra"))
+    assert not empty.create_link("crop", "x")["success"]
 
 
 def test_set_link_name_changes_the_name_and_the_id_that_matched_it(backend):

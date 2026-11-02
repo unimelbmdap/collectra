@@ -785,6 +785,10 @@ class GUIBackend:
             node_id = self._graph.resolve_id(node_id)
             item = context.artefact(node_id)
             view = item.display(context)
+            if "links" in view:
+                self._add_classifier_slots(
+                    view["links"], context.records[view["target_id"]]["label"]
+                )
             return {
                 "success": True,
                 "view": view,
@@ -793,6 +797,39 @@ class GUIBackend:
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    def _classifier_slots(self, label: str) -> list[dict]:
+        """The classifier tasks that take images of ``label``, with their classes."""
+        try:
+            nodes = self._pipeline.gui_graph()["nodes"]
+        except Exception:
+            # A pipeline that cannot be read only costs the extra choices.
+            return []
+        return [
+            {"task": node["id"], "options": node["outputs"]}
+            for node in nodes
+            if "ImageClassifier" in node["detail"] and label in node["inputs"]
+        ]
+
+    def _add_classifier_slots(self, links: list[dict], label: str) -> None:
+        """Mark the Link a classifier sets, or add an empty slot where it set none.
+
+        The link is the one named after one of the task's classes; a link with
+        any other name is left as it is.
+        """
+        for slot in self._classifier_slots(label):
+            match = next(
+                (
+                    link
+                    for link in links
+                    if link["name"] in slot["options"] and "task" not in link
+                ),
+                None,
+            )
+            if match is None:
+                links.append({"id": None, "name": None, **slot})
+            else:
+                match.update(slot)
 
     def rotate_image_clockwise(self, node_id: str) -> dict:
         """Persist a clockwise quarter-turn for an image and descendant images."""
@@ -1892,6 +1929,43 @@ class GUIBackend:
                 self._global_link_names.add(name)
                 self._save_collectra_file()
             return {**self.get_all_nodes_for_grid(), "id": new_id}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def create_link(self, parent_id: str, name: str) -> dict:
+        """
+        Add a Link named ``name`` (its label) under an image.
+
+        Its id is the name, or the name with a short suffix when that id is
+        already in use.
+
+        Returns:
+            dict with updated grid data and the Link's 'id', or 'error'
+        """
+        if self._graph is None:
+            return {"success": False, "error": "No graph loaded. Call load_yaml first."}
+
+        try:
+            parent_id = self._graph.resolve_id(parent_id)
+            if self._graph.get_node(parent_id) is None:
+                return {"success": False, "error": f"Node '{parent_id}' not found"}
+            name = (name or "").strip()
+            if not name:
+                return {"success": False, "error": "A Link needs a name"}
+            link_id = name
+            if link_id in self._graph.nodes:
+                link_id = f"{name}-{uuid.uuid4().hex[:8]}"
+            self._graph.add_node(
+                {
+                    "label": name,
+                    "type": "collectra.Link",
+                    "id": link_id,
+                    "parents": parent_id,
+                }
+            )
+            self._global_link_names.add(name)
+            self._save_collectra_file()
+            return {**self.get_all_nodes_for_grid(), "id": link_id}
         except Exception as e:
             return {"success": False, "error": str(e)}
 

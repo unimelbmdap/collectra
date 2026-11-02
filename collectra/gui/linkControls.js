@@ -4,20 +4,27 @@
 // without a DOM.
 
 // What the menu offers: every known name (the current one always included),
-// the current one marked, then Undefined last.
-function linkMenuItems(current, names) {
-    const all = [...new Set([...names, current])].sort((a, b) => a.localeCompare(b));
-    return [...all.map(name => ({name, current: name === current})), {undefined: true}];
+// the current one marked, then Undefined last when there is a link to remove.
+// A task's classes keep the order the task gives them (`sorted: false`).
+function linkMenuItems(current, names, {sorted = true} = {}) {
+    const all = [...new Set([...names, current].filter(Boolean))];
+    if (sorted) all.sort((a, b) => a.localeCompare(b));
+    const items = all.map(name => ({name, current: name === current}));
+    return current ? [...items, {undefined: true}] : items;
 }
 
-function createLinkEditor({link, loadNames, rename, remove, onChanged, isCurrent, onState}) {
+// `link` is {id, name} for a Link that exists. For a classifier task it also has
+// {task, options}: the choices are then the task's classes, and `id` and `name`
+// are null until one is chosen, which creates the Link.
+function createLinkEditor({link, loadNames, rename, create, remove, onChanged, isCurrent, onState}) {
     let id = link.id;
     let name = link.name;
-    let names = [name];
+    const closed = !!link.options;
+    let names = closed ? link.options : name ? [name] : [];
     let open = false;
     let busy = false;
     let error = '';
-    const state = () => ({id, name, names, open, busy, error});
+    const state = () => ({id, name, names, open, busy, error, task: link.task, closed});
     const emit = () => onState(state());
 
     async function toggle() {
@@ -27,6 +34,11 @@ function createLinkEditor({link, loadNames, rename, remove, onChanged, isCurrent
             return;
         }
         error = '';
+        if (closed) {
+            open = true;
+            emit();
+            return;
+        }
         try {
             const result = await loadNames();
             if (!isCurrent()) return;
@@ -71,9 +83,9 @@ function createLinkEditor({link, loadNames, rename, remove, onChanged, isCurrent
         if (!next || busy) return;
         if (next === name) return close();
         await work(async () => {
-            const result = await rename(id, next);
+            const result = id ? await rename(id, next) : await create(next);
             if (!isCurrent()) return false;
-            if (!result.success) throw new Error(result.error || 'Could not rename the link');
+            if (!result.success) throw new Error(result.error || 'Could not change the link');
             id = result.id;
             name = next;
             return true;
@@ -81,13 +93,24 @@ function createLinkEditor({link, loadNames, rename, remove, onChanged, isCurrent
     }
 
     async function undefine() {
+        if (!id) return;
         await work(() => remove(id, name));
     }
 
     return {toggle, close, choose, undefine, state};
 }
 
-function mountLinkControls({viewer, view, loadNames, rename, remove, onChanged, isCurrent}) {
+// "classify: handwritten ▾" for a task's link, "none" when it has not been set.
+function linkButtonText({task, name}) {
+    return `${task ? `${task}: ` : ''}${name ?? 'none'} ▾`;
+}
+
+function linkButtonTitle({task, name}) {
+    if (task) return `${task}: ${name ? `"${name}"` : 'not set'}. Click to choose.`;
+    return `Link "${name}": click to change it`;
+}
+
+function mountLinkControls({viewer, view, loadNames, rename, create, remove, onChanged, isCurrent}) {
     const links = view.links || [];
     if (!links.length) return [];
     const bar = document.createElement('div');
@@ -120,17 +143,17 @@ function mountLinkControls({viewer, view, loadNames, rename, remove, onChanged, 
         wrappers.push(wrapper);
 
         const editor = createLinkEditor({
-            link, loadNames, rename, remove, onChanged, isCurrent,
+            link, loadNames, rename, create, remove, onChanged, isCurrent,
             onState: state => {
-                button.textContent = `${state.name} ▾`;
-                button.title = `Link "${state.name}": click to change it`;
+                button.textContent = linkButtonText(state);
+                button.title = linkButtonTitle(state);
                 button.setAttribute('aria-expanded', String(state.open));
                 button.disabled = state.busy;
                 menu.hidden = !state.open;
-                entry.hidden = !state.open;
+                entry.hidden = !state.open || state.closed;
                 entry.disabled = state.busy;
                 status.textContent = state.error || (state.busy ? 'Working…' : '');
-                menu.replaceChildren(...linkMenuItems(state.name, state.names).map(item => {
+                menu.replaceChildren(...linkMenuItems(state.name, state.names, {sorted: !state.closed}).map(item => {
                     const choice = document.createElement('button');
                     choice.type = 'button';
                     choice.setAttribute('role', 'menuitem');
@@ -158,7 +181,7 @@ function mountLinkControls({viewer, view, loadNames, rename, remove, onChanged, 
             if (event.key === 'Enter') editor.choose(entry.value);
             else if (event.key === 'Escape') editor.close();
         };
-        button.textContent = `${link.name} ▾`;
+        button.textContent = linkButtonText(editor.state());
         editors.push(editor);
     });
 

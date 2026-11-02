@@ -236,6 +236,13 @@ new name and press Enter. A Link whose id is its old name takes the new name as
 its id too. Choose *Undefined* to remove the Link: the delete confirmation lists
 anything nested under it, which is removed with it.
 
+An image that a classifier task of the pipeline takes as input always has a
+button for that task, named after it (for example ``primary_label_type_detector:
+none``), even when no Link has been set. Its menu lists the classes the task can
+give, in the task's order; choosing one creates the Link, and later choices
+change it. The Link names that do not belong to a classifier are still shown, as
+above.
+
 For multichannel TIFFs, the viewer uses a preview of the channels. When the
 channel count is divisible by three, view controls switch between RGB triplets;
 the preview does not rewrite the source image.

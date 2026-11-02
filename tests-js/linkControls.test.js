@@ -17,11 +17,19 @@ it('offers the current name even when no list has it', () => {
     ]);
 });
 
+it('keeps a task\'s classes in their own order and has no Undefined when nothing is set', () => {
+    expect(linkMenuItems(null, ['printed', 'handwritten'], {sorted: false})).toEqual([
+        {name: 'printed', current: false},
+        {name: 'handwritten', current: false},
+    ]);
+});
+
 function editor(overrides = {}) {
     const options = {
         link: {id: 'handwritten', name: 'handwritten'},
         loadNames: vi.fn(async () => ({success: true, names: ['handwritten', 'printed']})),
         rename: vi.fn(async (id, name) => ({success: true, id: name})),
+        create: vi.fn(async (name) => ({success: true, id: name})),
         remove: vi.fn(async () => true),
         onChanged: vi.fn(async () => {}),
         isCurrent: () => true,
@@ -135,6 +143,58 @@ it('ignores a response that arrives after leaving the artefact', async () => {
     expect(onState).not.toHaveBeenCalled();
 });
 
+const slot = {id: null, name: null, task: 'classify', options: ['printed', 'handwritten']};
+
+it('offers a task\'s classes without loading names, even when nothing is set', async () => {
+    const {editor: e, loadNames} = editor({link: slot});
+    expect(e.state()).toMatchObject({id: null, name: null, task: 'classify', closed: true});
+    await e.toggle();
+    expect(loadNames).not.toHaveBeenCalled();
+    expect(e.state()).toMatchObject({open: true, names: ['printed', 'handwritten']});
+});
+
+it('creates the link when a class is chosen and none was set', async () => {
+    const {editor: e, create, rename, onChanged} = editor({link: slot});
+    await e.toggle();
+    await e.choose('handwritten');
+    expect(create).toHaveBeenCalledWith('handwritten');
+    expect(rename).not.toHaveBeenCalled();
+    expect(e.state()).toMatchObject({id: 'handwritten', name: 'handwritten', open: false, error: ''});
+    expect(onChanged).toHaveBeenCalledTimes(1);
+});
+
+it('renames the link on a later choice, once it exists', async () => {
+    const {editor: e, rename} = editor({link: slot});
+    await e.choose('handwritten');
+    await e.choose('printed');
+    expect(rename).toHaveBeenCalledWith('handwritten', 'printed');
+});
+
+it('says why when the link cannot be created', async () => {
+    const {editor: e, onChanged} = editor({link: slot, create: vi.fn(async () => ({success: false, error: 'boom'}))});
+    await e.choose('printed');
+    expect(e.state()).toMatchObject({id: null, name: null, error: 'boom'});
+    expect(onChanged).not.toHaveBeenCalled();
+});
+
+it('has nothing to remove when no link is set', async () => {
+    const {editor: e, remove} = editor({link: slot});
+    await e.undefine();
+    expect(remove).not.toHaveBeenCalled();
+});
+
+it('ignores a link created after leaving the artefact', async () => {
+    let current = true;
+    let finish;
+    const {editor: e, onChanged} = editor({link: slot, isCurrent: () => current,
+        create: vi.fn(() => new Promise(resolve => {finish = resolve;}))});
+    const pending = e.choose('printed');
+    current = false;
+    finish({success: true, id: 'printed'});
+    await pending;
+    expect(onChanged).not.toHaveBeenCalled();
+});
+
 function fakeDom() {
     const element = tag => ({
         tag, children: [], attributes: {}, style: {}, dataset: {}, hidden: false, textContent: '',
@@ -155,6 +215,7 @@ function mount(links, overrides = {}) {
         isCurrent: () => true,
         loadNames: async () => ({success: true, names: ['handwritten', 'printed']}),
         rename: vi.fn(async (id, name) => ({success: true, id: name})),
+        create: vi.fn(async (name) => ({success: true, id: name})),
         remove: vi.fn(async () => true),
         onChanged: vi.fn(async () => {}),
         ...overrides,
@@ -219,6 +280,46 @@ it('removes through the Undefined item', async () => {
         await wrapper.children[0].onclick();
         await wrapper.children[1].children[2].onclick();
         expect(remove).toHaveBeenCalledWith('a', 'handwritten');
+    } finally {
+        vi.unstubAllGlobals();
+    }
+});
+
+it('shows a task with nothing set by the task name, and creates the link from its classes', async () => {
+    fakeDom();
+    try {
+        const loadNames = vi.fn();
+        const {viewer, create, onChanged} = mount([
+            {id: null, name: null, task: 'classify', options: ['printed', 'handwritten']},
+        ], {loadNames});
+        const [bar] = viewer.addControl.mock.calls[0];
+        const [wrapper] = bar.children;
+        const [button, menu, entry] = wrapper.children;
+        expect(button.textContent).toBe('classify: none ▾');
+        await button.onclick();
+        expect(menu.hidden).toBe(false);
+        expect(entry.hidden).toBe(true);
+        expect(menu.children.map(item => item.textContent)).toEqual(['printed', 'handwritten']);
+        await menu.children[1].onclick();
+        expect(loadNames).not.toHaveBeenCalled();
+        expect(create).toHaveBeenCalledWith('handwritten');
+        expect(button.textContent).toBe('classify: handwritten ▾');
+        expect(onChanged).toHaveBeenCalled();
+    } finally {
+        vi.unstubAllGlobals();
+    }
+});
+
+it('offers Undefined for a task whose link is set', async () => {
+    fakeDom();
+    try {
+        const {viewer} = mount([
+            {id: 'a', name: 'printed', task: 'classify', options: ['printed', 'handwritten']},
+        ]);
+        const [bar] = viewer.addControl.mock.calls[0];
+        const [button, menu] = bar.children[0].children;
+        await button.onclick();
+        expect(menu.children.map(item => item.textContent)).toEqual(['printed', 'handwritten', 'Undefined']);
     } finally {
         vi.unstubAllGlobals();
     }

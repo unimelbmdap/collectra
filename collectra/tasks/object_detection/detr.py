@@ -173,7 +173,7 @@ class ObjectDetectionDETR(ObjectDetectionTask):
         self._load_model_from_hf(model_value)
 
     @threading_locked()
-    def run(self, *args: Image) -> list[Image]:
+    def run(self, *args: Image) -> list[ImageCrop]:
         import torch
 
         if len(args) != 1:

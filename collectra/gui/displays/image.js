@@ -352,6 +352,11 @@ function installImageDisplay(PanelController) {
                         if (result.success) renamedRows = result.rows;
                         return result;
                     },
+                    create: async name => {
+                        const result = await window.pywebview.api.create_link(view.target_id, name);
+                        if (result.success) renamedRows = result.rows;
+                        return result;
+                    },
                     // Previews the delete (listing what goes with the link) and
                     // asks first; resolves true only when the link was removed.
                     remove: (linkId, name) => deleteNodeWithConfirm(linkId, name),
