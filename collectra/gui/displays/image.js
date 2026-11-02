@@ -342,6 +342,31 @@ function installImageDisplay(PanelController) {
                 }
 
                 const viewer = this.pageViewer;
+                let renamedRows = null;
+                mountLinkControls({
+                    viewer, view,
+                    isCurrent: () => this._artefactToken === token,
+                    loadNames: () => window.pywebview.api.get_link_names(),
+                    rename: async (linkId, name) => {
+                        const result = await window.pywebview.api.set_link_name(linkId, name);
+                        if (result.success) renamedRows = result.rows;
+                        return result;
+                    },
+                    // Previews the delete (listing what goes with the link) and
+                    // asks first; resolves true only when the link was removed.
+                    remove: (linkId, name) => deleteNodeWithConfirm(linkId, name),
+                    onChanged: async () => {
+                        if (renamedRows) {
+                            Object.values(panelControllers).forEach(controller => controller.refreshPageAnnotations(renamedRows));
+                            renamedRows = null;
+                            await refreshActiveNodeIds();
+                            await syncInstanceTabs();
+                        }
+                        const refreshed = await window.pywebview.api.get_artefact_display(view.target_id, view.rgb_view_index || 0);
+                        if (!refreshed.success) throw new Error(refreshed.error);
+                        if (this._artefactToken === token) await this.renderPageArtefact(view.image_path, refreshed.view, refreshed);
+                    },
+                });
                 mountRgbViewControls({
                     viewer, view,
                     isCurrent: () => this._artefactToken === token,

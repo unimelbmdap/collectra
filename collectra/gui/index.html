@@ -1764,6 +1764,54 @@
         }
         .rgb-view-status:empty { display: none; }
 
+        /* The Link children of an image: one name button each, with a menu to
+           rename the link or set it to Undefined (which removes it). */
+        .link-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            gap: 6px;
+            margin: 8px;
+            font-size: 13px;
+        }
+        .link-control { display: flex; flex-direction: column; gap: 2px; align-items: stretch; }
+        .link-control-button,
+        .link-control-item {
+            cursor: pointer;
+            font: inherit;
+            color: var(--app-fg, #93a1a1);
+            background: var(--app-bg, #002b36);
+            border: 1px solid #0006;
+            border-radius: 5px;
+            padding: 4px 10px;
+            box-shadow: 0 1px 5px #0006;
+            white-space: nowrap;
+        }
+        .link-control-button:disabled,
+        .link-control-item:disabled { cursor: default; opacity: 0.5; }
+        .link-control-menu { display: flex; flex-direction: column; gap: 2px; }
+        .link-control-menu[hidden], .link-control-entry[hidden] { display: none; }
+        .link-control-item { text-align: left; box-shadow: none; }
+        .link-control-item:hover:not(:disabled) { filter: brightness(1.25); }
+        .link-control-item[aria-current="true"] { font-weight: 600; }
+        .link-control-item[aria-current="true"]::before { content: "✓ "; }
+        .link-control-item.undefined { font-style: italic; border-top: 1px solid #fff3; }
+        .link-control-entry {
+            font: inherit;
+            min-width: 11em;
+            box-sizing: border-box;
+            padding: 4px 8px;
+            border-radius: 5px;
+        }
+        .link-control-status {
+            padding: 2px 6px;
+            border-radius: 3px;
+            background: var(--app-bg, #002b36);
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .link-control-status:empty { display: none; }
+
         .page-artefact-display {
             position: relative;
             flex: 1;
@@ -1979,6 +2027,7 @@
     <script src="shiftDraw.js"></script>
     <script src="sourceControl.js"></script>
     <script src="rgbViewControls.js"></script>
+    <script src="linkControls.js"></script>
     <!-- Pure collapse/expand state for sidebar, right panel, and DAG toggles, unit tested in tests-js/ -->
     <script src="collapsibleRegion.js"></script>
     <!-- Pure open/closed state for the toolbar's floating popovers, unit tested in tests-js/ -->
@@ -2959,7 +3008,7 @@
             } catch (e) {
                 console.error('Error previewing delete:', e);
             }
-            if (!await confirmDelete({id: nodeId, name}, preview)) return;
+            if (!await confirmDelete({id: nodeId, name}, preview)) return false;
             try {
                 const keepsSelf = Boolean(preview && preview.keeps_self);
                 const result = keepsSelf
@@ -2973,12 +3022,13 @@
                     // instance of its label, or closes when none is left.
                     await syncInstanceTabs();
                     rerunArtefactSearch();
-                } else {
-                    console.error('Failed to delete:', result.error);
+                    return true;
                 }
+                console.error('Failed to delete:', result.error);
             } catch (e) {
                 console.error('Error deleting:', e);
             }
+            return false;
         }
 
 

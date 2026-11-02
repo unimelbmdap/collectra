@@ -105,6 +105,12 @@ class DisplayContext:
 
         return annotations(self, image)
 
+    def links(self, item):
+        """The Link nodes whose parent is ``item``, as ``{"id", "name"}``."""
+        from collectra.displays.images import links
+
+        return links(self, item)
+
     def image(self, item):
         from collectra.displays.images import image
 

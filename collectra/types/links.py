@@ -7,7 +7,7 @@ from pydantic import Field
 
 from .base import Artefact
 
-__all__ = ["Link"]
+__all__ = ["Link", "is_link_type"]
 
 
 class Link(Artefact):
@@ -102,3 +102,13 @@ class Link(Artefact):
                 return self.resolve().evaluate(gold.resolve())
             return float(bool(self.parent_id) and self.parent_id == gold.parent_id)
         return self.resolve().evaluate(gold)
+
+
+def is_link_type(declared: str) -> bool:
+    """Whether a ``type`` string from a results file names a Link (or a subclass)."""
+    from collectra.utils import load_class_from_string
+
+    try:
+        return issubclass(load_class_from_string(declared), Link)
+    except (ImportError, AttributeError, ValueError):
+        return declared.endswith(".Link")

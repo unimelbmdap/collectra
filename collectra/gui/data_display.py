@@ -261,6 +261,16 @@ class CollectraGraph:
                 labels.add(node.label)
         return sorted(labels)
 
+    def link_names(self) -> set[str]:
+        """The labels of the Link nodes: the names Links have been given."""
+        from collectra.types.links import is_link_type
+
+        return {
+            node.label
+            for node_id in self._graph.nodes
+            if (node := self.get_node(node_id)) and is_link_type(node.type)
+        }
+
     def count_nodes_by_label(self, type_filter: str = None) -> dict[str, int]:
         """Count nodes grouped by label, optionally filtered by type."""
         counts = {}
@@ -277,6 +287,15 @@ class CollectraGraph:
         if node is None:
             raise ValueError(f"Node {node_id} not found in graph.")
         node.label = label
+
+    def forget_label_if_unused(self, label: str) -> None:
+        """Stop remembering ``label`` as an empty result once no node has it.
+
+        Used when nodes were moved to another label on purpose, so the old one
+        is not written back as ``[]``.
+        """
+        if label not in self.get_unique_labels() and label in self._known_labels:
+            self._known_labels.remove(label)
 
     def set_name(self, node_id: str, name: str) -> None:
         """Set name field of a node."""

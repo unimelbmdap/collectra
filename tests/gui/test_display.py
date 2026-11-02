@@ -570,3 +570,142 @@ def test_a_page_with_the_old_header_opens_with_a_warning_and_is_upgraded_on_save
     assert list(saved) == ["results", "text"]
     assert saved["results"]["partition"] == "train"
     assert "collectra_results_metadata" not in saved
+
+
+# --- editing the Link children of an image -----------------------------------------
+
+
+def saved(backend):
+    return yaml.safe_load(Path(backend._yaml_path).read_text())
+
+
+def test_an_image_view_lists_its_link_children(backend):
+    assert view(backend, "crop")["links"] == [{"id": "link", "name": "link"}]
+    assert view(backend, "image")["links"] == []
+    assert view(backend, "link")["links"] == [{"id": "link", "name": "link"}]
+
+
+def test_set_link_name_changes_the_name_and_the_id_that_matched_it(backend):
+    result = backend.set_link_name("link", "handwritten")
+    assert result["success"], result
+    assert result["id"] == "handwritten"
+    node = backend._graph.get_node("handwritten")
+    assert node.label == "handwritten"
+    assert backend._graph.parents("handwritten") == ["crop"]
+    assert "link" not in saved(backend)
+    written = saved(backend)["handwritten"]
+    assert (written["type"], written["id"], written["parents"]) == (
+        "collectra.Link",
+        "handwritten",
+        "crop",
+    )
+    assert view(backend, "crop")["links"] == [
+        {"id": "handwritten", "name": "handwritten"}
+    ]
+
+
+def test_set_link_name_keeps_an_id_that_was_not_the_old_name(backend):
+    backend._graph.rename_id("link", "link-1234abcd")
+    assert (
+        backend.set_link_name("link-1234abcd", "combination")["id"] == "link-1234abcd"
+    )
+    assert saved(backend)["combination"]["id"] == "link-1234abcd"
+
+
+def test_set_link_name_gives_a_new_id_when_the_matching_one_is_taken(backend):
+    backend._graph.add_node(
+        dict(
+            label="combination",
+            type="collectra.Link",
+            id="combination",
+            parents="image",
+        )
+    )
+    result = backend.set_link_name("link", "combination")
+    assert result["success"], result
+    assert result["id"].startswith("combination-")
+    assert result["id"] != "combination"
+    assert backend._graph.get_node("combination").parents == ["image"]
+
+
+def test_set_link_name_to_the_same_name_changes_nothing(backend):
+    result = backend.set_link_name("link", "link")
+    assert result["success"]
+    assert result["id"] == "link"
+
+
+@pytest.mark.parametrize("name", ["", "   "])
+def test_set_link_name_needs_a_name(backend, name):
+    assert not backend.set_link_name("link", name)["success"]
+    assert backend._graph.get_node("link").label == "link"
+
+
+def test_set_link_name_only_applies_to_links(backend):
+    result = backend.set_link_name("crop", "handwritten")
+    assert not result["success"]
+    assert "Link" in result["error"]
+    assert backend._graph.get_node("crop").label == "crop"
+
+
+def test_set_link_name_reports_a_missing_node_or_page(backend, tmp_path):
+    assert "not found" in backend.set_link_name("nope", "x")["error"]
+    empty = GUIBackend(SimpleNamespace(ext="collectra"))
+    assert not empty.set_link_name("link", "x")["success"]
+
+
+def test_link_names_offered_are_those_on_this_page(backend):
+    backend._graph.add_node(
+        dict(label="handwritten", type="collectra.Link", id="h", parents="image")
+    )
+    assert backend.get_link_names() == {
+        "success": True,
+        "names": ["handwritten", "link"],
+    }
+
+
+def test_link_names_offered_include_other_pages_of_the_folder(backend, tmp_path):
+    folders = []
+    for page, name in [("a.collectra", "handwritten"), ("b.collectra", "printed")]:
+        folder = tmp_path / "pages" / page
+        folder.mkdir(parents=True)
+        (folder / "results.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "sheet": record("collectra.Image", "sheet", data="x.png"),
+                    name: record("collectra.Link", name, parents="sheet"),
+                }
+            )
+        )
+        folders.append(
+            {
+                "name": page,
+                "path": str(folder),
+                "yaml_path": str(folder / "results.yaml"),
+            }
+        )
+    backend._collectra_folders = folders
+    backend._folder_list_result()
+    assert backend.get_link_names()["names"] == ["handwritten", "link", "printed"]
+
+
+def test_link_names_without_a_page_are_only_the_global_ones():
+    empty = GUIBackend(SimpleNamespace(ext="collectra"))
+    assert empty.get_link_names() == {"success": True, "names": []}
+
+
+def test_a_name_other_links_still_use_stays_in_the_file(backend):
+    backend._graph.add_node(
+        dict(label="link", type="collectra.Link", id="link2", parents="image")
+    )
+    assert backend.set_link_name("link", "handwritten")["success"]
+    assert saved(backend)["link"]["id"] == "link2"
+
+
+def test_a_type_is_a_link_when_it_names_a_link_class_or_ends_in_link():
+    from collectra.types.links import is_link_type
+
+    assert is_link_type("collectra.Link")
+    assert is_link_type("tests.gui.test_display.Region") is False
+    assert is_link_type("not.installed.module.Link")  # cannot be loaded: judged by name
+    assert not is_link_type("not.installed.module.Text")
+    assert not is_link_type("")

@@ -13,6 +13,7 @@ import enum
 import platform
 import re
 import threading
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -70,6 +71,7 @@ class GUIBackend:
         self._parent_folder: str | None = None
         self._global_labels: set[str] = set()
         self._global_label_counts: dict[str, int] = {}  # {label: total_count}
+        self._global_link_names: set[str] = set()  # names of Links on any page
         from .session_cache import FolderSessionCache
 
         pipeline_path = getattr(pipeline, "path", None)
@@ -609,6 +611,7 @@ class GUIBackend:
 
         # Compute aggregate label statistics across all folders
         self._global_label_counts = {}
+        self._global_link_names = set()
         for folder in self._collectra_folders:
             try:
                 collectra_file = CollectraFile.from_data(Path(folder["path"]))
@@ -618,6 +621,7 @@ class GUIBackend:
                 )
                 # Accumulate unique labels
                 self._global_labels.update(temp_graph.get_unique_labels())
+                self._global_link_names.update(temp_graph.link_names())
                 # Accumulate counts
                 for label, count in label_counts.items():
                     self._global_label_counts[label] = (
@@ -1838,6 +1842,56 @@ class GUIBackend:
             self._save_collectra_file()
             return self.get_all_nodes_for_grid()
 
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def get_link_names(self) -> dict:
+        """The names a Link can be given: those used on this page and, when a
+        folder of pages is open, on any of its pages."""
+        names = set(self._global_link_names)
+        if self._graph is not None:
+            names.update(self._graph.link_names())
+        return {"success": True, "names": sorted(names)}
+
+    def set_link_name(self, link_id: str, name: str) -> dict:
+        """
+        Give a Link another name (its label, the key it has in results.yaml).
+
+        A Link whose id is its old name, as ``handwritten`` usually is, takes the
+        new name as its id too, so the two keep matching; if that id is already
+        in use it gets a short suffix instead. Any other id is left alone.
+
+        Returns:
+            dict with updated grid data and the Link's (possibly new) 'id', or 'error'
+        """
+        from collectra.types.links import is_link_type
+
+        if self._graph is None:
+            return {"success": False, "error": "No graph loaded. Call load_yaml first."}
+
+        try:
+            link_id = self._graph.resolve_id(link_id)
+            node = self._graph.get_node(link_id)
+            if node is None:
+                return {"success": False, "error": f"Node '{link_id}' not found"}
+            if not is_link_type(node.type):
+                return {"success": False, "error": f"'{link_id}' is not a Link"}
+            name = (name or "").strip()
+            if not name:
+                return {"success": False, "error": "A Link needs a name"}
+            old_name = node.label
+            new_id = link_id
+            if name != old_name:
+                if link_id == old_name:
+                    new_id = name
+                    if new_id in self._graph.nodes:
+                        new_id = f"{name}-{uuid.uuid4().hex[:8]}"
+                    self._graph.rename_id(link_id, new_id)
+                self._graph.set_label(new_id, name)
+                self._graph.forget_label_if_unused(old_name)
+                self._global_link_names.add(name)
+                self._save_collectra_file()
+            return {**self.get_all_nodes_for_grid(), "id": new_id}
         except Exception as e:
             return {"success": False, "error": str(e)}
 

@@ -198,6 +198,20 @@ def _preview_key(context, item, path):
         return None
 
 
+def links(context, item):
+    """The Link children of ``item``: each one's id and name (its label)."""
+    from collectra.types.links import is_link_type
+
+    found = []
+    for node_id, record in context.records.items():
+        parents = record.get("parents") or []
+        if isinstance(parents, str):
+            parents = [parents]
+        if is_link_type(record.get("type", "")) and item.id in parents:
+            found.append({"id": node_id, "name": record.get("label", node_id)})
+    return found
+
+
 def _image_view(context, item, path, source, view_count):
     from collectra.types.images import ImageSegmentation
     from .image_segmentation import segmentation
@@ -210,6 +224,7 @@ def _image_view(context, item, path, source, view_count):
         "annotations": context.annotations(item),
         "can_create_crop": True,
         "can_rotate": True,
+        "links": context.links(item),
         "rgb_view_index": context.rgb_view,
         "rgb_view_count": view_count,
     }

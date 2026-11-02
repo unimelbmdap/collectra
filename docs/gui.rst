@@ -228,6 +228,14 @@ Crop coordinates remain relative to the original source image. Other open
 image panels refresh to show the new orientations. Edits are saved back to the
 results.
 
+An image or crop that has ``collectra.Link`` children, such as the class given
+by a classifier, shows a button at the top left of the viewer for each of them,
+naming the Link (its key in ``results.yaml``). Click it to choose another name
+from those used on this page and on the other pages of the open folder, or type a
+new name and press Enter. A Link whose id is its old name takes the new name as
+its id too. Choose *Undefined* to remove the Link: the delete confirmation lists
+anything nested under it, which is removed with it.
+
 For multichannel TIFFs, the viewer uses a preview of the channels. When the
 channel count is divisible by three, view controls switch between RGB triplets;
 the preview does not rewrite the source image.
