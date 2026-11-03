@@ -32,12 +32,11 @@ function tabTypeTitle(tab, pageNodeTypes, resolveLabel) {
 // The buttons to the right of a node's id in the row under its tab, in order.
 // Ancestors/Descendants are greyed out when the node has none.
 function nodeActionButtons({hasAncestors, hasDescendants}) {
-    const buttons = [
+    return [
         {id: 'delete', title: 'Delete artefact', disabled: false},
         {id: 'ancestors', title: 'Ancestors', disabled: !hasAncestors},
         {id: 'descendants', title: 'Descendants', disabled: !hasDescendants},
     ];
-    return buttons;
 }
 
 if (typeof module !== 'undefined') module.exports = {pagerState, blankTabMessage, tabTypeTitle, nodeActionButtons};

@@ -1,4 +1,4 @@
-// Source control viewer: fixed operations exposed by the Python bridge.
+// History and Changes viewer: fixed operations exposed by the Python bridge.
 (function () {
     function setupSourceControl(document, api) {
         const viewer = document.getElementById('gitModal');
@@ -9,48 +9,48 @@
         const confirm = document.getElementById('gitCommitConfirm');
         const commitError = document.getElementById('gitCommitError');
         const buttons = [...viewer.querySelectorAll('[data-git-action]')];
-        const strategyChoice = document.getElementById('gitPullStrategy');
-        const strategyButtons = [...viewer.querySelectorAll('[data-pull-strategy]')];
         let repository = '';
         let busy = false;
         let opener;
 
+        function showRepository(path) {
+            repositoryLabel.textContent = `Project folder: ${path}`;
+        }
+
+        function showSaveError(text) {
+            commitError.textContent = text;
+            commitError.hidden = !text;
+        }
+
         function setBusy(value) {
             busy = value;
-            [...buttons, ...strategyButtons].forEach(button => { button.disabled = value; });
+            buttons.forEach(button => { button.disabled = value; });
             confirm.disabled = value || !message.value.trim();
             viewer.setAttribute('aria-busy', String(value));
             document.getElementById('gitToolbarBtn').disabled = value;
             message.disabled = value;
         }
 
-        async function run(action, commitMessage = '', strategy = '') {
+        async function run(action, commitMessage = '') {
             if (busy) return;
             setBusy(true);
-            strategyChoice.hidden = true;
-            output.textContent = `Running git ${action}…`;
+            output.textContent = 'Working…';
             try {
-                const result = await api().git_action(action, commitMessage, repository, ...(strategy ? [strategy] : []));
+                const result = await api().git_action(action, commitMessage, repository);
                 if (result.repository) {
                     repository = result.repository;
-                    repositoryLabel.textContent = repository;
+                    showRepository(repository);
+                } else if (!repository) {
+                    showRepository('not found');
                 }
-                output.textContent = result.success ? result.output : (result.error || 'Git failed');
-                if (result.needs_strategy) {
-                    output.textContent = 'Your local branch and the remote branch have diverged. '
-                        + 'Choose how to combine them:\n'
-                        + '  Merge: keep both histories and add a merge commit.\n'
-                        + '  Rebase: replay your local commits on top of the remote changes.\n'
-                        + '  Fast-forward only: refuse unless no combining is needed.';
-                    strategyChoice.hidden = false;
-                }
-                if (action === 'commit') {
-                    commitError.textContent = result.success ? '' : output.textContent;
+                output.textContent = result.success ? result.output : (result.error || 'Something went wrong.');
+                if (action === 'save') {
+                    showSaveError(result.success ? '' : output.textContent);
                     if (result.success) closeCommit();
                 }
             } catch (error) {
                 output.textContent = String(error);
-                if (action === 'commit') commitError.textContent = String(error);
+                if (action === 'save') showSaveError(String(error));
             } finally {
                 setBusy(false);
             }
@@ -58,13 +58,13 @@
 
         function closeCommit() {
             commit.classList.remove('visible');
-            buttons.find(button => button.dataset.gitAction === 'commit').focus();
+            buttons.find(button => button.dataset.gitAction === 'save').focus();
         }
 
         document.getElementById('gitToolbarBtn').addEventListener('click', () => {
             opener = document.activeElement;
             repository = '';
-            repositoryLabel.textContent = 'Active results repository';
+            showRepository('…');
             viewer.classList.add('visible');
             document.getElementById('gitClose').focus();
             run('status');
@@ -75,9 +75,9 @@
         });
         buttons.forEach(button => button.addEventListener('click', () => {
             const action = button.dataset.gitAction;
-            if (action === 'commit') {
+            if (action === 'save') {
                 message.value = '';
-                commitError.textContent = '';
+                showSaveError('');
                 confirm.disabled = true;
                 commit.classList.add('visible');
                 message.focus();
@@ -85,9 +85,8 @@
                 run(action);
             }
         }));
-        strategyButtons.forEach(button => button.addEventListener('click', () => run('pull', '', button.dataset.pullStrategy)));
         message.addEventListener('input', () => { confirm.disabled = busy || !message.value.trim(); });
-        confirm.addEventListener('click', () => run('commit', message.value));
+        confirm.addEventListener('click', () => run('save', message.value));
         document.getElementById('gitCommitCancel').addEventListener('click', closeCommit);
         document.addEventListener('keydown', event => {
             if (event.key !== 'Escape') return;

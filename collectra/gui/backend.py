@@ -147,9 +147,7 @@ class GUIBackend:
             "active_index": active_index,
         }
 
-    def git_action(
-        self, action: str, message: str = "", repository: str = "", strategy: str = ""
-    ) -> dict:
+    def git_action(self, action: str, message: str = "", repository: str = "") -> dict:
         """Operate on the Git repository containing the active results file."""
         from .source_control import run_git
 
@@ -158,9 +156,7 @@ class GUIBackend:
         if not self._git_lock.acquire(blocking=False):
             return {"success": False, "error": "A Git operation is already running"}
         try:
-            return run_git(
-                Path(self._yaml_path).parent, action, message, repository, strategy
-            )
+            return run_git(Path(self._yaml_path).parent, action, message, repository)
         finally:
             self._git_lock.release()
 

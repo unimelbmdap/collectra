@@ -31,23 +31,37 @@ def repository(tmp_path):
     return root, folder
 
 
-def test_status_add_and_commit_from_nested_folder(repository):
+def test_status_and_save_from_nested_folder(repository):
     root, folder = repository
     api = GUIBackend(SimpleNamespace())
     api._yaml_path = str(folder / "results.yaml")
     (folder / "results.yaml").write_text("changed")
-    (root / "outside-results.txt").write_text("also staged")
+    (root / "outside-results.txt").write_text("also saved")
     status = api.git_action("status")
     assert status["success"]
     assert status["repository"] == str(root.resolve())
-    assert "modified:" in status["output"]
-    assert api.git_action("add", repository=status["repository"])["success"]
-    assert "outside-results.txt" in git(root, "diff", "--cached", "--name-only")
+    assert "Not saved yet:" in status["output"]
+    assert "Edited: results/page.collectra/results.yaml" in status["output"]
+    assert "New: outside-results.txt" in status["output"]
     message = "A quoted message; $(touch should-not-exist)\n\nMore details"
-    assert api.git_action("commit", message, status["repository"])["success"]
+    saved = api.git_action("save", message, status["repository"])
+    assert saved["success"]
+    assert saved["output"] == "Changes saved."
+    assert "outside-results.txt" in git(
+        root, "show", "--name-only", "--format=", "HEAD"
+    )
     assert git(root, "log", "-1", "--format=%B").strip() == message
     assert not (root / "should-not-exist").exists()
-    assert "nothing to commit" in api.git_action("status")["output"]
+    assert api.git_action("status")["output"] == "Everything is saved and up to date."
+
+
+def test_status_lists_deleted_files(repository):
+    root, folder = repository
+    (folder / "results.yaml").unlink()
+    assert (
+        "Deleted: results/page.collectra/results.yaml"
+        in run_git(folder, "status")["output"]
+    )
 
 
 def test_push_and_pull_with_local_remote(repository, tmp_path):
@@ -70,28 +84,106 @@ def test_push_and_pull_with_local_remote(repository, tmp_path):
     git(other, "add", ".")
     git(other, "commit", "-m", "Remote change")
     git(other, "push")
-    assert run_git(folder, "pull")["success"]
+    status = run_git(folder, "status")
+    assert status["output"] == "Everything is saved and up to date."
+    git(root, "fetch")
+    assert run_git(folder, "status")["output"] == "1 update is waiting to be received."
+    pulled = run_git(folder, "pull")
+    assert pulled["success"]
+    assert pulled["output"] == "Updates received."
+    assert run_git(folder, "pull")["output"] == "Already up to date."
     assert (root / "remote-change.txt").read_text() == "remote"
     (folder / "results.yaml").write_text("local")
-    assert run_git(folder, "add")["success"]
-    assert run_git(folder, "commit", "Local change")["success"]
-    assert run_git(folder, "push")["success"]
+    assert run_git(folder, "save", "Local change")["success"]
+    assert (
+        run_git(folder, "status")["output"]
+        == "1 saved version has not been shared yet."
+    )
+    shared = run_git(folder, "push")
+    assert shared["success"]
+    assert shared["output"] == "Changes shared."
+    assert run_git(folder, "push")["output"] == "Nothing new to share."
     assert git(root, "rev-parse", "HEAD") == git(
         remote, "rev-parse", f"refs/heads/{branch}"
     )
 
 
-def test_errors_and_changed_repository(repository, tmp_path):
+def test_errors_are_in_plain_words(repository, tmp_path):
     root, folder = repository
-    assert not run_git(tmp_path, "status")["success"]
-    assert not run_git(folder, "reset")["success"]
-    assert not run_git(folder, "commit", "  ")["success"]
-    result = run_git(folder, "add", repository=str(tmp_path / "different"))
+    outside = run_git(tmp_path, "status")
+    assert not outside["success"]
+    assert outside["error"] == "This folder is not set up for saving versions."
+    for old_name in ("add", "commit", "reset"):
+        assert not run_git(folder, old_name)["success"]
+    blank = run_git(folder, "save", "  ")
+    assert not blank["success"]
+    assert blank["error"] == "Enter a message first."
+    result = run_git(folder, "status", repository=str(tmp_path / "different"))
     assert not result["success"]
     assert "changed" in result["error"]
-    failure = run_git(folder, "commit", "No changes")
-    assert not failure["success"]
-    assert "nothing to commit" in failure["error"]
+    nothing = run_git(folder, "save", "No changes")
+    assert not nothing["success"]
+    assert nothing["error"] == "There are no changes to save."
+
+
+def test_pull_clash_is_explained(repository, tmp_path):
+    root, folder = repository
+    remote = tmp_path / "remote.git"
+    remote.mkdir()
+    git(remote, "init", "--bare")
+    git(root, "remote", "add", "origin", str(remote))
+    branch = git(root, "branch", "--show-current").strip()
+    git(root, "push", "-u", "origin", branch)
+    other = tmp_path / "other"
+    subprocess.run(
+        ["git", "clone", "--branch", branch, str(remote), str(other)],
+        check=True,
+        capture_output=True,
+    )
+    git(other, "config", "user.email", "test@example.com")
+    git(other, "config", "user.name", "Test")
+    (other / "results/page.collectra/results.yaml").write_text("theirs")
+    git(other, "commit", "-am", "Theirs")
+    git(other, "push")
+    (folder / "results.yaml").write_text("mine")
+    git(root, "commit", "-am", "Mine")
+    result = run_git(folder, "pull")
+    assert not result["success"]
+    assert result["error"] == (
+        "Your changes and the updates are in the same place, so nothing was changed. "
+        "Ask for help before going on."
+    )
+    assert (folder / "results.yaml").read_text() == "mine"
+    assert not (root / ".git" / "MERGE_HEAD").exists()
+
+
+def test_pull_merges_when_both_sides_saved_different_files(repository, tmp_path):
+    root, folder = repository
+    remote = tmp_path / "remote.git"
+    remote.mkdir()
+    git(remote, "init", "--bare")
+    git(root, "remote", "add", "origin", str(remote))
+    branch = git(root, "branch", "--show-current").strip()
+    git(root, "push", "-u", "origin", branch)
+    other = tmp_path / "other"
+    subprocess.run(
+        ["git", "clone", "--branch", branch, str(remote), str(other)],
+        check=True,
+        capture_output=True,
+    )
+    git(other, "config", "user.email", "test@example.com")
+    git(other, "config", "user.name", "Test")
+    (other / "theirs.txt").write_text("theirs")
+    git(other, "add", ".")
+    git(other, "commit", "-m", "Theirs")
+    git(other, "push")
+    (root / "mine.txt").write_text("mine")
+    git(root, "add", ".")
+    git(root, "commit", "-m", "Mine")
+    result = run_git(folder, "pull")
+    assert result["success"]
+    assert result["output"] == "Updates received."
+    assert (root / "theirs.txt").exists() and (root / "mine.txt").exists()
 
 
 def test_backend_requires_open_results_and_serializes_operations(repository):
@@ -101,7 +193,7 @@ def test_backend_requires_open_results_and_serializes_operations(repository):
     api._yaml_path = str(folder / "results.yaml")
     api._git_lock.acquire()
     try:
-        assert "already running" in api.git_action("add")["error"]
+        assert "already running" in api.git_action("status")["error"]
     finally:
         api._git_lock.release()
 
@@ -143,47 +235,11 @@ def diverged(repository, tmp_path):
     return root, folder
 
 
-def test_divergent_pull_asks_for_a_strategy(diverged, monkeypatch):
+def test_pull_merges_diverged_branches_without_asking(diverged, monkeypatch):
     root, folder = diverged
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(root / "no-global-config"))
     result = run_git(folder, "pull")
-    assert not result["success"]
-    assert result["needs_strategy"]
-    assert not run_git(folder, "status")["needs_strategy"]
-
-
-@pytest.mark.parametrize("strategy", ["merge", "rebase"])
-def test_divergent_pull_with_chosen_strategy(diverged, monkeypatch, strategy):
-    root, folder = diverged
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(root / "no-global-config"))
-    result = run_git(folder, "pull", strategy=strategy)
     assert result["success"]
-    assert not result["needs_strategy"]
     assert (root / "remote-change.txt").exists()
     assert (root / "local-change.txt").exists()
-    merges = git(root, "rev-list", "--merges", "--count", "HEAD").strip()
-    assert merges == ("1" if strategy == "merge" else "0")
-
-
-def test_divergent_pull_fast_forward_only_is_refused(diverged, monkeypatch):
-    root, folder = diverged
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(root / "no-global-config"))
-    result = run_git(folder, "pull", strategy="ff-only")
-    assert not result["success"]
-    assert not result["needs_strategy"]
-    assert not (root / "remote-change.txt").exists()
-
-
-def test_unknown_pull_strategy_and_strategy_on_other_actions(repository):
-    root, folder = repository
-    assert (
-        "Unknown pull strategy" in run_git(folder, "pull", strategy="squash")["error"]
-    )
-    assert run_git(folder, "status", strategy="rebase")["success"]
-
-
-def test_backend_passes_the_pull_strategy(repository):
-    root, folder = repository
-    api = GUIBackend(SimpleNamespace())
-    api._yaml_path = str(folder / "results.yaml")
-    assert "Unknown pull strategy" in api.git_action("pull", strategy="squash")["error"]
+    assert git(root, "rev-list", "--merges", "--count", "HEAD").strip() == "1"

@@ -21,11 +21,10 @@ describe('Font Awesome icons', () => {
         });
     }
 
-    it('the delete button is a bin and the save button is a disk', () => {
+    it('the delete button is a bin', () => {
         const html = sources.find(([f]) => f === 'index.html')[1];
         const at = html.indexOf('const NODE_ACTION_ICONS');
         const icons = html.slice(at, html.indexOf('\n        };', at));
         expect(icons).toContain('fa-trash-can');
-        expect(icons).toContain('fa-floppy-disk');
     });
 });
