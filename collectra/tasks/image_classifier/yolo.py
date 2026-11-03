@@ -42,7 +42,7 @@ def _classification_channels(*roots):
         if root is None:
             continue
         for path in sorted(Path(root).rglob("*")):
-            if path.is_file() and path.suffix.lower() in Image.image_types():
+            if path.is_file() and path.suffix.lower() in Image.file_extensions():
                 try:
                     detected[path] = image_channel_count(path)
                 except Exception as error:
@@ -493,12 +493,12 @@ class ImageClassifierYOLO(YOLOTask):
         for cls_name in classes:
             train_counts[cls_name] = sum(
                 1
-                for ext in Image.image_types()
+                for ext in Image.file_extensions()
                 for _ in (train_dir / cls_name).glob(f"*{ext}")
             )
             validation_counts[cls_name] = sum(
                 1
-                for ext in Image.image_types()
+                for ext in Image.file_extensions()
                 for _ in (val_dir / cls_name).glob(f"*{ext}")
             )
         print_distribution_table(

@@ -68,6 +68,24 @@ class Text(Artefact):
             self.data = ""
 
     @staticmethod
+    def file_extensions() -> set[str]:
+        return {
+            ".txt",
+            ".md",
+            ".markdown",
+            ".xml",
+            ".html",
+            ".htm",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".csv",
+            ".tsv",
+            ".rst",
+            ".tex",
+        }
+
+    @staticmethod
     def _file_safe(name: str) -> str:
         """Keep a name inside its folder: no separators or leading dots."""
         return re.sub(r"[^\w.\-]", "_", name).lstrip(".")

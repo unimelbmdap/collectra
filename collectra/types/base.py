@@ -117,6 +117,13 @@ class Artefact(PositionalFields, EntityMixin, BaseModel, metaclass=ArtefactMeta)
     def __call__(self):
         """The artefact's content."""
 
+    @staticmethod
+    def file_extensions() -> set[str]:
+        """Lower-case file extensions, with the dot, that can hold this type."""
+        raise NotImplementedError(
+            "Artefact types must say which file extensions they can be read from."
+        )
+
     def stored_files(self, folder: Path) -> list[Path]:
         """Files this artefact owns, for removal before a forced rerun replaces it.
 

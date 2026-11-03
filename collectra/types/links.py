@@ -17,6 +17,10 @@ class Link(Artefact):
 
     _not_compared: ClassVar[frozenset[str]] = frozenset({"source_file", "target"})
 
+    @staticmethod
+    def file_extensions() -> set[str]:
+        return set()
+
     @property
     def parent_id(self) -> str:
         return self.parents[0] if self.parents else ""

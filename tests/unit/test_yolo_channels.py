@@ -116,8 +116,8 @@ def test_inconsistent_channels_fail_before_ultralytics(tmp_path, monkeypatch, sp
 
 
 def test_tif_extensions_and_distribution_are_not_double_counted(tmp_path, monkeypatch):
-    assert {".tif", ".tiff"} <= set(Image.image_types())
-    assert len(Image.image_types()) == len(set(Image.image_types()))
+    assert {".tif", ".tiff"} <= set(Image.file_extensions())
+    assert len(Image.file_extensions()) == len(set(Image.file_extensions()))
     assert Image.is_image_file(Path("image.tif"))
     assert Image.is_image_file(Path("image.TIFF"))
     train = tiff(tmp_path, "train.tif", (9, 11))

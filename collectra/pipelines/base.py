@@ -929,7 +929,7 @@ class Pipeline(LenientAttributes, BaseModel):
 
     def _is_image_file(self, path: Path) -> bool:
         """Check if path is an image file."""
-        return path.is_file() and path.suffix.lower() in Image.image_types()
+        return path.is_file() and path.suffix.lower() in Image.file_extensions()
 
     def _handle_existing_folder(
         self, savef: Path, output_dir: str | Path | None

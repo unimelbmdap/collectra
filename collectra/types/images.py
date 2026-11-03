@@ -309,8 +309,8 @@ class Image(Artefact):
         shutil.copy(self.get_path(), path)
 
     @staticmethod
-    def image_types() -> list[str]:
-        return [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp"]
+    def file_extensions() -> set[str]:
+        return {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp"}
 
     @property
     def width(self) -> int | float:
@@ -377,7 +377,7 @@ class Image(Artefact):
         Returns:
             bool: True if the file extension indicates a supported image format.
         """
-        return path.suffix.lower() in Image.image_types()
+        return path.suffix.lower() in Image.file_extensions()
 
     def _load_buffer(self, img: ImagePil.Image) -> bytes:
         buffer = io.BytesIO()
@@ -730,14 +730,18 @@ class ImageSegmentation(Image):
                 # A histogram validates binary values without large temporary
                 # NumPy arrays for every full-resolution mask in the viewer.
                 if any(mask.histogram()[2:]):
-                    raise ValueError("Mask must contain only single-channel 0 and 1 pixels")
+                    raise ValueError(
+                        "Mask must contain only single-channel 0 and 1 pixels"
+                    )
                 alpha = mask.point([0, 255] + [0] * 254, mode="L")
             elif mask.mode == "1":
                 alpha = mask.convert("L")
             else:
                 pixels = np.asarray(mask)
                 if pixels.ndim != 2 or not np.isin(pixels, [0, 1]).all():
-                    raise ValueError("Mask must contain only single-channel 0 and 1 pixels")
+                    raise ValueError(
+                        "Mask must contain only single-channel 0 and 1 pixels"
+                    )
                 alpha = ImagePil.fromarray(pixels.astype("uint8") * 255)
         if alpha.getbbox() is None:
             raise ValueError("ImageSegmentation mask is empty")

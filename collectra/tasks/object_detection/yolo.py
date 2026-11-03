@@ -746,7 +746,7 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask, ObjectDetectionTask)
         preview_dir = log / "preview"
         preview_dir.mkdir(exist_ok=True)
 
-        for image_type in Image.image_types():
+        for image_type in Image.file_extensions():
             for image_file in log.glob(f"*{image_type}"):
                 dest = preview_dir / image_file.name
                 shutil.copy(image_file, dest)
@@ -837,7 +837,7 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask, ObjectDetectionTask)
         train_images = [0, 0]
         val_images = [0, 0]
 
-        for image_type in Image.image_types():
+        for image_type in Image.file_extensions():
             for image_file in log.glob(f"*{image_type}"):
                 label_file = image_file.with_suffix(".txt")
                 with open(label_file, "r") as f:
