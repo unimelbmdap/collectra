@@ -309,10 +309,10 @@ class Pipeline(LenientAttributes, BaseModel):
     ) -> None:
         """Run the complete pipeline or start at a named task."""
         from collectra.logger import setup_logging
-        from collectra.utils import resolve_files, valid_raw_files
+        from collectra.utils import resolve_files
 
         setup_logging(verbose=verbose)
-        files = resolve_files(inputs, [f".{self.ext}", *valid_raw_files()])
+        files = resolve_files(inputs, self.file_extensions())
         if not files:
             logger.warning("No supported input files found for: %s", ", ".join(inputs))
             return
@@ -613,6 +613,27 @@ class Pipeline(LenientAttributes, BaseModel):
         }
         options["task_overrides"] = kwargs.copy()
         return options
+
+    def file_extensions(self) -> set[str]:
+        """File extensions this pipeline accepts as input.
+
+        Its own results-folder extension, plus those of the artefact types its
+        input node reads when it has a single input node.
+        """
+        extensions = {f".{self.ext}"}
+        self._ensure_workflow_connected()
+        roots = [
+            node
+            for node in self.node_manager.get_artefact_nodes()
+            if self._check_is_root(node.name)
+        ]
+        if len(roots) == 1:
+            for artefact_type in roots[0].types:
+                try:
+                    extensions |= artefact_type.file_extensions()
+                except NotImplementedError:
+                    pass
+        return extensions
 
     def _get_root_input(self) -> str:
         """Get the name of the root input artefact node for the workflow."""

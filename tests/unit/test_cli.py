@@ -192,14 +192,22 @@ def test_find_pipeline_accepts_both_option_forms():
     assert find_pipeline(["task", "--pipeline=b.yaml"])[0] == Path("b.yaml")
 
 
-def write_empty_pipeline(path: Path) -> Path:
+def write_empty_pipeline(path: Path, reads_images: bool = False) -> Path:
     pipeline_file = path / "pipeline.yaml"
-    pipeline_file.write_text(
+    text = (
         "collectra_pipeline_metadata:\n"
         "  name: Test\n"
         "  ext: collectra\n"
         "  version: 1.0.0\n"
     )
+    if reads_images:
+        text += (
+            "read:\n"
+            "  type: tests.unit.test_pipeline_file_extensions.FromImage\n"
+            "  input: [page]\n"
+            "  output: [out]\n"
+        )
+    pipeline_file.write_text(text)
     return pipeline_file
 
 
@@ -216,7 +224,7 @@ def test_actual_entry_point_root_help(tmp_path, capsys):
 def test_pipeline_run_accepts_tiff_inputs(
     tmp_path, monkeypatch, suffix, directory_input
 ):
-    pipeline = Pipeline.from_file(write_empty_pipeline(tmp_path))
+    pipeline = Pipeline.from_file(write_empty_pipeline(tmp_path, reads_images=True))
     image = tmp_path / f"multiview{suffix}"
     image.touch()
     calls = []
