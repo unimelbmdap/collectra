@@ -4,6 +4,8 @@ from pathlib import Path
 
 import torch
 
+from .rfdetr_channels import absolute_checkpoint
+
 
 def _patch_embeddings(detector):
     try:
@@ -75,7 +77,9 @@ def expand_rfdetr_input_channels(
 
     if variant is None:
         try:
-            detector = rfdetr.RFDETR.from_checkpoint(str(input_model), device="cpu")
+            detector = rfdetr.RFDETR.from_checkpoint(
+                absolute_checkpoint(input_model), device="cpu"
+            )
         except (KeyError, ValueError) as exc:
             raise ValueError(
                 "Could not reconstruct the input checkpoint automatically. "
@@ -96,7 +100,9 @@ def expand_rfdetr_input_channels(
         model_class = getattr(rfdetr, name, None)
         if model_class is None or not name.startswith("RFDETR"):
             raise ValueError(f"Unknown or unavailable RF-DETR variant: {variant}")
-        detector = model_class(pretrain_weights=str(input_model), device="cpu")
+        detector = model_class(
+            pretrain_weights=absolute_checkpoint(input_model), device="cpu"
+        )
 
     _expand_model(detector, num_views)
     config = detector.model_config.model_dump(mode="json")

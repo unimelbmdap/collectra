@@ -88,10 +88,13 @@ def patched_rfdetr_base():
     constructor calls via ``cls.instances``.
     """
     _FakeRFDETRBase.instances = []
-    with patch(
-        "collectra.tasks.object_detection.rfdetr.RFDETRBase",
-        new=_FakeRFDETRBase,
-    ) as patched, patch.object(rfdetr_module, "RFDETR", _FakeRFDETR):
+    with (
+        patch(
+            "collectra.tasks.object_detection.rfdetr.RFDETRBase",
+            new=_FakeRFDETRBase,
+        ) as patched,
+        patch.object(rfdetr_module, "RFDETR", _FakeRFDETR),
+    ):
         yield patched
 
 
@@ -128,8 +131,14 @@ def test_load_named_variant(name, class_name, monkeypatch):
     monkeypatch.setattr(
         rfdetr_module,
         "_backend_class",
-        lambda name: _FakeRFDETR if name == "RFDETR" else (
-            constructor if name == class_name else pytest.fail(f"Unexpected model: {name}")
+        lambda name: (
+            _FakeRFDETR
+            if name == "RFDETR"
+            else (
+                constructor
+                if name == class_name
+                else pytest.fail(f"Unexpected model: {name}")
+            )
         ),
     )
     task = ObjectDetectionRFDETR(name="detector", model=name)
@@ -144,7 +153,9 @@ def test_load_named_variant(name, class_name, monkeypatch):
 
 
 @pytest.mark.parametrize("class_name", ["RFDETRNano", "RFDETRSmall"])
-def test_load_checkpoint_tries_smaller_variants(class_name, monkeypatch, fake_checkpoint):
+def test_load_checkpoint_tries_smaller_variants(
+    class_name, monkeypatch, fake_checkpoint
+):
     model = _FakeRFDETR()
     constructor = MagicMock(return_value=model)
     incompatible = MagicMock(side_effect=ValueError("incompatible checkpoint"))
@@ -156,6 +167,28 @@ def test_load_checkpoint_tries_smaller_variants(class_name, monkeypatch, fake_ch
 
     assert rfdetr_module.load_rfdetr_model(fake_checkpoint) is model
     constructor.assert_called_once_with(pretrain_weights=str(fake_checkpoint))
+
+
+def test_a_bare_checkpoint_filename_reaches_rfdetr_as_an_absolute_path(
+    tmp_path, monkeypatch
+):
+    """rfdetr reads a bare filename as a file in its model cache, not the working directory."""
+    (tmp_path / "bare.pt").write_bytes(b"")
+    monkeypatch.chdir(tmp_path)
+    model = _FakeRFDETR()
+    constructor = MagicMock(return_value=model)
+    monkeypatch.setattr(
+        rfdetr_module,
+        "_backend_class",
+        lambda name: (
+            constructor
+            if name == "RFDETRNano"
+            else MagicMock(side_effect=ValueError("no"))
+        ),
+    )
+
+    assert rfdetr_module.load_rfdetr_model("bare.pt") is model
+    constructor.assert_called_once_with(pretrain_weights=str(tmp_path / "bare.pt"))
 
 
 # ---------------------------------------------------------------------------
@@ -185,9 +218,12 @@ def test_train_fold_uses_pretrain_weights_from_original_model_path(
     # Skip the heavy COCO writer (PIL / shutil) - none of that is under
     # test here. Also skip _reload so it doesn't re-construct the model
     # with pretrain_weights itself; that would mask the real bug.
-    with patch.object(
-        ObjectDetectionRFDETR, "_write_coco_dataset", return_value=log / "dataset"
-    ), patch.object(ObjectDetectionRFDETR, "_reload"):
+    with (
+        patch.object(
+            ObjectDetectionRFDETR, "_write_coco_dataset", return_value=log / "dataset"
+        ),
+        patch.object(ObjectDetectionRFDETR, "_reload"),
+    ):
         task._train_fold(
             train_samples=[],
             val_samples=[],

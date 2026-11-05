@@ -78,7 +78,13 @@ def _backend_class(name: str):
 
 
 def load_rfdetr_model(model_path: str | Path) -> RFDETR:
-    from .rfdetr_channels import multichannel_checkpoints, sync_channels
+    from .rfdetr_channels import (
+        absolute_checkpoint,
+        multichannel_checkpoints,
+        sync_channels,
+    )
+
+    model_path = absolute_checkpoint(model_path)
 
     # Fusion checkpoints retain a three-channel projection but consume many
     # RGB views. Ordinary RF-DETR loading would silently discard fusion weights.
