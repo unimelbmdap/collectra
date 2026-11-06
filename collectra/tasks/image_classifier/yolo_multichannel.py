@@ -145,7 +145,10 @@ class MultichannelClassificationTrainer(ClassificationTrainer):
 
 @torch.inference_mode()
 def classify_multichannel(yolo, image):
-    """Classify directly from tensors, bypassing Ultralytics' RGB predictor."""
+    """Classify directly from tensors, bypassing Ultralytics' RGB predictor.
+
+    Returns the class number and the model's names for its classes.
+    """
     if image.get_path().suffix.lower() in {".tif", ".tiff"}:
         pixels = _tiff_tensor(_target_tiff_pixels(image))
     else:
@@ -182,4 +185,4 @@ def classify_multichannel(yolo, image):
     predictions = (
         predictions[0] if isinstance(predictions, (tuple, list)) else predictions
     )
-    return model.names[predictions.argmax(dim=1).item()]
+    return predictions.argmax(dim=1).item(), model.names

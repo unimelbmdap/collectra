@@ -17,6 +17,7 @@ from collectra.commons.results import peek_header
 from collectra.utils import change_dir
 
 from ...logger import get_logger
+from .class_names import read_class_names, write_class_names
 
 logger = get_logger(__name__)
 
@@ -215,9 +216,9 @@ def save_training_result(task, results, *, log: str, **kwargs) -> None:
     new_model_path = f"{task.name}-{Path(log).name}.pt"
     shutil.copy(best_model_path, new_model_path)
     pipeline.data[task.name]["model"] = new_model_path
-    classes_src = best_model_path.parent / "classes.json"
-    if classes_src.exists():
-        shutil.copy(classes_src, f"{Path(new_model_path).stem}.classes.json")
+    classes = read_class_names(best_model_path)
+    if classes is not None:
+        write_class_names(Path(f"{Path(new_model_path).stem}.classes.yaml"), classes)
 
 
 def train_from_files(

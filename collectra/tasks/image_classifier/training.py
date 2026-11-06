@@ -23,6 +23,7 @@ from rich.progress import (
 
 from collectra.logger import get_logger
 from ..base import Task
+from ..machine_learning.class_names import write_class_names
 from ..machine_learning.training import print_distribution_table
 from collectra.types.images import Image, ImageCrop
 from collectra.types.links import Link
@@ -305,15 +306,14 @@ class TorchClassifierTask(Task):
         configured = kwargs.get("classes") or getattr(self, "output", [])
         if isinstance(configured, str):
             configured = [configured]
-        classes = sorted(
-            set(
-                configured
-                or [
-                    image.name
-                    for image in images
-                    if not kwargs.get("exclude") or image.partition != kwargs["exclude"]
-                ]
-            )
+        # The pipeline's outputs, in its order. Only without them are the classes
+        # found from the images.
+        classes = list(dict.fromkeys(configured)) or sorted(
+            {
+                image.name
+                for image in images
+                if not kwargs.get("exclude") or image.partition != kwargs["exclude"]
+            }
         )
         if not classes:
             raise ValueError("No classes provided/found for classifier training")
@@ -399,9 +399,7 @@ class TorchClassifierTask(Task):
         )
         weights_dir = log / "weights"
         weights_dir.mkdir(parents=True, exist_ok=True)
-        (weights_dir / "classes.json").write_text(
-            json.dumps({"classes": classes}, indent=2)
-        )
+        write_class_names(weights_dir / "classes.yaml", classes)
         wandb_run = None
         if bool(kwargs.get("wandb", False)):
             try:

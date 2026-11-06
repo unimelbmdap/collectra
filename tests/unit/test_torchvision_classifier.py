@@ -183,7 +183,7 @@ def test_training_checkpoint_reload_and_prediction(
     calls, weights = tiny_backend
     assert calls[0]["weights"] is weights
     assert calls[-1]["weights"] is None
-    assert result.results_dict["classes"] == ["Pollen", "Spore"]
+    assert result.results_dict["classes"] == ["Spore", "Pollen"]
     assert "val_accuracy" in result.results_dict
     checkpoint_path = result.save_dir / "weights" / "best.pt"
     checkpoint = torch.load(checkpoint_path, weights_only=True)
@@ -323,7 +323,10 @@ def test_import_and_help_do_not_load_ml_backends():
     assert result.returncode == 0, result.stderr
 
 
-def test_pipeline_training_persists_model_and_link_outputs(tmp_path, tiny_backend):
+@pytest.mark.parametrize("outputs", [["Pollen", "Spore"], ["Spore", "Pollen"]])
+def test_pipeline_training_persists_model_and_link_outputs(
+    tmp_path, tiny_backend, outputs
+):
     import yaml
     from collectra import Pipeline
     from collectra.types.base import ArtefactNode
@@ -347,7 +350,7 @@ def test_pipeline_training_persists_model_and_link_outputs(tmp_path, tiny_backen
                     "type": "collectra.ImageClassifierTorchvision",
                     "model": "resnet18",
                     "input": ["image"],
-                    "output": ["Pollen", "Spore"],
+                    "output": outputs,
                 },
             }
         )
@@ -385,7 +388,7 @@ def test_pipeline_training_persists_model_and_link_outputs(tmp_path, tiny_backen
         )
     pipeline = Pipeline.from_file(pipeline_file)
     pipeline.connect()
-    for name in ("Pollen", "Spore"):
+    for name in outputs:
         node = pipeline.node_manager.resolve_node(name)
         assert isinstance(node, ArtefactNode)
         assert node.types == {Link}
@@ -406,7 +409,10 @@ def test_pipeline_training_persists_model_and_link_outputs(tmp_path, tiny_backen
     assert (pipeline_dir / saved).is_file()
     task._reload()
     assert task.original_model_path == (pipeline_dir / saved).resolve()
-    assert (pipeline_dir / Path(saved).with_suffix(".classes.json")).is_file()
+    sidecar = pipeline_dir / Path(saved).with_suffix(".classes.yaml")
+    # The classes are the pipeline's outputs, in the order the pipeline lists them.
+    assert yaml.safe_load(sidecar.read_text())["classes"] == outputs
+    assert task._categories == outputs
     reloaded = Pipeline.from_file(pipeline_file)
     reloaded.connect()
     classifier = reloaded.node_manager.resolve_node("classifier").get_task()
@@ -531,7 +537,7 @@ def test_epoch_metrics_cover_all_batches(torch_backend, monkeypatch, mapping_bat
     task = ImageClassifierTorchvision("classifier")
     task._device = torch.device("cpu")
     task._categories = ["a", "b"]
-    logits = torch.tensor([[4., 0.], [4., 0.], [4., 0.], [0., 4.]])
+    logits = torch.tensor([[4.0, 0.0], [4.0, 0.0], [4.0, 0.0], [0.0, 4.0]])
     labels = torch.tensor([0, 0, 1, 1])
     batches = []
     for start, end in [(0, 3), (3, 4)]:
@@ -540,7 +546,8 @@ def test_epoch_metrics_cover_all_batches(torch_backend, monkeypatch, mapping_bat
             pixels = UserDict(pixel_values=pixels)
         batches.append((pixels, labels[start:end]))
     monkeypatch.setattr(
-        task, "_forward",
+        task,
+        "_forward",
         lambda pixels: pixels["pixel_values"] if mapping_batch else pixels,
     )
 
@@ -559,13 +566,26 @@ def test_zero_validation_accuracy_still_saves_best_checkpoint(
     tmp_path, tiny_backend, monkeypatch
 ):
     task = ImageClassifierTorchvision("classifier")
-    monkeypatch.setattr(task, "_epoch", lambda *args: {
-        "loss": 1.0, "accuracy": 0.0, "top5_accuracy": 1.0,
-    })
+    monkeypatch.setattr(
+        task,
+        "_epoch",
+        lambda *args: {
+            "loss": 1.0,
+            "accuracy": 0.0,
+            "top5_accuracy": 1.0,
+        },
+    )
     result = task._train(
-        *make_inputs(tmp_path), base_folder=tmp_path, log="run", epochs=1,
-        validation="validation", exclude="excluded", device="cpu", workers=0,
-        wandb=False, batch=2,
+        *make_inputs(tmp_path),
+        base_folder=tmp_path,
+        log="run",
+        epochs=1,
+        validation="validation",
+        exclude="excluded",
+        device="cpu",
+        workers=0,
+        wandb=False,
+        batch=2,
     )
     assert (result.save_dir / "weights" / "best.pt").is_file()
     assert result.results_dict["val_accuracy"] == 0.0

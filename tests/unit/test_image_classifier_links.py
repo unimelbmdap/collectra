@@ -389,7 +389,8 @@ def test_classification_distribution_includes_totals(tmp_path, capsys):
         ("val", "Pollen", 1),
         ("val", "Spore", 3),
     ):
-        directory = tmp_path / partition / class_name
+        folder = {"Pollen": "00_Pollen", "Spore": "01_Spore"}[class_name]
+        directory = tmp_path / partition / folder
         directory.mkdir(parents=True, exist_ok=True)
         for index in range(count):
             (directory / f"{index}.jpg").touch()

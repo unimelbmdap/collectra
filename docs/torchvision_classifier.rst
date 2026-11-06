@@ -80,7 +80,7 @@ The output directory contains:
 * ``weights/best.pt``: the checkpoint with the lowest validation loss (or training
   loss when validation is not requested).
 * ``weights/last.pt``: the last completed epoch's checkpoint.
-* ``weights/classes.json``: the ordered class names.
+* ``weights/classes.yaml``: the ordered class names.
 * ``history.csv``: loss, top-1 accuracy, and top-5 accuracy for each epoch.
 * ``metrics.json``: best-epoch metrics and the number of completed epochs.
 

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import re
 import shutil
 import tempfile
 from pathlib import Path
 from typing import Annotated, TYPE_CHECKING
 
 from cappa import Arg
+from pydantic import PrivateAttr
 
 from PIL import Image as PillowImage
 
@@ -65,8 +67,52 @@ def _classification_channels(*roots):
     return channels, tensor_loader
 
 
+def class_folder_names(classes: list[str]) -> list[str]:
+    """Training folder names that make Ultralytics number the classes in this order.
+
+    Ultralytics numbers classes by sorted folder name, so the folders are numbered.
+    """
+    width = max(2, len(str(len(classes) - 1)))
+    return [f"{index:0{width}d}_{name}" for index, name in enumerate(classes)]
+
+
+def _without_number(name: str) -> str:
+    return re.sub(r"^\d+_", "", name)
+
+
 class ImageClassifierYOLO(YOLOTask):
     prepare_training_inputs = staticmethod(prepare_classification_inputs)
+
+    _checked_names: list[str] | None = PrivateAttr(default=None)
+
+    def _outputs(self) -> list[str]:
+        output = getattr(self, "output", [])
+        return output if isinstance(output, list) else [output]
+
+    def _output_for(self, index: int, model_names: dict[int, str]) -> str:
+        """The pipeline's output for a class number, after checking the model fits.
+
+        The pipeline is the source of truth: the names the model holds are only
+        compared, and a difference is warned about once.
+        """
+        outputs = self._outputs()
+        names = [model_names[number] for number in sorted(model_names)]
+        if len(names) != len(outputs):
+            raise ValueError(
+                f"Task {self.name!r} has {len(outputs)} output(s) "
+                f"({', '.join(outputs)}) but the model has {len(names)} classes."
+            )
+        agree = outputs in (names, [_without_number(name) for name in names])
+        if not agree and self._checked_names != names:
+            logger.warning(
+                "Class names in the model (%s) differ from the outputs of task %r "
+                "(%s); using the pipeline's outputs, in the pipeline's order.",
+                ", ".join(names),
+                self.name,
+                ", ".join(outputs),
+            )
+        self._checked_names = names
+        return outputs[index]
 
     @threading_locked()
     def run(self, *args: Image, **kwargs) -> Link:
@@ -96,16 +142,11 @@ class ImageClassifierYOLO(YOLOTask):
         ):
             from .yolo_multichannel import classify_multichannel
 
-            predicted_class = classify_multichannel(self.model, image)
+            index, names = classify_multichannel(self.model, image)
         else:
-            predicted_class = self._predict_rgb(image)
+            index, names = self._predict_rgb(image)
 
-        outputs = self.output if isinstance(self.output, list) else [self.output]
-        if predicted_class not in outputs:
-            raise ValueError(
-                f"Predicted class {predicted_class!r} is not a configured output: "
-                f"{outputs}"
-            )
+        predicted_class = self._output_for(index, names)
         print(f"Classified as: {predicted_class}")
 
         return Link(name=predicted_class, target=image)
@@ -123,8 +164,7 @@ class ImageClassifierYOLO(YOLOTask):
         if results.probs is None:
             raise ValueError("No classification probabilities returned.")
 
-        top1_index = results.probs.top1
-        return results.names[top1_index]
+        return results.probs.top1, results.names
 
     @command
     def train(
@@ -290,9 +330,10 @@ class ImageClassifierYOLO(YOLOTask):
         log = kwargs["base_folder"] / log
         log.mkdir(parents=True, exist_ok=True)
         print(f"Training files will be saved to: {log}")
-        # Derive classes from training data, not from pipeline children nodes
-        classes = sorted(set(img.name for img in images))
-        kwargs.pop("classes", None)
+        # The pipeline's outputs, in its order. Only without them are the classes
+        # found from the images.
+        classes = list(dict.fromkeys(kwargs.pop("classes", None) or self._outputs()))
+        classes = classes or sorted({img.name for img in images})
         if not isinstance(self.model, YOLO):
             raise ValueError("Model must be a YOLO instance for training.")
 
@@ -372,9 +413,10 @@ class ImageClassifierYOLO(YOLOTask):
         if min_size < 0:
             raise ValueError("min_size cannot be negative")
 
-        for cls in classes:
-            (train_dir / cls).mkdir(parents=True, exist_ok=True)
-            (val_dir / cls).mkdir(parents=True, exist_ok=True)
+        folders = dict(zip(classes, class_folder_names(classes)))
+        for folder in folders.values():
+            (train_dir / folder).mkdir(parents=True, exist_ok=True)
+            (val_dir / folder).mkdir(parents=True, exist_ok=True)
 
         source_images: dict[Path, PillowImage.Image] = {}
         for img in images:
@@ -386,9 +428,9 @@ class ImageClassifierYOLO(YOLOTask):
                 continue
 
             if img.partition == validation_flag:
-                target_dir = val_dir / cls_name
+                target_dir = val_dir / folders[cls_name]
             else:
-                target_dir = train_dir / cls_name
+                target_dir = train_dir / folders[cls_name]
 
             target = img.resolve() if type(img) is Link else img
             src = target.get_path()
@@ -490,16 +532,16 @@ class ImageClassifierYOLO(YOLOTask):
 
         train_counts = {}
         validation_counts = {}
-        for cls_name in classes:
+        for cls_name, folder in zip(classes, class_folder_names(classes)):
             train_counts[cls_name] = sum(
                 1
                 for ext in Image.file_extensions()
-                for _ in (train_dir / cls_name).glob(f"*{ext}")
+                for _ in (train_dir / folder).glob(f"*{ext}")
             )
             validation_counts[cls_name] = sum(
                 1
                 for ext in Image.file_extensions()
-                for _ in (val_dir / cls_name).glob(f"*{ext}")
+                for _ in (val_dir / folder).glob(f"*{ext}")
             )
         print_distribution_table(
             "Classification Distribution", classes, train_counts, validation_counts

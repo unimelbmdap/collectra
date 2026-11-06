@@ -382,7 +382,7 @@ def test_pipeline_save_and_reload_after_log_cleanup(tmp_path, local_model):
     assert not result.save_dir.exists()
     saved = yaml.safe_load(pipeline_file.read_text())["classifier"]["model"]
     assert (pipeline_dir / saved).is_file()
-    assert (pipeline_dir / Path(saved).with_suffix(".classes.json")).is_file()
+    assert (pipeline_dir / Path(saved).with_suffix(".classes.yaml")).is_file()
     task._reload()
     reloaded = Pipeline.from_file(pipeline_file)
     reloaded.connect()

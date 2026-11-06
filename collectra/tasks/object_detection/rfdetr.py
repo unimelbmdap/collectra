@@ -35,6 +35,11 @@ from collectra.utils import change_dir
 from ...logger import get_logger
 from ..base import Task
 from collectra.utils import threading_locked
+from ..machine_learning.class_names import (
+    read_class_names,
+    sidecar_candidates,
+    write_class_names,
+)
 from ..machine_learning.training import (
     prepare_object_detection_inputs,
     print_distribution_table,
@@ -75,6 +80,17 @@ def __getattr__(name: str):
 
 def _backend_class(name: str):
     return globals().get(name) or __getattr__(name)
+
+
+def class_head_size(model) -> int | None:
+    """The number of outputs of the model's last classification layer, if it has one.
+
+    RF-DETR gives that layer one output for each class plus one for the background.
+    """
+    head = getattr(
+        getattr(getattr(model, "model", None), "model", None), "class_embed", None
+    )
+    return getattr(head, "out_features", None)
 
 
 def load_rfdetr_model(model_path: str | Path) -> RFDETR:
@@ -159,22 +175,46 @@ class ObjectDetectorRFDETR(RFDETRAdaptationCommands, ObjectDetector):
             return
 
         self.model = load_rfdetr_model(self.original_model_path)
-        self._load_categories_from_json(Path(self.original_model_path))
+        self._set_categories(Path(self.original_model_path))
 
-    def _classes_sidecar_candidates(self, checkpoint_path: Path) -> list[Path]:
-        weights_dir = checkpoint_path.parent
-        return [
-            weights_dir / f"{checkpoint_path.stem}.classes.json",
-            weights_dir / "classes.json",
-        ]
+    def _load_categories_from_sidecar(self, checkpoint_path: Path) -> None:
+        classes = read_class_names(checkpoint_path)
+        if classes is not None:
+            self._categories = classes
 
-    def _load_categories_from_json(self, checkpoint_path: Path) -> None:
-        for classes_file in self._classes_sidecar_candidates(checkpoint_path):
-            if classes_file.exists():
-                with open(classes_file, "r") as f:
-                    metadata = json.load(f)
-                self._categories = metadata.get("classes", self._categories)
-                return
+    def _output_names(self) -> list[str]:
+        """Names of this task's output nodes, in the order the pipeline lists them."""
+        pipeline = self.pipeline
+        if pipeline is None or not pipeline.node_manager.has_node(self.name):
+            return []
+        node = pipeline.node_manager.resolve_node(self.name)
+        return [str(output.name) for output in pipeline._output_nodes(node)]
+
+    def _set_categories(self, checkpoint_path: Path) -> None:
+        """Name the model's classes: the pipeline's outputs, else the sidecar.
+
+        The pipeline is the source of truth. A sidecar that disagrees is warned
+        about and ignored. Either way the last layer must fit the names.
+        """
+        self._load_categories_from_sidecar(checkpoint_path)
+        outputs = self._output_names()
+        if outputs:
+            if self._categories and self._categories != outputs:
+                logger.warning(
+                    "Class names in the sidecar next to %s (%s) differ from the outputs "
+                    "of task %r (%s); using the pipeline's outputs.",
+                    checkpoint_path,
+                    ", ".join(self._categories),
+                    self.name,
+                    ", ".join(outputs),
+                )
+            self._categories = outputs
+        size = class_head_size(self.model)
+        if self._categories and size is not None and size != len(self._categories) + 1:
+            raise ValueError(
+                f"Task {self.name!r} has {len(self._categories)} output(s) "
+                f"({', '.join(self._categories)}) but the model has {size - 1} classes."
+            )
 
     def _load(self) -> None:
         if isinstance(self.model, _backend_class("RFDETR")):
@@ -217,9 +257,9 @@ class ObjectDetectorRFDETR(RFDETRAdaptationCommands, ObjectDetector):
             self.original_model_path = checkpoint_path
             self.model = load_rfdetr_model(self.original_model_path)
             self._categories = []
-            self._load_categories_from_json(checkpoint_path)
-            candidates = self._classes_sidecar_candidates(checkpoint_path)
-            if not any(c.exists() for c in candidates):
+            self._set_categories(checkpoint_path)
+            candidates = sidecar_candidates(checkpoint_path)
+            if not self._categories and not any(c.exists() for c in candidates):
                 logger.warning(
                     "No classes sidecar found alongside checkpoint %s "
                     "(looked for %s); inference labels will fall back to "
@@ -709,9 +749,7 @@ class ObjectDetectorRFDETR(RFDETRAdaptationCommands, ObjectDetector):
         self.model = model
 
         # Persist class names alongside checkpoint for later reloading
-        classes_metadata = {"classes": classes}
-        with open(weights_dir / "classes.json", "w") as f:
-            json.dump(classes_metadata, f, indent=2)
+        write_class_names(weights_dir / "classes.yaml", classes)
 
         # RF-DETR's total checkpoint selects the validation winner across
         # regular and EMA weights. Prefer it so best.pt keeps that winner.
