@@ -26,6 +26,7 @@ _EXPORTS = {
     "ObjectDetectionDETR": "collectra.tasks.object_detection.detr",  # the former name
     "DetectionTrainResult": "collectra.tasks.object_detection.detr",
     "ObjectDetectorRFDETR": "collectra.tasks.object_detection.rfdetr",
+    "ObjectDetectorSam3": "collectra.tasks.object_detection.sam3",
     "ObjectDetectionRFDETR": "collectra.tasks.object_detection.rfdetr",  # the former name
     "ImageOrienter": "collectra.tasks.machine_learning.orienters",
     "ImageSegmenterSam3": "collectra.tasks.image_segmentation.sam3",

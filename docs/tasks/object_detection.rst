@@ -11,11 +11,12 @@ Use annotated crops with source-image relationships for training.
    object_detection_yolo
    object_detection_rfdetr
    object_detection_detr
+   object_detection_sam3
 
 Shared settings
 ---------------
 
-The three detectors inherit from ``collectra.ObjectDetector``, which
+The detectors inherit from ``collectra.ObjectDetector``, which
 declares the settings they have in common. Give them in the task's
 ``pipeline.yaml`` entry; ``run`` and ``train`` use them unless an option such as
 ``--epochs`` or ``--resolution`` is given for that command.
@@ -51,5 +52,5 @@ To write your own detector, subclass ``ObjectDetector`` and implement
 images at once also implements ``_predict_batch``, and ``prefetch`` then works
 for it without more code.
 
-All three detectors expose ``run`` and ``train``. To extract crop images or
+All the detectors expose ``run`` and ``train``. To extract crop images or
 evaluate predicted boxes, use the commands on :doc:`../artefacts/image_crop`.

@@ -14,6 +14,7 @@ _EXPORTS = {
     "DetectionTrainResult": "collectra.tasks.object_detection.detr",
     "ObjectDetectorRFDETR": "collectra.tasks.object_detection.rfdetr",
     "ObjectDetectionRFDETR": "collectra.tasks.object_detection.rfdetr",  # the former name
+    "ObjectDetectorSam3": "collectra.tasks.object_detection.sam3",
 }
 
 __all__ = sorted(_EXPORTS)

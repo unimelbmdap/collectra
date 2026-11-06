@@ -39,6 +39,8 @@ Command overview
      - ``run``, ``train``
    * - ObjectDetectorDETR
      - ``run``, ``train``
+   * - ObjectDetectorSam3
+     - ``run``, ``train``
    * - ImageSegmenterSam3
      - ``run``, ``train``
    * - ImageSegmenterRFDETR

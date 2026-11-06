@@ -82,7 +82,143 @@ from .data import (
 )
 
 
-class ImageSegmenterSam3(SegmentationTrainingData, Task):
+class Sam3Backend:
+    """What the SAM 3 tasks share: their prompts, checkpoint and processor.
+
+    A task using it has ``model``, ``prompt``, ``prompts``, ``version``,
+    ``threshold`` and ``device`` settings and keeps its processor in ``_processor``.
+    """
+
+    def _declared_outputs(self):
+        """The outputs the pipeline gives this task; empty if it gives none."""
+        outputs = getattr(self, "output", None) or []
+        return outputs if isinstance(outputs, list) else [outputs]
+
+    def _outputs(self):
+        return self._declared_outputs() or [self.get_output_name()]
+
+    def _prompts(self):
+        return self._prompts_for(self._outputs())
+
+    def _prompts_for(self, labels):
+        """The text prompt for each label: those given, else one for all, else its name."""
+        if self.prompts:
+            mapping = self.prompts
+        else:
+            mapping = {
+                label: self.prompt or label.replace("_", " ") for label in labels
+            }
+        if any(not label or not prompt.strip() for label, prompt in mapping.items()):
+            raise ValueError("SAM prompts and output labels must be nonempty")
+        return mapping
+
+    def _checkpoint(self):
+        _sam3()
+        if self.model:
+            path = Path(self.model).expanduser()
+            if not path.is_absolute() and self.pipeline is not None:
+                path = Path(self.pipeline.path) / path
+            path = path.resolve()
+            if not path.is_file():
+                raise FileNotFoundError(path)
+            return path
+        from sam3.model_builder import download_ckpt_from_hf
+
+        return Path(download_ckpt_from_hf(version=self.version))
+
+    def _init_model(self):
+        if self._processor is None:
+            self._processor = self._load_processor()
+
+    def _load_processor(self):
+        _sam3()
+        import torch
+        from sam3.model_builder import build_sam3_image_model
+        from sam3.model.sam3_image_processor import Sam3Processor
+
+        checkpoint = self._checkpoint()
+        state = torch.load(checkpoint, map_location="cpu", weights_only=True)
+        state = state.get("model", state)
+        from .sam3_training import load_image_state
+
+        model = build_sam3_image_model(
+            checkpoint_path=None,
+            load_from_HF=False,
+            device=self.device,
+            enable_segmentation=True,
+        )
+        load_image_state(model, state)
+        model.to(self.device).eval()
+        return Sam3Processor(
+            model, device=self.device, confidence_threshold=self.threshold
+        )
+
+    def _run_trainer(
+        self,
+        dataset,
+        output,
+        *,
+        masks,
+        epochs,
+        batch,
+        num_gpus,
+        wandb,
+        project,
+        started,
+    ):
+        """Fine-tune with Meta's trainer, returning the best weights it saved.
+
+        ``masks=False`` trains on boxes alone, for object detection.
+        """
+        from .sam3_training import training_config
+
+        training_progress("Resolving the SAM checkpoint (a download may be needed)")
+        initial_checkpoint = self._checkpoint()
+        training_progress(f"Using checkpoint: {initial_checkpoint}")
+        training_progress("Building the SAM training configuration")
+        config = training_config(
+            dataset,
+            output,
+            initial_checkpoint,
+            epochs=epochs,
+            batch=batch,
+            num_gpus=num_gpus,
+            wandb=wandb,
+            run_name=output.name,
+            project=project,
+            confidence_threshold=self.threshold,
+            masks=masks,
+        )
+        config_path = output / "sam3-training.yaml"
+        config_path.write_text(
+            yaml.safe_dump(config, sort_keys=False), encoding="utf-8"
+        )
+        training_progress(f"Configuration saved: {config_path}")
+        training_progress(
+            f"Starting SAM trainer ({time.monotonic() - started:.1f}s preparation); "
+            "trainer output follows"
+        )
+        subprocess.run(
+            [
+                sys.executable,
+                "-u",
+                "-c",
+                "from collectra.tasks.image_segmentation.sam3_training import launch; import sys; launch(sys.argv[1])",
+                str(config_path),
+            ],
+            check=True,
+            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        )
+        training_progress("SAM trainer exited successfully; checking its checkpoint")
+        checkpoint = output / "training" / "checkpoints" / "best.pt"
+        if not checkpoint.is_file():
+            raise FileNotFoundError(
+                f"SAM training produced no checkpoint at {checkpoint}"
+            )
+        return checkpoint
+
+
+class ImageSegmenterSam3(Sam3Backend, SegmentationTrainingData, Task):
     """Find all instances matching text prompts and return one mask per instance."""
 
     def __init__(
@@ -115,58 +251,6 @@ class ImageSegmenterSam3(SegmentationTrainingData, Task):
         return ImageSegmentation
 
     _progress = staticmethod(training_progress)
-
-    def _prompts(self):
-        if self.prompts:
-            mapping = self.prompts
-        else:
-            outputs = getattr(self, "output", None) or [self.get_output_name()]
-            outputs = outputs if isinstance(outputs, list) else [outputs]
-            mapping = {
-                label: self.prompt or label.replace("_", " ") for label in outputs
-            }
-        if any(not label or not prompt.strip() for label, prompt in mapping.items()):
-            raise ValueError("SAM prompts and output labels must be nonempty")
-        return mapping
-
-    def _checkpoint(self):
-        _sam3()
-        if self.model:
-            path = Path(self.model).expanduser()
-            if not path.is_absolute() and self.pipeline is not None:
-                path = Path(self.pipeline.path) / path
-            path = path.resolve()
-            if not path.is_file():
-                raise FileNotFoundError(path)
-            return path
-        from sam3.model_builder import download_ckpt_from_hf
-
-        return Path(download_ckpt_from_hf(version=self.version))
-
-    def _init_model(self):
-        if self._processor is not None:
-            return
-        _sam3()
-        import torch
-        from sam3.model_builder import build_sam3_image_model
-        from sam3.model.sam3_image_processor import Sam3Processor
-
-        checkpoint = self._checkpoint()
-        state = torch.load(checkpoint, map_location="cpu", weights_only=True)
-        state = state.get("model", state)
-        from .sam3_training import load_image_state
-
-        model = build_sam3_image_model(
-            checkpoint_path=None,
-            load_from_HF=False,
-            device=self.device,
-            enable_segmentation=True,
-        )
-        load_image_state(model, state)
-        model.to(self.device).eval()
-        self._processor = Sam3Processor(
-            model, device=self.device, confidence_threshold=self.threshold
-        )
 
     @threading_locked()
     def run(self, *images: Image) -> list[ImageSegmentation]:
@@ -337,50 +421,17 @@ class ImageSegmenterSam3(SegmentationTrainingData, Task):
             dataset = self.prepare_training_data(
                 inputs, output / "dataset", validation, exclude, max_items=max_items
             )
-        from .sam3_training import training_config
-
-        training_progress("Resolving the SAM checkpoint (a download may be needed)")
-        initial_checkpoint = self._checkpoint()
-        training_progress(f"Using checkpoint: {initial_checkpoint}")
-        training_progress("Building the SAM training configuration")
-        config = training_config(
+        checkpoint = self._run_trainer(
             dataset,
             output,
-            initial_checkpoint,
+            masks=True,
             epochs=epochs,
             batch=batch,
             num_gpus=num_gpus,
             wandb=wandb,
-            run_name=output.name,
             project=f"{self.pipeline.name}-{self.name}",
-            confidence_threshold=self.threshold,
+            started=started,
         )
-        config_path = output / "sam3-training.yaml"
-        config_path.write_text(
-            yaml.safe_dump(config, sort_keys=False), encoding="utf-8"
-        )
-        training_progress(f"Configuration saved: {config_path}")
-        training_progress(
-            f"Starting SAM trainer ({time.monotonic() - started:.1f}s preparation); "
-            "trainer output follows"
-        )
-        subprocess.run(
-            [
-                sys.executable,
-                "-u",
-                "-c",
-                "from collectra.tasks.image_segmentation.sam3_training import launch; import sys; launch(sys.argv[1])",
-                str(config_path),
-            ],
-            check=True,
-            env={**os.environ, "PYTHONUNBUFFERED": "1"},
-        )
-        training_progress("SAM trainer exited successfully; checking its checkpoint")
-        checkpoint = output / "training" / "checkpoints" / "best.pt"
-        if not checkpoint.is_file():
-            raise FileNotFoundError(
-                f"SAM training produced no checkpoint at {checkpoint}"
-            )
         destination = self.pipeline.path / f"{self.name}-{uuid.uuid4().hex[:8]}.pt"
         shutil.copy2(checkpoint, destination)
         self.model = destination

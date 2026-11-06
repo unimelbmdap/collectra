@@ -322,8 +322,9 @@ Built-in task types include:
 * ``collectra.OCRHuggingFace``: recognize text with Transformers image-to-text
   models such as DeepSeek-OCR-2 or PaddleOCR-VL, with fine-tuning.
 * ``collectra.ConcatenateText``: combine text artefacts.
-* ``collectra.ObjectDetectorYOLO``, ``collectra.ObjectDetectorDETR``, and
-  ``collectra.ObjectDetectorRFDETR``: produce labelled object crops.
+* ``collectra.ObjectDetectorYOLO``, ``collectra.ObjectDetectorDETR``,
+  ``collectra.ObjectDetectorRFDETR``, and ``collectra.ObjectDetectorSam3``: produce
+  labelled object crops.
 * ``collectra.ImageClassifierYOLO``, ``collectra.ImageClassifierTorchvision``, and
   ``collectra.ImageClassifierHuggingFace``: classify images or crops, producing
   ``Link`` artefacts that retain a reference to the classified image.

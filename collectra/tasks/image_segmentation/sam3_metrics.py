@@ -73,9 +73,11 @@ class MaskIoU:
     def compute(self):
         """Local progress value; never synchronize from a progress callback."""
         return {
-            "iou": self.intersection / self.union
-            if self.union
-            else (1.0 if self.queries else float("nan"))
+            "iou": (
+                self.intersection / self.union
+                if self.union
+                else (1.0 if self.queries else float("nan"))
+            )
         }
 
     def compute_synced(self):
@@ -104,7 +106,9 @@ class MaskIoU:
 class EpochReporter:
     """Keep one CSV row per epoch, merging train and validation reports."""
 
-    def __init__(self, output, *, wandb=False, run_name=None, project=None, config=None):
+    def __init__(
+        self, output, *, wandb=False, run_name=None, project=None, config=None
+    ):
         self.output = Path(output)
         self.output.mkdir(parents=True, exist_ok=True)
         self.rows = {}
@@ -157,8 +161,10 @@ class TrainingHooks:
         collectra_wandb=False,
         collectra_run_name=None,
         collectra_project=None,
+        collectra_selection="mask_iou",
         **kwargs,
     ):
+        self._collectra_selection = collectra_selection
         self._collectra_best = None
         self._collectra_output = Path(collectra_output)
         self._collectra_has_validation = bool(kwargs["data"].get("val"))
@@ -173,7 +179,7 @@ class TrainingHooks:
                 config={
                     "epochs": self.max_epochs,
                     "selection_metric": (
-                        "val/mask_iou"
+                        f"val/{collectra_selection}"
                         if self._collectra_has_validation
                         else "train/loss"
                     ),
@@ -240,18 +246,26 @@ class TrainingHooks:
 
     def val_epoch(self, val_loader, phase):
         metrics = super().val_epoch(val_loader, phase)
+        if self._collectra_selection == "bbox_ap":
+            name, ending, what = (
+                "bbox_ap",
+                "/coco_eval_bbox_AP",
+                "box average precision",
+            )
+        else:
+            name, ending, what = "mask_iou", "/mask_iou/iou", "mask IoU"
         values = [
             value
             for key, value in metrics.items()
-            if key.replace("\\", "/").endswith("/mask_iou/iou")
+            if key.replace("\\", "/").endswith(ending)
         ]
         if len(values) != 1:
-            raise ValueError("SAM3 validation did not report its mask IoU")
-        metrics["mask_iou"] = float(values[0])
+            raise ValueError(f"SAM3 validation did not report its {what}")
+        metrics[name] = float(values[0])
         loss = metrics.get("Losses/val_roboflow100_loss")
         if loss is not None:
             metrics["loss"] = float(loss)
-        self._save_best(metrics["mask_iou"], "val/mask_iou", maximize=True)
+        self._save_best(metrics[name], f"val/{name}", maximize=True)
         if self._collectra_reporter is not None:
             self._collectra_reporter.record(self.epoch + 1, "val", metrics)
         return metrics
