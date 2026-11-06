@@ -174,6 +174,8 @@ class Pipeline(LenientAttributes, BaseModel):
     # Runtime state of a run in progress.
     _stage_gate: StageGate | None = None
     _run_progress: RunProgress | None = None
+    # (task, file, error) for each task that failed in the current run.
+    _failures: list[tuple[str, str, str]] = PrivateAttr(default_factory=list)
     # True when the file used the deprecated ``collectra_pipeline_metadata``
     # block; saving then keeps that form rather than rewriting the file.
     _legacy_declaration: bool = PrivateAttr(default=False)
@@ -653,6 +655,7 @@ class Pipeline(LenientAttributes, BaseModel):
             options: Execution options (single, files, usage, render, output).
         """
         files = options["files"]
+        self._failures = []
         downstream = {} if options["single"] else self._batchable_tasks(starting_nodes)
         batch_size = self._starting_batch_size(starting_nodes)
         batch_size = max([batch_size, *(t.batch_size for t in downstream.values())])
@@ -678,6 +681,16 @@ class Pipeline(LenientAttributes, BaseModel):
                     self._process_chunk(starting_nodes, chunk, options, downstream)
             finally:
                 self._run_progress = None
+        self._report_failures()
+
+    def _report_failures(self) -> None:
+        """Say at the end of a run which tasks failed, since each was only logged."""
+        if not self._failures:
+            return
+        lines = "\n".join(
+            f"  {task} on {file}: {error}" for task, file, error in self._failures
+        )
+        logger.error("%d task failure(s) in this run:\n%s", len(self._failures), lines)
 
     def _process_chunk(
         self,
@@ -1274,6 +1287,13 @@ class Pipeline(LenientAttributes, BaseModel):
         previous = self._take_outputs(node, kwargs.get("value")) if force else None
         try:
             results = self._run_task(node, **kwargs)
+        except Exception as error:
+            # Only this task's branch stops: with no output, the tasks that need
+            # it are never ready, while the rest of the DAG carries on.
+            if previous is not None:
+                previous.restore()
+            self._task_failed(node, kwargs.get("value", ""), error, render)
+            return
         except BaseException:
             if previous is not None:
                 previous.restore()
@@ -1286,6 +1306,18 @@ class Pipeline(LenientAttributes, BaseModel):
         self.render("workflow_run", file=kwargs.get("value", ""), render=render)
 
         self._run_nodes(children, *results, **kwargs)
+
+    def _task_failed(
+        self, node: TaskNode, folder, error: Exception, render: bool = False
+    ) -> None:
+        """Log a task's failure and mark it, leaving the rest of the run to go on."""
+        name = Path(str(folder)).name or "this file"
+        logger.error(
+            "Task '%s' failed for %s: %s", node.name, name, error, exc_info=error
+        )
+        self._failures.append((node.name, name, f"{type(error).__name__}: {error}"))
+        self._update_node_status(node, False)
+        self.render("workflow_run", file=folder, render=render)
 
     def _output_nodes(self, node: TaskNode) -> list[ArtefactNode]:
         return [
@@ -1672,22 +1704,19 @@ class Pipeline(LenientAttributes, BaseModel):
                 task = node.get_task()
                 detail = task.get_class_path()
                 params = getattr(task, "params", {})
-                if "LLM" in detail:
-                    node_type = "llm"
-                elif "ObjectDetection" in detail or "ImageClassifier" in detail:
-                    node_type = "detector"
-                else:
-                    node_type = "processor"
+                node_type = "Task"
+                types = []
             else:
-                type_names = sorted(type_.get_class_path() for type_ in node.types)
-                detail = ", ".join(type_names)
-                node_type = "data" if node.items else "implicit"
+                types = sorted(type_.get_class_path() for type_ in node.types)
+                detail = ", ".join(types)
+                node_type = "Artefact"
 
             nodes.append(
                 {
                     "id": name,
                     "label": name,
                     "nodeType": node_type,
+                    "types": types,
                     "detail": detail,
                     "inputs": inputs,
                     "outputs": outputs,

@@ -4,7 +4,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from collectra import ImageCrop, ObjectDetectionYOLO
+from collectra import ImageCrop, ObjectDetectorYOLO
 from collectra.cli import invoke
 
 
@@ -21,7 +21,7 @@ def install_fake_yolo(monkeypatch):
 def test_train_yolo_temp_dir(classes, image, tmp_path, monkeypatch):
     """Exercise YOLO training orchestration without weights or a backend."""
     install_fake_yolo(monkeypatch)
-    task = ObjectDetectionYOLO(name="label-detector", model=FakeYOLO())
+    task = ObjectDetectorYOLO(name="label-detector", model=FakeYOLO())
     crop = image.make_crop(0.5, 0.5, 0.25, 0.25, name="human")
     crop.add_source_parent(image)
     monkeypatch.setattr(task, "_init_model", lambda: None)
@@ -108,7 +108,7 @@ def test_run_yolo(
     fake_models = ModuleType("ultralytics.models")
     fake_models.YOLO = LoadingModel
     monkeypatch.setitem(sys.modules, "ultralytics.models", fake_models)
-    task = ObjectDetectionYOLO(name="label-detector", model="configured.pt")
+    task = ObjectDetectorYOLO(name="label-detector", model="configured.pt")
     if configured_imgsz is not None:
         task.resolution = configured_imgsz
     if cropped:
@@ -129,7 +129,7 @@ def test_run_yolo(
 @pytest.mark.parametrize("model", [None, "/models/override.pt"])
 @pytest.mark.parametrize("imgsz", [None, 1280])
 def test_run_cli_model_override(model, imgsz):
-    task = ObjectDetectionYOLO("detector", model="configured.pt")
+    task = ObjectDetectorYOLO("detector", model="configured.pt")
     calls = []
     task.pipeline = SimpleNamespace(
         cli_run=lambda inputs, **kwargs: calls.append(
@@ -185,7 +185,7 @@ def test_prefetch_batches_the_model_and_run_reuses_results(image, monkeypatch):
     fake_models = ModuleType("ultralytics.models")
     fake_models.YOLO = BatchModel
     monkeypatch.setitem(sys.modules, "ultralytics.models", fake_models)
-    task = ObjectDetectionYOLO(name="label-detector", model="configured.pt")
+    task = ObjectDetectorYOLO(name="label-detector", model="configured.pt")
     task.batch_size = 2
     crops = [image.make_crop(0.5, 0.5, w, w) for w in (0.2, 0.3, 0.4)]
 

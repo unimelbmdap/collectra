@@ -16,7 +16,7 @@ from .base import (
     Batch,
     Epochs,
     LearningRate,
-    ObjectDetectionTask,
+    ObjectDetector,
     TrainResolution,
     WeightDecay,
 )
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-__all__ = ["ObjectDetectionDETR", "DetectionTrainResult"]
+__all__ = ["ObjectDetectorDETR", "ObjectDetectionDETR", "DetectionTrainResult"]
 
 
 class DetectionTrainResult(PositionalFields, BaseModel):
@@ -40,7 +40,7 @@ class DetectionTrainResult(PositionalFields, BaseModel):
     results_dict: dict
 
 
-class ObjectDetectionDETR(ObjectDetectionTask):
+class ObjectDetectorDETR(ObjectDetector):
     """DETR task backed by Hugging Face Transformers."""
 
     model: Any = None  # a path or a loaded torch module
@@ -671,3 +671,7 @@ class ObjectDetectionDETR(ObjectDetectionTask):
 
         print(f"Best DETR model saved to: {results.save_dir / 'weights' / 'best.pt'}")
         return results
+
+
+# The former name of ObjectDetectorDETR.
+ObjectDetectionDETR = ObjectDetectorDETR

@@ -74,8 +74,8 @@ def test_get_task(pipeline, debug):
             isinstance(task, dict) and len(task) > 0
         ), f"Task '{task_name}' should be a non-empty dictionary"
         assert (
-            task.get("type", None) == "collectra.ObjectDetectionYOLO"
-        ), f"Task '{task_name}' should have type 'collectra.ObjectDetectionYOLO'"
+            task.get("type", None) == "collectra.ObjectDetectorYOLO"
+        ), f"Task '{task_name}' should have type 'collectra.ObjectDetectorYOLO'"
     except Exception as e:
         debug(e)
 

@@ -8,14 +8,14 @@ import pytest
 from pydantic import ValidationError
 
 import collectra
-from collectra import ObjectDetectionDETR, ObjectDetectionRFDETR, ObjectDetectionYOLO
-from collectra.tasks.object_detection.base import ObjectDetectionTask
+from collectra import ObjectDetectorDETR, ObjectDetectorRFDETR, ObjectDetectorYOLO
+from collectra.tasks.object_detection.base import ObjectDetector
 
-DETECTORS = [ObjectDetectionYOLO, ObjectDetectionRFDETR, ObjectDetectionDETR]
+DETECTORS = [ObjectDetectorYOLO, ObjectDetectorRFDETR, ObjectDetectorDETR]
 MODULES = {
-    ObjectDetectionYOLO: "yolo",
-    ObjectDetectionRFDETR: "rfdetr",
-    ObjectDetectionDETR: "detr",
+    ObjectDetectorYOLO: "yolo",
+    ObjectDetectorRFDETR: "rfdetr",
+    ObjectDetectorDETR: "detr",
 }
 
 
@@ -23,9 +23,9 @@ MODULES = {
 
 
 def test_the_parent_is_exported_and_all_three_detectors_inherit_from_it():
-    assert collectra.ObjectDetectionTask is ObjectDetectionTask
+    assert collectra.ObjectDetector is ObjectDetector
     for detector in DETECTORS:
-        assert issubclass(detector, ObjectDetectionTask)
+        assert issubclass(detector, ObjectDetector)
 
 
 @pytest.mark.parametrize("detector", DETECTORS)
@@ -37,20 +37,20 @@ def test_the_shared_defaults(detector):
 
 
 def test_backends_keep_the_defaults_that_only_make_sense_for_them():
-    assert (ObjectDetectionYOLO("d").batch, ObjectDetectionYOLO("d").learning_rate) == (
+    assert (ObjectDetectorYOLO("d").batch, ObjectDetectorYOLO("d").learning_rate) == (
         16,
         0.01,
     )
-    assert ObjectDetectionYOLO("d").weight_decay == 0.0005
-    assert ObjectDetectionYOLO("d").iou == 0.7
+    assert ObjectDetectorYOLO("d").weight_decay == 0.0005
+    assert ObjectDetectorYOLO("d").iou == 0.7
     assert (
-        ObjectDetectionRFDETR("d").batch,
-        ObjectDetectionRFDETR("d").learning_rate,
+        ObjectDetectorRFDETR("d").batch,
+        ObjectDetectorRFDETR("d").learning_rate,
     ) == (
         4,
         1e-4,
     )
-    assert (ObjectDetectionDETR("d").batch, ObjectDetectionDETR("d").learning_rate) == (
+    assert (ObjectDetectorDETR("d").batch, ObjectDetectorDETR("d").learning_rate) == (
         2,
         1e-4,
     )
@@ -115,7 +115,7 @@ def test_giving_both_names_is_an_error(detector):
 
 def test_lr0_is_still_accepted_by_yolo_as_learning_rate():
     with pytest.warns(FutureWarning, match="lr0.*deprecated.*learning_rate"):
-        task = ObjectDetectionYOLO("d", lr0=0.02)
+        task = ObjectDetectorYOLO("d", lr0=0.02)
     assert task.learning_rate == 0.02
 
 
@@ -168,7 +168,7 @@ def test_yolo_inference_uses_the_shared_threshold_and_its_own_iou(image, monkeyp
     fake_models = ModuleType("ultralytics.models")
     fake_models.YOLO = Recording
     monkeypatch.setitem(sys.modules, "ultralytics.models", fake_models)
-    task = ObjectDetectionYOLO(
+    task = ObjectDetectorYOLO(
         "d", model="m.pt", threshold=0.4, iou=0.5, resolution=960
     )
     task.run(image)
@@ -193,13 +193,13 @@ def capture(monkeypatch, detector):
 
 
 NAMES = {
-    ObjectDetectionYOLO: dict(
+    ObjectDetectorYOLO: dict(
         resolution="imgsz", learning_rate="lr0", weight_decay="weight_decay"
     ),
-    ObjectDetectionRFDETR: dict(
+    ObjectDetectorRFDETR: dict(
         resolution="resolution", learning_rate="lr", weight_decay="weight_decay"
     ),
-    ObjectDetectionDETR: dict(
+    ObjectDetectorDETR: dict(
         resolution=None, learning_rate="lr", weight_decay="weight_decay"
     ),
 }
@@ -242,8 +242,8 @@ def test_a_value_given_to_train_beats_the_task(detector, monkeypatch):
 
 
 def test_train_still_accepts_the_old_names_with_a_warning(monkeypatch):
-    seen = capture(monkeypatch, ObjectDetectionYOLO)
-    task = ObjectDetectionYOLO("d")
+    seen = capture(monkeypatch, ObjectDetectorYOLO)
+    task = ObjectDetectorYOLO("d")
     with pytest.warns(FutureWarning, match="imgsz.*deprecated"):
         task.train(["x"], imgsz=256)
     assert seen["imgsz"] == 256
@@ -253,11 +253,11 @@ def test_train_still_accepts_the_old_names_with_a_warning(monkeypatch):
 
 
 def test_train_rejects_the_old_and_new_name_together(monkeypatch):
-    capture(monkeypatch, ObjectDetectionYOLO)
+    capture(monkeypatch, ObjectDetectorYOLO)
     with pytest.raises(ValueError, match="imgsz.*resolution"):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            ObjectDetectionYOLO("d").train(["x"], imgsz=1, resolution=2)
+            ObjectDetectorYOLO("d").train(["x"], imgsz=1, resolution=2)
 
 
 # --- DETR: the resolution sets the size the image processor resizes to ---------------------
@@ -275,7 +275,7 @@ def test_detr_processor_size_follows_the_resolution(monkeypatch):
     fake_transformers = ModuleType("transformers")
     fake_transformers.DetrImageProcessor = Processor
     monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
-    task = ObjectDetectionDETR("d")
+    task = ObjectDetectorDETR("d")
     assert task._load_processor("model", None) == "processor"
     task._load_processor("model", 640)
     assert seen == [
@@ -287,7 +287,7 @@ def test_detr_processor_size_follows_the_resolution(monkeypatch):
 # --- the shared code ------------------------------------------------------------------------
 
 
-class Counting(ObjectDetectionTask):
+class Counting(ObjectDetector):
     """A detector that predicts by returning the image's name."""
 
     def _init_model(self):
@@ -337,12 +337,12 @@ def test_the_cache_is_per_resolution(pictures):
 
 
 def test_a_backend_without_batching_ignores_prefetch(pictures):
-    task = ObjectDetectionDETR("d", batch_size=4)
+    task = ObjectDetectorDETR("d", batch_size=4)
     task.prefetch([pictures("a")])  # does nothing, and does not load a model
 
 
 def test_the_parent_leaves_prediction_and_loading_to_the_backend():
-    parent = ObjectDetectionTask("p")
+    parent = ObjectDetector("p")
     with pytest.raises(NotImplementedError):
         parent._predict_batch([])
     with pytest.raises(NotImplementedError):
@@ -350,7 +350,7 @@ def test_the_parent_leaves_prediction_and_loading_to_the_backend():
 
 
 def test_a_device_is_chosen_for_the_machine(monkeypatch):
-    task = ObjectDetectionYOLO("d")
+    task = ObjectDetectorYOLO("d")
     monkeypatch.setattr("platform.system", lambda: "Darwin")
     assert task._select_device() == "mps"
     monkeypatch.setattr("platform.system", lambda: "Linux")
@@ -362,4 +362,4 @@ def test_a_device_is_chosen_for_the_machine(monkeypatch):
 
 def test_something_that_is_not_a_mapping_is_left_for_pydantic_to_reject():
     with pytest.raises(ValidationError):
-        ObjectDetectionYOLO.model_validate("not a task")
+        ObjectDetectorYOLO.model_validate("not a task")

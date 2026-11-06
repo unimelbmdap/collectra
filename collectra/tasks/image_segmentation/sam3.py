@@ -32,29 +32,57 @@ def training_progress(message):
     print(f"[SAM3] {message}", flush=True)
 
 
+_INSTALL = (
+    'Install it with `uv sync --extra sam3` (or pip install "sam3 @ '
+    'git+https://github.com/facebookresearch/sam3.git").'
+)
+_PLATFORM = (
+    " SAM 3 only works on Linux with an NVIDIA GPU (CUDA), and this computer is "
+    "not running Linux: run this task on a Linux GPU machine."
+)
+
+
 def _sam3():
+    """Meta's ``sam3`` package, or an ImportError that says what to do about it."""
     try:
         import sam3
     except ModuleNotFoundError as error:
-        if error.name != "sam3":
-            raise
-        raise ImportError(
-            'Install Meta SAM3 separately: pip install "sam3[train] @ '
-            'git+https://github.com/facebookresearch/sam3.git". '
-            "See Meta prerequisites (Python 3.12+, PyTorch, CUDA) and checkpoint access."
-        ) from error
+        on_linux = sys.platform.startswith("linux")
+        hint = "" if on_linux else _PLATFORM
+        if error.name == "sam3":
+            message = (
+                f"SAM 3 is not installed. {_INSTALL} It needs Python 3.12+, "
+                f"PyTorch and access to Meta's checkpoints.{hint}"
+            )
+        elif error.name == "triton" and not on_linux:
+            message = (
+                "SAM 3 is installed but needs the Python package 'triton', which "
+                f"only has packages for Linux.{hint}"
+            )
+        else:
+            message = (
+                f"SAM 3 is installed but needs the Python package {error.name!r}, "
+                f"which is missing. {_INSTALL}{hint}"
+            )
+        raise ImportError(message) from error
     return sam3
 
 
 # Keep these imports available for callers using the original SAM3 module.
 from .data import (
-    SegmentationSample, SegmentationTrainingData, _bounds, _sample_partition,
-    encode_rle, export_dataset, mask_in_view, mask_to_source,
+    SegmentationSample,
+    SegmentationTrainingData,
+    _bounds,
+    _sample_partition,
+    encode_rle,
+    export_dataset,
+    mask_in_view,
+    mask_to_source,
     prepare_segmentation_inputs,
 )
 
 
-class ImageSegmentationSam3(SegmentationTrainingData, Task):
+class ImageSegmenterSam3(SegmentationTrainingData, Task):
     """Find all instances matching text prompts and return one mask per instance."""
 
     def __init__(
@@ -162,7 +190,9 @@ class ImageSegmentationSam3(SegmentationTrainingData, Task):
                 state = self._processor.set_image(image.pil().convert("RGB"))
                 for label, prompt in prompts.items():
                     self._processor.reset_all_prompts(state)
-                    prediction = self._processor.set_text_prompt(prompt=prompt, state=state)
+                    prediction = self._processor.set_text_prompt(
+                        prompt=prompt, state=state
+                    )
                     masks = prediction["masks"]
                     if hasattr(masks, "detach"):
                         # Under autocast masks may be bfloat16, which NumPy lacks.
@@ -203,40 +233,59 @@ class ImageSegmentationSam3(SegmentationTrainingData, Task):
         ],
         output: Annotated[
             Path | None,
-            Arg(help="Directory for prepared data, metrics.csv, logs and best model weights. Defaults to a timestamped directory; required with --reuse-data."),
+            Arg(
+                help="Directory for prepared data, metrics.csv, logs and best model weights. Defaults to a timestamped directory; required with --reuse-data."
+            ),
         ] = None,
         validation: Annotated[
             str,
-            Arg(help="Partition used for validation and best-model selection by mask IoU. Omit to train without validation. Ignored when reusing an existing export."),
+            Arg(
+                help="Partition used for validation and best-model selection by mask IoU. Omit to train without validation. Ignored when reusing an existing export."
+            ),
         ] = "",
         exclude: Annotated[
             str,
-            Arg(help="Partition excluded from both training and validation during data preparation. Ignored when reusing an existing export."),
+            Arg(
+                help="Partition excluded from both training and validation during data preparation. Ignored when reusing an existing export."
+            ),
         ] = "",
         epochs: Annotated[
-            int, Arg(help="Number of training epochs; validation runs after every epoch when available."),
+            int,
+            Arg(
+                help="Number of training epochs; validation runs after every epoch when available."
+            ),
         ] = 20,
         batch: Annotated[
-            int, Arg(help="Number of training images per batch on each GPU."),
+            int,
+            Arg(help="Number of training images per batch on each GPU."),
         ] = 1,
         num_gpus: Annotated[
-            int, Arg(help="Number of GPUs used for training on this node."),
+            int,
+            Arg(help="Number of GPUs used for training on this node."),
         ] = 1,
         keep_log: Annotated[
             bool,
-            Arg(help="Keep prepared data, metrics, logs and checkpoints after copying the best weights into the pipeline. --no-keep-log removes the output directory."),
+            Arg(
+                help="Keep prepared data, metrics, logs and checkpoints after copying the best weights into the pipeline. --no-keep-log removes the output directory."
+            ),
         ] = True,
         reuse_data: Annotated[
             bool,
-            Arg(help="Reuse OUTPUT/dataset when both split annotation files exist; otherwise prepare it from the input paths. Requires --output. Reuse ignores input paths, partitions and --max-items. Does not resume optimizer state."),
+            Arg(
+                help="Reuse OUTPUT/dataset when both split annotation files exist; otherwise prepare it from the input paths. Requires --output. Reuse ignores input paths, partitions and --max-items. Does not resume optimizer state."
+            ),
         ] = False,
         wandb: Annotated[
             bool,
-            Arg(help="Log epoch metrics to Weights & Biases. Project: <pipeline-directory>-<task>; run: output directory name; entity: W&B settings or WANDB_ENTITY."),
+            Arg(
+                help="Log epoch metrics to Weights & Biases. Project: <pipeline-directory>-<task>; run: output directory name; entity: W&B settings or WANDB_ENTITY."
+            ),
         ] = False,
         max_items: Annotated[
             int | None,
-            Arg(help="Maximum total images across training and validation, after exclusions, in input order. Omit for all images. Ignored when reusing an existing export."),
+            Arg(
+                help="Maximum total images across training and validation, after exclusions, in input order. Omit for all images. Ignored when reusing an existing export."
+            ),
         ] = None,
     ) -> Path:
         """Prepare instance masks and fine-tune using Meta's image trainer.
@@ -272,12 +321,18 @@ class ImageSegmentationSam3(SegmentationTrainingData, Task):
         if reuse_prepared:
             dataset = output / "dataset"
             training_progress(f"Reusing prepared dataset directly: {dataset}")
-            training_progress("Skipping source checks and export; using existing train/validation splits")
+            training_progress(
+                "Skipping source checks and export; using existing train/validation splits"
+            )
             if max_items is not None:
-                training_progress("Ignoring --max-items because --reuse-data uses the existing dataset unchanged")
+                training_progress(
+                    "Ignoring --max-items because --reuse-data uses the existing dataset unchanged"
+                )
         else:
             if reuse_data:
-                training_progress("Prepared dataset is missing or incomplete; falling back to preparation from inputs")
+                training_progress(
+                    "Prepared dataset is missing or incomplete; falling back to preparation from inputs"
+                )
             training_progress("Preparing the dataset before GPU training starts")
             dataset = self.prepare_training_data(
                 inputs, output / "dataset", validation, exclude, max_items=max_items
@@ -338,3 +393,7 @@ class ImageSegmentationSam3(SegmentationTrainingData, Task):
             training_progress(f"Removed training directory: {output}")
         training_progress(f"Training complete ({time.monotonic() - started:.1f}s)")
         return destination
+
+
+# The former name of ImageSegmenterSam3.
+ImageSegmentationSam3 = ImageSegmenterSam3

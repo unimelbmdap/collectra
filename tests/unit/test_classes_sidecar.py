@@ -6,7 +6,7 @@ Two pieces of new behavior:
    weights dir alongside the renamed checkpoint, named
    ``<new_model_stem>.classes.json``.
 
-2. ``ObjectDetectionRFDETR._load_categories_from_json`` looks up the
+2. ``ObjectDetectorRFDETR._load_categories_from_json`` looks up the
    sidecar at ``<checkpoint.stem>.classes.json`` first, then falls back
    to ``classes.json``.
 """
@@ -31,7 +31,7 @@ from collectra.pipelines.base import Pipeline  # noqa: E402
 from collectra.tasks.base import Task  # noqa: E402
 from collectra.tasks.machine_learning.training import save_training_result  # noqa: E402
 from collectra.tasks.object_detection.rfdetr import (  # noqa: E402
-    ObjectDetectionRFDETR,
+    ObjectDetectorRFDETR,
 )
 
 # ---------------------------------------------------------------------------
@@ -82,17 +82,17 @@ def test_save_train_no_classes_json_no_crash(tmp_path: Path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Load-side: ObjectDetectionRFDETR._load_categories_from_json
+# Load-side: ObjectDetectorRFDETR._load_categories_from_json
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def task() -> ObjectDetectionRFDETR:
-    return ObjectDetectionRFDETR(name="t")
+def task() -> ObjectDetectorRFDETR:
+    return ObjectDetectorRFDETR(name="t")
 
 
 def test_load_categories_prefers_stem_sidecar(
-    tmp_path: Path, task: ObjectDetectionRFDETR
+    tmp_path: Path, task: ObjectDetectorRFDETR
 ):
     ckpt = tmp_path / "best.pt"
     ckpt.write_bytes(b"x")
@@ -105,7 +105,7 @@ def test_load_categories_prefers_stem_sidecar(
 
 
 def test_load_categories_falls_back_to_plain_classes_json(
-    tmp_path: Path, task: ObjectDetectionRFDETR
+    tmp_path: Path, task: ObjectDetectorRFDETR
 ):
     ckpt = tmp_path / "best.pt"
     ckpt.write_bytes(b"x")
@@ -116,7 +116,7 @@ def test_load_categories_falls_back_to_plain_classes_json(
     assert task._categories == ["a", "b"]
 
 
-def test_load_categories_noop_when_missing(tmp_path: Path, task: ObjectDetectionRFDETR):
+def test_load_categories_noop_when_missing(tmp_path: Path, task: ObjectDetectorRFDETR):
     ckpt = tmp_path / "best.pt"
     ckpt.write_bytes(b"x")
     task._categories = ["sentinel"]

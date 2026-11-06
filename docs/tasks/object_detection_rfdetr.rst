@@ -1,4 +1,4 @@
-ObjectDetectionRFDETR
+ObjectDetectorRFDETR
 =======================
 
 Uses RF-DETR to detect objects and return labelled image crops. Select a
@@ -7,7 +7,7 @@ pretrained variant or a checkpoint trained for your collection:
 .. code-block:: yaml
 
     detect_labels:
-      type: collectra.ObjectDetectionRFDETR
+      type: collectra.ObjectDetectorRFDETR
       model: models/labels.pth
       input: image
       output: [label]

@@ -15,7 +15,7 @@ from collectra import (
     Image,
     ImageCrop,
     ImageSegmentation,
-    ImageSegmentationSam3,
+    ImageSegmenterSam3,
 )
 from collectra.cli import invoke
 from collectra.tasks.image_segmentation.sam3 import (
@@ -97,7 +97,7 @@ def test_coco_rle_roundtrip(pixels):
 
 
 def test_inference_returns_one_artifact_per_instance(image, tmp_path):
-    task = ImageSegmentationSam3("segment", prompts={"region": "printed region"})
+    task = ImageSegmenterSam3("segment", prompts={"region": "printed region"})
     task.context.file_path = tmp_path / "output.collectra"
     mask = np.zeros((2, 1, 8, 12), dtype=bool)
     mask[0, 0, 1:3, 2:5] = True
@@ -117,7 +117,7 @@ def test_inference_returns_one_artifact_per_instance(image, tmp_path):
 def test_inference_runs_under_bfloat16_autocast(image, tmp_path):
     import torch
 
-    task = ImageSegmentationSam3("segment", prompt="region", device="cpu")
+    task = ImageSegmenterSam3("segment", prompt="region", device="cpu")
     task.context.file_path = tmp_path
     seen = []
 
@@ -137,7 +137,7 @@ def test_inference_runs_under_bfloat16_autocast(image, tmp_path):
 
 
 def test_empty_predictions_and_bad_inputs(image, tmp_path):
-    task = ImageSegmentationSam3("segment")
+    task = ImageSegmenterSam3("segment")
     task.context.file_path = tmp_path
     task._processor = Mock()
     task._processor.set_text_prompt.return_value = {"masks": np.empty((0, 1, 8, 12))}
@@ -172,7 +172,7 @@ def test_model_loading_handles_official_and_finetuned_checkpoints(
         return_value=model
     )
     processor = sys.modules["sam3.model.sam3_image_processor"].Sam3Processor = Mock()
-    task = ImageSegmentationSam3("segment", model="model.pt", threshold=0.7)
+    task = ImageSegmenterSam3("segment", model="model.pt", threshold=0.7)
     task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path)
     task._init_model()
     assert builder.call_args.kwargs["load_from_HF"] is False
@@ -440,7 +440,7 @@ def test_preparation_requires_parent_and_matching_image(image, tmp_path):
 
 
 def test_cli_and_public_exports_need_no_sam_backend(capsys):
-    task = ImageSegmentationSam3("segment")
+    task = ImageSegmenterSam3("segment")
     assert task.input_type() is Image
     assert task.output_type() is ImageSegmentation
     with pytest.raises(cappa.HelpExit):
@@ -482,7 +482,7 @@ def test_pipeline_training_export_without_model_installation(tmp_path, input_kin
         "1",
         path=tmp_path,
         segment={
-            "type": "collectra.ImageSegmentationSam3",
+            "type": "collectra.ImageSegmenterSam3",
             "input": "image",
             "output": "region",
         },
@@ -608,7 +608,7 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
     monkeypatch.setattr(
         sam3, "datetime", SimpleNamespace(now=lambda: datetime(2026, 10, 16, 14))
     )
-    task = ImageSegmentationSam3("segment", model="initial.pt")
+    task = ImageSegmenterSam3("segment", model="initial.pt")
     task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path, data={"segment": {}}, save=Mock())
     dataset = export_dataset(
         [SegmentationSample(image, [instance(image, tmp_path)])], tmp_path / "dataset"
@@ -673,7 +673,7 @@ def test_train_reuses_output_dataset_without_source_checks(
         [SegmentationSample(image, [instance(image, tmp_path)])], output / 'dataset'
     )
     before = {path: path.read_bytes() for path in dataset.rglob('*') if path.is_file()}
-    task = ImageSegmentationSam3('segment', model='initial.pt')
+    task = ImageSegmenterSam3('segment', model='initial.pt')
     task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path, data={'segment': {}}, save=Mock())
     prepare = Mock(side_effect=AssertionError('Must not prepare or check source data'))
     monkeypatch.setattr(task, 'prepare_training_data', prepare)
@@ -702,7 +702,7 @@ def test_train_reuses_output_dataset_without_source_checks(
 
 
 def test_reuse_data_requires_output_and_normal_training_requires_inputs():
-    task = ImageSegmentationSam3('segment')
+    task = ImageSegmenterSam3('segment')
     with pytest.raises(ValueError, match='--reuse-data requires --output'):
         invoke(task, ['train', '--reuse-data'])
     with pytest.raises(ValueError, match='Supply training inputs'):
@@ -711,7 +711,7 @@ def test_reuse_data_requires_output_and_normal_training_requires_inputs():
 
 def test_reuse_missing_dataset_requires_inputs(tmp_path):
     with pytest.raises(ValueError, match="requires an existing export"):
-        invoke(ImageSegmentationSam3("segment"), ["train", "--reuse-data", "--output", str(tmp_path)])
+        invoke(ImageSegmenterSam3("segment"), ["train", "--reuse-data", "--output", str(tmp_path)])
 
 
 @pytest.mark.parametrize("options, message", [
@@ -720,4 +720,4 @@ def test_reuse_missing_dataset_requires_inputs(tmp_path):
 ])
 def test_max_items_rejects_invalid_options(options, message):
     with pytest.raises(ValueError, match=message):
-        invoke(ImageSegmentationSam3("segment"), ["train", "results", *options])
+        invoke(ImageSegmenterSam3("segment"), ["train", "results", *options])

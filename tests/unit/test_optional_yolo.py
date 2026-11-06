@@ -21,8 +21,8 @@ def test_core_and_help_without_yolo_dependencies():
         import cappa
         from PIL import Image as PILImage
         from collectra import (
-            Image, LineDetectorRLSA, ObjectDetectionYOLO, ImageClassifierYOLO,
-            ImageClassifierTorchvision, ObjectDetectionRFDETR,
+            Image, LineDetectorRLSA, ObjectDetectorYOLO, ImageClassifierYOLO,
+            ImageClassifierTorchvision, ObjectDetectorRFDETR,
         )
         from collectra.cli import invoke
 
@@ -30,7 +30,7 @@ def test_core_and_help_without_yolo_dependencies():
             path = Path(folder) / 'page.png'
             PILImage.new('RGB', (80, 80), 'white').save(path)
             assert LineDetectorRLSA('lines').run(Image(name='page', data=path))
-            for cls in [ObjectDetectionYOLO, ImageClassifierYOLO]:
+            for cls in [ObjectDetectorYOLO, ImageClassifierYOLO]:
                 task = cls('task', model='unused.pt')
                 try:
                     invoke(task, ['train', '--help'], name='task')
@@ -46,7 +46,7 @@ def test_core_and_help_without_yolo_dependencies():
                     else:
                         raise AssertionError('Expected optional dependency error')
             try:
-                ObjectDetectionYOLO('detector')._preview_assets(Path(folder), [])
+                ObjectDetectorYOLO('detector')._preview_assets(Path(folder), [])
             except ImportError as error:
                 assert 'collectra[yolo]' in str(error)
             else:

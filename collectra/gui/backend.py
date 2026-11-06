@@ -183,8 +183,14 @@ class GUIBackend:
         layouts = metadata.get("layouts", [])
         for index, filename in enumerate(layouts if isinstance(layouts, list) else []):
             if isinstance(filename, str) and filename.strip():
-                entries.append((f"pipeline:{index}", "pipeline", Path(filename).stem,
-                                Path(self._pipeline.path) / filename))
+                entries.append(
+                    (
+                        f"pipeline:{index}",
+                        "pipeline",
+                        Path(filename).stem,
+                        Path(self._pipeline.path) / filename,
+                    )
+                )
         if self._arrangement:
             for path in self._arrangement.custom_layouts():
                 entries.append((f"custom:{path.name}", "custom", path.stem, path))
@@ -195,7 +201,10 @@ class GUIBackend:
         if self._window is None:
             return {"success": False, "error": "No GUI window is open."}
         if not self._update_lock.acquire(blocking=False):
-            return {"success": False, "error": "Wait for the update to finish before restarting."}
+            return {
+                "success": False,
+                "error": "Wait for the update to finish before restarting.",
+            }
         try:
             if self._collectra_folders:
                 self._save_folder_session()
@@ -215,24 +224,35 @@ class GUIBackend:
         metadata = getattr(self._pipeline, "pipeline_metadata", {})
         return {
             "success": True,
-            "pipeline_name": metadata.get("name") or getattr(self._pipeline, "name", "Pipeline"),
-            "layouts": [{"id": key, "source": source, "name": name}
-                        for key, source, name, _ in self._available_layouts()],
+            "pipeline_name": metadata.get("name")
+            or getattr(self._pipeline, "name", "Pipeline"),
+            "layouts": [
+                {"id": key, "source": source, "name": name}
+                for key, source, name, _ in self._available_layouts()
+            ],
         }
 
     def check_updates(self) -> dict:
         from .updates import collectra_repository, inspect_repository
 
         if not self._update_lock.acquire(blocking=False):
-            return {"success": False, "error": "An update operation is already running."}
+            return {
+                "success": False,
+                "error": "An update operation is already running.",
+            }
         try:
             targets = [
                 ("pipeline", getattr(self._pipeline, "path", None), "Pipeline"),
                 ("collectra", collectra_repository(), "Collectra"),
             ]
-            return {"success": True, "restart_required": self._restart_required, "repositories": [
-                {"id": key, **inspect_repository(root, label)} for key, root, label in targets
-            ]}
+            return {
+                "success": True,
+                "restart_required": self._restart_required,
+                "repositories": [
+                    {"id": key, **inspect_repository(root, label)}
+                    for key, root, label in targets
+                ],
+            }
         finally:
             self._update_lock.release()
 
@@ -242,10 +262,14 @@ class GUIBackend:
         if target not in {"pipeline", "collectra"}:
             return {"success": False, "error": "Unknown update target."}
         if not self._update_lock.acquire(blocking=False):
-            return {"success": False, "error": "An update operation is already running."}
+            return {
+                "success": False,
+                "error": "An update operation is already running.",
+            }
         try:
             root, label = (
-                (getattr(self._pipeline, "path", None), "Pipeline") if target == "pipeline"
+                (getattr(self._pipeline, "path", None), "Pipeline")
+                if target == "pipeline"
                 else (collectra_repository(), "Collectra")
             )
             repository = {"id": target, **update_repository(root, label)}
@@ -289,7 +313,11 @@ class GUIBackend:
         """Persist a chosen layout without touching the loaded results."""
         result = self.load_layout(layout_id)
         if not result["success"] or self._arrangement is None:
-            return result if not result["success"] else {"success": False, "error": "No pipeline open."}
+            return (
+                result
+                if not result["success"]
+                else {"success": False, "error": "No pipeline open."}
+            )
         try:
             self._arrangement._write_file(
                 self._arrangement.path, result["arrangement"], raise_errors=True
@@ -676,7 +704,7 @@ class GUIBackend:
         active_ids, can use node_types[label] to show the node's real type,
         and node_ids[label] to show the real results.yaml id(s) — a list,
         not a single value, since a detector-type node (e.g.
-        collectra.ObjectDetectionYOLO) declares one output label in the
+        collectra.ObjectDetectorYOLO) declares one output label in the
         pipeline but can produce any number of real instances per page
         (one per detected object), all sharing that same label.
         node_parents supplies each instance's actual direct parent ids so
@@ -716,7 +744,8 @@ class GUIBackend:
                 "node_ids": node_ids,
                 "node_parents": {
                     node_id: graph.parents(node_id)
-                    for node_id in graph.nodes if graph.get_node(node_id)
+                    for node_id in graph.nodes
+                    if graph.get_node(node_id)
                 },
                 "crop_labels": sorted(crop_labels),
             }
@@ -760,7 +789,12 @@ class GUIBackend:
             for node_id in self._graph.nodes
             if self._graph.get_node(node_id)
         }
-        return DisplayContext(records, Path(self._yaml_path).parent, rgb_view=rgb_view, max_pixels=self._max_pixels)
+        return DisplayContext(
+            records,
+            Path(self._yaml_path).parent,
+            rgb_view=rgb_view,
+            max_pixels=self._max_pixels,
+        )
 
     def get_artefact_display(self, node_id: str = "", rgb_view: int = 0) -> dict:
         """Ask the actual artefact class how it should be presented."""
@@ -795,16 +829,25 @@ class GUIBackend:
             return {"success": False, "error": str(e)}
 
     def _classifier_slots(self, label: str) -> list[dict]:
-        """The classifier tasks that take images of ``label``, with their classes."""
+        """The tasks that take images of ``label`` and output Links, with their classes.
+
+        A task whose outputs are Links sets a Link by choosing one of them.
+        """
         try:
             nodes = self._pipeline.gui_graph()["nodes"]
         except Exception:
             # A pipeline that cannot be read only costs the extra choices.
             return []
+        link_nodes = {
+            node["id"] for node in nodes if "collectra.Link" in node.get("types", [])
+        }
         return [
             {"task": node["id"], "options": node["outputs"]}
             for node in nodes
-            if "ImageClassifier" in node["detail"] and label in node["inputs"]
+            if node["nodeType"] == "Task"
+            and label in node["inputs"]
+            and node["outputs"]
+            and set(node["outputs"]) <= link_nodes
         ]
 
     def _add_classifier_slots(self, links: list[dict], label: str) -> None:
@@ -881,15 +924,25 @@ class GUIBackend:
                 collectra_file = CollectraFile.from_data(target.parent)
                 graph = CollectraGraph.from_collectra_file(collectra_file)
                 records = {
-                    key: {**graph.get_node(key).model_dump(), "label": graph.get_node(key).label}
-                    for key in graph.nodes if graph.get_node(key)
+                    key: {
+                        **graph.get_node(key).model_dump(),
+                        "label": graph.get_node(key).label,
+                    }
+                    for key in graph.nodes
+                    if graph.get_node(key)
                 }
-                context = DisplayContext(records, target.parent, max_pixels=self._max_pixels)
+                context = DisplayContext(
+                    records, target.parent, max_pixels=self._max_pixels
+                )
                 item = context.artefact(graph.resolve_id(node_id))
                 if isinstance(item, Link):
                     item = item.resolve()
                 changed = paint_mask(item, strokes, orientation)
-                return {"success": True, "changed": changed, "segmentation": segmentation(context, item)}
+                return {
+                    "success": True,
+                    "changed": changed,
+                    "segmentation": segmentation(context, item),
+                }
         except Exception as error:
             return {"success": False, "error": str(error)}
 
@@ -922,10 +975,16 @@ class GUIBackend:
                     collectra_file = CollectraFile.from_data(target.parent)
                     graph = CollectraGraph.from_collectra_file(collectra_file)
                 records = {
-                    key: {**graph.get_node(key).model_dump(), "label": graph.get_node(key).label}
-                    for key in graph.nodes if graph.get_node(key)
+                    key: {
+                        **graph.get_node(key).model_dump(),
+                        "label": graph.get_node(key).label,
+                    }
+                    for key in graph.nodes
+                    if graph.get_node(key)
                 }
-                context = DisplayContext(records, target.parent, max_pixels=self._max_pixels)
+                context = DisplayContext(
+                    records, target.parent, max_pixels=self._max_pixels
+                )
                 item = context.artefact(graph.resolve_id(node_id))
                 view = item.display(context)
                 if view.get("kind") != "text" or not view.get("editable"):
@@ -1502,7 +1561,10 @@ class GUIBackend:
         from collectra.display import DisplayContext
 
         records = {
-            node_id: {**graph.get_node(node_id).model_dump(), "label": graph.get_node(node_id).label}
+            node_id: {
+                **graph.get_node(node_id).model_dump(),
+                "label": graph.get_node(node_id).label,
+            }
             for node_id in graph.nodes
             if graph.get_node(node_id)
         }
@@ -1568,7 +1630,10 @@ class GUIBackend:
                     graph, Path(folder["path"]), max_chars
                 )
             except Exception:
-                cells, editable = {}, []  # a folder that cannot be loaded is still a row
+                cells, editable = (
+                    {},
+                    [],
+                )  # a folder that cannot be loaded is still a row
             for label, text in cells.items():
                 if label not in columns:
                     columns.append(label)  # made by hand, not in the pipeline
@@ -1640,10 +1705,15 @@ class GUIBackend:
         for edit in edits or []:
             by_page.setdefault(edit.get("index"), []).append(edit)
         for index, page_edits in by_page.items():
-            def skip(edit, reason):
-                skipped.append({"index": index, "label": edit.get("label"), "reason": reason})
 
-            if not isinstance(index, int) or not 0 <= index < len(self._collectra_folders):
+            def skip(edit, reason):
+                skipped.append(
+                    {"index": index, "label": edit.get("label"), "reason": reason}
+                )
+
+            if not isinstance(index, int) or not 0 <= index < len(
+                self._collectra_folders
+            ):
                 for edit in page_edits:
                     skip(edit, "No such page")
                 continue
@@ -2157,7 +2227,9 @@ def _set_macos_app_name(name: str) -> None:
         # A packaged launcher also supplies these names in its Info.plist.
         import logging
 
-        logging.getLogger(__name__).warning("Could not set macOS application name", exc_info=True)
+        logging.getLogger(__name__).warning(
+            "Could not set macOS application name", exc_info=True
+        )
 
 
 def _disable_macos_tabbing() -> None:
@@ -2227,8 +2299,14 @@ def start(
         import os
         import sys
 
-        arguments = [sys.executable, "-m", "collectra.main", "--pipeline",
-                     str(Path(pipeline.path).resolve() / "pipeline.yaml"), "gui"]
+        arguments = [
+            sys.executable,
+            "-m",
+            "collectra.main",
+            "--pipeline",
+            str(Path(pipeline.path).resolve() / "pipeline.yaml"),
+            "gui",
+        ]
         if debug:
             arguments.append("--debug")
         arguments.extend(["--max-pixels", str(max_pixels)])

@@ -2667,11 +2667,11 @@
         }
 
         // the live pipeline graph's own node-kind classification —
-        // 'llm'/'detector'/'processor' are processing steps, transparent to
-        // imageCropDescendantLabels' walk; anything else is a data node.
+        // a 'Task' is a processing step, transparent to
+        // imageCropDescendantLabels' walk; an 'Artefact' is a data node.
         function isDagTaskNode(label) {
             const node = lastDagNodes.find((n) => n.id === label);
-            return !!node && (node.nodeType === 'llm' || node.nodeType === 'detector' || node.nodeType === 'processor');
+            return !!node && node.nodeType === 'Task';
         }
 
         // The ImageCrop-type crop labels one data-generation downstream of the
@@ -4720,7 +4720,7 @@
                         }
                     },
                     {
-                        selector: 'node[nodeType = "llm"], node[nodeType = "detector"], node[nodeType = "processor"]',
+                        selector: 'node[nodeType = "Task"]',
                         style: {
                             'shape': 'round-rectangle',
                             'height': 58,
@@ -5929,9 +5929,8 @@
         const PAGE_NODE_RE = /^Page\d+_/;
 
         function populateTabs(nodes) {
-            const taskNodeTypes = new Set(['llm', 'detector', 'processor']);
-            const tasks     = nodes.filter(n => taskNodeTypes.has(n.nodeType));
-            const artefacts = nodes.filter(n => !taskNodeTypes.has(n.nodeType) && !PAGE_NODE_RE.test(n.id));
+            const tasks     = nodes.filter(n => n.nodeType === 'Task');
+            const artefacts = nodes.filter(n => n.nodeType !== 'Task' && !PAGE_NODE_RE.test(n.id));
 
             const artefactsList = document.getElementById('artefactsList');
             const tasksList     = document.getElementById('tasksList');

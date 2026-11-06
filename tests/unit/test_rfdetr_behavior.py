@@ -1,4 +1,4 @@
-"""Behavioral unit tests for ObjectDetectionRFDETR.
+"""Behavioral unit tests for ObjectDetectorRFDETR.
 
 These tests pin down three behaviors that the production code currently
 violates. They are written to fail against the current implementation in
@@ -39,7 +39,7 @@ except Exception:  # pragma: no cover - environment guard
     sys.modules["cv2"] = MagicMock()
 
 from collectra.tasks.object_detection import rfdetr as rfdetr_module  # noqa: E402
-from collectra.tasks.object_detection.rfdetr import ObjectDetectionRFDETR  # noqa: E402
+from collectra.tasks.object_detection.rfdetr import ObjectDetectorRFDETR  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -103,7 +103,7 @@ def test_init_model_accepts_other_rfdetr_variants(patched_rfdetr_base):
         pass
 
     model = OtherRFDETR()
-    task = ObjectDetectionRFDETR(name="rfdetr-other", model=model)
+    task = ObjectDetectorRFDETR(name="rfdetr-other", model=model)
 
     task._init_model()
     task._init_model()
@@ -141,7 +141,7 @@ def test_load_named_variant(name, class_name, monkeypatch):
             )
         ),
     )
-    task = ObjectDetectionRFDETR(name="detector", model=name)
+    task = ObjectDetectorRFDETR(name="detector", model=name)
     task.original_model_path = Path("previous.pt")
     monkeypatch.setattr(task, "_select_device", lambda: "cpu")
 
@@ -205,7 +205,7 @@ def test_train_fold_uses_pretrain_weights_from_original_model_path(
     must instantiate ``RFDETRBase(pretrain_weights=<that path>)`` for the
     model that gets trained - not a bare ``RFDETRBase()``.
     """
-    task = ObjectDetectionRFDETR(name="rfdetr-train", model=fake_checkpoint)
+    task = ObjectDetectorRFDETR(name="rfdetr-train", model=fake_checkpoint)
     # Mirror the real call path: train() runs _init_model() before _train_fold,
     # so self.model gets constructed via _load with pretrain_weights wired.
     task._init_model()
@@ -220,9 +220,9 @@ def test_train_fold_uses_pretrain_weights_from_original_model_path(
     # with pretrain_weights itself; that would mask the real bug.
     with (
         patch.object(
-            ObjectDetectionRFDETR, "_write_coco_dataset", return_value=log / "dataset"
+            ObjectDetectorRFDETR, "_write_coco_dataset", return_value=log / "dataset"
         ),
-        patch.object(ObjectDetectionRFDETR, "_reload"),
+        patch.object(ObjectDetectorRFDETR, "_reload"),
     ):
         task._train_fold(
             train_samples=[],
@@ -271,10 +271,10 @@ def test_train_raises_for_nonexistent_model_path(
     bogus = tmp_path / "does_not_exist.pt"
     assert not bogus.exists()
 
-    task = ObjectDetectionRFDETR(name="rfdetr-train", model=bogus)
+    task = ObjectDetectorRFDETR(name="rfdetr-train", model=bogus)
 
     # Spy on the dataset writer to confirm we error out *before* it runs.
-    with patch.object(ObjectDetectionRFDETR, "_write_coco_dataset") as write_mock:
+    with patch.object(ObjectDetectorRFDETR, "_write_coco_dataset") as write_mock:
         with pytest.raises(ValueError):
             task._train(
                 log="run",
@@ -298,16 +298,16 @@ def test_train_raises_when_load_returns_non_rfdetrbase(
     We simulate this by patching ``_load`` to leave ``self.model`` as a
     non-RFDETRBase value.
     """
-    task = ObjectDetectionRFDETR(name="rfdetr-train", model=fake_checkpoint)
+    task = ObjectDetectorRFDETR(name="rfdetr-train", model=fake_checkpoint)
 
     def _bad_load(self):
         # Pretend loading "succeeded" but produced the wrong type.
         self.model = object()
 
     with patch.object(
-        ObjectDetectionRFDETR, "_load", autospec=True, side_effect=_bad_load
+        ObjectDetectorRFDETR, "_load", autospec=True, side_effect=_bad_load
     ):
-        with patch.object(ObjectDetectionRFDETR, "_write_coco_dataset") as write_mock:
+        with patch.object(ObjectDetectorRFDETR, "_write_coco_dataset") as write_mock:
             with pytest.raises(ValueError):
                 task._train(
                     log="run",
@@ -337,7 +337,7 @@ def test_load_warns_when_classes_json_missing(
     sibling = fake_checkpoint.parent / "classes.json"
     assert not sibling.exists()
 
-    task = ObjectDetectionRFDETR(name="rfdetr-load", model=fake_checkpoint)
+    task = ObjectDetectorRFDETR(name="rfdetr-load", model=fake_checkpoint)
 
     with caplog.at_level(logging.WARNING, logger=rfdetr_module.logger.name):
         task._load()
@@ -366,7 +366,7 @@ def test_load_does_not_warn_when_classes_json_present(
     classes_file = fake_checkpoint.parent / "classes.json"
     classes_file.write_text(json.dumps({"classes": ["a", "b"]}))
 
-    task = ObjectDetectionRFDETR(name="rfdetr-load", model=fake_checkpoint)
+    task = ObjectDetectorRFDETR(name="rfdetr-load", model=fake_checkpoint)
 
     with caplog.at_level(logging.WARNING, logger=rfdetr_module.logger.name):
         task._load()
@@ -404,7 +404,7 @@ def test_prefetch_batches_predictions_and_run_reuses_them(
             )
             return [one for _ in batch] if isinstance(inputs, list) else one
 
-    task = ObjectDetectionRFDETR(name="rfdetr-batch", model=BatchModel())
+    task = ObjectDetectorRFDETR(name="rfdetr-batch", model=BatchModel())
     task._categories = ["hourglass"]
     task.batch_size = 2
     task.resolution = 960

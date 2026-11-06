@@ -37,7 +37,7 @@ def yolo_device(device, num_gpus=1):
     return device
 
 
-class ImageSegmentationYOLO(SegmentationTrainingData, Task):
+class ImageSegmenterYOLO(SegmentationTrainingData, Task):
     """Predict one source-aligned ImageSegmentation for each detected instance.
 
     ``model`` is an Ultralytics segmentation model name or a local YOLO
@@ -90,7 +90,7 @@ class ImageSegmentationYOLO(SegmentationTrainingData, Task):
         if self._predictor is None:
             predictor = get_yolo_class()(self._model_path())
             if predictor.task != "segment":
-                raise ValueError("ImageSegmentationYOLO requires a YOLO segmentation model (-seg)")
+                raise ValueError("ImageSegmenterYOLO requires a YOLO segmentation model (-seg)")
             self._predictor = predictor
 
     @threading_locked()
@@ -253,3 +253,7 @@ class ImageSegmentationYOLO(SegmentationTrainingData, Task):
         if not keep_log:
             shutil.rmtree(output)
         return destination
+
+
+# The former name of ImageSegmenterYOLO.
+ImageSegmentationYOLO = ImageSegmenterYOLO

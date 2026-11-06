@@ -2,8 +2,6 @@
 // nodes and edges (plain data) — not from a drawn graph — so they are available for
 // every node whatever panels happen to be open.
 
-const LINEAGE_TASK_TYPES = new Set(['llm', 'detector', 'processor']);
-
 // ids of every node of the same kind (tasks with tasks, data with data) reachable from
 // nodeId, at any depth, in discovery order. direction is 'ancestors' or 'descendants'.
 // Nodes of the other kind are walked through but not listed. skip(id) leaves out nodes
@@ -17,7 +15,7 @@ function lineageNeighbors(nodeId, direction, nodes, edges, skip = () => false) {
         if (!next.has(from)) next.set(from, []);
         next.get(from).push(to);
     }
-    const isTask = (id) => byId.has(id) && LINEAGE_TASK_TYPES.has(byId.get(id).nodeType);
+    const isTask = (id) => byId.has(id) && byId.get(id).nodeType === 'Task';
     const startIsTask = isTask(nodeId);
     const visited = new Set([nodeId]);
     const queue = [nodeId];

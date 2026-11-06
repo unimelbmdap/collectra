@@ -15,7 +15,7 @@ from .base import (
     Batch,
     Epochs,
     LearningRate,
-    ObjectDetectionTask,
+    ObjectDetector,
     RunResolution,
     Threshold,
     TrainResolution,
@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-__all__ = ["ObjectDetectionRFDETR"]
+__all__ = ["ObjectDetectorRFDETR", "ObjectDetectionRFDETR"]
 
 _MODEL_VARIANTS = {
     "base": "RFDETRBase",
@@ -130,7 +130,7 @@ def load_rfdetr_model(model_path: str | Path) -> RFDETR:
     logger.error("Failed to load RF-DETR model from %s. Errors: %s", model_path, errors)
 
 
-class ObjectDetectionRFDETR(RFDETRAdaptationCommands, ObjectDetectionTask):
+class ObjectDetectorRFDETR(RFDETRAdaptationCommands, ObjectDetector):
     """RF-DETR task backed by the Roboflow rfdetr package."""
 
     model: Any = None  # a path or a loaded RF-DETR model
@@ -976,3 +976,7 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, ObjectDetectionTask):
             f"Best RF-DETR model saved to: {results.save_dir / 'weights' / 'best.pt'}"
         )
         return results
+
+
+# The former name of ObjectDetectorRFDETR.
+ObjectDetectionRFDETR = ObjectDetectorRFDETR

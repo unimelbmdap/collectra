@@ -15,18 +15,25 @@ _EXPORTS = {
     "Task": "collectra.tasks.base",
     "TaskNode": "collectra.tasks.base",
     "YOLOTask": "collectra.tasks.machine_learning.yolo",
-    "ObjectDetectionTask": "collectra.tasks.object_detection.base",
-    "ObjectDetectionYOLO": "collectra.tasks.object_detection.yolo",
+    "ObjectDetector": "collectra.tasks.object_detection.base",
+    "ObjectDetectionTask": "collectra.tasks.object_detection.base",  # the former name
+    "ObjectDetectorYOLO": "collectra.tasks.object_detection.yolo",
+    "ObjectDetectionYOLO": "collectra.tasks.object_detection.yolo",  # the former name
     "ImageClassifierYOLO": "collectra.tasks.image_classifier.yolo",
     "ImageClassifierTorchvision": "collectra.tasks.image_classifier.torchvision",
     "ImageClassifierHuggingFace": "collectra.tasks.image_classifier.huggingface",
-    "ObjectDetectionDETR": "collectra.tasks.object_detection.detr",
+    "ObjectDetectorDETR": "collectra.tasks.object_detection.detr",
+    "ObjectDetectionDETR": "collectra.tasks.object_detection.detr",  # the former name
     "DetectionTrainResult": "collectra.tasks.object_detection.detr",
-    "ObjectDetectionRFDETR": "collectra.tasks.object_detection.rfdetr",
+    "ObjectDetectorRFDETR": "collectra.tasks.object_detection.rfdetr",
+    "ObjectDetectionRFDETR": "collectra.tasks.object_detection.rfdetr",  # the former name
     "ImageOrienter": "collectra.tasks.machine_learning.orienters",
-    "ImageSegmentationSam3": "collectra.tasks.image_segmentation.sam3",
-    "ImageSegmentationRFDETR": "collectra.tasks.image_segmentation.rfdetr",
-    "ImageSegmentationYOLO": "collectra.tasks.image_segmentation.yolo",
+    "ImageSegmenterSam3": "collectra.tasks.image_segmentation.sam3",
+    "ImageSegmentationSam3": "collectra.tasks.image_segmentation.sam3",  # the former name
+    "ImageSegmenterRFDETR": "collectra.tasks.image_segmentation.rfdetr",
+    "ImageSegmentationRFDETR": "collectra.tasks.image_segmentation.rfdetr",  # the former name
+    "ImageSegmenterYOLO": "collectra.tasks.image_segmentation.yolo",
+    "ImageSegmentationYOLO": "collectra.tasks.image_segmentation.yolo",  # the former name
     "LLM": "collectra.tasks.llms",
     "LLMCanonicaliser": "collectra.tasks.canonicalisers",
     "IRNResolver": "collectra.tasks.irn_resolvers",

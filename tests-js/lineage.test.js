@@ -7,9 +7,9 @@ const between = (from, to) => html.slice(html.indexOf(from), html.indexOf(to, ht
 // sheet(data) -> detect(task) -> crop(data) -> read(task) -> text(data)
 //                            \-> hand(data)
 const nodes = [
-    {id: 'sheet', nodeType: 'data'}, {id: 'detect', nodeType: 'detector'},
-    {id: 'crop', nodeType: 'data'}, {id: 'hand', nodeType: 'data'},
-    {id: 'read', nodeType: 'llm'}, {id: 'text', nodeType: 'data'},
+    {id: 'sheet', nodeType: 'Artefact'}, {id: 'detect', nodeType: 'Task'},
+    {id: 'crop', nodeType: 'Artefact'}, {id: 'hand', nodeType: 'Artefact'},
+    {id: 'read', nodeType: 'Task'}, {id: 'text', nodeType: 'Artefact'},
 ];
 const edges = [
     {source: 'sheet', target: 'detect'}, {source: 'detect', target: 'crop'}, {source: 'detect', target: 'hand'},

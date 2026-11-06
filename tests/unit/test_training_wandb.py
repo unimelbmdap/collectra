@@ -14,9 +14,9 @@ from collectra.cli import invoke
         ("image_classifier.torchvision", "ImageClassifierTorchvision"),
         ("image_classifier.huggingface", "ImageClassifierHuggingFace"),
         ("image_classifier.yolo", "ImageClassifierYOLO"),
-        ("object_detection.yolo", "ObjectDetectionYOLO"),
-        ("object_detection.detr", "ObjectDetectionDETR"),
-        ("object_detection.rfdetr", "ObjectDetectionRFDETR"),
+        ("object_detection.yolo", "ObjectDetectorYOLO"),
+        ("object_detection.detr", "ObjectDetectorDETR"),
+        ("object_detection.rfdetr", "ObjectDetectorRFDETR"),
     ],
 )
 def test_training_cli_wandb_is_opt_in(module_name, class_name, monkeypatch):
@@ -75,8 +75,8 @@ def test_yolo_wandb_scoped_to_training(enabled, fails, monkeypatch):
 
 
 def test_rfdetr_wandb_backend_defaults_off(tmp_path):
-    from collectra import ObjectDetectionRFDETR
+    from collectra import ObjectDetectorRFDETR
 
-    task = ObjectDetectionRFDETR("detector")
+    task = ObjectDetectorRFDETR("detector")
     assert task._prepare_params(output_dir=tmp_path)["wandb"] is False
     assert task._prepare_params(output_dir=tmp_path, wandb=True)["wandb"] is True

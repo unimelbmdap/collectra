@@ -145,10 +145,10 @@ def training_hooks(output, threshold, has_validation):
 
 
 def launch(config_path):
-    from .rfdetr import ImageSegmentationRFDETR
+    from .rfdetr import ImageSegmenterRFDETR
 
     config = json.loads(Path(config_path).read_text())
-    task = ImageSegmentationRFDETR(
+    task = ImageSegmenterRFDETR(
         "train", model=config["model"], device=config["device"], resolution=config["resolution"],
     )
     with training_hooks(config["params"]["output_dir"], config["threshold"], config["has_validation"]):

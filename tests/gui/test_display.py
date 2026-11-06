@@ -446,7 +446,7 @@ def test_unannotated_detector_output_has_crop_type(tmp_path):
     pipeline_file.write_text(
         "collectra_pipeline_metadata: {name: test, ext: sandglass, version: '1.0'}\n"
         "detector:\n"
-        "  type: collectra.ObjectDetectionYOLO\n"
+        "  type: collectra.ObjectDetectorYOLO\n"
         "  input: image\n"
         "  output: sandglass\n"
     )
@@ -457,7 +457,7 @@ def test_unannotated_detector_output_has_crop_type(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "task_type", ["ObjectDetectionRFDETR", "ObjectDetectionDETR"]
+    "task_type", ["ObjectDetectorRFDETR", "ObjectDetectorDETR"]
 )
 def test_unannotated_detector_output_has_crop_type_for_every_detector(
     tmp_path, task_type
@@ -606,15 +606,18 @@ def test_an_image_view_lists_its_link_children(backend):
     assert view(backend, "link")["links"] == [{"id": "link", "name": "link"}]
 
 
-def with_classifier(backend, inputs=("crop",), detail="collectra.ImageClassifierTorchvision"):
+def with_classifier(backend, inputs=("crop",), output_type="collectra.Link"):
+    """A graph with a task that outputs ``link`` and ``printed``, and one elsewhere."""
+
+    def artefact(name, types):
+        return {"id": name, "nodeType": "Artefact", "types": types, "inputs": [], "outputs": []}
+
     nodes = [
-        {
-            "id": "classify",
-            "detail": detail,
-            "inputs": list(inputs),
-            "outputs": ["link", "printed"],
-        },
-        {"id": "other", "detail": "collectra.ImageClassifierTorchvision", "inputs": ["x"], "outputs": ["a"]},
+        {"id": "classify", "nodeType": "Task", "types": [], "inputs": list(inputs), "outputs": ["link", "printed"]},
+        artefact("link", [output_type]),
+        artefact("printed", [output_type]),
+        {"id": "other", "nodeType": "Task", "types": [], "inputs": ["x"], "outputs": ["a"]},
+        artefact("a", ["collectra.Link"]),
     ]
     backend._pipeline = SimpleNamespace(ext="collectra", gui_graph=lambda: {"nodes": nodes})
 
@@ -643,7 +646,7 @@ def test_a_link_with_another_name_stays_beside_the_classifier_slot(backend):
 
 
 def test_only_classifier_tasks_that_take_the_image_are_offered(backend):
-    with_classifier(backend, detail="collectra.ObjectDetectionYOLO")
+    with_classifier(backend, output_type="collectra.ImageCrop")
     assert view(backend, "different")["links"] == []
     with_classifier(backend, inputs=("elsewhere",))
     assert view(backend, "different")["links"] == []

@@ -37,13 +37,13 @@ def test_gui_and_pipeline_discovery_with_ml_backends_unavailable():
             root = Path(folder)
             config = {'collectra_pipeline_metadata': {'name': 'Viewer', 'ext': 'collectra', 'version': '1'}}
             for name, kind in [
-                ('rfdetr', 'ObjectDetectionRFDETR'), ('detr', 'ObjectDetectionDETR'),
-                ('yolo', 'ObjectDetectionYOLO'), ('classifier', 'ImageClassifierTorchvision'),
+                ('rfdetr', 'ObjectDetectorRFDETR'), ('detr', 'ObjectDetectorDETR'),
+                ('yolo', 'ObjectDetectorYOLO'), ('classifier', 'ImageClassifierTorchvision'),
                 ('huggingface', 'ImageClassifierHuggingFace'), ('orienter', 'ImageOrienter'),
                 ('llm', 'LLM'),
-                ('sam3', 'ImageSegmentationSam3'),
-                ('seg_rfdetr', 'ImageSegmentationRFDETR'),
-                ('seg_yolo', 'ImageSegmentationYOLO'),
+                ('sam3', 'ImageSegmenterSam3'),
+                ('seg_rfdetr', 'ImageSegmenterRFDETR'),
+                ('seg_yolo', 'ImageSegmenterYOLO'),
             ]:
                 config[name] = {'type': 'collectra.' + kind, 'model': 'unused.pt'}
             pipeline_path = root / 'pipeline.yaml'

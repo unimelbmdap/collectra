@@ -1,4 +1,4 @@
-ObjectDetectionYOLO
+ObjectDetectorYOLO
 ===================
 
 Uses Ultralytics YOLO weights to detect objects and return labelled image crops.
@@ -8,7 +8,7 @@ For example, configure a detector trained to identify specimen labels:
 .. code-block:: yaml
 
     detect_labels:
-      type: collectra.ObjectDetectionYOLO
+      type: collectra.ObjectDetectorYOLO
       model: models/labels.pt
       input: image
       output: [label]

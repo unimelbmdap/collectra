@@ -217,7 +217,7 @@ def launch(config_path):
     config = json.loads(Path(config_path).read_text())
     model = get_yolo_class()(config["model"])
     if model.task != "segment":
-        raise ValueError("ImageSegmentationYOLO requires a YOLO segmentation model (-seg)")
+        raise ValueError("ImageSegmenterYOLO requires a YOLO segmentation model (-seg)")
     (Path(config["params"]["project"]) / config["params"]["name"] / "weights" / "best.pt").unlink(missing_ok=True)
     with YOLOTask("train", model=model)._wandb_logging(False):
         try:

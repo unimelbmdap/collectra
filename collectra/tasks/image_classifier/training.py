@@ -134,7 +134,9 @@ class TorchClassifierTask(Task):
                 train_dir,
                 val_dir,
             )
-            counts = {split: {name: 0 for name in classes} for split in ("train", "val")}
+            counts = {
+                split: {name: 0 for name in classes} for split in ("train", "val")
+            }
             for split, directory in (("train", train_dir), ("val", val_dir)):
                 for name in classes:
                     class_dir = directory / name
@@ -210,8 +212,11 @@ class TorchClassifierTask(Task):
             if export_workers > 0:
                 with ThreadPoolExecutor(max_workers=export_workers) as executor:
                     futures = {
-                        executor.submit(export_job, target, destination):
-                        (image_id, class_name, split)
+                        executor.submit(export_job, target, destination): (
+                            image_id,
+                            class_name,
+                            split,
+                        )
                         for image_id, class_name, split, target, destination in jobs
                     }
                     for future in as_completed(futures):
@@ -430,7 +435,9 @@ class TorchClassifierTask(Task):
             ) as progress:
                 epoch_task_id = progress.add_task("Training epochs...", total=epochs)
                 for epoch in range(1, epochs + 1):
-                    progress.update(epoch_task_id, description=f"Training epoch {epoch}/{epochs}")
+                    progress.update(
+                        epoch_task_id, description=f"Training epoch {epoch}/{epochs}"
+                    )
                     logger.info("Starting epoch %d/%d", epoch, epochs)
                     self.model.train(
                         not freeze
@@ -445,11 +452,17 @@ class TorchClassifierTask(Task):
                         "epoch": epoch,
                         **{f"train_{k}": v for k, v in train_metrics.items()},
                     }
-                    metrics.update({f"val_{k}": v for k, v in (val_metrics or {}).items()})
+                    metrics.update(
+                        {f"val_{k}": v for k, v in (val_metrics or {}).items()}
+                    )
                     history.append(metrics)
                     checkpoint = self._checkpoint(epoch, metrics)
                     torch.save(checkpoint, weights_dir / "last.pt")
-                    score = val_metrics["accuracy"] if val_metrics else train_metrics["accuracy"]
+                    score = (
+                        val_metrics["accuracy"]
+                        if val_metrics
+                        else train_metrics["accuracy"]
+                    )
                     if not math.isfinite(score):
                         raise ValueError("Training produced a non-finite accuracy")
                     if score > best_accuracy:
@@ -510,7 +523,8 @@ class TorchClassifierTask(Task):
             shapes = {name: tuple(tensor.shape) for name, tensor in tensors.items()}
             if first_batch:
                 approximate_mib = sum(
-                    tensor.numel() * tensor.element_size() for tensor in tensors.values()
+                    tensor.numel() * tensor.element_size()
+                    for tensor in tensors.values()
                 ) / (1024 * 1024)
                 logger.info(
                     "%s first batch: input_shapes=%s, labels_shape=%s, dtypes=%s, approx_input_mib=%.1f",

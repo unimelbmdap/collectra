@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from PIL import Image as PILImage
 
-from collectra import Pipeline, Image, ImageCrop, ImageSegmentation, ImageSegmentationRFDETR
+from collectra import Pipeline, Image, ImageCrop, ImageSegmentation, ImageSegmenterRFDETR
 from collectra.cli import invoke
 from collectra.tasks.image_segmentation import rfdetr
 from collectra.tasks.image_segmentation.data import SegmentationSample
@@ -48,7 +48,7 @@ def test_prediction_inverts_crop_and_preserves_parent(sample, tmp_path):
                      x_center=.5, y_center=3.5/8, width_relative=8/12, height_relative=5/8, partition="test")
     local = np.ones((5, 8), dtype=bool)
     local[2, 2] = False
-    task = ImageSegmentationRFDETR("segment", output="text_region", threshold=.7)
+    task = ImageSegmenterRFDETR("segment", output="text_region", threshold=.7)
     task.context.file_path = tmp_path / "results"
     task._predictor = predictor([local])
     result, = task.run(crop)
@@ -72,7 +72,7 @@ def test_pipeline_run_stores_mask_paths_relative_to_results(pipeline, tmp_path, 
     def init_model(task):
         task._predictor = predictor([local])
 
-    monkeypatch.setattr(ImageSegmentationRFDETR, "_init_model", init_model)
+    monkeypatch.setattr(ImageSegmenterRFDETR, "_init_model", init_model)
     pipeline.cli_run([str(page)], output=tmp_path / "out")
     folder = tmp_path / "out" / "page.htr"
     record = yaml.safe_load((folder / "results.yaml").read_text())["text_region"]
@@ -82,7 +82,7 @@ def test_pipeline_run_stores_mask_paths_relative_to_results(pipeline, tmp_path, 
 
 
 def test_segmentation_input_constrains_prediction(sample, tmp_path):
-    task = ImageSegmentationRFDETR("segment", output="text_region")
+    task = ImageSegmenterRFDETR("segment", output="text_region")
     task.context.file_path = tmp_path
     image = sample.instances[0]
     view = image.pil()
@@ -92,7 +92,7 @@ def test_segmentation_input_constrains_prediction(sample, tmp_path):
 
 
 def test_empty_predictions_and_unconfigured_classes(sample, tmp_path):
-    task = ImageSegmentationRFDETR("segment", output="text_region")
+    task = ImageSegmenterRFDETR("segment", output="text_region")
     task.context.file_path = tmp_path
     task._predictor = predictor(np.empty((0, 8, 12)))
     assert task.run(sample.image) == []
@@ -104,7 +104,7 @@ def test_empty_predictions_and_unconfigured_classes(sample, tmp_path):
 def test_lazy_variant_backend(monkeypatch, model, classname):
     backend = SimpleNamespace(**{classname: Mock(return_value=predictor([]))})
     monkeypatch.setattr(rfdetr, "_rfdetr", lambda: backend)
-    task = ImageSegmentationRFDETR("segment", model=model, device="cpu", resolution=384)
+    task = ImageSegmenterRFDETR("segment", model=model, device="cpu", resolution=384)
     task._init_model()
     task._init_model()
     getattr(backend, classname).assert_called_once_with(device="cpu", resolution=384)
@@ -116,7 +116,7 @@ def test_checkpoint_resolves_relative_to_pipeline_and_rejects_detection(monkeypa
     loaded = predictor([])
     loader = Mock(return_value=loaded)
     monkeypatch.setattr(rfdetr, "_rfdetr", lambda: SimpleNamespace(RFDETR=SimpleNamespace(from_checkpoint=loader)))
-    task = ImageSegmentationRFDETR("segment", model="weights.pt")
+    task = ImageSegmenterRFDETR("segment", model="weights.pt")
     task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path)
     task._init_model()
     loader.assert_called_once_with(str(checkpoint), device="cuda")
@@ -127,7 +127,7 @@ def test_checkpoint_resolves_relative_to_pipeline_and_rejects_detection(monkeypa
 
 
 def test_export_keeps_class_names_and_native_loader_decodes_holes(sample, tmp_path, monkeypatch):
-    task = ImageSegmentationRFDETR("segment", output="text_region", prompt="printed page")
+    task = ImageSegmenterRFDETR("segment", output="text_region", prompt="printed page")
     monkeypatch.setattr(task, "_samples", lambda *a, **kw: [sample])
     dataset = task.prepare_training_data([], tmp_path / "dataset")
     annotations = json.loads((dataset / "train/_annotations.coco.json").read_text())
@@ -146,7 +146,7 @@ def pipeline(tmp_path):
     path = tmp_path / "pipeline.yaml"
     path.write_text(yaml.safe_dump({
         "collectra_pipeline_metadata": {"name": "Segments", "ext": "htr", "version": "1"},
-        "segment": {"type": "collectra.ImageSegmentationRFDETR", "input": "page", "output": "text_region"},
+        "segment": {"type": "collectra.ImageSegmenterRFDETR", "input": "page", "output": "text_region"},
     }))
     return Pipeline.from_file(path)
 

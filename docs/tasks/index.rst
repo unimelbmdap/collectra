@@ -33,17 +33,17 @@ Command overview
 
    * - Task class
      - Commands
-   * - ObjectDetectionYOLO
+   * - ObjectDetectorYOLO
      - ``run``, ``train``
-   * - ObjectDetectionRFDETR
+   * - ObjectDetectorRFDETR
      - ``run``, ``train``
-   * - ObjectDetectionDETR
+   * - ObjectDetectorDETR
      - ``run``, ``train``
-   * - ImageSegmentationSam3
+   * - ImageSegmenterSam3
      - ``run``, ``train``
-   * - ImageSegmentationRFDETR
+   * - ImageSegmenterRFDETR
      - ``run``, ``train``
-   * - ImageSegmentationYOLO
+   * - ImageSegmenterYOLO
      - ``run``, ``train``
    * - LineDetectorRLSA
      - ``run``

@@ -55,7 +55,7 @@ WeightDecay = Annotated[
 ]
 
 
-class ObjectDetectionTask(Task):
+class ObjectDetector(Task):
     """Settings and behaviour shared by all object detectors.
 
     Attributes:
@@ -176,7 +176,7 @@ class ObjectDetectionTask(Task):
         A backend that does not predict in batches (it has no ``_predict_batch``)
         does nothing here, and ``run`` predicts each image itself.
         """
-        if type(self)._predict_batch is ObjectDetectionTask._predict_batch:
+        if type(self)._predict_batch is ObjectDetector._predict_batch:
             return
         self._init_model()
         images = [
@@ -200,3 +200,7 @@ class ObjectDetectionTask(Task):
 
     def _init_model(self) -> None:
         raise NotImplementedError
+
+
+# The former name of ObjectDetector.
+ObjectDetectionTask = ObjectDetector

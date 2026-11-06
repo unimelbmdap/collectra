@@ -8,7 +8,7 @@ const fn = (name, kind = 'function') => {
     return html.slice(from, html.indexOf('\n        }\n', from)) + '\n        }\n';
 };
 
-const graph = { success: true, ext: 'grapto', nodes: [{ id: 'a', nodeType: 'data' }], edges: [] };
+const graph = { success: true, ext: 'grapto', nodes: [{ id: 'a', nodeType: 'Artefact' }], edges: [] };
 
 function dagPage({ withElements, initThrows }) {
     const els = {};

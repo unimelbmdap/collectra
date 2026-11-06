@@ -210,11 +210,11 @@ def test_command_adapts_validates_and_preserves_detection_output(detector, tmp_p
         rgb_path,
     )
     output = tmp_path / "fusion.pth"
-    from collectra import ObjectDetectionRFDETR
+    from collectra import ObjectDetectorRFDETR
     from collectra.cli import invoke
 
     invoke(
-        ObjectDetectionRFDETR("detector"),
+        ObjectDetectorRFDETR("detector"),
         [
             "adapt-feature-fusion",
             str(rgb_path),
@@ -238,7 +238,7 @@ def test_command_adapts_validates_and_preserves_detection_output(detector, tmp_p
 
 
 def test_input_channel_command_roundtrip(detector, tmp_path):
-    from collectra import ObjectDetectionRFDETR
+    from collectra import ObjectDetectorRFDETR
     from collectra.cli import invoke
     from collectra.tasks.object_detection.rfdetr_input_adaptation import (
         load_adapted_model,
@@ -257,7 +257,7 @@ def test_input_channel_command_roundtrip(detector, tmp_path):
     )
     output = tmp_path / "expanded.pth"
     invoke(
-        ObjectDetectionRFDETR("detector"),
+        ObjectDetectorRFDETR("detector"),
         [
             "adapt-input-channels",
             str(source),

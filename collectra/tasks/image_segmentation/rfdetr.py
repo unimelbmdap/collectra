@@ -45,7 +45,7 @@ def _rfdetr():
     return rfdetr
 
 
-class ImageSegmentationRFDETR(SegmentationTrainingData, Task):
+class ImageSegmenterRFDETR(SegmentationTrainingData, Task):
     """Predict one source-aligned ImageSegmentation for each detected instance.
 
     ``model`` is a segmentation variant (small by default) or a local RF-DETR
@@ -103,7 +103,7 @@ class ImageSegmentationRFDETR(SegmentationTrainingData, Task):
                 raise FileNotFoundError(checkpoint)
             predictor = backend.RFDETR.from_checkpoint(str(checkpoint), **options)
         if not predictor.model_config.segmentation_head:
-            raise ValueError("ImageSegmentationRFDETR requires an RF-DETR segmentation checkpoint")
+            raise ValueError("ImageSegmenterRFDETR requires an RF-DETR segmentation checkpoint")
         self._predictor = predictor
 
     @threading_locked()
@@ -274,3 +274,7 @@ class ImageSegmentationRFDETR(SegmentationTrainingData, Task):
         if not keep_log:
             shutil.rmtree(output)
         return destination
+
+
+# The former name of ImageSegmenterRFDETR.
+ImageSegmentationRFDETR = ImageSegmenterRFDETR

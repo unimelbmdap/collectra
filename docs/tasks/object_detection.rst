@@ -15,7 +15,7 @@ Use annotated crops with source-image relationships for training.
 Shared settings
 ---------------
 
-The three detectors inherit from ``collectra.ObjectDetectionTask``, which
+The three detectors inherit from ``collectra.ObjectDetector``, which
 declares the settings they have in common. Give them in the task's
 ``pipeline.yaml`` entry; ``run`` and ``train`` use them unless an option such as
 ``--epochs`` or ``--resolution`` is given for that command.
@@ -23,7 +23,7 @@ declares the settings they have in common. Give them in the task's
 .. code-block:: yaml
 
     label_detector:
-      type: collectra.ObjectDetectionYOLO
+      type: collectra.ObjectDetectorYOLO
       model: label_detector.pt
       input: specimen_sheet
       output: [primary_label, handwritten_data]
@@ -46,7 +46,7 @@ page. A setting a detector does not know is reported with a warning, naming the
 settings it does understand. The old name ``imgsz`` and YOLO's ``lr0`` are still
 accepted, with a warning, as ``resolution`` and ``learning_rate``.
 
-To write your own detector, subclass ``ObjectDetectionTask`` and implement
+To write your own detector, subclass ``ObjectDetector`` and implement
 ``_init_model``, ``run`` and ``train``. A detector that can predict several
 images at once also implements ``_predict_batch``, and ``prefetch`` then works
 for it without more code.

@@ -139,10 +139,10 @@ def test_task_run_command_accepts_force(tmp_path, monkeypatch):
 
 
 def test_detector_run_commands_accept_force(capsys):
-    from collectra.tasks.object_detection.rfdetr import ObjectDetectionRFDETR
-    from collectra.tasks.object_detection.yolo import ObjectDetectionYOLO
+    from collectra.tasks.object_detection.rfdetr import ObjectDetectorRFDETR
+    from collectra.tasks.object_detection.yolo import ObjectDetectorYOLO
 
-    for task in (ObjectDetectionYOLO("y"), ObjectDetectionRFDETR("r")):
+    for task in (ObjectDetectorYOLO("y"), ObjectDetectorRFDETR("r")):
         with pytest.raises(SystemExit):
             invoke(task, ["run", "--help"], name="task")
         assert "--force" in capsys.readouterr().out

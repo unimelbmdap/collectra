@@ -2329,7 +2329,7 @@ class TestGetActiveNodeIds:
         temp_parent_folder_with_subfolders,
         sample_yaml_data,
     ):
-        # A detector node (e.g. collectra.ObjectDetectionYOLO) declares one
+        # A detector node (e.g. collectra.ObjectDetectorYOLO) declares one
         # output label in pipeline.yaml but can produce any number of real
         # instances per page — all of them must be preserved, not just the
         # last one processed.

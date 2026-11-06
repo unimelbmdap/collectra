@@ -12,7 +12,7 @@ import tifffile
 pytest.importorskip("ultralytics")
 from ultralytics import YOLO
 from ultralytics.nn.tasks import DetectionModel
-from collectra import Image, ObjectDetectionYOLO
+from collectra import Image, ObjectDetectorYOLO
 from collectra.tasks.object_detection.yolo_feature_fusion import (
     FeatureFusionDetectionModel,
     FeatureFusionDetectionTrainer,
@@ -102,11 +102,11 @@ def test_checkpoint_command_reload_in_fresh_process(rgb_yolo, tmp_path):
     source = tmp_path / "rgb.pt"
     rgb_yolo.save(source)
     path = tmp_path / "fusion.pt"
-    from collectra import ObjectDetectionYOLO
+    from collectra import ObjectDetectorYOLO
     from collectra.cli import invoke
 
     invoke(
-        ObjectDetectionYOLO("detector"),
+        ObjectDetectorYOLO("detector"),
         [
             "adapt-feature-fusion",
             str(source),
@@ -188,7 +188,7 @@ def test_collectra_tiff_inference_and_fusion_channel_check(
         return result
 
     monkeypatch.setattr(DetectionPredictor, "preprocess", capture)
-    task = ObjectDetectionYOLO("fusion", model=path)
+    task = ObjectDetectorYOLO("fusion", model=path)
     assert isinstance(task.run(Image(name="views", data=image_path), resolution=64), list)
     assert isinstance(task.model, FeatureFusionYOLO)
     assert observed == [torch.Size([1, 6, 64, 64])]

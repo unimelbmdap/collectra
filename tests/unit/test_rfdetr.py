@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from collectra import Image, ImageCrop, ObjectDetectionRFDETR
+from collectra import Image, ImageCrop, ObjectDetectorRFDETR
 from collectra.tasks.object_detection.detr import DetectionTrainResult
 
 
@@ -16,7 +16,7 @@ def one_crop(image: Image) -> ImageCrop:
 
 def test_train_rfdetr_temp_dir(image, tmp_path, monkeypatch):
     """Exercise RF-DETR training orchestration without training RF-DETR."""
-    task = ObjectDetectionRFDETR(name="label-detector")
+    task = ObjectDetectorRFDETR(name="label-detector")
     crop = one_crop(image)
     seen = {}
     monkeypatch.setattr(task, "_init_model", lambda: None)
@@ -51,7 +51,7 @@ def test_train_rfdetr_temp_dir(image, tmp_path, monkeypatch):
 
 
 def test_train_rfdetr_max_items_limits_each_split(image, tmp_path, monkeypatch):
-    task = ObjectDetectionRFDETR(name="label-detector")
+    task = ObjectDetectorRFDETR(name="label-detector")
     seen = {}
     monkeypatch.setattr(task, "_init_model", lambda: None)
     monkeypatch.setattr(
@@ -91,7 +91,7 @@ class FakeRFDETRModel:
 
 def test_run_rfdetr(image, monkeypatch):
     """Exercise conversion of RF-DETR predictions into ImageCrops."""
-    task = ObjectDetectionRFDETR(name="label-detector")
+    task = ObjectDetectorRFDETR(name="label-detector")
     task.model = FakeRFDETRModel()
     task._categories = ["human"]
     monkeypatch.setattr(task, "_init_model", lambda: None)
@@ -114,7 +114,7 @@ def test_rfdetr_train_forwards_regularization_options(monkeypatch):
         "collectra.tasks.object_detection.rfdetr.run_training_command",
         fake_training_command,
     )
-    task = ObjectDetectionRFDETR(name="label-detector")
+    task = ObjectDetectorRFDETR(name="label-detector")
 
     task.train(
         [],
@@ -143,7 +143,7 @@ def test_rfdetr_train_forwards_regularization_options(monkeypatch):
 
 
 def test_rfdetr_prepare_params_includes_regularization_defaults(tmp_path):
-    task = ObjectDetectionRFDETR(name="label-detector")
+    task = ObjectDetectorRFDETR(name="label-detector")
 
     params = task._prepare_params(output_dir=tmp_path)
 
@@ -158,7 +158,7 @@ def test_rfdetr_prepare_params_includes_regularization_defaults(tmp_path):
 
 
 def test_rfdetr_rejects_unknown_augmentation_preset(tmp_path):
-    task = ObjectDetectionRFDETR(name="label-detector")
+    task = ObjectDetectorRFDETR(name="label-detector")
 
     with pytest.raises(ValueError, match="augmentation must be one of"):
         task._prepare_params(output_dir=tmp_path, augmentation="surprise")
@@ -170,7 +170,7 @@ def test_tiff_tensor_keeps_all_channels(tmp_path):
     pixels = np.arange(40 * 60 * 5, dtype=np.uint16).reshape(40, 60, 5)
     path = tmp_path / "multi.tif"
     tifffile.imwrite(path, pixels, photometric="minisblack", planarconfig="contig")
-    task = ObjectDetectionRFDETR(name="label-detector")
+    task = ObjectDetectorRFDETR(name="label-detector")
     task.model = SimpleNamespace(model_config=SimpleNamespace(num_channels=5))
 
     crop = Image(name="sheet", data=path).make_crop(0.5, 0.5, 0.5, 0.5, name="c")
@@ -192,7 +192,7 @@ def test_tiff_tensor_rejects_channel_mismatch(tmp_path):
         photometric="minisblack",
         planarconfig="contig",
     )
-    task = ObjectDetectionRFDETR(name="label-detector")
+    task = ObjectDetectorRFDETR(name="label-detector")
     task.model = SimpleNamespace(model_config=SimpleNamespace(num_channels=3))
 
     with pytest.raises(ValueError, match="5 image channels"):

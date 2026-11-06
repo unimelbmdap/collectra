@@ -1,13 +1,17 @@
 Image segmentation
 ==================
 
-``ImageSegmentationSam3``, ``ImageSegmentationRFDETR`` and
-``ImageSegmentationYOLO`` accept ``Image`` and its subclasses and return one
+``ImageSegmenterSam3``, ``ImageSegmenterRFDETR`` and
+``ImageSegmenterYOLO`` accept ``Image`` and its subclasses and return one
 ``ImageSegmentation`` artefact for every predicted instance. Each result retains
 its input image as a parent and references a source-sized, binary 0/1 PNG mask.
 Crop and orientation transforms are inverted before writing masks, so masks
 remain aligned with the original source pixels. Segmentation inputs constrain
 predictions to their existing mask.
+
+SAM 3 only runs on Linux with an NVIDIA GPU. On such a machine install it with
+``uv sync --extra sam3``. On another computer the task stops with a message that
+says so, and the rest of the pipeline carries on.
 
 .. code-block:: yaml
 
@@ -16,7 +20,7 @@ predictions to their existing mask.
       ext: collectra
       version: "1.0"
     segment:
-      type: collectra.ImageSegmentationSam3
+      type: collectra.ImageSegmenterSam3
       input: page
       output: region
       prompt: printed text region
@@ -406,13 +410,13 @@ the final wrapper error.
 RF-DETR segmentation
 --------------------
 
-``ImageSegmentationRFDETR`` uses the same inputs, mask annotations and output
+``ImageSegmenterRFDETR`` uses the same inputs, mask annotations and output
 artefacts as SAM3. Change the task type and select an RF-DETR segmentation model:
 
 .. code-block:: yaml
 
     region_segmenter:
-      type: collectra.ImageSegmentationRFDETR
+      type: collectra.ImageSegmenterRFDETR
       input: page
       output: region
       model: small
@@ -503,13 +507,13 @@ for upstream model and hardware details.
 YOLO segmentation
 -----------------
 
-``ImageSegmentationYOLO`` offers the same Collectra mask inputs, outputs and
+``ImageSegmenterYOLO`` offers the same Collectra mask inputs, outputs and
 training flags using an Ultralytics instance segmentation model:
 
 .. code-block:: yaml
 
     region_segmenter:
-      type: collectra.ImageSegmentationYOLO
+      type: collectra.ImageSegmenterYOLO
       input: page
       output: region
       model: yolo11n-seg.pt

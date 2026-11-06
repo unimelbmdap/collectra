@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from PIL import Image as PILImage
 
-from collectra import Image, ImageCrop, ImageSegmentation, ImageSegmentationYOLO
+from collectra import Image, ImageCrop, ImageSegmentation, ImageSegmenterYOLO
 from collectra.tasks.image_segmentation import yolo
 from collectra.tasks.image_segmentation.data import SegmentationSample, export_dataset
 
@@ -44,7 +44,7 @@ def test_prediction_preserves_crop_orientation_and_binary_mask(sample, tmp_path,
     image = ImageCrop(name="crop", id="crop", data=sample.image.data, x_center=.5, y_center=.5,
                       width_relative=.5, height_relative=.5, orientation=orientation, partition="test")
     mask = np.asarray(mask_in_view(image, sample.instances[0]._mask_image())) != 0
-    task = ImageSegmentationYOLO("segment", output="text_region", device="cpu", threshold=.7, resolution=64)
+    task = ImageSegmenterYOLO("segment", output="text_region", device="cpu", threshold=.7, resolution=64)
     task.context.file_path = tmp_path / "result"
     task._predictor = fake_predictor([mask])
     result, = task.run(image)
@@ -60,7 +60,7 @@ def test_prediction_preserves_crop_orientation_and_binary_mask(sample, tmp_path,
 def test_prediction_clips_to_parent_segmentation(sample, tmp_path):
     image = sample.instances[0]
     view = image.pil()
-    task = ImageSegmentationYOLO("segment", output="text_region")
+    task = ImageSegmenterYOLO("segment", output="text_region")
     task.context.file_path = tmp_path
     task._predictor = fake_predictor([np.ones((view.height, view.width), bool)])
     result, = task.run(image)
@@ -68,7 +68,7 @@ def test_prediction_clips_to_parent_segmentation(sample, tmp_path):
 
 
 def test_empty_prediction(sample, tmp_path):
-    task = ImageSegmentationYOLO("segment")
+    task = ImageSegmenterYOLO("segment")
     task.context.file_path = tmp_path
     task._predictor = SimpleNamespace(predict=Mock(return_value=[SimpleNamespace(masks=None)]))
     assert task.run(sample.image) == []
@@ -79,7 +79,7 @@ def test_model_path_and_segmentation_validation(tmp_path, monkeypatch):
     checkpoint.touch()
     factory = Mock(return_value=SimpleNamespace(task="detect"))
     monkeypatch.setattr(yolo, "get_yolo_class", lambda: factory)
-    task = ImageSegmentationYOLO("segment", model="weights.pt")
+    task = ImageSegmenterYOLO("segment", model="weights.pt")
     task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path)
     with pytest.raises(ValueError, match="segmentation model"):
         task._init_model()
@@ -108,7 +108,7 @@ def test_bitmap_dataset_keeps_holes_islands_and_collates(sample, tmp_path):
 
 
 def test_train_reuses_coco_data_and_adopts_best(sample, tmp_path, monkeypatch):
-    task = ImageSegmentationYOLO("segment", output="text_region", device="cuda:1")
+    task = ImageSegmenterYOLO("segment", output="text_region", device="cuda:1")
     task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path, data={"segment": {}}, save=Mock())
     output = tmp_path / "output"
     export_dataset([sample], output / "dataset", prompts={"text_region": "text_region"})
@@ -130,7 +130,7 @@ def test_train_reuses_coco_data_and_adopts_best(sample, tmp_path, monkeypatch):
 
 
 def test_missing_reuse_falls_back_to_export(sample, tmp_path, monkeypatch):
-    task = ImageSegmentationYOLO("segment", output="text_region", device="cpu")
+    task = ImageSegmenterYOLO("segment", output="text_region", device="cpu")
     task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path, data={"segment": {}}, save=Mock())
     task._samples = Mock(return_value=[sample])
     output = tmp_path / "run"
@@ -188,7 +188,7 @@ def test_real_cpu_training_and_checkpoint_reload(sample, tmp_path, monkeypatch, 
         assert "scaler" not in checkpoint
         loaded = ultralytics.YOLO(str(best))
         assert loaded.task == "segment" and loaded.names == {0: "text_region"}
-        task = ImageSegmentationYOLO("segment", model=best, output="text_region", device="cpu", resolution=64)
+        task = ImageSegmenterYOLO("segment", model=best, output="text_region", device="cpu", resolution=64)
         task.context.file_path = tmp_path / "predictions"
         assert isinstance(task.run(sample.image), list)
     finally:

@@ -82,7 +82,7 @@ describe('Ancestors and Descendants follow the tab\'s selected instance', () => 
     });
 
     it('a label the pipeline knows has lineage even when no instance of it is on the page record', () => {
-        const nodes = [{ id: 'sheet', nodeType: 'data' }, { id: 'det', nodeType: 'detector' }, { id: 'locality', nodeType: 'data' }];
+        const nodes = [{ id: 'sheet', nodeType: 'Artefact' }, { id: 'det', nodeType: 'Task' }, { id: 'locality', nodeType: 'Artefact' }];
         const edges = [{ source: 'sheet', target: 'det' }, { source: 'det', target: 'locality' }];
         expect(lineageNeighbors('locality', 'ancestors', nodes, edges)).toEqual(['sheet']);
     });

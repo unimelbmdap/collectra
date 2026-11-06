@@ -3,7 +3,7 @@
 import yaml
 from PIL import Image as PillowImage
 
-from collectra import Image, ImageCrop, ObjectDetectionRFDETR, ObjectDetectionYOLO
+from collectra import Image, ImageCrop, ObjectDetectorRFDETR, ObjectDetectorYOLO
 from collectra.tasks.machine_learning.training import print_distribution_table
 from collectra.types.base import ArtefactNode
 
@@ -38,7 +38,7 @@ def test_yolo_background_image_gets_empty_label_and_is_trained(tmp_path):
     log = tmp_path / "log"
     log.mkdir()
 
-    train, val = ObjectDetectionYOLO("detector")._prepare_assets(
+    train, val = ObjectDetectorYOLO("detector")._prepare_assets(
         ["Palynomorph"], log, "validation", "", image
     )
 
@@ -52,7 +52,7 @@ def test_rfdetr_background_image_is_kept(tmp_path):
     PillowImage.new("RGB", (12, 12), "white").save(image_path)
     image = Image(name="image", data=image_path, partition="training")
 
-    train, val = ObjectDetectionRFDETR("detector")._prepare_assets(
+    train, val = ObjectDetectorRFDETR("detector")._prepare_assets(
         ["Palynomorph"], "validation", "", image
     )
 

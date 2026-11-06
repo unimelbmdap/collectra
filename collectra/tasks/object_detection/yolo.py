@@ -16,7 +16,7 @@ from .base import (
     Batch,
     Epochs,
     LearningRate,
-    ObjectDetectionTask,
+    ObjectDetector,
     RunResolution,
     Threshold,
     TrainResolution,
@@ -45,7 +45,7 @@ if TYPE_CHECKING:
     from ultralytics.models import YOLO
     from ultralytics.utils.metrics import ClassifyMetrics, DetMetrics
 
-__all__ = ["ObjectDetectionYOLO"]
+__all__ = ["ObjectDetectorYOLO", "ObjectDetectionYOLO"]
 
 
 class DetectionResult:
@@ -78,7 +78,7 @@ class DetectionResult:
         return best_result
 
 
-class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask, ObjectDetectionTask):
+class ObjectDetectorYOLO(YOLOAdaptationCommands, YOLOTask, ObjectDetector):
     singletons: bool = False
     batch_size: int = Field(default=1, ge=1)
     # Ultralytics' own defaults, where they differ from the shared ones.
@@ -88,7 +88,7 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask, ObjectDetectionTask)
     # Overlap above which two boxes of one class count as the same object.
     iou: float = Field(default=0.7, gt=0, le=1)
 
-    RENAMED_SETTINGS = {**ObjectDetectionTask.RENAMED_SETTINGS, "lr0": "learning_rate"}
+    RENAMED_SETTINGS = {**ObjectDetector.RENAMED_SETTINGS, "lr0": "learning_rate"}
 
     @command(name="run")
     def cli_run(
@@ -985,3 +985,7 @@ class ObjectDetectionYOLO(YOLOAdaptationCommands, YOLOTask, ObjectDetectionTask)
             if kwargs.get(optional):
                 params[optional] = kwargs[optional]
         return params
+
+
+# The former name of ObjectDetectorYOLO.
+ObjectDetectionYOLO = ObjectDetectorYOLO

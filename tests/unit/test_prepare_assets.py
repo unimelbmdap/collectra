@@ -1,6 +1,6 @@
 """Hermetic unit tests for ``_prepare_assets`` on DETR-family detection tasks.
 
-These tests verify that ``ObjectDetectionRFDETR`` and ``ObjectDetectionDETR``
+These tests verify that ``ObjectDetectorRFDETR`` and ``ObjectDetectorDETR``
 share YOLO's contract for turning a stream of ``Image``/``ImageCrop`` objects
 into training samples. The key behaviour under test is that images without
 in-class annotations are retained as empty-box *background* samples rather
@@ -21,14 +21,14 @@ import pytest
 from PIL import Image as PILImage
 
 from collectra import Image, ImageCrop
-from collectra.tasks.object_detection.detr import ObjectDetectionDETR
-from collectra.tasks.object_detection.rfdetr import ObjectDetectionRFDETR
+from collectra.tasks.object_detection.detr import ObjectDetectorDETR
+from collectra.tasks.object_detection.rfdetr import ObjectDetectorRFDETR
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-TASK_CLASSES = [ObjectDetectionRFDETR, ObjectDetectionDETR]
+TASK_CLASSES = [ObjectDetectorRFDETR, ObjectDetectorDETR]
 TASK_IDS = ["rfdetr", "detr"]
 
 

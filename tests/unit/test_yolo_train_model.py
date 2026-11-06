@@ -3,14 +3,14 @@ from types import ModuleType
 
 import pytest
 
-from collectra import ImageClassifierYOLO, ObjectDetectionYOLO
+from collectra import ImageClassifierYOLO, ObjectDetectorYOLO
 
 
 @pytest.mark.parametrize(
     ("task_class", "module_name"),
     [
         (
-            ObjectDetectionYOLO,
+            ObjectDetectorYOLO,
             "collectra.tasks.object_detection.yolo.run_training_command",
         ),
         (
@@ -39,7 +39,7 @@ def test_train_forwards_optional_base_model(
     assert task.model == "stored.pt"
 
 
-@pytest.mark.parametrize("task_class", [ObjectDetectionYOLO, ImageClassifierYOLO])
+@pytest.mark.parametrize("task_class", [ObjectDetectorYOLO, ImageClassifierYOLO])
 @pytest.mark.parametrize(
     ("model_option", "expected"),
     [("", "stored.pt"), ("/models/base.pt", "/models/base.pt")],
@@ -172,7 +172,7 @@ def test_classifier_prepare_params_forwards_regularization_options():
 
 
 def test_detector_prepare_params_defaults_to_100_epochs():
-    task = ObjectDetectionYOLO("detector", model="stored.pt")
+    task = ObjectDetectorYOLO("detector", model="stored.pt")
 
     params = task._prepare_params(
         log="run", config_file="dataset.yaml", project="project", base_folder=None
@@ -191,7 +191,7 @@ def test_detector_train_forwards_yolo_options(monkeypatch):
         "collectra.tasks.object_detection.yolo.run_training_command",
         fake_training_command,
     )
-    task = ObjectDetectionYOLO("detector", model="stored.pt")
+    task = ObjectDetectorYOLO("detector", model="stored.pt")
 
     task.train(
         [],
@@ -220,7 +220,7 @@ def test_detector_train_forwards_yolo_options(monkeypatch):
 
 
 def test_detector_prepare_params_forwards_optional_yolo_options():
-    task = ObjectDetectionYOLO("detector", model="stored.pt")
+    task = ObjectDetectorYOLO("detector", model="stored.pt")
 
     params = task._prepare_params(
         log="run",

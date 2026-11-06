@@ -77,14 +77,14 @@ def help_for(app, argv, capsys) -> str:
 
 
 def test_rfdetr_training_help_and_annotated_options(capsys, monkeypatch):
-    from collectra import ObjectDetectionRFDETR
+    from collectra import ObjectDetectorRFDETR
 
     captured = {}
     monkeypatch.setattr(
         "collectra.tasks.object_detection.rfdetr.run_training_command",
         lambda *args, **kwargs: captured.update(kwargs),
     )
-    app = RuntimeApplication({"detector": ObjectDetectionRFDETR("detector")})
+    app = RuntimeApplication({"detector": ObjectDetectorRFDETR("detector")})
     help_text = help_for(app, ["task", "detector", "train", "--help"], capsys)
     normalized_help = " ".join(help_text.split())
     assert "Checkpoint path or pretrained variant" in normalized_help
@@ -429,10 +429,10 @@ def test_cli_import_does_not_import_ml_backends():
 def test_model_task_class_discovery_does_not_import_backends():
     script = (
         "import sys; "
-        "from collectra.tasks.object_detection.yolo import ObjectDetectionYOLO; "
+        "from collectra.tasks.object_detection.yolo import ObjectDetectorYOLO; "
         "from collectra.tasks.image_classifier.yolo import ImageClassifierYOLO; "
-        "from collectra.tasks.object_detection.detr import ObjectDetectionDETR; "
-        "from collectra.tasks.object_detection.rfdetr import ObjectDetectionRFDETR; "
+        "from collectra.tasks.object_detection.detr import ObjectDetectorDETR; "
+        "from collectra.tasks.object_detection.rfdetr import ObjectDetectorRFDETR; "
         "from collectra.tasks.machine_learning.orienters import ImageOrienter; "
         "print(*(name in sys.modules for name in "
         "('torch', 'torchvision', 'ultralytics', 'rfdetr', 'transformers')))"
@@ -455,10 +455,10 @@ def test_pipeline_help_with_model_tasks_does_not_import_backends(tmp_path):
         "  ext: collectra\n"
         "  version: 1.0.0\n"
         "detector:\n"
-        "  type: collectra.ObjectDetectionYOLO\n"
+        "  type: collectra.ObjectDetectorYOLO\n"
         "  model: model.pt\n"
         "rfdetr_detector:\n"
-        "  type: collectra.ObjectDetectionRFDETR\n"
+        "  type: collectra.ObjectDetectorRFDETR\n"
         "  model: model.pth\n"
     )
     script = (
@@ -489,32 +489,32 @@ def test_training_is_owned_by_concrete_tasks():
 def test_model_task_classes_have_domain_specific_module_paths():
     from collectra import (
         ImageClassifierYOLO,
-        ObjectDetectionDETR,
-        ObjectDetectionRFDETR,
-        ObjectDetectionYOLO,
+        ObjectDetectorDETR,
+        ObjectDetectorRFDETR,
+        ObjectDetectorYOLO,
     )
 
-    assert ObjectDetectionYOLO.__module__ == "collectra.tasks.object_detection.yolo"
-    assert ObjectDetectionDETR.__module__ == "collectra.tasks.object_detection.detr"
-    assert ObjectDetectionRFDETR.__module__ == "collectra.tasks.object_detection.rfdetr"
+    assert ObjectDetectorYOLO.__module__ == "collectra.tasks.object_detection.yolo"
+    assert ObjectDetectorDETR.__module__ == "collectra.tasks.object_detection.detr"
+    assert ObjectDetectorRFDETR.__module__ == "collectra.tasks.object_detection.rfdetr"
     assert ImageClassifierYOLO.__module__ == "collectra.tasks.image_classifier.yolo"
 
 
 def test_yolo_task_types_are_siblings():
-    from collectra import ImageClassifierYOLO, ObjectDetectionYOLO, YOLOTask
+    from collectra import ImageClassifierYOLO, ObjectDetectorYOLO, YOLOTask
 
-    assert issubclass(ObjectDetectionYOLO, YOLOTask)
+    assert issubclass(ObjectDetectorYOLO, YOLOTask)
     assert issubclass(ImageClassifierYOLO, YOLOTask)
-    assert not issubclass(ImageClassifierYOLO, ObjectDetectionYOLO)
+    assert not issubclass(ImageClassifierYOLO, ObjectDetectorYOLO)
 
 
 def test_concrete_model_tasks_own_typed_train_commands(capsys):
-    from collectra import ImageClassifierYOLO, ObjectDetectionDETR
+    from collectra import ImageClassifierYOLO, ObjectDetectorDETR
 
     app = RuntimeApplication(
         {
             "classifier": ImageClassifierYOLO("classifier", model="model.pt"),
-            "detector": ObjectDetectionDETR("detector", model="default"),
+            "detector": ObjectDetectorDETR("detector", model="default"),
         }
     )
     classifier_help = help_for(app, ["task", "classifier", "train", "--help"], capsys)
