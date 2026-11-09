@@ -5,7 +5,11 @@ import pytest
 import tifffile
 
 from collectra import Image, ImageClassifierTorchvision, Link
-from collectra.tasks.image_classifier.torchvision_fusion import RGBViewFusionClassifier
+from collectra.tasks.image_classifier.torchvision_fusion import (
+    RGBViewFusionClassifier,
+    SpatialViewAttention,
+    restore_fusion,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -18,22 +22,33 @@ def single_thread():
     torch.set_num_threads(before)
 
 
+def randomize_attention(model, seed=0):
+    import torch
+
+    generator = torch.Generator().manual_seed(seed)
+    with torch.no_grad():
+        for parameter in model.attention.parameters():
+            parameter.copy_(torch.randn(parameter.shape, generator=generator))
+
+
 @pytest.mark.parametrize("architecture", ["resnet18", "convnext_tiny"])
-def test_real_rgb_encoder_preserved_and_shared_across_views(architecture):
+def test_identical_views_reproduce_rgb_model_with_shared_encoder(architecture):
     import torch
     from torchvision import models
 
     original = models.get_model(architecture, weights=None).eval()
     reference = deepcopy(original)
     model = RGBViewFusionClassifier(original, 9).eval()
-    pixels = torch.randn(2, 9, 32, 32)
+    randomize_attention(model)
+    rgb = torch.randn(2, 3, 32, 32)
     observed = []
     handle = model.encoder.register_forward_pre_hook(
         lambda module, args: observed.append(args[0].shape)
     )
     with torch.no_grad():
+        # Any convex combination of identical views is that view.
         torch.testing.assert_close(
-            model(pixels), reference(pixels[:, :3]), rtol=1e-4, atol=1e-5
+            model(rgb.repeat(1, 3, 1, 1)), reference(rgb), rtol=1e-4, atol=1e-5
         )
     handle.remove()
     assert observed == [torch.Size([6, 3, 32, 32])]
@@ -41,9 +56,73 @@ def test_real_rgb_encoder_preserved_and_shared_across_views(architecture):
         layer for layer in model.encoder.modules() if isinstance(layer, torch.nn.Conv2d)
     )
     assert first.in_channels == 3
-    assert sum(p.numel() for p in model.encoder.parameters()) + sum(
-        p.numel() for p in model.head.parameters()
-    ) == sum(p.numel() for p in reference.parameters())
+    attention = sum(p.numel() for p in model.attention.parameters())
+    assert sum(p.numel() for p in model.parameters()) - attention == sum(
+        p.numel() for p in reference.parameters()
+    )
+
+
+def test_fusion_is_view_agnostic():
+    from torchvision import models
+
+    model = RGBViewFusionClassifier(models.resnet18(weights=None), 9)
+    assert not hasattr(model, "reference_view")
+    assert not hasattr(model, "view_bias")
+    assert not hasattr(model, "gate")
+    assert model.fusion_spec == {"version": 2, "num_views": 3, "hidden_dim": 128}
+
+
+def test_initial_fusion_averages_spatial_feature_maps_before_pooling():
+    import torch
+    from torchvision import models
+
+    original = models.resnet18(weights=None).eval()
+    reference = deepcopy(original)
+    model = RGBViewFusionClassifier(original, 9).eval()
+    pixels = torch.randn(2, 9, 32, 32)
+    maps = []
+    handle = reference.avgpool.register_forward_pre_hook(
+        lambda module, args: maps.append(args[0])
+    )
+    with torch.no_grad():
+        for view in range(3):
+            reference(pixels[:, 3 * view : 3 * view + 3])
+        handle.remove()
+        mean_map = torch.stack(maps).mean(0)
+        expected = reference.fc(torch.flatten(reference.avgpool(mean_map), 1))
+        torch.testing.assert_close(model(pixels), expected, rtol=1e-4, atol=1e-5)
+
+
+def test_view_order_does_not_change_prediction():
+    import torch
+    from torchvision import models
+
+    model = RGBViewFusionClassifier(models.resnet18(weights=None), 9).eval()
+    randomize_attention(model, seed=1)
+    pixels = torch.randn(2, 9, 32, 32)
+    permuted = torch.cat([pixels[:, 6:9], pixels[:, 0:3], pixels[:, 3:6]], dim=1)
+    with torch.no_grad():
+        torch.testing.assert_close(model(permuted), model(pixels), rtol=1e-4, atol=1e-5)
+
+
+def test_attention_weights_are_per_position_softmax_over_views():
+    import torch
+
+    attention = SpatialViewAttention(4, hidden_dim=8)
+    features = torch.randn(2, 3, 4, 5, 6)
+    weights = attention.weights(features)
+    assert weights.shape == (2, 3, 5, 6)
+    torch.testing.assert_close(weights, torch.full_like(weights, 1 / 3))
+    torch.testing.assert_close(attention(features), features.mean(1))
+    with torch.no_grad():
+        for parameter in attention.parameters():
+            parameter.copy_(torch.randn(parameter.shape))
+    weights = attention.weights(features)
+    torch.testing.assert_close(weights.sum(1), torch.ones(2, 5, 6))
+    # Weights vary across positions, so each location chooses its own views.
+    assert weights.flatten(2).std(-1).max() > 0
+    expected = (features * weights[:, :, None]).sum(1)
+    torch.testing.assert_close(attention(features), expected)
 
 
 def test_attention_learns_from_every_view_and_freezing_preserves_backbone():
@@ -57,19 +136,22 @@ def test_attention_learns_from_every_view_and_freezing_preserves_backbone():
     task._input_channels = 9
     task._prepare_training_model(["a", "b"], pretrained=False, freeze=True)
     model = task.model.eval()
-    assert not any(parameter.requires_grad for parameter in model.encoder.parameters())
-    assert all(parameter.requires_grad for parameter in model.attention.parameters())
-    assert model.gate.requires_grad and model.view_bias.requires_grad
+    attention = {id(parameter) for parameter in model.attention.parameters()}
+    assert attention and all(
+        parameter.requires_grad for parameter in model.attention.parameters()
+    )
+    assert not any(
+        parameter.requires_grad
+        for parameter in model.encoder.parameters()
+        if id(parameter) not in attention
+    )
     assert all(parameter.requires_grad for parameter in model.head.parameters())
-    with torch.no_grad():
-        model.gate.fill_(0.5)
+    randomize_attention(model, seed=2)
     pixels = torch.randn(2, 9, 32, 32, requires_grad=True)
     model(pixels).square().mean().backward()
     for view in range(3):
         assert pixels.grad[:, view * 3 : (view + 1) * 3].abs().sum() > 0
-    assert model.attention[-1].weight.grad.abs().sum() > 0
-    assert model.view_bias.grad.abs().sum() > 0
-    assert model.gate.grad.abs() > 0
+    assert model.attention.score[-1].weight.grad.abs().sum() > 0
 
 
 def test_fusion_checkpoint_roundtrip_and_new_class_head(tmp_path):
@@ -91,9 +173,7 @@ def test_fusion_checkpoint_roundtrip_and_new_class_head(tmp_path):
     }
     task._prepare_training_model(["a", "b"], pretrained=False, freeze=False)
     task.model.eval()
-    with torch.no_grad():
-        task.model.gate.fill_(0.7)
-        task.model.view_bias[1] = 0.6
+    randomize_attention(task.model, seed=3)
     pixels = torch.randn(2, 6, 32, 32)
     expected = task.model(pixels).detach()
     checkpoint = tmp_path / "fusion.pt"
@@ -107,10 +187,28 @@ def test_fusion_checkpoint_roundtrip_and_new_class_head(tmp_path):
     with pytest.raises(ValueError, match="channel count differs"):
         loaded._prepare_training_model(["a", "b"], pretrained=False, freeze=False)
     loaded._input_channels = 6
-    before = loaded.model.attention[-1].weight.detach().clone()
+    before = loaded.model.attention.score[-1].weight.detach().clone()
     loaded._prepare_training_model(["c", "b", "a"], pretrained=False, freeze=False)
     assert loaded.model.head.out_features == 3
-    torch.testing.assert_close(loaded.model.attention[-1].weight, before)
+    torch.testing.assert_close(loaded.model.attention.score[-1].weight, before)
+
+
+@pytest.mark.parametrize(
+    "spec,message",
+    [
+        (
+            {"version": 1, "num_views": 2, "reference_view": 0, "hidden_dim": 8},
+            "version",
+        ),
+        ("not a spec", "version"),
+        ({"version": 2, "num_views": 3, "hidden_dim": 8}, "view count"),
+    ],
+)
+def test_restore_rejects_old_or_mismatched_specs(spec, message):
+    from torchvision import models
+
+    with pytest.raises(ValueError, match=message):
+        restore_fusion(models.resnet18(weights=None), 6, spec)
 
 
 @pytest.mark.parametrize("channels", [1, 4, 5])
@@ -119,6 +217,13 @@ def test_fusion_rejects_incomplete_rgb_stacks(channels):
 
     with pytest.raises(ValueError, match="multiple of 3"):
         RGBViewFusionClassifier(models.resnet18(weights=None), channels)
+
+
+def test_fusion_rejects_bad_hidden_dim():
+    from torchvision import models
+
+    with pytest.raises(ValueError, match="hidden dimension"):
+        RGBViewFusionClassifier(models.resnet18(weights=None), 6, hidden_dim=0)
 
 
 def test_fusion_rejects_expanded_stem_and_wrong_inference_channels():
@@ -134,6 +239,37 @@ def test_fusion_rejects_expanded_stem_and_wrong_inference_channels():
         model(torch.randn(1, 3, 32, 32))
 
 
+def test_fusion_requires_spatial_avgpool():
+    import torch
+    from torchvision import models
+
+    with pytest.raises(ValueError, match="avgpool"):
+        RGBViewFusionClassifier(models.vit_b_16(weights=None), 6)
+
+    class UnusedPool(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 4, 1)
+            self.avgpool = torch.nn.AdaptiveAvgPool2d(1)
+            self.fc = torch.nn.Linear(4, 2)
+
+        def forward(self, pixels):
+            return self.fc(self.conv1(pixels).mean((2, 3)))
+
+    with pytest.raises(ValueError, match="avgpool"):
+        RGBViewFusionClassifier(UnusedPool(), 6)
+
+
+def test_channel_probe_preserves_training_modes():
+    from torchvision import models
+
+    model = models.resnet18(weights=None).train()
+    model.layer1.eval()
+    fused = RGBViewFusionClassifier(model, 6)
+    assert fused.training and fused.encoder.layer2.training
+    assert not fused.encoder.layer1.training
+
+
 def test_yaml_fusion_training_tiff_inference_and_reload(tmp_path, monkeypatch):
     import torch
     from types import SimpleNamespace
@@ -144,10 +280,11 @@ def test_yaml_fusion_training_tiff_inference_and_reload(tmp_path, monkeypatch):
         def __init__(self):
             super().__init__()
             self.conv1 = torch.nn.Conv2d(3, 4, 1)
+            self.avgpool = torch.nn.AdaptiveAvgPool2d(1)
             self.fc = torch.nn.Linear(4, 1000)
 
         def forward(self, pixels):
-            return self.fc(self.conv1(pixels).mean((2, 3)))
+            return self.fc(torch.flatten(self.avgpool(self.conv1(pixels)), 1))
 
     monkeypatch.setattr(models, "get_model", lambda *args, **kwargs: TinyClassifier())
     weights = SimpleNamespace(
@@ -193,6 +330,7 @@ def test_yaml_fusion_training_tiff_inference_and_reload(tmp_path, monkeypatch):
         workers=0,
         device="cpu",
         wandb=False,
+        rotate90=True,
     )
     saved = ImageClassifierTorchvision(
         "classifier",
@@ -205,3 +343,20 @@ def test_yaml_fusion_training_tiff_inference_and_reload(tmp_path, monkeypatch):
     assert saved.fusion is True and saved._input_channels == 6
     assert saved.model.encoder.conv1.in_channels == 3
     assert saved._preprocessing["mean"] == [0.5] * 6
+
+
+def test_fusion_requires_final_linear_projection():
+    import torch
+
+    class ConvolutionalHead(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 4, 1)
+            self.avgpool = torch.nn.AdaptiveAvgPool2d(1)
+            self.classifier = torch.nn.Sequential(torch.nn.Conv2d(4, 2, 1))
+
+        def forward(self, pixels):
+            return self.classifier(self.avgpool(self.conv1(pixels))).flatten(1)
+
+    with pytest.raises(ValueError, match="final linear classification head"):
+        RGBViewFusionClassifier(ConvolutionalHead(), 6)

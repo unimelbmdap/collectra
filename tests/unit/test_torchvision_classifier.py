@@ -306,6 +306,10 @@ def test_training_help_and_forwarding(capsys, monkeypatch):
     assert calls["model"] == "resnet50"
     assert calls["pretrained"] is False
     assert calls["freeze_backbone"] is True
+    assert calls["rotate90"] is False
+    assert "--rotate90" in help_text
+    invoke(task, ["train", "data", "--rotate90"], name="classifier")
+    assert calls["rotate90"] is True
 
 
 def test_import_and_help_do_not_load_ml_backends():

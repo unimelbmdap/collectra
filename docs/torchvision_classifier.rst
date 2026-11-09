@@ -58,12 +58,15 @@ weights' resize, crop, interpolation, and normalization settings. Training adds
 horizontal flips with probability ``--fliplr`` (default 0.5); use ``--fliplr 0``
 when flipping is inappropriate for the images.
 ``--flipud`` similarly controls vertical flips during training (default 0.0).
-Neither flip augmentation is applied during validation or inference.
+``--rotate90`` randomly rotates each training image by 0, 90, 180 or 270
+degrees (off by default). It suits images without a canonical orientation, such
+as microscopy. All channels, and therefore all stacked views, rotate together.
+None of these augmentations is applied during validation or inference.
 
 By default all model parameters are fine-tuned using AdamW. ``--freeze-backbone``
 trains only the final projection and freezes the rest of the model, including
 batch-normalization statistics. With RGB-view fusion enabled, it trains the
-attention modules and final projection while freezing the shared encoder.
+attention module and final projection while freezing the shared encoder.
 ``--learning-rate``, ``--weight-decay``,
 ``--early-stop``, ``--device``, and ``--workers`` control training. Each CLI option
 has a description in ``train --help``.
@@ -161,25 +164,30 @@ same spatial crop and augmentation, and each RGB triplet uses the model's RGB
 normalization statistics.
 
 The views are reshaped into a single batch and passed through **one shared RGB
-encoder**. Learned, reference-conditioned softmax attention combines their
-feature vectors immediately before the final linear classification projection.
-The input convolution stays three-channel; encoder weights are shared across
-views. A residual gate starts at zero, preserving the first RGB view's prediction
-in evaluation mode initially, and learns how much the other views contribute.
+encoder**. The input convolution stays three-channel; encoder weights are shared
+across views. Immediately before the encoder's global average pooling, learned
+softmax attention combines the views' spatial feature maps **at each position**,
+so every location can draw on whichever views are informative there (for
+example, the sharpest focal plane in a z-stack). The fused map is then pooled and
+classified once.
 
-This follows the view-attention approach used by Collectra's YOLO and RF-DETR
-fusion models. Those detectors fuse spatial features before their detection
-heads; the classifier fuses feature vectors before its final class prediction.
-Training cost grows with the number of views, so choose batch size accordingly.
+Fusion is view-agnostic: no view is privileged. The attention scores each view
+against the mean of all views, and has no per-view bias, so reordering the views
+does not change the prediction. Attention starts uniform, so a new fusion model
+initially classifies the mean of the views' feature maps; identical views always
+reproduce the RGB model's prediction. Training cost grows with the number of
+views, so choose the batch size accordingly.
 
-Fusion supports torchvision classifiers with a final linear projection,
-including ResNet and ConvNeXt. Convolutional-only heads such as SqueezeNet's are
-not supported in fusion mode. Start from an RGB architecture/checkpoint; a
+Fusion supports convolutional torchvision classifiers with an ``avgpool`` layer
+and a final linear projection, including ResNet, ConvNeXt and EfficientNet.
+Vision transformers, and convolutional-only heads such as SqueezeNet's, are not
+supported in fusion mode. Start from an RGB architecture/checkpoint; a
 checkpoint whose first convolution was already expanded to multiple views
 cannot be converted to this architecture by toggling the flag.
 
 Saved checkpoints contain the view count, attention configuration and all fusion
-weights. Loading a fusion checkpoint reconstructs it automatically, even when
+weights. Checkpoints from the earlier reference-view fusion are not supported;
+retrain them. Loading a fusion checkpoint reconstructs it automatically, even when
 ``fusion`` is omitted from the task YAML. Fine-tuning preserves its attention
 weights; changing classes replaces only the final projection. A dataset with a
 different view count is rejected rather than silently discarding learned views.

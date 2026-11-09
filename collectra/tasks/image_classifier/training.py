@@ -279,6 +279,8 @@ class TorchClassifierTask(Task):
             if not 0 <= flipud <= 1:
                 raise ValueError("flipud must be in [0, 1]")
             augmentation["flipud"] = flipud
+        if kwargs.get("rotate90"):
+            augmentation["rotate90"] = True
         if (
             epochs < 1
             or batch < 1
