@@ -443,7 +443,7 @@ class ObjectDetectorRFDETR(CocoDetectionData, RFDETRAdaptationCommands, ObjectDe
             )
 
         print(f"Found {len(results)} objects in the image.")
-        return results
+        return self._orient_crops(results)
 
     def _prepare_params(self, **kwargs) -> dict:
         params = {

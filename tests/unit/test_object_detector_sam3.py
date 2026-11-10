@@ -199,3 +199,16 @@ def test_a_pipeline_builds_it_from_its_settings(tmp_path):
     assert task.threshold == 0.4
     assert task.input_type() is Image and task.output_type() is ImageCrop
     assert "_processor" in task.attributes_to_ignore()
+
+
+def test_the_chosen_classes_are_oriented(image, monkeypatch):
+    from collectra.types.images import Orientation
+    from tests.unit.test_detector_orient import fake_orienter
+
+    fake_orienter(monkeypatch, Orientation.EAST)
+    task = detector(
+        {"stamp": prediction([[0, 0, 10, 10]], [0.8])},
+        output=["stamp"],
+        orient=["stamp"],
+    )
+    assert task.run(image)[0].orientation == Orientation.EAST

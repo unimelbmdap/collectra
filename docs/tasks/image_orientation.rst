@@ -5,7 +5,14 @@ ImageOrienter
 -------------
 
 ``collectra.ImageOrienter`` consumes an image and returns it with a predicted
-orientation. Supply a compatible trained orientation-model checkpoint.
+orientation. ``model`` is a compatible orientation-model checkpoint. Without
+it, the published model of `deep-image-orientation-detection
+<https://github.com/duartebarbosadev/deep-image-orientation-detection>`_ (MIT
+licensed) is downloaded from Hugging Face on first use and cached. On machines
+without internet access, download it once beforehand or give ``model``.
+
+Object detectors can orient the crops of chosen classes themselves with their
+``orient`` setting; see :doc:`object_detection`.
 
 .. code-block:: yaml
 

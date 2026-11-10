@@ -234,7 +234,7 @@ class ObjectDetectorYOLO(YOLOAdaptationCommands, YOLOTask, ObjectDetector):
         print(f"Found {len(detections)} objects in the image:")
         for name, count in counts.items():
             print(f"\t{name}: {count}")
-        return detections
+        return self._orient_crops(detections)
 
     def _tiff_pixels(self, image: Image):
         """Decode a TIFF (cropped and rotated as needed) for the model's channels."""

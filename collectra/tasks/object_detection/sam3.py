@@ -107,7 +107,7 @@ class ObjectDetectorSam3(Sam3Backend, CocoDetectionData, ObjectDetector):
                             name=label,
                         )
                     )
-        return crops
+        return self._orient_crops(crops)
 
     @command
     def train(

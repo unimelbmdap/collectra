@@ -242,7 +242,7 @@ class ObjectDetectorDETR(ObjectDetector):
             )
 
         print(f"Found {len(detections)} objects in the image.")
-        return detections
+        return self._orient_crops(detections)
 
     def _prepare_params(self, **kwargs) -> dict:
         model_name = kwargs.get("model_name", self._model_name)

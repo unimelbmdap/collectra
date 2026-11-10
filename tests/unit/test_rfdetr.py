@@ -57,7 +57,10 @@ def test_train_rfdetr_max_items_limits_each_split(image, tmp_path, monkeypatch):
     monkeypatch.setattr(
         task,
         "_prepare_assets",
-        lambda *args: ([{"train": i} for i in range(5)], [{"val": i} for i in range(4)]),
+        lambda *args: (
+            [{"train": i} for i in range(5)],
+            [{"val": i} for i in range(4)],
+        ),
     )
     monkeypatch.setattr(task, "_check_distribution", lambda *args: None)
 
@@ -210,7 +213,9 @@ def test_checkpoint_channels_reads_patch_projection(tmp_path):
     plain = tmp_path / "plain.pth"
     torch.save({"model": {PROJECTION_KEY: torch.zeros(8, 15, 2, 2)}}, plain)
     lightning = tmp_path / "last.ckpt"
-    torch.save({"state_dict": {f"model.{PROJECTION_KEY}": torch.zeros(8, 6, 2, 2)}}, lightning)
+    torch.save(
+        {"state_dict": {f"model.{PROJECTION_KEY}": torch.zeros(8, 6, 2, 2)}}, lightning
+    )
 
     assert checkpoint_channels(plain) == 15
     assert checkpoint_channels(lightning) == 6
@@ -230,14 +235,20 @@ def test_channel_aware_loader_widens_before_and_after_loading(tmp_path):
             projection=torch.nn.Conv2d(3, 4, 2, stride=2), num_channels=3
         )
         encoder = SimpleNamespace(
-            encoder=SimpleNamespace(embeddings=SimpleNamespace(patch_embeddings=embeddings))
+            encoder=SimpleNamespace(
+                embeddings=SimpleNamespace(patch_embeddings=embeddings)
+            )
         )
         return SimpleNamespace(backbone=[SimpleNamespace(encoder=encoder)]), embeddings
 
     seen = []
 
     def load(nn_model, config):
-        seen.append(nn_model.backbone[0].encoder.encoder.embeddings.patch_embeddings.projection.in_channels)
+        seen.append(
+            nn_model.backbone[
+                0
+            ].encoder.encoder.embeddings.patch_embeddings.projection.in_channels
+        )
 
     wide = tmp_path / "wide.pth"
     torch.save({"model": {PROJECTION_KEY: torch.zeros(4, 9, 2, 2)}}, wide)
@@ -257,3 +268,17 @@ def test_channel_aware_loader_widens_before_and_after_loading(tmp_path):
     widened = embeddings.projection.weight.detach()
     assert seen[-1] == 3 and widened.shape[1] == 6
     torch.testing.assert_close(widened[:, 3:], original / 2)
+
+
+def test_run_rfdetr_orients_the_chosen_classes(image, monkeypatch):
+    from collectra.types.images import Orientation
+    from tests.unit.test_detector_orient import fake_orienter
+
+    fake_orienter(monkeypatch, Orientation.SOUTH)
+    task = ObjectDetectorRFDETR(
+        name="label-detector", output=["human"], orient=["human"]
+    )
+    task.model = FakeRFDETRModel()
+    task._categories = ["human"]
+    monkeypatch.setattr(task, "_init_model", lambda **kwargs: None)
+    assert task.run(image)[0].orientation == Orientation.SOUTH
