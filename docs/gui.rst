@@ -212,6 +212,78 @@ Git must be installed, and signing in to the shared copy must already be set
 up; sign-in prompts are disabled. After getting updates, reopen the results
 folder to load the updated files into the viewer.
 
+Running the pipeline on a page
+------------------------------
+
+The play button (▶) in the panel toolbar, right after the search icon, runs
+the pipeline on the page that is open. It is disabled until a page is open.
+Clicking it opens a confirmation panel that lists every task of the pipeline
+with what the run will do:
+
+* **will run**: the task has no output on this page yet.
+* **will re-run**: the task has output, but a task upstream of it will run, so
+  its input is about to change. The reason names the nearest such task.
+* **skipped**: the task already has output and is left alone.
+
+The run fills in what is missing; there is no option to force a task to run
+again. The only tasks that run again are the re-run ones. These **replace their
+existing output, including any edits you made by hand**, and the panel warns
+you when there are any. If nothing would re-run, the panel says your edits are
+kept. If every task already has output, or the pipeline cannot run on this page,
+the panel says so and the run button in it is disabled.
+
+The panel has an optional **Note** (at most 200 characters; whitespace is
+collapsed) that is saved with the run in ``run-log.txt``. Confirm with the
+button labelled with the number of tasks, for example ``Run 3 tasks``.
+
+While the run goes on, a progress popover shows how many tasks are done, and
+the toolbar button is highlighted. Click the button again to reopen the
+popover. **Stop** asks the run to start no further task; it takes effect
+between tasks, so the task in progress finishes first. When the run ends, the
+popover shows a summary and, if the page is still the one open, it is reloaded
+to show the new results.
+
+A task that fails, or whose output cannot be saved, leaves no half-finished
+output. If it was a re-run task, its previous output is kept, but that output
+may now be out of date because its input was replaced; the next run sees the
+task has output and does not redo it automatically. The failure is recorded in
+``run-log.txt``.
+
+While a run is going:
+
+* Edits to the page being run are refused. Other open pages stay editable.
+* Git actions that change things (**Get updates**, **Save changes**,
+  **Share my changes**) are refused for every page, because Git works on the
+  whole project. Looking at **What's changed** still works.
+
+``run-log.txt`` sits beside ``results.yaml`` in the page's folder. It is
+append-only: each run adds one entry when it starts, with the plan, and finishes
+it with what happened to each task and a summary. It is plain text, and you may
+edit it by hand; Collectra only ever appends to it. An example entry, for a
+pipeline whose ``crop`` task had no output and whose ``ocr`` task depends on it:
+
+.. code-block:: text
+
+    2026-11-11 14:30:05  started  My Pipeline 1.0
+      note: after fixing the crop
+      detect  planned to skip: already has output
+      crop  planned to run: no output yet
+      ocr  planned to rerun: upstream crop runs
+      detect  skipped (kept existing output)
+      crop  ran
+      ocr  re-ran, replaced existing output (upstream crop ran)
+      result  2 ran, 1 skipped, 0 failed, 12.3 s
+
+The first line has the start time and the pipeline's name and version. The note
+line appears only if you wrote a note. A task that failed is shown as
+``failed: <reason>``, and one that did not start because the run was stopped (or
+because an input it needs was not produced) as ``cancelled: <reason>``; the
+summary then also counts failed and cancelled tasks. Entries are separated by a
+blank line.
+
+The GUI runs one page at a time. To run many files, keep using the ``run``
+command line, which is unchanged.
+
 Inspect and edit artefacts
 --------------------------
 
