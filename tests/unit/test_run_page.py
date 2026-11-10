@@ -14,6 +14,7 @@ from collectra.types.texts import Text
 
 THIS = "tests.unit.test_run_page"
 RAN: list[str] = []
+STALE = "kept previous output, which may be out of date (upstream ocr ran)"
 
 
 def saved_text(task: Task, data: str) -> Text:
@@ -159,6 +160,8 @@ def test_failed_task_leaves_no_partial_output(tmp_path, folder, monkeypatch):
     assert report.failed == [failed]
     assert outcome(report, "detect").status == "ran"
     assert outcome(report, "classify").status == "cancelled"
+    # Its input was never replaced, so its old output is not out of date.
+    assert "out of date" not in outcome(report, "classify").detail
     assert "words" not in yaml.safe_load((folder / "results.yaml").read_text())
     node = pipeline.node_manager.resolve_node("ocr")
     assert not pipeline._has_output(node)
@@ -178,13 +181,101 @@ def test_failed_rerun_keeps_the_output_it_was_to_replace(tmp_path, folder, monke
     old = saved(folder, "label")
     drop(folder, "words")
 
-    def broken(self, text):
+    def broken(self, text: Text) -> Text:
         raise RuntimeError("out of memory")
 
     monkeypatch.setattr(Classify, "run", broken)
     report = run_page(tmp_path, folder)
-    assert outcome(report, "classify").status == "failed"
+    failed = outcome(report, "classify")
+    assert failed.status == "failed"
+    assert "out of memory" in failed.detail
+    assert STALE in failed.detail
     assert saved(folder, "label") == old
+
+
+def test_stopped_rerun_says_its_kept_output_may_be_out_of_date(tmp_path, folder):
+    old = saved(folder, "label")
+    drop(folder, "words")
+    report = run_page(tmp_path, folder, should_stop=lambda: "ocr" in RAN)
+    assert RAN == ["ocr"]
+    cancelled = outcome(report, "classify")
+    assert cancelled.status == "cancelled"
+    assert STALE in cancelled.detail
+    assert saved(folder, "label") == old
+
+
+def fail_saving(monkeypatch, node_name):
+    real = Pipeline.save_run
+
+    def save_run(self, key, value, artefact_node=None):
+        if artefact_node is not None and artefact_node.name == node_name:
+            raise OSError("disk full")
+        return real(self, key, value, artefact_node)
+
+    monkeypatch.setattr(Pipeline, "save_run", save_run)
+
+
+def test_a_task_whose_output_cannot_be_saved_failed(tmp_path, folder, monkeypatch):
+    drop(folder, "boxes", "words", "label")
+    fail_saving(monkeypatch, "words")
+    report = run_page(tmp_path, folder)
+    failed = outcome(report, "ocr")
+    assert failed.status == "failed"
+    assert "OSError: disk full" in failed.detail
+    assert outcome(report, "classify").status != "ran"
+    assert failed in report.failed
+
+
+def test_a_rerun_whose_output_cannot_be_saved_keeps_the_old_output(
+    tmp_path, folder, monkeypatch
+):
+    old = saved(folder, "label")
+    drop(folder, "words")
+    fail_saving(monkeypatch, "label")
+    report = run_page(tmp_path, folder)
+    failed = outcome(report, "classify")
+    assert failed.status == "failed"
+    assert "disk full" in failed.detail
+    assert STALE in failed.detail
+    assert saved(folder, "label") == old
+
+
+def test_a_page_that_cannot_be_set_up_fails_every_task(tmp_path, folder, monkeypatch):
+    drop(folder, "label")
+    pipeline = build(tmp_path)
+    plan = pipeline.plan_page_run(folder)
+
+    def broken(self, *args, **kwargs):
+        raise RuntimeError("cannot read the page")
+
+    monkeypatch.setattr(Pipeline, "_setup_file", broken)
+    report = pipeline.run_page(folder, plan)
+    assert RAN == []
+    assert {item.status for item in report.outcomes} == {"failed"}
+    assert all("cannot read the page" in item.detail for item in report.outcomes)
+
+
+def test_a_workflow_error_fails_every_task(tmp_path, folder, monkeypatch):
+    pipeline = build(tmp_path)
+    plan = pipeline.plan_page_run(folder)
+
+    def broken(self, task_name):
+        raise TypeError("no such task")
+
+    monkeypatch.setattr(Pipeline, "_get_starting_nodes", broken)
+    report = pipeline.run_page(folder, plan)
+    assert {item.status for item in report.outcomes} == {"failed"}
+    assert all("no such task" in item.detail for item in report.outcomes)
+
+
+def test_cli_run_still_logs_and_swallows_a_save_error(
+    tmp_path, folder, monkeypatch, caplog
+):
+    drop(folder, "label")
+    fail_saving(monkeypatch, "label")
+    with caplog.at_level("ERROR", logger="collectra"):
+        build(tmp_path).run(files=[str(folder)])
+    assert any("Error processing file" in r.getMessage() for r in caplog.records)
 
 
 def test_rerun_that_produces_nothing_keeps_existing_output(

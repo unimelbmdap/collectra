@@ -186,6 +186,8 @@ class Pipeline(LenientAttributes, BaseModel):
     # (status, detail) for each task that ran, was skipped, failed or was
     # stopped in the current run, by task name.
     _outcomes: dict[str, tuple[str, str]] = PrivateAttr(default_factory=dict)
+    # Errors that stopped a file, or the whole run, after being logged.
+    _run_errors: list[str] = PrivateAttr(default_factory=list)
     # True when the file used the deprecated ``collectra_pipeline_metadata``
     # block; saving then keeps that form rather than rewriting the file.
     _legacy_declaration: bool = PrivateAttr(default=False)
@@ -567,6 +569,8 @@ class Pipeline(LenientAttributes, BaseModel):
                 - force: Rerun tasks whose outputs already exist.
                 - output: Output directory for results.
         """
+        self._outcomes = {}
+        self._run_errors = []
         try:
             self._ensure_workflow_connected()
             starting_nodes = self._get_starting_nodes(task_name)
@@ -574,6 +578,7 @@ class Pipeline(LenientAttributes, BaseModel):
             self._process_files(starting_nodes, run_options)
         except Exception as e:
             logger.error("Workflow run failed: %s", e, exc_info=True)
+            self._run_errors.append(f"{type(e).__name__}: {e}")
 
     def _ensure_workflow_connected(self):
         """Ensure the workflow graph is connected before execution.
@@ -670,7 +675,6 @@ class Pipeline(LenientAttributes, BaseModel):
         """
         files = options["files"]
         self._failures = []
-        self._outcomes = {}
         downstream = {} if options["single"] else self._batchable_tasks(starting_nodes)
         batch_size = self._starting_batch_size(starting_nodes)
         batch_size = max([batch_size, *(t.batch_size for t in downstream.values())])
@@ -740,6 +744,7 @@ class Pipeline(LenientAttributes, BaseModel):
                         self._process_single_file(nodes, file_path, stage_options)
                     except Exception as e:
                         logger.error("Error processing file: %s", e, exc_info=True)
+                        self._run_errors.append(f"{type(e).__name__}: {e}")
                     held = self._stage_gate.deferred if self._stage_gate else {}
                     deferred.extend(held.items())
                     if self._run_progress and not held:
@@ -997,15 +1002,13 @@ class Pipeline(LenientAttributes, BaseModel):
 
         rerun = {task.name for task in plan.tasks if task.action == "rerun"}
         self.run(files=[str(folder)], rerun=rerun, stop=stop)
+        errors = "; ".join(self._run_errors)
+        statuses: dict[str, str] = {}
         outcomes = []
         for task in plan.tasks:
             status, detail = self._outcomes.get(task.name, ("", ""))
-            if status == "ran" and task.name in rerun:
-                upstream = task.reason.removesuffix(" runs") + " ran"
-                status = "re-ran"
-                detail = f"{detail or 'replaced existing output'} ({upstream})"
-            elif status == "ran":
-                detail = detail or task.reason
+            if not status and errors:
+                status, detail = "failed", f"did not run: {errors}"
             elif not status:
                 status = "cancelled"
                 detail = (
@@ -1013,6 +1016,21 @@ class Pipeline(LenientAttributes, BaseModel):
                     if stopped
                     else "did not run: its inputs were not produced"
                 )
+            if task.name in rerun:
+                source = task.reason.removeprefix("upstream ").removesuffix(" runs")
+                upstream = f"upstream {source} ran"
+                if status == "ran":
+                    status = "re-ran"
+                    detail = f"{detail or 'replaced existing output'} ({upstream})"
+                elif statuses.get(source) in ("ran", "re-ran"):
+                    # Its input was replaced, but its output was not.
+                    detail = (
+                        f"{detail}; kept previous output, which may be out of date "
+                        f"({upstream})"
+                    )
+            elif status == "ran":
+                detail = detail or task.reason
+            statuses[task.name] = status
             outcomes.append(TaskOutcome(task.name, status, detail))
         return RunReport(outcomes)
 
@@ -1344,15 +1362,22 @@ class Pipeline(LenientAttributes, BaseModel):
         child node execution.
         """
         single_run = kwargs.get("single", False)
-        render = kwargs.get("render", False)
-
-        self._mark_nodes_as_processing(nodes)
-        self.render("workflow_run", file=kwargs.get("value", ""), render=render)
-
-        child_tasks = self._execute_nodes(nodes, args, kwargs, render)
+        child_tasks = self._run_node_step(nodes, args, kwargs)
 
         if child_tasks and not single_run:
             self._run_nodes(child_tasks, *args, **kwargs)
+
+    def _run_node_step(
+        self,
+        nodes: list[TaskNode | ArtefactNode] | list[TaskNode] | list[ArtefactNode],
+        args: tuple,
+        kwargs: dict,
+    ) -> list[TaskNode]:
+        """Execute ``nodes`` themselves, returning the child tasks now ready."""
+        render = kwargs.get("render", False)
+        self._mark_nodes_as_processing(nodes)
+        self.render("workflow_run", file=kwargs.get("value", ""), render=render)
+        return self._execute_nodes(nodes, args, kwargs, render)
 
     def _mark_nodes_as_processing(
         self, nodes: list[TaskNode | ArtefactNode] | list[TaskNode] | list[ArtefactNode]
@@ -1436,16 +1461,32 @@ class Pipeline(LenientAttributes, BaseModel):
                 previous.restore()
             raise
         detail = ""
-        if previous is not None:
+        if previous is not None and not results:
             # A failed rerun must not destroy the output it was meant to replace.
-            previous.discard() if results else previous.restore()
-            detail = "" if results else "produced nothing, kept existing output"
-        self._outcomes[node.name] = ("ran", detail)
+            previous.restore()
+            previous = None
+            detail = "produced nothing, kept existing output"
 
         self._update_node_status(node, bool(results))
         self.render("workflow_run", file=kwargs.get("value", ""), render=render)
 
-        self._run_nodes(children, *results, **kwargs)
+        try:
+            child_tasks = self._run_node_step(children, tuple(results), kwargs)
+        except BaseException as error:
+            # Nor must new output that could not be saved.
+            if previous is not None:
+                previous.restore()
+            self._outcomes[node.name] = (
+                "failed",
+                f"could not save its output: {type(error).__name__}: {error}",
+            )
+            raise
+        if previous is not None:
+            previous.discard()
+        self._outcomes[node.name] = ("ran", detail)
+
+        if child_tasks and not kwargs.get("single", False):
+            self._run_nodes(child_tasks, *results, **kwargs)
 
     def _task_failed(
         self, node: TaskNode, folder, error: Exception, render: bool = False
