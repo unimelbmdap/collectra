@@ -300,7 +300,7 @@ def test_train_raises_when_load_returns_non_rfdetrbase(
     """
     task = ObjectDetectorRFDETR(name="rfdetr-train", model=fake_checkpoint)
 
-    def _bad_load(self):
+    def _bad_load(self, **kwargs):
         # Pretend loading "succeeded" but produced the wrong type.
         self.model = object()
 

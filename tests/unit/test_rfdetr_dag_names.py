@@ -165,3 +165,48 @@ def test_pretrained_variant_keeps_its_own_class_names(checkpoint, monkeypatch):
     )
     task._load()
     assert len(task._categories) == 80  # COCO, not the pipeline's three outputs
+
+
+# Training replaces the model's last layer to fit the training classes, so a
+# checkpoint is only a starting point there: its head may have any number of
+# classes. Prediction uses the head as it is, so it must match the outputs.
+
+
+def trainable_detector(checkpoint, monkeypatch, classes=90, outputs=["Palynomorph"]):
+    """A detector whose fake model passes the RF-DETR instance check."""
+    task = detector(checkpoint, monkeypatch, classes=classes, outputs=outputs)
+    monkeypatch.setattr(
+        rfdetr_module,
+        "_backend_class",
+        lambda name: SimpleNamespace if name == "RFDETR" else Variant,
+    )
+    return task
+
+
+def test_training_starts_from_a_checkpoint_whose_head_has_other_classes(
+    checkpoint, monkeypatch, tmp_path
+):
+    # E.g. a checkpoint adapted for multi-view input keeps the 90 COCO classes,
+    # while the pipeline detects one.
+    task = trainable_detector(checkpoint, monkeypatch)
+    calls = []
+    monkeypatch.setattr(task, "_prepare_assets", lambda *args: ([], []))
+    monkeypatch.setattr(task, "_check_distribution", lambda *args: None)
+    monkeypatch.setattr(
+        task,
+        "_train_fold",
+        lambda train, val, classes, log, kwargs: calls.append(classes)
+        or SimpleNamespace(save_dir=log),
+    )
+    task._train(base_folder=tmp_path, log="run", classes=["Palynomorph"])
+    assert calls == [["Palynomorph"]]
+
+
+def test_prediction_still_rejects_a_head_that_does_not_fit_the_outputs(
+    checkpoint, monkeypatch, raw_img_path
+):
+    from collectra import Image
+
+    task = trainable_detector(checkpoint, monkeypatch)
+    with pytest.raises(ValueError, match="1 output.*90 classes"):
+        task.run(Image(name="page", data=raw_img_path))

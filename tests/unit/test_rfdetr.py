@@ -19,7 +19,7 @@ def test_train_rfdetr_temp_dir(image, tmp_path, monkeypatch):
     task = ObjectDetectorRFDETR(name="label-detector")
     crop = one_crop(image)
     seen = {}
-    monkeypatch.setattr(task, "_init_model", lambda: None)
+    monkeypatch.setattr(task, "_init_model", lambda **kwargs: None)
     monkeypatch.setattr(task, "_prepare_assets", lambda *args: ([{"train": 1}], []))
     monkeypatch.setattr(task, "_check_distribution", lambda *args: None)
 
@@ -53,7 +53,7 @@ def test_train_rfdetr_temp_dir(image, tmp_path, monkeypatch):
 def test_train_rfdetr_max_items_limits_each_split(image, tmp_path, monkeypatch):
     task = ObjectDetectorRFDETR(name="label-detector")
     seen = {}
-    monkeypatch.setattr(task, "_init_model", lambda: None)
+    monkeypatch.setattr(task, "_init_model", lambda **kwargs: None)
     monkeypatch.setattr(
         task,
         "_prepare_assets",
@@ -94,7 +94,7 @@ def test_run_rfdetr(image, monkeypatch):
     task = ObjectDetectorRFDETR(name="label-detector")
     task.model = FakeRFDETRModel()
     task._categories = ["human"]
-    monkeypatch.setattr(task, "_init_model", lambda: None)
+    monkeypatch.setattr(task, "_init_model", lambda **kwargs: None)
 
     detections = task.run(image)
 

@@ -158,8 +158,9 @@ class ObjectDetectorRFDETR(CocoDetectionData, RFDETRAdaptationCommands, ObjectDe
         self._device = None
         self._categories: list[str] = []
 
-    def _init_model(self) -> None:
-        self._load()
+    def _init_model(self, *, training: bool = False) -> None:
+        """Load the model; with ``training`` it is only a starting point."""
+        self._load(training=training)
 
         if not isinstance(self.model, _backend_class("RFDETR")):
             raise ValueError("Model must be an RFDETR instance")
@@ -185,11 +186,13 @@ class ObjectDetectorRFDETR(CocoDetectionData, RFDETRAdaptationCommands, ObjectDe
         node = pipeline.node_manager.resolve_node(self.name)
         return [str(output.name) for output in pipeline._output_nodes(node)]
 
-    def _set_categories(self, checkpoint_path: Path) -> None:
+    def _set_categories(self, checkpoint_path: Path, *, training: bool = False) -> None:
         """Name the model's classes: the pipeline's outputs, else the sidecar.
 
         The pipeline is the source of truth. A sidecar that disagrees is warned
-        about and ignored. Either way the last layer must fit the names.
+        about and ignored. To predict, the last layer must fit the names.
+        Training replaces that layer, so a checkpoint used as its starting
+        point may have any number of classes.
         """
         self._load_categories_from_sidecar(checkpoint_path)
         outputs = self._output_names()
@@ -206,12 +209,19 @@ class ObjectDetectorRFDETR(CocoDetectionData, RFDETRAdaptationCommands, ObjectDe
             self._categories = outputs
         size = class_head_size(self.model)
         if self._categories and size is not None and size != len(self._categories) + 1:
+            if training:
+                logger.info(
+                    "Checkpoint %s has %d classes; training replaces its last layer.",
+                    checkpoint_path,
+                    size - 1,
+                )
+                return
             raise ValueError(
                 f"Task {self.name!r} has {len(self._categories)} output(s) "
                 f"({', '.join(self._categories)}) but the model has {size - 1} classes."
             )
 
-    def _load(self) -> None:
+    def _load(self, *, training: bool = False) -> None:
         if isinstance(self.model, _backend_class("RFDETR")):
             return
 
@@ -252,7 +262,7 @@ class ObjectDetectorRFDETR(CocoDetectionData, RFDETRAdaptationCommands, ObjectDe
             self.original_model_path = checkpoint_path
             self.model = load_rfdetr_model(self.original_model_path)
             self._categories = []
-            self._set_categories(checkpoint_path)
+            self._set_categories(checkpoint_path, training=training)
             candidates = sidecar_candidates(checkpoint_path)
             if not self._categories and not any(c.exists() for c in candidates):
                 logger.warning(
@@ -781,7 +791,7 @@ class ObjectDetectorRFDETR(CocoDetectionData, RFDETRAdaptationCommands, ObjectDe
         if kwargs.get("model"):
             self.model = kwargs["model"]
 
-        self._init_model()
+        self._init_model(training=True)
         log = kwargs.get("log", None)
         if log is None:
             raise ValueError(
