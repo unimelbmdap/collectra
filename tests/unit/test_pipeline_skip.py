@@ -243,3 +243,88 @@ def test_tasks_reached_before_their_other_inputs_are_ready_stay_quiet(
     with caplog.at_level("WARNING", logger="collectra"):
         pipeline.run(files=files[:1])
     assert not [r for r in caplog.records if "did not run" in r.getMessage()]
+
+
+# Rerunning a pipeline over the original images must resume, not start again:
+# a job stopped part way (e.g. preempted on a cluster) is simply run again.
+
+
+def test_rerunning_images_keeps_their_results_and_skips_finished_tasks(tmp_path, files):
+    output = tmp_path / "out"
+    build(tmp_path, batch_size=1).run(files=files, output=str(output))
+    EVENTS.clear()
+    build(tmp_path, batch_size=1).run(files=files, output=str(output))
+    assert EVENTS == []
+    for name in "abc":
+        assert saved(output / f"{name}.stg", "shouted") == [f"PAGE {name.upper()}"]
+
+
+def test_rerunning_images_without_an_output_folder_also_resumes(tmp_path, files):
+    build(tmp_path, batch_size=1).run(files=files)
+    EVENTS.clear()
+    build(tmp_path, batch_size=1).run(files=files)
+    assert EVENTS == []
+    assert saved(tmp_path / "input" / "a.stg", "described") == ["page a"]
+
+
+def test_rerunning_images_runs_only_what_is_unfinished(tmp_path, files):
+    import shutil
+
+    output = tmp_path / "out"
+    build(tmp_path, batch_size=1).run(files=files, output=str(output))
+    # b was set up but stopped before any task saved; c was never reached.
+    results = output / "b.stg" / "results.yaml"
+    data = yaml.safe_load(results.read_text())
+    del data["described"], data["shouted"]
+    results.write_text(yaml.safe_dump(data))
+    shutil.rmtree(output / "c.stg")
+    EVENTS.clear()
+    build(tmp_path, batch_size=1).run(files=files, output=str(output))
+    assert EVENTS == ["describe:b", "shout:b", "describe:c", "shout:c"]
+    assert saved(output / "b.stg", "shouted") == ["PAGE B"]
+    assert saved(output / "c.stg", "shouted") == ["PAGE C"]
+
+
+def test_rerunning_images_does_not_copy_them_over_finished_results(tmp_path, files):
+    output = tmp_path / "out"
+    build(tmp_path, batch_size=1).run(files=files[:1], output=str(output))
+    copy = output / "a.stg" / "a.jpg"
+    copy.write_bytes(b"kept")
+    build(tmp_path, batch_size=1).run(files=files[:1], output=str(output))
+    assert copy.read_bytes() == b"kept"
+
+
+def test_force_on_images_reruns_and_replaces_their_output(tmp_path, files, monkeypatch):
+    output = tmp_path / "out"
+    build(tmp_path, batch_size=1).run(files=files, output=str(output))
+    stamp(monkeypatch, "again")
+    EVENTS.clear()
+    build(tmp_path, batch_size=1).run(files=files, output=str(output), force=True)
+    assert EVENTS[:2] == ["describe:a", "shout:again"]
+    assert saved(output / "a.stg", "described") == ["page a again"]
+    assert saved(output / "a.stg", "shouted") == ["PAGE A AGAIN"]
+
+
+def test_a_task_that_found_nothing_is_not_rerun(tmp_path, files, monkeypatch, caplog):
+    def nothing(self, image: Image):
+        EVENTS.append("describe")
+        return None
+
+    monkeypatch.setattr(Describe, "run", nothing)
+    output = tmp_path / "out"
+    build(tmp_path, batch_size=1).run(files=files[:1], output=str(output))
+    assert EVENTS == ["describe"]
+    assert (
+        yaml.safe_load((output / "a.stg" / "results.yaml").read_text())["described"]
+        == []
+    )
+    EVENTS.clear()
+    with caplog.at_level("WARNING", logger="collectra"):
+        build(tmp_path, batch_size=1).run(files=files[:1], output=str(output))
+    assert EVENTS == []
+    message = next(
+        m.getMessage() for m in caplog.records if "'first'" in m.getMessage()
+    )
+    assert "described (0)" in message
+    build(tmp_path, batch_size=1).run(files=files[:1], output=str(output), force=True)
+    assert EVENTS == ["describe"]

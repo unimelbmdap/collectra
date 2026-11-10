@@ -924,7 +924,7 @@ class Pipeline(LenientAttributes, BaseModel):
 
         Handles three cases:
         - Existing collectra folder with results.yaml
-        - Single image file
+        - Single image file (resuming its results folder if it already has one)
         - Directory without results.yaml
         """
         self._validate_file_inputs(key, value)
@@ -937,6 +937,10 @@ class Pipeline(LenientAttributes, BaseModel):
         # Case B: Single image file
         if self._is_image_file(savef):
             savef = self._handle_image_file(savef, output_dir)
+            if (savef / self.RESULTS_FILE).exists():
+                # An earlier run made this folder: keep its results, so that
+                # rerunning over the images resumes rather than starting again.
+                return "file", savef
 
         # Case C: Directory without results.yaml - create results file
         if savef.is_dir():
@@ -988,6 +992,8 @@ class Pipeline(LenientAttributes, BaseModel):
             else file_path.parent / folder_name
         )
         savef.mkdir(parents=True, exist_ok=True)
+        if (savef / self.RESULTS_FILE).exists():
+            return savef  # already ingested; its results refer to that copy
 
         # Keep the file exactly as supplied, EXIF orientation included: every
         # reader in Collectra applies it rather than stripping it.
@@ -1268,7 +1274,7 @@ class Pipeline(LenientAttributes, BaseModel):
             existing = [
                 f"{output.name} ({len(output.items)})"
                 for output in self._output_nodes(node)
-                if output.items
+                if self._holds_output(output)
             ]
             logger.warning(
                 "Skipping task '%s' for %s: output already exists in %s. "
@@ -1326,9 +1332,18 @@ class Pipeline(LenientAttributes, BaseModel):
             if isinstance(child, ArtefactNode)
         ]
 
+    @staticmethod
+    def _holds_output(output: ArtefactNode) -> bool:
+        """Whether a node has items, or a saved empty result.
+
+        A task that ran and found nothing saves its output as an empty entry,
+        which loads as a ready node with no items. That is a finished result.
+        """
+        return bool(output.items) or output.status == NodeStatus.READY
+
     def _has_output(self, node: TaskNode) -> bool:
-        """Whether any of a task's output nodes already holds items."""
-        return any(output.items for output in self._output_nodes(node))
+        """Whether any of a task's output nodes already holds a result."""
+        return any(self._holds_output(output) for output in self._output_nodes(node))
 
     def _take_outputs(self, node: TaskNode, folder) -> PreviousOutputs:
         """Empty a task's output nodes before a forced rerun replaces them.
