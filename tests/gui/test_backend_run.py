@@ -1,16 +1,18 @@
 """Tests for running the pipeline on the open page from the GUI backend."""
 
 import queue
+import shutil
 import threading
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import pytest
 import yaml
 from PIL import Image
 
 from collectra.gui import run_log
-from collectra.gui.backend import GUIBackend
+from collectra.gui.backend import RUN_STOP_TIMEOUT, GUIBackend, _RunState
 from collectra.pipelines.run_plan import RunPlan, RunReport, TaskOutcome, TaskPlan
 
 GUARD = {"success": False, "error": "A run is in progress on this page"}
@@ -665,3 +667,230 @@ def test_a_base_exception_in_the_run_is_recorded_and_re_raised(backend, pipeline
     assert status["summary"] == "0 ran, 1 skipped, 2 failed"
     assert "  ocr  failed: SystemExit: shutting down" in log_text(page)
     assert not backend._run_lock.locked()
+
+
+# Previews of real pages
+
+
+@pytest.fixture
+def real_page(tmp_path, raw_img_path):
+    """A page every task of the planning test pipeline has run on once."""
+    from tests.unit.test_run_plan import RAN, build
+
+    source = tmp_path / "input"
+    source.mkdir()
+    shutil.copy(raw_img_path, source / "a.jpg")
+    build(tmp_path).run(files=[str(source / "a.jpg")])
+    RAN.clear()
+    return source / "a.pln"
+
+
+def real_backend(tmp_path, folder):
+    from tests.unit.test_run_plan import build
+
+    backend = GUIBackend(build(tmp_path))
+    assert backend.load_yaml(str(folder / "results.yaml"))["success"]
+    return backend
+
+
+def test_preview_of_a_renamed_page_is_refused_and_writes_nothing(tmp_path, real_page):
+    from tests.unit.test_run_plan import snapshot
+
+    renamed = real_page.with_name("a_renamed")
+    real_page.rename(renamed)
+    backend = real_backend(tmp_path, renamed)
+    before = snapshot(renamed)
+    preview = backend.get_run_preview()
+    assert preview["can_run"] is False
+    assert preview["tasks"] == []
+    assert preview["message"] == (
+        "a_renamed cannot be run with the Plan pipeline: its pages are folders "
+        "whose names end in .pln."
+    )
+    assert snapshot(renamed) == before
+    assert backend.start_run() == {"success": False, "error": preview["message"]}
+    assert snapshot(renamed) == before
+
+
+def test_preview_and_run_of_a_page_whose_original_image_is_gone(tmp_path, real_page):
+    from tests.unit.test_run_plan import RAN
+
+    (real_page.parent / "a.jpg").unlink()
+    path = real_page / "results.yaml"
+    data = yaml.safe_load(path.read_text())
+    data.pop("shouted")
+    path.write_text(yaml.safe_dump(data))
+    backend = real_backend(tmp_path, real_page)
+    preview = backend.get_run_preview()
+    assert preview["can_run"] is True
+    assert [task["action"] for task in preview["tasks"]] == ["skip", "run"]
+    assert backend.start_run()["success"]
+    backend._run_thread.join(TIMEOUT)
+    status = backend.get_run_status()
+    assert status["summary"] == "1 ran, 1 skipped, 0 failed"
+    assert RAN == ["shout"]
+    assert yaml.safe_load(path.read_text())["shouted"]["data"] == "PAGE"
+
+
+def test_preview_says_how_the_results_differ_from_the_pipeline(backend, pipeline):
+    pipeline.plan = RunPlan(
+        pipeline.plan.tasks,
+        warnings=(
+            "these results were made by the Other pipeline, not demo",
+            "pipeline version 1.2, results made with 1.0",
+        ),
+    )
+    preview = backend.get_run_preview()
+    assert preview["can_run"] is True
+    assert preview["message"] == (
+        "Warning: these results were made by the Other pipeline, not demo; "
+        "pipeline version 1.2, results made with 1.0."
+    )
+
+
+def test_the_started_entry_notes_how_the_results_differ(backend, pipeline, page):
+    pipeline.plan = RunPlan(
+        pipeline.plan.tasks,
+        warnings=("pipeline version 1.2, results made with 1.0",),
+    )
+    assert backend.start_run()["success"]
+    wait_started(pipeline)
+    assert "  warning: pipeline version 1.2, results made with 1.0\n" in (
+        pipeline.log_at_start
+    )
+    finish(backend, pipeline, tasks=2)
+
+
+def test_preview_holds_the_run_lock_while_it_plans(backend, pipeline):
+    held = []
+    plan = pipeline.plan
+
+    def plan_page_run(folder):
+        held.append(backend._run_lock.locked())
+        return plan
+
+    pipeline.plan_page_run = plan_page_run
+    assert backend.get_run_preview()["can_run"] is True
+    assert held == [True]
+    assert not backend._run_lock.locked()
+
+
+def test_preview_releases_the_run_lock_when_planning_fails(backend, pipeline):
+    pipeline.plan_error = ValueError("no")
+    assert backend.get_run_preview()["message"] == "no"
+    assert not backend._run_lock.locked()
+
+
+def test_a_preview_in_progress_keeps_a_run_from_starting(backend, pipeline):
+    inside, release = threading.Event(), threading.Event()
+    plan = pipeline.plan
+
+    def plan_page_run(folder):
+        inside.set()
+        assert release.wait(TIMEOUT)
+        return plan
+
+    pipeline.plan_page_run = plan_page_run
+    previews = []
+    thread = threading.Thread(
+        target=lambda: previews.append(backend.get_run_preview()), daemon=True
+    )
+    thread.start()
+    assert inside.wait(TIMEOUT)
+    assert backend.start_run() == {
+        "success": False,
+        "error": "A run is already in progress",
+    }
+    release.set()
+    thread.join(TIMEOUT)
+    assert previews[0]["can_run"] is True
+
+
+def test_a_crash_that_cannot_be_reported_still_releases_the_lock(
+    backend, pipeline, page
+):
+    pipeline.run_error = RuntimeError("the run broke")
+    with patch(
+        "collectra.gui.backend._crashed_report", side_effect=RuntimeError("worse")
+    ):
+        assert backend.start_run()["success"]
+        status = finish(backend, pipeline)
+    assert status["running"] is False
+    assert status["error"] == "The run could not be recorded: worse"
+    assert not backend._run_lock.locked()
+
+
+# Restarting, updating and closing during a run
+
+
+def test_restart_is_refused_while_a_run_is_going(backend, pipeline):
+    backend._window = Mock()
+    assert backend.start_run()["success"]
+    wait_started(pipeline)
+    assert backend.restart_gui() == {
+        "success": False,
+        "error": "Stop the run, or wait for it to finish, before restarting.",
+    }
+    backend._window.destroy.assert_not_called()
+    assert not backend._restart_requested
+    finish(backend, pipeline, tasks=2)
+    assert backend.restart_gui()["success"]
+
+
+def test_update_is_refused_while_a_run_is_going(backend, pipeline):
+    assert backend.start_run()["success"]
+    wait_started(pipeline)
+    with patch("collectra.gui.updates.update_repository") as update:
+        assert backend.install_update("pipeline") == {
+            "success": False,
+            "error": "Stop the run, or wait for it to finish, before updating.",
+        }
+    update.assert_not_called()
+    finish(backend, pipeline, tasks=2)
+
+
+class FakeThread:
+    def __init__(self, alive=True):
+        self.alive = alive
+        self.joins = []
+
+    def is_alive(self):
+        return self.alive
+
+    def join(self, timeout=None):
+        self.joins.append(timeout)
+
+
+def test_closing_the_window_stops_the_run_and_waits_a_while(pipeline, page):
+    backend = GUIBackend(pipeline)
+    backend._run_state = _RunState(page, total=1)
+    backend._run_thread = thread = FakeThread()
+    assert backend._on_closing() is None
+    assert backend._run_state.stop is True
+    assert thread.joins == [RUN_STOP_TIMEOUT]
+    assert RUN_STOP_TIMEOUT == 30
+
+
+def test_closing_the_window_without_a_run_does_not_wait(pipeline, page):
+    backend = GUIBackend(pipeline)
+    assert backend._on_closing() is None
+    backend._run_state = _RunState(page, total=1, running=False)
+    backend._run_thread = thread = FakeThread(alive=False)
+    assert backend._on_closing() is None
+    assert thread.joins == []
+    assert backend._run_state.stop is False
+
+
+def test_closing_the_window_runs_the_closing_handler(pipeline, page):
+    from webview.event import Event
+
+    backend = GUIBackend(pipeline)
+    window = SimpleNamespace(events=SimpleNamespace(closing=Event(None, True)))
+    backend.set_window(window)
+    assert backend._window is window
+    backend._run_state = _RunState(page, total=1)
+    backend._run_thread = thread = FakeThread()
+    cancelled = window.events.closing.set()
+    assert cancelled is False
+    assert backend._run_state.stop is True
+    assert thread.joins == [RUN_STOP_TIMEOUT]

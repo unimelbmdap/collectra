@@ -45,6 +45,9 @@ class ImageFormat(enum.Enum):
 
 RUN_IN_PROGRESS = "A run is in progress on this page"
 STALE_PAGE = "The run changed this page; open it again before editing"
+# How long closing the window waits for a stopping run to finish its task and
+# put back any output it had moved aside.
+RUN_STOP_TIMEOUT = 30
 
 
 @dataclass
@@ -236,12 +239,19 @@ class GUIBackend:
             yield self._run_guard(folder)
 
     def get_run_preview(self) -> dict:
-        """Which tasks a run of the open page would run, re-run or skip."""
+        """Which tasks a run of the open page would run, re-run or skip.
+
+        Planning loads the page into the pipeline as a run does, so it holds
+        the run lock: no run starts while a preview is being made.
+        """
         try:
             folder = self._run_folder()
-            if self._run_lock.locked():
+            if not self._run_lock.acquire(blocking=False):
                 raise RuntimeError("A run is already in progress")
-            plan = self._pipeline.plan_page_run(folder)
+            try:
+                plan = self._pipeline.plan_page_run(folder)
+            finally:
+                self._run_lock.release()
         except Exception as error:
             return {
                 "success": True,
@@ -256,7 +266,9 @@ class GUIBackend:
                 {"name": task.name, "action": task.action, "reason": task.reason}
                 for task in plan.tasks
             ],
-            "message": "",
+            "message": (
+                f"Warning: {'; '.join(plan.warnings)}." if plan.warnings else ""
+            ),
         }
 
     def _run_folder(self) -> Path:
@@ -318,16 +330,16 @@ class GUIBackend:
         began = time.monotonic()
         crash = None
         try:
-            report = self._pipeline.run_page(state.folder, plan, should_stop)
-            if not isinstance(report, RunReport):
-                raise TypeError(
-                    f"run_page returned {type(report).__name__}, not a RunReport"
-                )
-        except BaseException as error:
-            crash = error
-            state.error = str(error)
-            report = _crashed_report(plan, error)
-        try:
+            try:
+                report = self._pipeline.run_page(state.folder, plan, should_stop)
+                if not isinstance(report, RunReport):
+                    raise TypeError(
+                        f"run_page returned {type(report).__name__}, not a RunReport"
+                    )
+            except BaseException as error:
+                crash = error
+                state.error = str(error)
+                report = _crashed_report(plan, error)
             state.summary = run_log.summarize(report)
             state.done = sum(
                 outcome.status in ("ran", "re-ran", "failed")
@@ -434,6 +446,13 @@ class GUIBackend:
         """Close the GUI so start() can replace the process with fresh code."""
         if self._window is None:
             return {"success": False, "error": "No GUI window is open."}
+        if self._run_lock.locked():
+            # Replacing the process would end the run without putting back the
+            # output its re-run tasks had moved aside.
+            return {
+                "success": False,
+                "error": "Stop the run, or wait for it to finish, before restarting.",
+            }
         if not self._update_lock.acquire(blocking=False):
             return {
                 "success": False,
@@ -495,6 +514,12 @@ class GUIBackend:
 
         if target not in {"pipeline", "collectra"}:
             return {"success": False, "error": "Unknown update target."}
+        if self._run_lock.locked():
+            # The run is using the code an update would replace.
+            return {
+                "success": False,
+                "error": "Stop the run, or wait for it to finish, before updating.",
+            }
         if not self._update_lock.acquire(blocking=False):
             return {
                 "success": False,
@@ -613,8 +638,23 @@ class GUIBackend:
         return self._pipeline.ext
 
     def set_window(self, window):
-        """Store the window reference for use in dialogs."""
+        """Store the window reference for use in dialogs, and watch it close."""
         self._window = window
+        window.events.closing += self._on_closing
+
+    def _on_closing(self) -> None:
+        """Stop a run when the window closes, and give it a while to end.
+
+        The run stops between tasks; waiting lets a re-run task finish and put
+        back the output it moved aside. The wait is bounded so that a task
+        that never ends cannot keep the window from closing.
+        """
+        thread = self._run_thread
+        if thread is None or not thread.is_alive():
+            return
+        if self._run_state is not None:
+            self._run_state.stop = True
+        thread.join(RUN_STOP_TIMEOUT)
 
     def reveal_in_folder(self, path: str) -> dict:
         """Reveal a file in the OS file manager, selected within its folder.
