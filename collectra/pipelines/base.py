@@ -20,24 +20,24 @@ from __future__ import annotations
 __all__ = ["Pipeline"]
 
 import copy
-import tempfile
-from contextlib import nullcontext
 import datetime
 import json
 import shlex
 import shutil
 import stat
 import sys
+import tempfile
 import time
 import warnings
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Annotated, Any, ClassVar
 
-from cappa import Arg
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 import graphviz
 import networkx as nx
 import yaml
+from cappa import Arg
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 from rich.markup import escape
 from rich.progress import (
     BarColumn,
@@ -50,13 +50,13 @@ from rich.progress import (
     track,
 )
 
-from collectra.utils import change_dir, load_class_from_string, write_yaml
 from collectra.cli import command, group
+from collectra.utils import change_dir, load_class_from_string, write_yaml
 from utils.get_types import get_param_types, get_return_type, unpack_types
 
 from ..commons.base import LenientAttributes, TaskContext
-from ..logger import get_logger
 from ..commons.results import Results, pop_header, put_header
+from ..logger import get_logger
 from ..resources.base import Resource
 from ..tasks.base import (
     Task,
@@ -71,6 +71,7 @@ from ..types.images import Image, ImageCrop
 from ..types.links import Link
 from ..types.texts import Text
 from .node_graph_manager import NodeGraphManager
+from .run_plan import RunPlan, plan_tasks
 
 logger = get_logger(__name__)
 
@@ -889,6 +890,56 @@ class Pipeline(LenientAttributes, BaseModel):
             task_overrides=options["task_overrides"],
         )
         self._warn_unready_starting_tasks(starting_nodes, value)
+
+    def plan_page_run(self, folder: Path) -> RunPlan:
+        """Which tasks running this results folder would run, re-run or skip.
+
+        The folder is loaded the way a run loads it, but no task runs.
+
+        Raises:
+            FileNotFoundError: The folder has no results, or the image copy
+                its results refer to is missing.
+            ValueError: The results do not match this pipeline's tasks.
+        """
+        folder = Path(folder)
+        results_file = folder / self.RESULTS_FILE
+        if not results_file.exists():
+            raise FileNotFoundError(f"{results_file} does not exist.")
+        self._ensure_workflow_connected()
+        root = self._get_root_input()
+        saved = yaml.safe_load(results_file.read_text()) or {}
+        pop_header(saved, source=folder)
+        if root not in saved:
+            raise ValueError(
+                f"The results in {folder.name} do not match this pipeline: "
+                f"there is no '{root}' entry."
+            )
+        entry = saved[root]
+        image = (
+            entry.get("data", entry.get("path")) if isinstance(entry, dict) else None
+        )
+        # A run can record the copy by bare name or by the path it was fed.
+        copy = Path(str(image)).name if image else None
+        if copy and not (folder / copy).exists():
+            raise FileNotFoundError(
+                f"{copy} is missing from {folder}; the results refer to it."
+            )
+        options = {"output": None, "usage": False, "render": False, "single": False}
+        self._setup_file(self._get_root_starting_nodes(), str(folder), options)
+        flow = self.node_manager.flow
+        tasks = {node.name: node for node in self.node_manager.get_task_nodes()}
+        order = [name for name in nx.topological_sort(flow) if name in tasks]
+        children = {
+            name: {
+                grandchild.name
+                for output in self._output_nodes(node)
+                for grandchild in self.node_manager.get_children(output)
+                if isinstance(grandchild, TaskNode)
+            }
+            for name, node in tasks.items()
+        }
+        missing = {name for name, node in tasks.items() if not self._has_output(node)}
+        return plan_tasks(missing, children, order)
 
     def _warn_unready_starting_tasks(self, starting_nodes: list[TaskNode], value):
         """Explain why a task the user asked for never ran for this file.
