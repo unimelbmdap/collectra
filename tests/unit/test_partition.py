@@ -14,6 +14,7 @@ from collectra.partition import (
     get_partition_value_type,
     get_partitions,
     partition_files,
+    partition_results,
     process_partitions,
     validate_partition_sum,
     validate_partition_value,
@@ -259,27 +260,25 @@ class TestAssignPartitionLabel:
         assert mock_instance.save.call_count == 3
 
     @patch("collectra.partition.assign_partition_label")
-    def test_rollback_on_error(self, mock_assign):
-        """On error, assign_partition_label_to_files should attempt to revert changes."""
-        # First two succeed, third raises. Then rollback calls assign_partition_label
-        # for up to 3 items (the error item was appended before the exception).
-        # Provide enough side_effects: 2 ok + 1 error + 3 rollback = 6.
-        mock_assign.side_effect = [
-            None,  # file 0 assign
-            None,  # file 1 assign
-            RuntimeError("save failed"),  # file 2 assign fails
-            None,  # rollback file 0
-            None,  # rollback file 1
-            None,  # rollback file 2
+    @patch("collectra.partition.CollectraFile")
+    def test_rollback_on_error(self, mock_cf_cls, mock_assign):
+        """On error, assign_partition_label_to_files should restore the original labels."""
+        originals = ["test", None, "val"]
+        instances = [
+            MagicMock(collectra_results_metadata=MagicMock(partition=label))
+            for label in originals
         ]
+        instances[2].save.side_effect = RuntimeError("save failed")
+        mock_cf_cls.from_data.side_effect = instances
 
         files = [Path(f"/fake/{i}.arb") for i in range(3)]
 
         with pytest.raises(RuntimeError):
             assign_partition_label_to_files(files, "train")
 
-        # 3 initial calls + up to 3 rollback calls
-        assert mock_assign.call_count >= 3
+        assert mock_assign.call_args_list == [
+            call(file, label) for file, label in zip(files, originals)
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -408,3 +407,68 @@ class TestProcessPartitions:
 
         call_args = mock_partition.call_args
         assert call_args.args[2] == "float"
+
+
+# ---------------------------------------------------------------------------
+# partition_results
+# ---------------------------------------------------------------------------
+
+
+class TestPartitionResults:
+    """Tests for partition_results() — the --force guard on existing partitions."""
+
+    @staticmethod
+    def _results(tmp_path, partitions):
+        import yaml
+
+        folders = []
+        for i, partition in enumerate(partitions):
+            folder = tmp_path / f"item{i}.arb"
+            folder.mkdir()
+            metadata = {} if partition is None else {"partition": partition}
+            (folder / "results.yaml").write_text(
+                yaml.safe_dump({"collectra_results_metadata": metadata})
+            )
+            folders.append(folder)
+        return folders
+
+    @staticmethod
+    def _partition(folder):
+        from collectra.commons.files import CollectraFile
+
+        return CollectraFile.from_data(folder).collectra_results_metadata.partition
+
+    def test_raises_when_already_partitioned(self, tmp_path):
+        """Should refuse to change existing partitions without force."""
+        folders = self._results(tmp_path, ["train", None, None, None])
+
+        with pytest.raises(ValueError, match="--force"):
+            partition_results([str(tmp_path)], "arb", {"train": "50%"})
+
+        assert [self._partition(f) for f in folders] == ["train", None, None, None]
+
+    def test_unpartitioned_results_succeed_without_force(self, tmp_path):
+        """Should partition results that have no existing partition."""
+        folders = self._results(tmp_path, [None] * 4)
+
+        partition_results([str(tmp_path)], "arb", {"train": "50%"})
+
+        assert sorted(str(self._partition(f)) for f in folders) == [
+            "None",
+            "None",
+            "train",
+            "train",
+        ]
+
+    def test_force_overrides_existing_partitions(self, tmp_path):
+        """Should overwrite existing partitions and leave unassigned results unchanged."""
+        folders = self._results(tmp_path, ["test"] * 4)
+
+        partition_results([str(tmp_path)], "arb", {"train": "50%"}, force=True)
+
+        assert sorted(self._partition(f) for f in folders) == [
+            "test",
+            "test",
+            "train",
+            "train",
+        ]

@@ -5,7 +5,7 @@ import pytest
 import tifffile
 import yaml
 
-from collectra import Image, ObjectDetectionYOLO
+from collectra import Image, ObjectDetectorYOLO
 from collectra.types.images import Orientation
 
 
@@ -65,8 +65,8 @@ def test_tiff_inference_preserves_channels(
         return tensor
 
     monkeypatch.setattr(DetectionPredictor, "preprocess", capture_preprocess)
-    task = ObjectDetectionYOLO("detector", model=multichannel_yolo)
-    results = task.run(image, imgsz=64)
+    task = ObjectDetectorYOLO("detector", model=multichannel_yolo)
+    results = task.run(image, resolution=64)
 
     assert len(observed) == 1
     assert observed[0][0:2] == (1, 75)
@@ -77,7 +77,7 @@ def test_tiff_inference_preserves_channels(
 def test_tiff_inference_reports_channel_mismatch(tmp_path, multichannel_yolo):
     path = tmp_path / "gray.tif"
     tifffile.imwrite(path, np.zeros((48, 64), dtype=np.uint8))
-    task = ObjectDetectionYOLO("detector", model=multichannel_yolo)
+    task = ObjectDetectorYOLO("detector", model=multichannel_yolo)
 
     with pytest.raises(ValueError, match="1 image channels.*expects 75"):
-        task.run(Image(name="gray", data=path), imgsz=64)
+        task.run(Image(name="gray", data=path), resolution=64)

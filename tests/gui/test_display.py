@@ -1,6 +1,5 @@
 import base64
 import io
-from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,7 +12,6 @@ from collectra.gui.backend import GUIBackend
 from collectra.types.base import Artefact
 
 
-@dataclass
 class Measurement(Artefact):
     value: float = 0
 
@@ -442,20 +440,41 @@ def test_rotate_crop_via_link_leaves_parent_and_siblings(backend):
 
 
 def test_unannotated_detector_output_has_crop_type(tmp_path):
-    from collectra import Collectra
+    from collectra import Pipeline
 
     pipeline_file = tmp_path / "pipeline.yaml"
     pipeline_file.write_text(
         "collectra_pipeline_metadata: {name: test, ext: sandglass, version: '1.0'}\n"
         "detector:\n"
-        "  type: collectra.ObjectDetectionYOLO\n"
+        "  type: collectra.ObjectDetectorYOLO\n"
         "  input: image\n"
         "  output: sandglass\n"
     )
-    graph = Collectra.from_file(pipeline_file).gui_graph()
+    graph = Pipeline.from_file(pipeline_file).gui_graph()
     nodes = {node["id"]: node for node in graph["nodes"]}
     assert nodes["sandglass"]["detail"] == "collectra.ImageCrop"
     assert nodes["image"]["detail"] == "collectra.Image"
+
+
+@pytest.mark.parametrize(
+    "task_type", ["ObjectDetectorRFDETR", "ObjectDetectorDETR"]
+)
+def test_unannotated_detector_output_has_crop_type_for_every_detector(
+    tmp_path, task_type
+):
+    from collectra import Pipeline
+
+    pipeline_file = tmp_path / "pipeline.yaml"
+    pipeline_file.write_text(
+        "collectra_pipeline_metadata: {name: test, ext: sandglass, version: '1.0'}\n"
+        "detector:\n"
+        f"  type: collectra.{task_type}\n"
+        "  input: image\n"
+        "  output: sandglass\n"
+    )
+    graph = Pipeline.from_file(pipeline_file).gui_graph()
+    nodes = {node["id"]: node for node in graph["nodes"]}
+    assert nodes["sandglass"]["detail"] == "collectra.ImageCrop"
 
 
 def test_active_node_ids_reuse_loaded_page_graph(backend, monkeypatch):
@@ -483,11 +502,9 @@ def test_external_artefact_publishes_renderer_beside_python_module(
     )
     (package / "measurement.js").write_text(source)
     (package / "measurement.py").write_text("""
-from dataclasses import dataclass
 from pathlib import Path
 from collectra.types.base import Artefact
 
-@dataclass
 class Measurement(Artefact):
     value: float = 0
 
@@ -524,3 +541,276 @@ class Measurement(Artefact):
     error = backend.get_artefact_display("example")
     assert not error["success"]
     assert "measurement.js" in error["error"]
+
+
+def results_file(tmp_path, name, header):
+    folder = tmp_path / f"{name}.collectra"
+    folder.mkdir()
+    (folder / "results.yaml").write_text(
+        yaml.safe_dump(
+            {
+                **header,
+                "text": {"type": "collectra.Text", "id": "text", "data": "before"},
+            },
+            sort_keys=False,
+        )
+    )
+    return folder / "results.yaml"
+
+
+def test_a_page_with_the_new_results_header_opens_and_saves_it_back(backend, tmp_path):
+    path = results_file(
+        tmp_path,
+        "new",
+        {"results": {"type": "collectra.Results", "partition": "validation"}},
+    )
+    assert backend.load_yaml(str(path))["success"]
+    assert backend._graph.nodes == ["text"]  # the header is not a node
+    assert backend.update_display_text("text", "after", str(path))["success"]
+    saved = yaml.safe_load(path.read_text())
+    assert list(saved) == ["results", "text"]
+    assert saved["results"]["type"] == "collectra.Results"
+    assert saved["results"]["partition"] == "validation"
+    assert saved["text"]["data"] == "after"
+
+
+def test_a_page_with_the_old_header_opens_with_a_warning_and_is_upgraded_on_save(
+    backend, tmp_path, monkeypatch
+):
+    from collectra.commons import results as header_module
+
+    monkeypatch.setattr(header_module, "_warned", False)
+    path = results_file(
+        tmp_path, "old", {"collectra_results_metadata": {"partition": "train"}}
+    )
+    with pytest.warns(FutureWarning, match="deprecated"):
+        assert backend.load_yaml(str(path))["success"]
+    assert backend._graph.nodes == ["text"]
+    assert backend.update_display_text("text", "after", str(path))["success"]
+    saved = yaml.safe_load(path.read_text())
+    assert list(saved) == ["results", "text"]
+    assert saved["results"]["partition"] == "train"
+    assert "collectra_results_metadata" not in saved
+
+
+# --- editing the Link children of an image -----------------------------------------
+
+
+def saved(backend):
+    return yaml.safe_load(Path(backend._yaml_path).read_text())
+
+
+def test_an_image_view_lists_its_link_children(backend):
+    assert view(backend, "crop")["links"] == [{"id": "link", "name": "link"}]
+    assert view(backend, "image")["links"] == []
+    assert view(backend, "link")["links"] == [{"id": "link", "name": "link"}]
+
+
+def with_classifier(backend, inputs=("crop",), output_type="collectra.Link"):
+    """A graph with a task that outputs ``link`` and ``printed``, and one elsewhere."""
+
+    def artefact(name, types):
+        return {"id": name, "nodeType": "Artefact", "types": types, "inputs": [], "outputs": []}
+
+    nodes = [
+        {"id": "classify", "nodeType": "Task", "types": [], "inputs": list(inputs), "outputs": ["link", "printed"]},
+        artefact("link", [output_type]),
+        artefact("printed", [output_type]),
+        {"id": "other", "nodeType": "Task", "types": [], "inputs": ["x"], "outputs": ["a"]},
+        artefact("a", ["collectra.Link"]),
+    ]
+    backend._pipeline = SimpleNamespace(ext="collectra", gui_graph=lambda: {"nodes": nodes})
+
+
+def test_a_classifier_task_names_the_link_it_sets_and_offers_its_classes(backend):
+    with_classifier(backend)
+    assert view(backend, "crop")["links"] == [
+        {"id": "link", "name": "link", "task": "classify", "options": ["link", "printed"]}
+    ]
+
+
+def test_a_classifier_task_is_offered_even_when_no_link_is_set(backend):
+    with_classifier(backend, inputs=("different",))
+    assert view(backend, "different")["links"] == [
+        {"id": None, "name": None, "task": "classify", "options": ["link", "printed"]}
+    ]
+
+
+def test_a_link_with_another_name_stays_beside_the_classifier_slot(backend):
+    backend.set_link_name("link", "odd")
+    with_classifier(backend)
+    assert view(backend, "crop")["links"] == [
+        {"id": "odd", "name": "odd"},
+        {"id": None, "name": None, "task": "classify", "options": ["link", "printed"]},
+    ]
+
+
+def test_only_classifier_tasks_that_take_the_image_are_offered(backend):
+    with_classifier(backend, output_type="collectra.ImageCrop")
+    assert view(backend, "different")["links"] == []
+    with_classifier(backend, inputs=("elsewhere",))
+    assert view(backend, "different")["links"] == []
+
+
+def test_a_pipeline_that_cannot_be_read_adds_no_classifier_slots(backend):
+    def broken():
+        raise RuntimeError("cannot connect")
+
+    backend._pipeline = SimpleNamespace(ext="collectra", gui_graph=broken)
+    assert view(backend, "crop")["links"] == [{"id": "link", "name": "link"}]
+
+
+def test_create_link_adds_a_link_under_the_image_and_saves_it(backend):
+    result = backend.create_link("different", "printed")
+    assert result["success"] and result["id"] == "printed"
+    assert "printed" in backend.get_link_names()["names"]
+    assert view(backend, "different")["links"] == [{"id": "printed", "name": "printed"}]
+    record = saved(backend)["printed"]
+    assert record["type"] == "collectra.Link"
+    assert record["id"] == "printed"
+    assert record["parents"] == "different"
+
+
+def test_create_link_gives_a_new_id_when_the_name_is_taken(backend):
+    first = backend.create_link("different", "printed")["id"]
+    second = backend.create_link("crop", "printed")["id"]
+    assert first == "printed"
+    assert second != "printed" and second.startswith("printed-")
+    assert len(saved(backend)["printed"]) == 2
+
+
+@pytest.mark.parametrize("name", ["", "   ", None])
+def test_create_link_needs_a_name(backend, name):
+    assert not backend.create_link("crop", name)["success"]
+
+
+def test_create_link_reports_a_missing_parent_or_page(backend, tmp_path):
+    assert "not found" in backend.create_link("nope", "x")["error"]
+    empty = GUIBackend(SimpleNamespace(ext="collectra"))
+    assert not empty.create_link("crop", "x")["success"]
+
+
+def test_set_link_name_changes_the_name_and_the_id_that_matched_it(backend):
+    result = backend.set_link_name("link", "handwritten")
+    assert result["success"], result
+    assert result["id"] == "handwritten"
+    node = backend._graph.get_node("handwritten")
+    assert node.label == "handwritten"
+    assert backend._graph.parents("handwritten") == ["crop"]
+    assert "link" not in saved(backend)
+    written = saved(backend)["handwritten"]
+    assert (written["type"], written["id"], written["parents"]) == (
+        "collectra.Link",
+        "handwritten",
+        "crop",
+    )
+    assert view(backend, "crop")["links"] == [
+        {"id": "handwritten", "name": "handwritten"}
+    ]
+
+
+def test_set_link_name_keeps_an_id_that_was_not_the_old_name(backend):
+    backend._graph.rename_id("link", "link-1234abcd")
+    assert (
+        backend.set_link_name("link-1234abcd", "combination")["id"] == "link-1234abcd"
+    )
+    assert saved(backend)["combination"]["id"] == "link-1234abcd"
+
+
+def test_set_link_name_gives_a_new_id_when_the_matching_one_is_taken(backend):
+    backend._graph.add_node(
+        dict(
+            label="combination",
+            type="collectra.Link",
+            id="combination",
+            parents="image",
+        )
+    )
+    result = backend.set_link_name("link", "combination")
+    assert result["success"], result
+    assert result["id"].startswith("combination-")
+    assert result["id"] != "combination"
+    assert backend._graph.get_node("combination").parents == ["image"]
+
+
+def test_set_link_name_to_the_same_name_changes_nothing(backend):
+    result = backend.set_link_name("link", "link")
+    assert result["success"]
+    assert result["id"] == "link"
+
+
+@pytest.mark.parametrize("name", ["", "   "])
+def test_set_link_name_needs_a_name(backend, name):
+    assert not backend.set_link_name("link", name)["success"]
+    assert backend._graph.get_node("link").label == "link"
+
+
+def test_set_link_name_only_applies_to_links(backend):
+    result = backend.set_link_name("crop", "handwritten")
+    assert not result["success"]
+    assert "Link" in result["error"]
+    assert backend._graph.get_node("crop").label == "crop"
+
+
+def test_set_link_name_reports_a_missing_node_or_page(backend, tmp_path):
+    assert "not found" in backend.set_link_name("nope", "x")["error"]
+    empty = GUIBackend(SimpleNamespace(ext="collectra"))
+    assert not empty.set_link_name("link", "x")["success"]
+
+
+def test_link_names_offered_are_those_on_this_page(backend):
+    backend._graph.add_node(
+        dict(label="handwritten", type="collectra.Link", id="h", parents="image")
+    )
+    assert backend.get_link_names() == {
+        "success": True,
+        "names": ["handwritten", "link"],
+    }
+
+
+def test_link_names_offered_include_other_pages_of_the_folder(backend, tmp_path):
+    folders = []
+    for page, name in [("a.collectra", "handwritten"), ("b.collectra", "printed")]:
+        folder = tmp_path / "pages" / page
+        folder.mkdir(parents=True)
+        (folder / "results.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "sheet": record("collectra.Image", "sheet", data="x.png"),
+                    name: record("collectra.Link", name, parents="sheet"),
+                }
+            )
+        )
+        folders.append(
+            {
+                "name": page,
+                "path": str(folder),
+                "yaml_path": str(folder / "results.yaml"),
+            }
+        )
+    backend._collectra_folders = folders
+    backend._folder_list_result()
+    assert backend.get_link_names()["names"] == ["handwritten", "link", "printed"]
+
+
+def test_link_names_without_a_page_are_only_the_global_ones():
+    empty = GUIBackend(SimpleNamespace(ext="collectra"))
+    assert empty.get_link_names() == {"success": True, "names": []}
+
+
+def test_a_name_other_links_still_use_stays_in_the_file(backend):
+    backend._graph.add_node(
+        dict(label="link", type="collectra.Link", id="link2", parents="image")
+    )
+    assert backend.set_link_name("link", "handwritten")["success"]
+    assert saved(backend)["link"]["id"] == "link2"
+
+
+def test_a_type_is_a_link_when_it_names_a_link_class_or_ends_in_link():
+    from collectra.types.links import is_link_type
+
+    assert is_link_type("collectra.Link")
+    assert is_link_type("tests.gui.test_display.Region") is False
+    assert is_link_type("not.installed.module.Link")  # cannot be loaded: judged by name
+    assert not is_link_type("not.installed.module.Text")
+    assert not is_link_type("")

@@ -23,7 +23,9 @@ import torch
 
 from .rfdetr_data import channel_stats
 
-PROJECTION_KEY = "backbone.0.encoder.encoder.embeddings.patch_embeddings.projection.weight"
+PROJECTION_KEY = (
+    "backbone.0.encoder.encoder.embeddings.patch_embeddings.projection.weight"
+)
 
 
 MIN_RFDETR_VERSION = (1, 10, 1)
@@ -42,6 +44,16 @@ def require_multichannel_rfdetr() -> None:
             f"but rfdetr {installed} is installed. Upgrade it, "
             f"e.g. `pip install 'rfdetr[metrics,train,loggers]>={required}'`."
         )
+
+
+def absolute_checkpoint(path) -> str:
+    """The checkpoint's path made absolute.
+
+    RF-DETR reads a bare filename as a file in its model cache directory
+    (``~/.roboflow/models``), not in the working directory, so a checkpoint
+    beside the pipeline file must be given with its directory.
+    """
+    return os.path.abspath(os.path.expanduser(str(path)))
 
 
 def _patch_embeddings(nn_model):
@@ -95,7 +107,8 @@ def sync_channels(detector) -> int:
     try:
         encoder = detector.model.model.backbone[0].encoder
         channels = (
-            3 * encoder.num_views if hasattr(encoder, "fusion_spec")
+            3 * encoder.num_views
+            if hasattr(encoder, "fusion_spec")
             else _patch_embeddings(detector.model.model).projection.in_channels
         )
     except (AttributeError, IndexError, TypeError):

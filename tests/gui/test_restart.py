@@ -40,12 +40,12 @@ def test_process_replaced_only_after_requested_gui_shutdown(tmp_path, monkeypatc
     execute = Mock(side_effect=lambda *args: events.append("restart"))
     monkeypatch.setattr(os, "execv", execute)
     pipeline = SimpleNamespace(path=tmp_path, name="Pipeline")
-    backend.start(pipeline, debug=True)
+    backend.start(pipeline, debug=True, max_pixels=2048)
     if restart:
         assert events == ["closed", "restart"]
         execute.assert_called_once_with(sys.executable, [
             sys.executable, "-m", "collectra.main", "--pipeline",
-            str(tmp_path / "pipeline.yaml"), "gui", "--debug",
+            str(tmp_path / "pipeline.yaml"), "gui", "--debug", "--max-pixels", "2048",
         ])
     else:
         execute.assert_not_called()

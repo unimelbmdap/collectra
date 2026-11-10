@@ -1,4 +1,4 @@
-ObjectDetectionYOLO
+ObjectDetectorYOLO
 ===================
 
 Uses Ultralytics YOLO weights to detect objects and return labelled image crops.
@@ -8,7 +8,7 @@ For example, configure a detector trained to identify specimen labels:
 .. code-block:: yaml
 
     detect_labels:
-      type: collectra.ObjectDetectionYOLO
+      type: collectra.ObjectDetectorYOLO
       model: models/labels.pt
       input: image
       output: [label]
@@ -19,14 +19,15 @@ Commands
 --------
 
 * ``run INPUTS...``: detect objects. In addition to the shared run options,
-  ``--model`` overrides the checkpoint and ``--imgsz`` sets the inference size.
+  ``--model`` overrides the checkpoint, ``--resolution`` sets the image size and
+  ``--threshold`` the minimum confidence.
 * ``train INPUTS...``: train on annotated result directories. Supports model,
-  epoch, batch, image-size, optimizer, augmentation, device, and checkpoint options.
+  epoch, batch, resolution, learning-rate, optimizer, augmentation, device, and checkpoint options.
 
 .. code-block:: bash
 
     collectra --pipeline pipeline.yaml task detect_labels run images --output results
-    collectra --pipeline pipeline.yaml task detect_labels run images --model models/other.pt --imgsz 1280
+    collectra --pipeline pipeline.yaml task detect_labels run images --model models/other.pt --resolution 1280
     collectra --pipeline pipeline.yaml task detect_labels train training-data --epochs 20 --validation validation
     collectra --pipeline pipeline.yaml task detect_labels train --help
 

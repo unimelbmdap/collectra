@@ -11,7 +11,7 @@ import pytest
 from collectra.cli import command, group, invoke
 from collectra.main import find_pipeline
 from collectra.main import main
-from collectra.pipelines.base import Collectra
+from collectra.pipelines.base import Pipeline
 
 
 class Detector:
@@ -77,14 +77,14 @@ def help_for(app, argv, capsys) -> str:
 
 
 def test_rfdetr_training_help_and_annotated_options(capsys, monkeypatch):
-    from collectra import ObjectDetectionRFDETR
+    from collectra import ObjectDetectorRFDETR
 
     captured = {}
     monkeypatch.setattr(
         "collectra.tasks.object_detection.rfdetr.run_training_command",
         lambda *args, **kwargs: captured.update(kwargs),
     )
-    app = RuntimeApplication({"detector": ObjectDetectionRFDETR("detector")})
+    app = RuntimeApplication({"detector": ObjectDetectorRFDETR("detector")})
     help_text = help_for(app, ["task", "detector", "train", "--help"], capsys)
     normalized_help = " ".join(help_text.split())
     assert "Checkpoint path or pretrained variant" in normalized_help
@@ -192,14 +192,22 @@ def test_find_pipeline_accepts_both_option_forms():
     assert find_pipeline(["task", "--pipeline=b.yaml"])[0] == Path("b.yaml")
 
 
-def write_empty_pipeline(path: Path) -> Path:
+def write_empty_pipeline(path: Path, reads_images: bool = False) -> Path:
     pipeline_file = path / "pipeline.yaml"
-    pipeline_file.write_text(
+    text = (
         "collectra_pipeline_metadata:\n"
         "  name: Test\n"
         "  ext: collectra\n"
         "  version: 1.0.0\n"
     )
+    if reads_images:
+        text += (
+            "read:\n"
+            "  type: tests.unit.test_pipeline_file_extensions.FromImage\n"
+            "  input: [page]\n"
+            "  output: [out]\n"
+        )
+    pipeline_file.write_text(text)
     return pipeline_file
 
 
@@ -216,7 +224,7 @@ def test_actual_entry_point_root_help(tmp_path, capsys):
 def test_pipeline_run_accepts_tiff_inputs(
     tmp_path, monkeypatch, suffix, directory_input
 ):
-    pipeline = Collectra.from_file(write_empty_pipeline(tmp_path))
+    pipeline = Pipeline.from_file(write_empty_pipeline(tmp_path, reads_images=True))
     image = tmp_path / f"multiview{suffix}"
     image.touch()
     calls = []
@@ -228,7 +236,7 @@ def test_pipeline_run_accepts_tiff_inputs(
 
 
 def test_pipeline_run_warns_when_no_inputs_match(tmp_path, monkeypatch, capsys):
-    pipeline = Collectra.from_file(write_empty_pipeline(tmp_path))
+    pipeline = Pipeline.from_file(write_empty_pipeline(tmp_path))
     unsupported = tmp_path / "unsupported.txt"
     unsupported.touch()
     calls = []
@@ -255,7 +263,7 @@ def test_installed_pipeline_launcher_delegates_to_main(tmp_path, monkeypatch, sp
         monkeypatch.setattr(sys, "executable", str(interpreter))
         tmp_path = directory
     pipeline_file = write_empty_pipeline(tmp_path)
-    pipeline = Collectra.from_file(pipeline_file)
+    pipeline = Pipeline.from_file(pipeline_file)
     bin_dir = tmp_path / "bin"
     pipeline.cli_install("test-pipeline", bin_dir=bin_dir)
     launcher = bin_dir / "test-pipeline"
@@ -306,7 +314,7 @@ def test_pipeline_exposes_commands_for_artefact_types(tmp_path, capsys):
         "  type: collectra.ImageCrop\n"
         "  data: source.jpg\n"
     )
-    pipeline = Collectra.from_file(pipeline_file)
+    pipeline = Pipeline.from_file(pipeline_file)
 
     artefact_help = help_for(pipeline, ["artefact", "--help"], capsys)
     image_help = help_for(pipeline, ["artefact", "Palynomorph", "--help"], capsys)
@@ -338,7 +346,7 @@ def test_image_artefact_extract_command(tmp_path):
         "  type: collectra.Image\n"
         "  data: source.jpg\n"
     )
-    pipeline = Collectra.from_file(pipeline_file)
+    pipeline = Pipeline.from_file(pipeline_file)
     output = tmp_path / "output"
 
     invoke(
@@ -376,7 +384,7 @@ def test_artefact_evaluate_command_uses_selected_node(tmp_path, capsys):
     )
     (predictions / "results.yaml").write_text(result)
     (ground_truth / "results.yaml").write_text(result)
-    pipeline = Collectra.from_file(pipeline_file)
+    pipeline = Pipeline.from_file(pipeline_file)
     csv_output = tmp_path / "reports" / "evaluation.csv"
 
     invoke(
@@ -421,10 +429,10 @@ def test_cli_import_does_not_import_ml_backends():
 def test_model_task_class_discovery_does_not_import_backends():
     script = (
         "import sys; "
-        "from collectra.tasks.object_detection.yolo import ObjectDetectionYOLO; "
+        "from collectra.tasks.object_detection.yolo import ObjectDetectorYOLO; "
         "from collectra.tasks.image_classifier.yolo import ImageClassifierYOLO; "
-        "from collectra.tasks.object_detection.detr import ObjectDetectionDETR; "
-        "from collectra.tasks.object_detection.rfdetr import ObjectDetectionRFDETR; "
+        "from collectra.tasks.object_detection.detr import ObjectDetectorDETR; "
+        "from collectra.tasks.object_detection.rfdetr import ObjectDetectorRFDETR; "
         "from collectra.tasks.machine_learning.orienters import ImageOrienter; "
         "print(*(name in sys.modules for name in "
         "('torch', 'torchvision', 'ultralytics', 'rfdetr', 'transformers')))"
@@ -442,15 +450,15 @@ def test_model_task_class_discovery_does_not_import_backends():
 def test_pipeline_help_with_model_tasks_does_not_import_backends(tmp_path):
     pipeline_file = tmp_path / "pipeline.yaml"
     pipeline_file.write_text(
-        "collectra_pipeline_metadata:\n"
-        "  name: Lazy\n"
+        "Lazy:\n"
+        "  type: collectra.Pipeline\n"
         "  ext: collectra\n"
         "  version: 1.0.0\n"
         "detector:\n"
-        "  type: collectra.ObjectDetectionYOLO\n"
+        "  type: collectra.ObjectDetectorYOLO\n"
         "  model: model.pt\n"
         "rfdetr_detector:\n"
-        "  type: collectra.ObjectDetectionRFDETR\n"
+        "  type: collectra.ObjectDetectorRFDETR\n"
         "  model: model.pth\n"
     )
     script = (
@@ -472,8 +480,8 @@ def test_pipeline_help_with_model_tasks_does_not_import_backends(tmp_path):
 
 
 def test_training_is_owned_by_concrete_tasks():
-    assert not hasattr(Collectra, "train")
-    assert not hasattr(Collectra, "save_train")
+    assert not hasattr(Pipeline, "train")
+    assert not hasattr(Pipeline, "save_train")
     assert "MachineLearningTask" not in collectra.__all__
     assert not hasattr(collectra, "MachineLearningTask")
 
@@ -481,32 +489,32 @@ def test_training_is_owned_by_concrete_tasks():
 def test_model_task_classes_have_domain_specific_module_paths():
     from collectra import (
         ImageClassifierYOLO,
-        ObjectDetectionDETR,
-        ObjectDetectionRFDETR,
-        ObjectDetectionYOLO,
+        ObjectDetectorDETR,
+        ObjectDetectorRFDETR,
+        ObjectDetectorYOLO,
     )
 
-    assert ObjectDetectionYOLO.__module__ == "collectra.tasks.object_detection.yolo"
-    assert ObjectDetectionDETR.__module__ == "collectra.tasks.object_detection.detr"
-    assert ObjectDetectionRFDETR.__module__ == "collectra.tasks.object_detection.rfdetr"
+    assert ObjectDetectorYOLO.__module__ == "collectra.tasks.object_detection.yolo"
+    assert ObjectDetectorDETR.__module__ == "collectra.tasks.object_detection.detr"
+    assert ObjectDetectorRFDETR.__module__ == "collectra.tasks.object_detection.rfdetr"
     assert ImageClassifierYOLO.__module__ == "collectra.tasks.image_classifier.yolo"
 
 
 def test_yolo_task_types_are_siblings():
-    from collectra import ImageClassifierYOLO, ObjectDetectionYOLO, YOLOTask
+    from collectra import ImageClassifierYOLO, ObjectDetectorYOLO, YOLOTask
 
-    assert issubclass(ObjectDetectionYOLO, YOLOTask)
+    assert issubclass(ObjectDetectorYOLO, YOLOTask)
     assert issubclass(ImageClassifierYOLO, YOLOTask)
-    assert not issubclass(ImageClassifierYOLO, ObjectDetectionYOLO)
+    assert not issubclass(ImageClassifierYOLO, ObjectDetectorYOLO)
 
 
 def test_concrete_model_tasks_own_typed_train_commands(capsys):
-    from collectra import ImageClassifierYOLO, ObjectDetectionDETR
+    from collectra import ImageClassifierYOLO, ObjectDetectorDETR
 
     app = RuntimeApplication(
         {
             "classifier": ImageClassifierYOLO("classifier", model="model.pt"),
-            "detector": ObjectDetectionDETR("detector", model="default"),
+            "detector": ObjectDetectorDETR("detector", model="default"),
         }
     )
     classifier_help = help_for(app, ["task", "classifier", "train", "--help"], capsys)
@@ -525,8 +533,9 @@ def test_concrete_model_tasks_own_typed_train_commands(capsys):
 
 @pytest.mark.parametrize("debug", [False, True])
 @pytest.mark.parametrize("with_inputs", [False, True])
+@pytest.mark.parametrize("max_pixels", [None, 2048])
 def test_pipeline_gui_opens_selected_workflow(
-    tmp_path, monkeypatch, debug, with_inputs
+    tmp_path, monkeypatch, debug, with_inputs, max_pixels
 ):
     from unittest.mock import MagicMock
 
@@ -562,11 +571,13 @@ def test_pipeline_gui_opens_selected_workflow(
             "gui",
             *inputs,
             *(["--debug"] if debug else []),
+            *(["--max-pixels", str(max_pixels)] if max_pixels else []),
         ]
     )
 
     create_window.assert_called_once()
     api = create_window.call_args.kwargs["js_api"]
+    assert api._max_pixels == (max_pixels or 4096)
     assert api._pipeline.path == pipeline_dir.resolve()
     assert api._extension == "example"
     initial = api.get_initial_items()

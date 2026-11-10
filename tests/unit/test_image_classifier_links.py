@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from collectra import Collectra, Image, ImageClassifierYOLO, Link
+from collectra import Pipeline, Image, ImageClassifierYOLO, Link
 from collectra.types.base import ArtefactNode
 
 
@@ -70,7 +70,7 @@ def test_classifier_output_nodes_are_typed_as_links(tmp_path):
             sort_keys=False,
         )
     )
-    pipeline = Collectra.from_file(pipeline_file)
+    pipeline = Pipeline.from_file(pipeline_file)
     pipeline.connect()
 
     for name in ("Algae", "Fungi", "Pollen"):
@@ -307,9 +307,8 @@ def test_classifier_writes_each_linked_crop_with_a_unique_name(tmp_path, monkeyp
         )
     task = ImageClassifierYOLO("classifier", model="unused.pt")
     log = tmp_path / "training"
-    from PIL import Image as PillowImage
+    from collectra.types.images import open_oriented as real_open
 
-    real_open = PillowImage.open
     opened = []
 
     def tracking_open(path, *args, **kwargs):
@@ -317,8 +316,7 @@ def test_classifier_writes_each_linked_crop_with_a_unique_name(tmp_path, monkeyp
         return real_open(path, *args, **kwargs)
 
     monkeypatch.setattr(
-        "collectra.tasks.image_classifier.yolo.PillowImage",
-        SimpleNamespace(open=tracking_open),
+        "collectra.tasks.image_classifier.yolo.open_oriented", tracking_open
     )
 
     train, _ = task._prepare_assets(["Pollen"], log, "validation", "", *links)
@@ -391,7 +389,8 @@ def test_classification_distribution_includes_totals(tmp_path, capsys):
         ("val", "Pollen", 1),
         ("val", "Spore", 3),
     ):
-        directory = tmp_path / partition / class_name
+        folder = {"Pollen": "00_Pollen", "Spore": "01_Spore"}[class_name]
+        directory = tmp_path / partition / folder
         directory.mkdir(parents=True, exist_ok=True)
         for index in range(count):
             (directory / f"{index}.jpg").touch()

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from rich import print
 
-from collectra import ImageCrop, ObjectDetectionYOLO
+from collectra import ImageCrop, ObjectDetectorYOLO
 from collectra.utils import change_dir, error_msg
 
 
@@ -28,7 +28,7 @@ def train_yolo(tmp_path):
     from ultralytics.utils.metrics import DetMetrics
 
     def _train_yolo(
-        task: ObjectDetectionYOLO, *images: ImageCrop, **kwargs
+        task: ObjectDetectorYOLO, *images: ImageCrop, **kwargs
     ) -> DetMetrics | None:
         log = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         # setting training run to be in the temp directory

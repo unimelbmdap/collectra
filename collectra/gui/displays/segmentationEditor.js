@@ -30,8 +30,8 @@ async function mountSegmentationEditor(controller, view, {token, resultsPath, on
     const surface = viewer.canvas;
     const size = view.segmentation;
     const shade = document.createElement('canvas');
-    shade.width = size.width;
-    shade.height = size.height;
+    shade.width = size.preview_width || size.width;
+    shade.height = size.preview_height || size.height;
     shade.style.pointerEvents = 'none';
     const context = shade.getContext('2d');
     let saved = size, disposed = false, mode = null, radius = 10, stroke = null, saving = false;
@@ -51,13 +51,14 @@ async function mountSegmentationEditor(controller, view, {token, resultsPath, on
         context.fillStyle = 'rgba(0,0,0,0.5)';
         context.fillRect(0, 0, shade.width, shade.height);
         context.globalCompositeOperation = 'destination-out';
-        context.drawImage(image, 0, 0);
+        context.drawImage(image, 0, 0, shade.width, shade.height);
         context.globalCompositeOperation = 'source-over';
         saved = data;
     }
     await setMask(size);
     if (!current()) return {dispose() {}, isActive: () => false};
-    viewer.addOverlay({element: shade, location: viewer.world.getItemAt(0).imageToViewportRectangle(0, 0, size.width, size.height), checkResize: false});
+    const contentSize = viewer.world.getItemAt(0).getContentSize();
+    viewer.addOverlay({element: shade, location: viewer.world.getItemAt(0).imageToViewportRectangle(0, 0, contentSize.x, contentSize.y), checkResize: false});
 
     const bar = document.createElement('div');
     bar.className = 'segmentation-editor-tools';
@@ -101,7 +102,7 @@ async function mountSegmentationEditor(controller, view, {token, resultsPath, on
         const rect = surface.getBoundingClientRect();
         const item = viewer.world.getItemAt(0);
         const a = viewer.viewport.pixelFromPoint(item.imageToViewportCoordinates(0, 0), true);
-        const b = viewer.viewport.pixelFromPoint(item.imageToViewportCoordinates(radius * 2, 0), true);
+        const b = viewer.viewport.pixelFromPoint(item.imageToViewportCoordinates(radius * 2 * contentSize.x / size.width, 0), true);
         const diameter = Math.hypot(b.x - a.x, b.y - a.y);
         Object.assign(ring.style, {display: 'block', width: diameter + 'px', height: diameter + 'px',
             left: (lastPointer.clientX - rect.left) + 'px', top: (lastPointer.clientY - rect.top) + 'px'});
@@ -160,10 +161,12 @@ async function mountSegmentationEditor(controller, view, {token, resultsPath, on
         const rect = viewer.container.getBoundingClientRect();
         const pixel = new OpenSeadragon.Point(event.clientX - rect.left, event.clientY - rect.top);
         const p = viewer.world.getItemAt(0).viewportToImageCoordinates(viewer.viewport.pointFromPixel(pixel, true));
-        return [p.x, p.y];
+        return [p.x * size.width / contentSize.x, p.y * size.height / contentSize.y];
     };
     const suppress = event => {event.preventDefault(); event.stopImmediatePropagation();};
     function drawSegment(a, b) {
+        context.save();
+        context.scale(shade.width / size.width, shade.height / size.height);
         const path = () => {
             context.beginPath();
             if (a[0] === b[0] && a[1] === b[1]) {
@@ -180,6 +183,7 @@ async function mountSegmentationEditor(controller, view, {token, resultsPath, on
             context.strokeStyle = context.fillStyle = 'rgba(0,0,0,0.5)'; path();
         }
         context.globalCompositeOperation = 'source-over';
+        context.restore();
     }
     const down = event => {
         modifiers(event);
@@ -254,7 +258,7 @@ async function mountSegmentationEditor(controller, view, {token, resultsPath, on
     window.addEventListener('blur', blur);
     viewer.addHandler('animation', updateRing);
     viewer.addHandler('resize', updateRing);
-    controller.zoomToBoxGeometry(size.bounds);
+    controller.zoomToBoxGeometry(segmentationBoundsInPreview(controller, size));
     return {
         isActive: () => !!mode,
         isSaving: () => saving || maskUpdating || !!stroke,
@@ -268,6 +272,7 @@ async function mountSegmentationEditor(controller, view, {token, resultsPath, on
             window.removeEventListener('blur', blur);
             viewer.removeHandler('animation', updateRing); viewer.removeHandler('resize', updateRing);
             viewer.removeOverlay(shade); viewer.removeControl(bar);
+            shade.width = shade.height = 0;
             for (const button of toolButtons) {
                 if (viewer.buttonGroup) {
                     const index = viewer.buttonGroup.buttons.indexOf(button);

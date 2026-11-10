@@ -8,10 +8,12 @@ JavaScript usage:
 """
 
 import base64
+import csv
 import enum
 import platform
 import re
 import threading
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -19,10 +21,11 @@ import webview
 
 from collectra.commons.files import CollectraFile
 
+from .scss_theme import compile_theme
 from .data_display import CollectraAnnotationNode, CollectraGraph, NodeDisplayValue
 
 if TYPE_CHECKING:
-    from collectra.pipelines.base import Collectra
+    from collectra.pipelines.base import Pipeline
 
 
 class ImageFormat(enum.Enum):
@@ -44,13 +47,16 @@ class GUIBackend:
         window.pywebview.api.methodName(args)
     """
 
-    def __init__(self, pipeline: "Collectra", inputs=()):
+    def __init__(self, pipeline: "Pipeline", inputs=(), max_pixels: int = 4096):
         """
         Initialize the API instance.
 
         Sets up the annotation graph, YAML path, and window reference.
         All values are initially None until load_yaml() is called.
         """
+        if type(max_pixels) is not int or max_pixels < 1:
+            raise ValueError("max_pixels must be a positive integer")
+        self._max_pixels = max_pixels
         self._git_lock = threading.Lock()
         self._text_save_lock = threading.Lock()
         self._update_lock = threading.Lock()
@@ -65,6 +71,7 @@ class GUIBackend:
         self._parent_folder: str | None = None
         self._global_labels: set[str] = set()
         self._global_label_counts: dict[str, int] = {}  # {label: total_count}
+        self._global_link_names: set[str] = set()  # names of Links on any page
         from .session_cache import FolderSessionCache
 
         pipeline_path = getattr(pipeline, "path", None)
@@ -176,8 +183,14 @@ class GUIBackend:
         layouts = metadata.get("layouts", [])
         for index, filename in enumerate(layouts if isinstance(layouts, list) else []):
             if isinstance(filename, str) and filename.strip():
-                entries.append((f"pipeline:{index}", "pipeline", Path(filename).stem,
-                                Path(self._pipeline.path) / filename))
+                entries.append(
+                    (
+                        f"pipeline:{index}",
+                        "pipeline",
+                        Path(filename).stem,
+                        Path(self._pipeline.path) / filename,
+                    )
+                )
         if self._arrangement:
             for path in self._arrangement.custom_layouts():
                 entries.append((f"custom:{path.name}", "custom", path.stem, path))
@@ -188,7 +201,10 @@ class GUIBackend:
         if self._window is None:
             return {"success": False, "error": "No GUI window is open."}
         if not self._update_lock.acquire(blocking=False):
-            return {"success": False, "error": "Wait for the update to finish before restarting."}
+            return {
+                "success": False,
+                "error": "Wait for the update to finish before restarting.",
+            }
         try:
             if self._collectra_folders:
                 self._save_folder_session()
@@ -208,24 +224,35 @@ class GUIBackend:
         metadata = getattr(self._pipeline, "pipeline_metadata", {})
         return {
             "success": True,
-            "pipeline_name": metadata.get("name") or getattr(self._pipeline, "name", "Pipeline"),
-            "layouts": [{"id": key, "source": source, "name": name}
-                        for key, source, name, _ in self._available_layouts()],
+            "pipeline_name": metadata.get("name")
+            or getattr(self._pipeline, "name", "Pipeline"),
+            "layouts": [
+                {"id": key, "source": source, "name": name}
+                for key, source, name, _ in self._available_layouts()
+            ],
         }
 
     def check_updates(self) -> dict:
         from .updates import collectra_repository, inspect_repository
 
         if not self._update_lock.acquire(blocking=False):
-            return {"success": False, "error": "An update operation is already running."}
+            return {
+                "success": False,
+                "error": "An update operation is already running.",
+            }
         try:
             targets = [
                 ("pipeline", getattr(self._pipeline, "path", None), "Pipeline"),
                 ("collectra", collectra_repository(), "Collectra"),
             ]
-            return {"success": True, "restart_required": self._restart_required, "repositories": [
-                {"id": key, **inspect_repository(root, label)} for key, root, label in targets
-            ]}
+            return {
+                "success": True,
+                "restart_required": self._restart_required,
+                "repositories": [
+                    {"id": key, **inspect_repository(root, label)}
+                    for key, root, label in targets
+                ],
+            }
         finally:
             self._update_lock.release()
 
@@ -235,10 +262,14 @@ class GUIBackend:
         if target not in {"pipeline", "collectra"}:
             return {"success": False, "error": "Unknown update target."}
         if not self._update_lock.acquire(blocking=False):
-            return {"success": False, "error": "An update operation is already running."}
+            return {
+                "success": False,
+                "error": "An update operation is already running.",
+            }
         try:
             root, label = (
-                (getattr(self._pipeline, "path", None), "Pipeline") if target == "pipeline"
+                (getattr(self._pipeline, "path", None), "Pipeline")
+                if target == "pipeline"
                 else (collectra_repository(), "Collectra")
             )
             repository = {"id": target, **update_repository(root, label)}
@@ -282,7 +313,11 @@ class GUIBackend:
         """Persist a chosen layout without touching the loaded results."""
         result = self.load_layout(layout_id)
         if not result["success"] or self._arrangement is None:
-            return result if not result["success"] else {"success": False, "error": "No pipeline open."}
+            return (
+                result
+                if not result["success"]
+                else {"success": False, "error": "No pipeline open."}
+            )
         try:
             self._arrangement._write_file(
                 self._arrangement.path, result["arrangement"], raise_errors=True
@@ -382,6 +417,38 @@ class GUIBackend:
             return {"success": True}
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    def copy_to_clipboard(self, text: str) -> dict:
+        """Copy text to the system clipboard (used by the 'Copy Path' menu item).
+
+        The webview's own clipboard API is unavailable outside secure contexts,
+        so use the operating system's clipboard tool instead.
+
+        Returns:
+            dict with 'success' or 'error'
+        """
+        import subprocess
+
+        system = platform.system()
+        if system == "Darwin":
+            commands = [["pbcopy"]]
+        elif system == "Windows":
+            commands = [["clip"]]
+        else:
+            commands = [["xclip", "-selection", "clipboard"], ["wl-copy"]]
+
+        for command in commands:
+            try:
+                subprocess.run(command, input=text, text=True, check=True)
+                return {"success": True}
+            except FileNotFoundError:
+                continue
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+        return {
+            "success": False,
+            "error": f"No clipboard tool found ({' or '.join(c[0] for c in commands)})",
+        }
 
     def _scan_collectra_folder(self, folder_path: Path) -> dict | None:
         """
@@ -568,6 +635,7 @@ class GUIBackend:
 
         # Compute aggregate label statistics across all folders
         self._global_label_counts = {}
+        self._global_link_names = set()
         for folder in self._collectra_folders:
             try:
                 collectra_file = CollectraFile.from_data(Path(folder["path"]))
@@ -577,6 +645,7 @@ class GUIBackend:
                 )
                 # Accumulate unique labels
                 self._global_labels.update(temp_graph.get_unique_labels())
+                self._global_link_names.update(temp_graph.link_names())
                 # Accumulate counts
                 for label, count in label_counts.items():
                     self._global_label_counts[label] = (
@@ -635,7 +704,7 @@ class GUIBackend:
         active_ids, can use node_types[label] to show the node's real type,
         and node_ids[label] to show the real results.yaml id(s) — a list,
         not a single value, since a detector-type node (e.g.
-        collectra.ObjectDetectionYOLO) declares one output label in the
+        collectra.ObjectDetectorYOLO) declares one output label in the
         pipeline but can produce any number of real instances per page
         (one per detected object), all sharing that same label.
         node_parents supplies each instance's actual direct parent ids so
@@ -675,7 +744,8 @@ class GUIBackend:
                 "node_ids": node_ids,
                 "node_parents": {
                     node_id: graph.parents(node_id)
-                    for node_id in graph.nodes if graph.get_node(node_id)
+                    for node_id in graph.nodes
+                    if graph.get_node(node_id)
                 },
                 "crop_labels": sorted(crop_labels),
             }
@@ -719,7 +789,12 @@ class GUIBackend:
             for node_id in self._graph.nodes
             if self._graph.get_node(node_id)
         }
-        return DisplayContext(records, Path(self._yaml_path).parent, rgb_view=rgb_view)
+        return DisplayContext(
+            records,
+            Path(self._yaml_path).parent,
+            rgb_view=rgb_view,
+            max_pixels=self._max_pixels,
+        )
 
     def get_artefact_display(self, node_id: str = "", rgb_view: int = 0) -> dict:
         """Ask the actual artefact class how it should be presented."""
@@ -740,6 +815,10 @@ class GUIBackend:
             node_id = self._graph.resolve_id(node_id)
             item = context.artefact(node_id)
             view = item.display(context)
+            if "links" in view:
+                self._add_classifier_slots(
+                    view["links"], context.records[view["target_id"]]["label"]
+                )
             return {
                 "success": True,
                 "view": view,
@@ -748,6 +827,48 @@ class GUIBackend:
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    def _classifier_slots(self, label: str) -> list[dict]:
+        """The tasks that take images of ``label`` and output Links, with their classes.
+
+        A task whose outputs are Links sets a Link by choosing one of them.
+        """
+        try:
+            nodes = self._pipeline.gui_graph()["nodes"]
+        except Exception:
+            # A pipeline that cannot be read only costs the extra choices.
+            return []
+        link_nodes = {
+            node["id"] for node in nodes if "collectra.Link" in node.get("types", [])
+        }
+        return [
+            {"task": node["id"], "options": node["outputs"]}
+            for node in nodes
+            if node["nodeType"] == "Task"
+            and label in node["inputs"]
+            and node["outputs"]
+            and set(node["outputs"]) <= link_nodes
+        ]
+
+    def _add_classifier_slots(self, links: list[dict], label: str) -> None:
+        """Mark the Link a classifier sets, or add an empty slot where it set none.
+
+        The link is the one named after one of the task's classes; a link with
+        any other name is left as it is.
+        """
+        for slot in self._classifier_slots(label):
+            match = next(
+                (
+                    link
+                    for link in links
+                    if link["name"] in slot["options"] and "task" not in link
+                ),
+                None,
+            )
+            if match is None:
+                links.append({"id": None, "name": None, **slot})
+            else:
+                match.update(slot)
 
     def rotate_image_clockwise(self, node_id: str) -> dict:
         """Persist a clockwise quarter-turn for an image and descendant images."""
@@ -803,15 +924,25 @@ class GUIBackend:
                 collectra_file = CollectraFile.from_data(target.parent)
                 graph = CollectraGraph.from_collectra_file(collectra_file)
                 records = {
-                    key: {**graph.get_node(key).model_dump(), "label": graph.get_node(key).label}
-                    for key in graph.nodes if graph.get_node(key)
+                    key: {
+                        **graph.get_node(key).model_dump(),
+                        "label": graph.get_node(key).label,
+                    }
+                    for key in graph.nodes
+                    if graph.get_node(key)
                 }
-                context = DisplayContext(records, target.parent)
+                context = DisplayContext(
+                    records, target.parent, max_pixels=self._max_pixels
+                )
                 item = context.artefact(graph.resolve_id(node_id))
                 if isinstance(item, Link):
                     item = item.resolve()
                 changed = paint_mask(item, strokes, orientation)
-                return {"success": True, "changed": changed, "segmentation": segmentation(context, item)}
+                return {
+                    "success": True,
+                    "changed": changed,
+                    "segmentation": segmentation(context, item),
+                }
         except Exception as error:
             return {"success": False, "error": str(error)}
 
@@ -844,10 +975,16 @@ class GUIBackend:
                     collectra_file = CollectraFile.from_data(target.parent)
                     graph = CollectraGraph.from_collectra_file(collectra_file)
                 records = {
-                    key: {**graph.get_node(key).model_dump(), "label": graph.get_node(key).label}
-                    for key in graph.nodes if graph.get_node(key)
+                    key: {
+                        **graph.get_node(key).model_dump(),
+                        "label": graph.get_node(key).label,
+                    }
+                    for key in graph.nodes
+                    if graph.get_node(key)
                 }
-                context = DisplayContext(records, target.parent)
+                context = DisplayContext(
+                    records, target.parent, max_pixels=self._max_pixels
+                )
                 item = context.artefact(graph.resolve_id(node_id))
                 view = item.display(context)
                 if view.get("kind") != "text" or not view.get("editable"):
@@ -1376,6 +1513,242 @@ class GUIBackend:
         matches.sort(key=lambda match: ranks.get(match["label"], len(ranks)))
         return {"success": True, "matches": matches}
 
+    def _text_artefact_labels(self) -> list[str]:
+        """The pipeline's text artefact labels, in the order the pipeline reads."""
+        from collectra.types.base import ArtefactNode
+        from collectra.types.texts import Text
+
+        try:
+            self._pipeline._ensure_workflow_connected()  # builds the nodes
+            manager = self._pipeline.node_manager
+            labels = []
+            for name in manager.get_node_names():
+                node = manager.resolve_node(name)
+                if isinstance(node, ArtefactNode) and any(
+                    isinstance(type_, type) and issubclass(type_, Text)
+                    for type_ in node.types
+                ):
+                    labels.append(name)
+        except Exception:
+            return []
+        ranks = self._pipeline_label_ranks()
+        return sorted(labels, key=lambda label: ranks.get(label, len(ranks)))
+
+    def _page_text_nodes(self, graph) -> dict[str, list[str]]:
+        """The ids of a page's text artefacts, by DAG label."""
+        from collectra.types.texts import Text
+        from collectra.utils import load_class_from_string
+
+        nodes: dict[str, list[str]] = {}
+        for node_id in graph.nodes:
+            node = graph.get_node(node_id)
+            if node is None:
+                continue
+            try:
+                if issubclass(load_class_from_string(node.type), Text):
+                    nodes.setdefault(node.label, []).append(node_id)
+            except Exception:
+                continue  # an unknown type is not a text
+        return nodes
+
+    def _page_text_cells(
+        self, graph, directory: Path, limit: int
+    ) -> tuple[dict[str, str], list[str]]:
+        """The text of each text artefact on a page, by DAG label, and the
+        labels that can be edited from the table: those with exactly one
+        artefact, shown in full. A label with several artefacts has them
+        joined with " | "; each is cut at ``limit``."""
+        from collectra.display import DisplayContext
+
+        records = {
+            node_id: {
+                **graph.get_node(node_id).model_dump(),
+                "label": graph.get_node(node_id).label,
+            }
+            for node_id in graph.nodes
+            if graph.get_node(node_id)
+        }
+        context = DisplayContext(records, directory, max_pixels=self._max_pixels)
+        cells: dict[str, str] = {}
+        editable = []
+        for label, node_ids in self._page_text_nodes(graph).items():
+            values, whole = [], True
+            for node_id in node_ids:
+                record = records[node_id]
+                try:
+                    path = context.text_path(node_id)
+                    if path:
+                        text = path.read_text(encoding="utf-8")
+                    elif record.get("path"):
+                        text = ""  # its file is missing: show nothing, not its path
+                    else:
+                        text = record.get("data") or ""
+                except Exception:
+                    whole = False  # one unreadable artefact must not blank the table
+                    continue
+                text = str(text)
+                if len(text) > limit:
+                    text = text[:limit] + "\u2026"
+                    whole = False
+                values.append(text)
+            if not values:
+                continue
+            cells[label] = " | ".join(values)
+            if whole and len(node_ids) == 1:
+                editable.append(label)
+        return cells, editable
+
+    def get_table_data(self, max_chars: int = 2000) -> dict:
+        """
+        Return the text artefacts of every loaded page for the table view.
+
+        Returns:
+            dict with 'columns' (the text artefact labels, in pipeline order)
+            and 'rows': one per loaded folder, in sidebar order, each with
+            'index', 'name', the text of each label that page has, and
+            '__editable': the labels whose text set_table_cells can change.
+        """
+        if not self._collectra_folders:
+            return {"success": True, "columns": [], "rows": []}
+        columns = self._text_artefact_labels()
+        rows = []
+        for index, folder in enumerate(self._collectra_folders):
+            row = {"index": index, "name": folder["name"]}
+            try:
+                if (
+                    self._graph is not None
+                    and self._yaml_path is not None
+                    and Path(self._yaml_path).resolve()
+                    == Path(folder["yaml_path"]).resolve()
+                ):
+                    graph = self._graph
+                else:
+                    graph = CollectraGraph.from_collectra_file(
+                        CollectraFile.from_data(Path(folder["path"]))
+                    )
+                cells, editable = self._page_text_cells(
+                    graph, Path(folder["path"]), max_chars
+                )
+            except Exception:
+                cells, editable = (
+                    {},
+                    [],
+                )  # a folder that cannot be loaded is still a row
+            for label, text in cells.items():
+                if label not in columns:
+                    columns.append(label)  # made by hand, not in the pipeline
+                row[label] = text
+            row["__editable"] = editable
+            rows.append(row)
+        return {"success": True, "columns": columns, "rows": rows}
+
+    def export_table_csv(self, headers: dict | None = None) -> dict:
+        """
+        Ask where to save, then write the table as a CSV: a "File" column and
+        one column per text artefact, one row per loaded page, with every text
+        in full.
+
+        Args:
+            headers: optional column titles by text artefact label, as the
+                table shows them
+
+        Returns:
+            dict with 'success' and 'path', or 'cancelled' when no file was
+            chosen
+        """
+        if self._window is None:
+            return {"success": False, "error": "Window not initialized"}
+        try:
+            table = self.get_table_data(max_chars=10**12)
+            if not table.get("columns") and not table.get("rows"):
+                return {"success": False, "error": "No files are loaded"}
+            result = self._window.create_file_dialog(
+                dialog_type=webview.FileDialog.SAVE,
+                save_filename="table.csv",
+                file_types=("CSV files (*.csv)",),
+            )
+            if not result:
+                return {"success": False, "cancelled": True}
+            path = Path(result if isinstance(result, (str, Path)) else result[0])
+            if not path.suffix:
+                path = path.with_suffix(".csv")
+            columns = table["columns"]
+            headers = headers or {}
+            # utf-8-sig so that Excel reads non-ASCII text correctly
+            with open(path, "w", encoding="utf-8-sig", newline="") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(["File"] + [headers.get(c) or c for c in columns])
+                for row in table["rows"]:
+                    writer.writerow([row["name"]] + [row.get(c, "") for c in columns])
+            return {"success": True, "path": str(path)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def set_table_cells(self, edits: list[dict]) -> dict:
+        """
+        Save text pasted or typed into the table.
+
+        Args:
+            edits: each {'index': the page's index in the sidebar, 'label': the
+                text artefact's DAG label, 'text': the new text}
+
+        Only a label with exactly one text artefact on its page can be set;
+        the rest are skipped, not created. Every other edit is still saved
+        when one fails.
+
+        Returns:
+            dict with 'saved' (the edits that were written, or already held
+            that text) and 'skipped' (each edit that was not, with a 'reason')
+        """
+        saved, skipped = [], []
+        by_page: dict[int, list[dict]] = {}
+        for edit in edits or []:
+            by_page.setdefault(edit.get("index"), []).append(edit)
+        for index, page_edits in by_page.items():
+
+            def skip(edit, reason):
+                skipped.append(
+                    {"index": index, "label": edit.get("label"), "reason": reason}
+                )
+
+            if not isinstance(index, int) or not 0 <= index < len(
+                self._collectra_folders
+            ):
+                for edit in page_edits:
+                    skip(edit, "No such page")
+                continue
+            folder = self._collectra_folders[index]
+            try:
+                if (
+                    self._graph is not None
+                    and self._yaml_path is not None
+                    and Path(self._yaml_path).resolve()
+                    == Path(folder["yaml_path"]).resolve()
+                ):
+                    graph = self._graph
+                else:
+                    graph = CollectraGraph.from_collectra_file(
+                        CollectraFile.from_data(Path(folder["path"]))
+                    )
+                nodes = self._page_text_nodes(graph)
+            except Exception as e:
+                for edit in page_edits:
+                    skip(edit, str(e))
+                continue
+            for edit in page_edits:
+                node_ids = nodes.get(edit.get("label"), [])
+                if len(node_ids) != 1:
+                    skip(edit, "Needs exactly one text artefact on the page")
+                    continue
+                result = self.update_display_text(
+                    node_ids[0], str(edit.get("text", "")), folder["yaml_path"]
+                )
+                if result.get("success"):
+                    saved.append({"index": index, "label": edit["label"]})
+                else:
+                    skip(edit, result.get("error", "Could not save"))
+        return {"success": True, "saved": saved, "skipped": skipped}
+
     def _pipeline_label_ranks(self) -> dict[str, int]:
         from .pipeline_order import pipeline_label_ranks
 
@@ -1575,6 +1948,93 @@ class GUIBackend:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def get_link_names(self) -> dict:
+        """The names a Link can be given: those used on this page and, when a
+        folder of pages is open, on any of its pages."""
+        names = set(self._global_link_names)
+        if self._graph is not None:
+            names.update(self._graph.link_names())
+        return {"success": True, "names": sorted(names)}
+
+    def set_link_name(self, link_id: str, name: str) -> dict:
+        """
+        Give a Link another name (its label, the key it has in results.yaml).
+
+        A Link whose id is its old name, as ``handwritten`` usually is, takes the
+        new name as its id too, so the two keep matching; if that id is already
+        in use it gets a short suffix instead. Any other id is left alone.
+
+        Returns:
+            dict with updated grid data and the Link's (possibly new) 'id', or 'error'
+        """
+        from collectra.types.links import is_link_type
+
+        if self._graph is None:
+            return {"success": False, "error": "No graph loaded. Call load_yaml first."}
+
+        try:
+            link_id = self._graph.resolve_id(link_id)
+            node = self._graph.get_node(link_id)
+            if node is None:
+                return {"success": False, "error": f"Node '{link_id}' not found"}
+            if not is_link_type(node.type):
+                return {"success": False, "error": f"'{link_id}' is not a Link"}
+            name = (name or "").strip()
+            if not name:
+                return {"success": False, "error": "A Link needs a name"}
+            old_name = node.label
+            new_id = link_id
+            if name != old_name:
+                if link_id == old_name:
+                    new_id = name
+                    if new_id in self._graph.nodes:
+                        new_id = f"{name}-{uuid.uuid4().hex[:8]}"
+                    self._graph.rename_id(link_id, new_id)
+                self._graph.set_label(new_id, name)
+                self._graph.forget_label_if_unused(old_name)
+                self._global_link_names.add(name)
+                self._save_collectra_file()
+            return {**self.get_all_nodes_for_grid(), "id": new_id}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def create_link(self, parent_id: str, name: str) -> dict:
+        """
+        Add a Link named ``name`` (its label) under an image.
+
+        Its id is the name, or the name with a short suffix when that id is
+        already in use.
+
+        Returns:
+            dict with updated grid data and the Link's 'id', or 'error'
+        """
+        if self._graph is None:
+            return {"success": False, "error": "No graph loaded. Call load_yaml first."}
+
+        try:
+            parent_id = self._graph.resolve_id(parent_id)
+            if self._graph.get_node(parent_id) is None:
+                return {"success": False, "error": f"Node '{parent_id}' not found"}
+            name = (name or "").strip()
+            if not name:
+                return {"success": False, "error": "A Link needs a name"}
+            link_id = name
+            if link_id in self._graph.nodes:
+                link_id = f"{name}-{uuid.uuid4().hex[:8]}"
+            self._graph.add_node(
+                {
+                    "label": name,
+                    "type": "collectra.Link",
+                    "id": link_id,
+                    "parents": parent_id,
+                }
+            )
+            self._global_link_names.add(name)
+            self._save_collectra_file()
+            return {**self.get_all_nodes_for_grid(), "id": link_id}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def _save_collectra_file(self) -> None:
         """Persist GUI edits through the shared Collectra file writer."""
         if self._collectra_file is None or self._graph is None:
@@ -1648,6 +2108,16 @@ class GUIBackend:
                     hits = list(directory.rglob(named))
                 except (PermissionError, OSError):
                     hits = []
+                if hits and hits[0].suffix.lower() == ".scss":
+                    try:
+                        return {
+                            "success": True,
+                            "css": compile_theme(hits[0]),
+                            "path": str(hits[0]),
+                        }
+                    except Exception as e:
+                        # A broken theme must not leave the app unstyled
+                        return {**self._default_theme_css(), "warning": str(e)}
                 if hits:
                     try:
                         with open(hits[0], "r") as f:
@@ -1675,7 +2145,10 @@ class GUIBackend:
                 except Exception as e:
                     return {"success": False, "error": str(e)}
 
-        # Fall back to bundled default asset
+        return self._default_theme_css()
+
+    def _default_theme_css(self) -> dict:
+        """The CSS of the bundled default theme."""
         asset_path = Path(get_resource_path("assets/theme.css"))
         if asset_path.is_file():
             try:
@@ -1754,7 +2227,9 @@ def _set_macos_app_name(name: str) -> None:
         # A packaged launcher also supplies these names in its Info.plist.
         import logging
 
-        logging.getLogger(__name__).warning("Could not set macOS application name", exc_info=True)
+        logging.getLogger(__name__).warning(
+            "Could not set macOS application name", exc_info=True
+        )
 
 
 def _disable_macos_tabbing() -> None:
@@ -1786,9 +2261,10 @@ def get_resource_path(relative_path: str) -> str:
 
 
 def start(
-    pipeline: "Collectra",
+    pipeline: "Pipeline",
     debug: bool = False,
     inputs=(),
+    max_pixels: int = 4096,
 ):
     """
     Create and start the pywebview window with the API.
@@ -1797,9 +2273,10 @@ def start(
         pipeline: The live pipeline whose graph the GUI displays.
         debug: Enable developer tools
         inputs: Optional result files/folders to populate the sidebar at startup.
+        max_pixels: Maximum image/mask preview dimension in pixels.
     """
     _set_macos_app_name(pipeline.name)
-    api = GUIBackend(pipeline, inputs=inputs)
+    api = GUIBackend(pipeline, inputs=inputs, max_pixels=max_pixels)
     html_path = get_resource_path("index.html")
     window = webview.create_window(
         title=pipeline.name,
@@ -1822,10 +2299,17 @@ def start(
         import os
         import sys
 
-        arguments = [sys.executable, "-m", "collectra.main", "--pipeline",
-                     str(Path(pipeline.path).resolve() / "pipeline.yaml"), "gui"]
+        arguments = [
+            sys.executable,
+            "-m",
+            "collectra.main",
+            "--pipeline",
+            str(Path(pipeline.path).resolve() / "pipeline.yaml"),
+            "gui",
+        ]
         if debug:
             arguments.append("--debug")
+        arguments.extend(["--max-pixels", str(max_pixels)])
         # Reuse the environment and process. Startup restores saved results,
         # the selected page, and layout rather than the original launch inputs.
         os.execv(sys.executable, arguments)

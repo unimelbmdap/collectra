@@ -22,6 +22,16 @@ Return a JSON-compatible dictionary from ``display(context)``:
 ``ImageCrop`` and ``ImageSegmentation`` inherit the image view and render their
 own cropped or masked image. ``Link`` delegates to its target's display.
 
+Built-in image previews and mask textures default to a limit of 4096 pixels on their
+longest edge to keep browser canvas memory bounded for large manuscript pages.
+Use ``gui --max-pixels 2048`` to choose a smaller limit for the session.
+JPEG previews use reduced-resolution decoding when possible. This affects only
+GUI previews: source images, stored masks, extraction and training retain their
+original resolution. Crop overlays use normalized coordinates, while the mask
+editor translates preview positions and brush sizes back to source pixels.
+Custom image renderers should similarly bound textures rather than allocating
+full-resolution canvases for every segmentation.
+
 Providing a renderer
 --------------------
 
@@ -31,11 +41,9 @@ For example, place these files in an importable ``my_artefacts`` package.
 
 .. code-block:: python
 
-    from dataclasses import dataclass
     from pathlib import Path
     from collectra.types.base import Artefact
 
-    @dataclass
     class Measurement(Artefact):
         value: float = 0
 

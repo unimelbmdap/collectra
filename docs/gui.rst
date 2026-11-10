@@ -33,6 +33,13 @@ Open results
     collectra --pipeline pipeline.yaml gui results/page001.collectra/results.yaml
     collectra --pipeline pipeline.yaml gui results
     collectra --pipeline pipeline.yaml gui --help
+    collectra --pipeline pipeline.yaml gui --max-pixels 2048
+
+Image and mask previews default to at most 4096 pixels on their longest edge.
+``--max-pixels`` sets this limit for the session, including mask editing previews.
+It must be a positive integer. The original images and masks stay at full
+resolution, and brush positions and sizes are mapped back to source pixels.
+The setting is preserved when using the GUI's restart action.
 
 Without paths, select a results folder in the GUI. You can supply multiple
 result paths or parent directories. Result directories must use the extension
@@ -75,13 +82,13 @@ or a custom icon, use ``--app-dir`` or ``--icon``:
     collectra --pipeline pipeline.yaml install-app results --name "My Pipeline"
     collectra --pipeline pipeline.yaml install-app --name "My Pipeline" --app-dir /Applications --icon custom.icns
 
-By default, the launcher uses ``icon`` from ``collectra_pipeline_metadata``
+By default, the launcher uses ``icon`` from the pipeline entry
 when configured, resolving relative paths from the pipeline directory:
 
 .. code-block:: yaml
 
-    collectra_pipeline_metadata:
-      name: My Pipeline
+    My Pipeline:
+      type: collectra.Pipeline
       ext: collectra
       version: "1.0"
       icon: assets/pipeline.png
@@ -138,13 +145,13 @@ are written to their linked files, preserving the references in ``results.yaml``
 Workflow layouts
 ----------------
 
-List layout YAML files in the pipeline metadata, with paths relative to the
+List layout YAML files in the pipeline entry, with paths relative to the
 pipeline directory:
 
 .. code-block:: yaml
 
-    collectra_pipeline_metadata:
-      name: My Pipeline
+    My Pipeline:
+      type: collectra.Pipeline
       ext: collectra
       version: "1.0"
       layouts:
@@ -224,6 +231,21 @@ Crop coordinates remain relative to the original source image. Other open
 image panels refresh to show the new orientations. Edits are saved back to the
 results.
 
+An image or crop that has ``collectra.Link`` children, such as the class given
+by a classifier, shows a button at the top left of the viewer for each of them,
+naming the Link (its key in ``results.yaml``). Click it to choose another name
+from those used on this page and on the other pages of the open folder, or type a
+new name and press Enter. A Link whose id is its old name takes the new name as
+its id too. Choose *Undefined* to remove the Link: the delete confirmation lists
+anything nested under it, which is removed with it.
+
+An image that a classifier task of the pipeline takes as input always has a
+button for that task, named after it (for example ``primary_label_type_detector:
+none``), even when no Link has been set. Its menu lists the classes the task can
+give, in the task's order; choosing one creates the Link, and later choices
+change it. The Link names that do not belong to a classifier are still shown, as
+above.
+
 For multichannel TIFFs, the viewer uses a preview of the channels. When the
 channel count is divisible by three, view controls switch between RGB triplets;
 the preview does not rewrite the source image.
@@ -244,9 +266,9 @@ The Python equivalent is:
 
 .. code-block:: python
 
-    from collectra import Collectra
+    from collectra import Pipeline
 
-    pipeline = Collectra.from_file("pipeline.yaml")
+    pipeline = Pipeline.from_file("pipeline.yaml")
     pipeline.launch_gui("results/page001.collectra", debug=True)
 
 Custom displays

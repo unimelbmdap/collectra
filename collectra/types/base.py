@@ -1,15 +1,17 @@
 import uuid
-from dataclasses import dataclass, field
+from abc import abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import yaml
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 from rich import print
 
 from collectra.cli import command
 
-from ..commons import BaseEntity, Node, NodeStatus
+from ..commons import EntityMixin, Node, NodeStatus, PositionalFields
+from ..commons.results import peek_header, pop_header
 from ..utils import (
     change_dir,
     error_msg,
@@ -60,18 +62,96 @@ class ArtefactCommands:
             report.save_csv(output)
 
 
-@dataclass
-class Artefact(BaseEntity):
-    name: str
-    id: str = field(default="")
-    parents: list[str] = field(default_factory=list)
-    partition: str = field(default="")
-    embeddings: list[str] = field(default_factory=list)
-    orientation: str = field(default="north")  # e.g., "landscape" or "portrait"
-    ensemble: list[str] = field(default_factory=list)
-    source_file: Path | None = field(
-        default=None, init=False, repr=False, compare=False
+class ArtefactMeta(type(BaseModel)):
+    """Lets an artefact that stands in for another one pass its ``isinstance`` checks.
+
+    A ``Link`` is a soft reference; once bound it should satisfy
+    ``isinstance(link, ImageCrop)`` when it points at a crop. The real class of
+    the object is left alone, which pydantic relies on.
+    """
+
+    def __instancecheck__(cls, instance) -> bool:
+        if super().__instancecheck__(instance):
+            return True
+        stand_in = getattr(type(instance), "_stand_in_type", None)
+        return bool(stand_in) and issubclass(stand_in(instance), cls)
+
+
+class Artefact(PositionalFields, EntityMixin, BaseModel, metaclass=ArtefactMeta):
+    model_config = ConfigDict(
+        extra="allow",
+        validate_assignment=True,
+        arbitrary_types_allowed=True,
+        protected_namespaces=(),
     )
+
+    name: str
+    id: str = ""
+    parents: list[str] = Field(default_factory=list)
+    partition: str = ""
+    embeddings: list[str] = Field(default_factory=list)
+    orientation: str = "north"  # e.g., "landscape" or "portrait"
+    ensemble: list[str] = Field(default_factory=list)
+    source_file: Path | None = Field(default=None, exclude=True, repr=False)
+
+    # An automatic id is provisional: the pipeline renames it after the node
+    # (``node`` or ``node-k``) when the artefact joins its node.
+    _auto_id: bool = PrivateAttr(default=False)
+    # Fields left out when comparing artefacts: runtime state, not content.
+    _not_compared: ClassVar[frozenset[str]] = frozenset({"source_file"})
+
+    # Measured or set at runtime, never passed in: skipped for positional arguments.
+    _runtime_fields: ClassVar[frozenset[str]] = frozenset(
+        {"source_file", "raw_width", "raw_height", "source_parent"}
+    )
+
+    @field_validator("parents", "embeddings", mode="before")
+    @classmethod
+    def _as_list(cls, value):
+        """YAML writes a single reference as a bare value; always hold a list."""
+        if value is None:
+            return []
+        return value if isinstance(value, list) else [value]
+
+    @abstractmethod
+    def __call__(self):
+        """The artefact's content."""
+
+    @staticmethod
+    def file_extensions() -> set[str]:
+        """Lower-case file extensions, with the dot, that can hold this type."""
+        raise NotImplementedError(
+            "Artefact types must say which file extensions they can be read from."
+        )
+
+    def stored_files(self, folder: Path) -> list[Path]:
+        """Files this artefact owns, for removal before a forced rerun replaces it.
+
+        ``folder`` is the results folder that relative paths are read against.
+        Most artefacts own none: an image's ``data`` is a source file that must
+        never be deleted. Only artefacts whose content a task wrote to a file
+        of its own list it here.
+        """
+        return []
+
+    def finalise(self, folder: Path, node: str) -> None:
+        """Called once the artefact has its final id, before results are saved.
+
+        ``folder`` is the results folder and ``node`` the name of the node the
+        artefact belongs to. Artefacts that keep content in separate files
+        write them here. The default does nothing.
+        """
+
+    def _comparable(self) -> dict:
+        values = {**self.__dict__, **(self.__pydantic_extra__ or {})}
+        return {k: v for k, v in values.items() if k not in self._not_compared}
+
+    def __eq__(self, other: object) -> bool:
+        if type(self) is not type(other):
+            return False
+        return self._comparable() == other._comparable()
+
+    __hash__ = None
 
     def set_parents(self, parents: list["Artefact"]) -> None:
         self.parents = [parent.id for parent in parents]
@@ -121,8 +201,8 @@ class Artefact(BaseEntity):
         # Generate a unique ID based on the name and other attributes
         return f"{self.name}-{uuid.uuid4()}"
 
-    def __post_init__(self) -> None:
-        super().__init__(self.name)  # Initialize BaseEntity
+    def model_post_init(self, __context: Any) -> None:
+        self._auto_id = not self.id
         if not self.id:
             self.id = self._generate_id()
 
@@ -131,6 +211,7 @@ class Artefact(BaseEntity):
         attributes.add("name")
         attributes.add("partition")
         attributes.add("source_file")
+        attributes.add("_auto_id")
         return attributes
 
     @classmethod
@@ -144,17 +225,15 @@ class Artefact(BaseEntity):
         )
 
 
-@dataclass
 class ArtefactNode(Node):
 
-    items: dict[str, Artefact] = field(default_factory=dict)
-    ensemble_items: dict[str, Artefact] = field(default_factory=dict)
-    types: set[type] = field(default_factory=set)
+    items: dict[str, Artefact] = Field(default_factory=dict)
+    ensemble_items: dict[str, Artefact] = Field(default_factory=dict)
+    types: set[type] = Field(default_factory=set)
     skip_type_check: bool = False
     ensemble: bool = False
 
-    def __post_init__(self) -> None:
-        super().__post_init__()
+    def model_post_init(self, __context: Any) -> None:
         self.status = NodeStatus.READY if self.items else NodeStatus.NOT_READY
 
     def add_item(self, item: Artefact) -> None:
@@ -463,13 +542,15 @@ class ArtefactNode(Node):
                     result_file = Path("results.yaml")
                     with open(result_file, "r") as f:
                         results: dict = yaml.safe_load(f)
-                        partition = results.pop(
-                            "collectra_results_metadata", dict()
-                        ).get("partition", None)
+                        partition = pop_header(results, source=value).partition
                         if key not in results:
-                            raise ValueError(
-                                f"[red]{key}[/red] could not be found in {value}"
+                            # Normal when the task producing this node hasn't run yet.
+                            logger.info(
+                                "No %s yet in %s; it will be created when its task runs.",
+                                key,
+                                value.name,
                             )
+                            return
                         data = results[key]
                         if not data:
                             # Key exists but empty — pipeline processed it, found nothing
@@ -502,7 +583,7 @@ class ArtefactNode(Node):
                                 if (
                                     "data" not in item
                                     and "path" in item
-                                    and "path" not in cls_.__dataclass_fields__
+                                    and "path" not in cls_.model_fields
                                 ):
                                     item["data"] = item.pop("path")
                                 if "parents" in item and not isinstance(
@@ -559,19 +640,18 @@ class ArtefactNode(Node):
                     return data
                 with open(result_file, "r") as f:
                     file_data: dict = yaml.safe_load(f)
-                    partition = file_data.get("collectra_results_metadata", dict()).get(
-                        "partition", None
-                    )
-                all_names_not_found = all(name not in file_data for name in names)
+                    partition = peek_header(file_data, source=item_file).partition
+                # With unlabelled samples allowed, an empty annotation list
+                # means the same as no annotations at all.
+                all_names_not_found = all(
+                    name not in file_data
+                    or (include_unlabelled and not file_data[name])
+                    for name in names
+                )
                 # Object detection can opt into base images with no annotations
                 # as negative samples. Classification must not treat an
                 # unlabelled image as a training example.
                 if all_names_not_found and include_unlabelled:
-                    print(
-                        f"[yellow]No matching labels found in [blue]{item_file}[/blue] "
-                        f"for names: {', '.join(names)}. Using its base image as an "
-                        "unlabelled detection sample."
-                    )
                     found_base = False
                     for name, values in file_data.items():
                         values = values if isinstance(values, list) else [values]
@@ -616,6 +696,8 @@ class ArtefactNode(Node):
                     if name not in file_data:
                         continue
                     value = file_data[name]
+                    if not value and include_unlabelled:
+                        continue
                     if not value:
                         raise Warning(
                             f"Artefact seems to be empty for {name} in {item_file}. Provided: {value}"
@@ -640,7 +722,7 @@ class ArtefactNode(Node):
                         if not match:
                             continue
                         item["name"] = name
-                        if "path" in item and "path" not in cls_.__dataclass_fields__:
+                        if "path" in item and "path" not in cls_.model_fields:
                             item["data"] = item.pop("path")
                         if partition is not None:
                             item["partition"] = partition

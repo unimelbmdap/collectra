@@ -95,6 +95,45 @@ def test_spatial_transforms_and_channel_statistics():
     assert torch.equal(task._transforms()(pixels), (pixels - 1) / 2)
 
 
+def test_rotate90_applies_one_of_four_right_angle_rotations_to_all_channels():
+    import torch
+
+    task = ImageClassifierTorchvision("classifier")
+    task._preprocessing = preprocessing(4)
+    task._preprocessing["mean"] = [0.0] * 6
+    task._preprocessing["std"] = [1.0] * 6
+    pixels = torch.arange(6 * 4 * 4, dtype=torch.float32).reshape(6, 4, 4)
+    rotations = [torch.rot90(pixels, k, dims=(-2, -1)) for k in range(4)]
+    # Off by default and never applied outside training.
+    assert torch.equal(task._transforms(training=True)(pixels), pixels)
+    assert torch.equal(task._transforms(rotate90=True)(pixels), pixels)
+    transform = task._transforms(training=True, rotate90=True)
+    torch.manual_seed(0)
+    seen = set()
+    for _ in range(40):
+        output = transform(pixels)
+        matches = [
+            k for k, rotated in enumerate(rotations) if torch.equal(output, rotated)
+        ]
+        assert len(matches) == 1
+        seen.add(matches[0])
+    assert seen == {0, 1, 2, 3}
+
+
+def test_rotate90_rotates_pil_images_exactly():
+    import torch
+    from collectra.tasks.image_classifier.torchvision import _RandomRotate90
+
+    image = PILImage.fromarray(np.arange(2 * 3 * 3, dtype=np.uint8).reshape(2, 3, 3))
+    expected = {
+        PILImage.fromarray(np.rot90(np.asarray(image), k)).tobytes() for k in range(4)
+    }
+    torch.manual_seed(0)
+    outputs = [_RandomRotate90()(image) for _ in range(40)]
+    assert {output.tobytes() for output in outputs} == expected
+    assert {output.size for output in outputs} == {(3, 2), (2, 3)}
+
+
 def test_all_prepared_splits_have_consistent_channels(tmp_path):
     for split, count in [("train", 75), ("val", 74)]:
         directory = tmp_path / split / "Pollen"
@@ -380,7 +419,9 @@ def test_adapt_rgb_input_channels_requires_conv1_conv2d():
             super().__init__()
             self.conv1 = torch.nn.Linear(3, 4)
 
-    with pytest.raises(ValueError, match="Expected first layer to be Conv2d, got Linear"):
+    with pytest.raises(
+        ValueError, match="Expected first layer to be Conv2d, got Linear"
+    ):
         _adapt_rgb_input_channels(BadConv1(), 15)
 
 
@@ -401,7 +442,9 @@ def test_unsupported_architecture_fails_for_multichannel_training(tmp_path):
         ValueError,
         match="15-channel input adaptation is currently supported only for",
     ):
-        task._prepare_training_model(["Pollen", "Spore"], pretrained=False, freeze=False)
+        task._prepare_training_model(
+            ["Pollen", "Spore"], pretrained=False, freeze=False
+        )
 
 
 def test_unsupported_architecture_fails_for_multichannel_checkpoint_load(

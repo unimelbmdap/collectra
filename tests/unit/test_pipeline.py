@@ -2,16 +2,16 @@ import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
-from collectra import Collectra, Task, TaskNode
+from collectra import Pipeline, Task, TaskNode
 
 
-def build_pipeline(pipeline: dict) -> Collectra:
+def build_pipeline(pipeline: dict) -> Pipeline:
     metadata: dict = pipeline.pop("collectra_pipeline_metadata")
     name = metadata["name"]
     ext = metadata["ext"]
     version = metadata["version"]
     path = pipeline.pop("pipeline_path", "")
-    return Collectra(name, ext, version, path=path, **pipeline)
+    return Pipeline(name, ext, version, path=path, **pipeline)
 
 
 def test_pipeline_init(pipeline, debug):
@@ -32,7 +32,7 @@ def test_pipeline_init(pipeline, debug):
 
 
 def test_run_task_reports_rich_progress(tmp_path, monkeypatch):
-    pipeline = Collectra("progress", "collectra", "1", path=tmp_path)
+    pipeline = Pipeline("progress", "collectra", "1", path=tmp_path)
     task = Task("line_reader")
     task.prepare_inputs = lambda parents: [["first"], ["second"], ["third"]]
     task_node = TaskNode("line_reader", task)
@@ -74,8 +74,8 @@ def test_get_task(pipeline, debug):
             isinstance(task, dict) and len(task) > 0
         ), f"Task '{task_name}' should be a non-empty dictionary"
         assert (
-            task.get("type", None) == "collectra.ObjectDetectionYOLO"
-        ), f"Task '{task_name}' should have type 'collectra.ObjectDetectionYOLO'"
+            task.get("type", None) == "collectra.ObjectDetectorYOLO"
+        ), f"Task '{task_name}' should have type 'collectra.ObjectDetectorYOLO'"
     except Exception as e:
         debug(e)
 

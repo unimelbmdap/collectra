@@ -5,10 +5,16 @@ from __future__ import annotations
 from importlib import import_module
 
 _EXPORTS = {
-    "ObjectDetectionYOLO": "collectra.tasks.object_detection.yolo",
-    "ObjectDetectionDETR": "collectra.tasks.object_detection.detr",
+    "ObjectDetector": "collectra.tasks.object_detection.base",
+    "ObjectDetectionTask": "collectra.tasks.object_detection.base",  # the former name
+    "ObjectDetectorYOLO": "collectra.tasks.object_detection.yolo",
+    "ObjectDetectionYOLO": "collectra.tasks.object_detection.yolo",  # the former name
+    "ObjectDetectorDETR": "collectra.tasks.object_detection.detr",
+    "ObjectDetectionDETR": "collectra.tasks.object_detection.detr",  # the former name
     "DetectionTrainResult": "collectra.tasks.object_detection.detr",
-    "ObjectDetectionRFDETR": "collectra.tasks.object_detection.rfdetr",
+    "ObjectDetectorRFDETR": "collectra.tasks.object_detection.rfdetr",
+    "ObjectDetectionRFDETR": "collectra.tasks.object_detection.rfdetr",  # the former name
+    "ObjectDetectorSam3": "collectra.tasks.object_detection.sam3",
 }
 
 __all__ = sorted(_EXPORTS)

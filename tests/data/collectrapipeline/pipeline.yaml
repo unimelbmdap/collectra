@@ -12,7 +12,7 @@ md_example:
   data: page00076-markdown.md
 
 object_detector:
-  type: collectra.ObjectDetectionYOLO
+  type: collectra.ObjectDetectorYOLO
   model: object_detector-20260825_131409.pt
   input:
   - bar_img
@@ -28,7 +28,7 @@ object_detector:
     seed: 37
 
 text-detector:
-  type: collectra.ObjectDetectionYOLO
+  type: collectra.ObjectDetectorYOLO
   model: yolo11n.pt
   input:
   - human

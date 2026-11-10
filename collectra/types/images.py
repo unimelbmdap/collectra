@@ -22,12 +22,14 @@ __all__ = ["Image", "ImageCrop", "ImageSegmentation"]
 import base64
 import io
 import shutil
-from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from PIL import Image as ImagePil
+from PIL import ImageOps
+from pydantic import Field, PrivateAttr, field_validator
 
 from collectra.cli import command
 
@@ -65,6 +67,51 @@ def _tiff_dimensions(path: str | Path) -> tuple[int, int, int]:
     return shape[axes.index("X")], shape[axes.index("Y")], channels
 
 
+_TURNED = {5, 6, 7, 8}  # EXIF orientations that exchange width and height
+
+
+def _is_tiff(path: str | Path) -> bool:
+    return Path(path).suffix.lower() in {".tif", ".tiff"}
+
+
+def _displayed_size(image: ImagePil.Image) -> tuple[int, int]:
+    """Size after applying the EXIF orientation tag, as viewers display it."""
+    width, height = image.size
+    if image.getexif().get(0x0112) in _TURNED:
+        return height, width
+    return width, height
+
+
+def open_oriented(path: str | Path) -> ImagePil.Image:
+    """Open an image with its EXIF orientation applied, so pixels match the display.
+
+    Browsers and image viewers honour the tag; Pillow does not. Every pixel read
+    in Collectra goes through here, so coordinates agree with what the user sees.
+    TIFFs are left alone: their tags describe scientific channel layouts.
+    """
+    with ImagePil.open(path) as image:
+        if _is_tiff(path):
+            return image.copy()
+        return ImageOps.exif_transpose(image)
+
+
+def bake_orientation(path: str | Path) -> None:
+    """Rewrite a raster file in place with its EXIF orientation applied to the pixels.
+
+    For temporary training copies read by libraries that ignore the tag. Files
+    that are untagged, upright or TIFF are left byte-for-byte untouched.
+    """
+    path = Path(path)
+    if _is_tiff(path):
+        return
+    with ImagePil.open(path) as image:
+        if image.getexif().get(0x0112, 1) == 1:
+            return
+        image_format = image.format
+        oriented = ImageOps.exif_transpose(image)
+    oriented.save(path, format=image_format)
+
+
 def image_channel_count(path: str | Path) -> int:
     """Inspect image metadata for its channel count; never convert image pixels."""
     if Path(path).suffix.lower() in {".tif", ".tiff"}:
@@ -75,12 +122,25 @@ def image_channel_count(path: str | Path) -> int:
         return len(image.getbands())
 
 
+def convert_image_to_rgb(path: str | Path) -> None:
+    """Rewrite an image file in place as 3-channel RGB (no-op if it already is)."""
+    path = Path(path)
+    try:
+        with ImagePil.open(path) as image:
+            if image.mode == "RGB":
+                return
+            converted = image.convert("RGB")
+    except Exception as error:
+        raise ValueError(f"Cannot convert {path.name} to RGB: {error}") from error
+    converted.save(path)
+
+
 def image_size(path: str | Path) -> tuple[int, int]:
     """Return ``(width, height)`` from image metadata; supports multi-channel TIFFs."""
     if Path(path).suffix.lower() in {".tif", ".tiff"}:
         return _tiff_dimensions(path)[:2]
     with ImagePil.open(path) as image:
-        return image.size
+        return _displayed_size(image)
 
 
 def read_tiff_channels(path: str | Path, maxworkers: int | None = None):
@@ -113,7 +173,7 @@ def _image_metadata(
         width, height, _ = _tiff_dimensions(path)
         return width, height, "TIFF"
     with ImagePil.open(path) as image:
-        width, height = image.size
+        width, height = _displayed_size(image)
         return width, height, image.format
 
 
@@ -195,7 +255,6 @@ class Orientation(Enum):
                 raise ValueError(f"Invalid degree for orientation: {direction}")
 
 
-@dataclass
 class Image(Artefact):
     """Base class for handling image data and metadata in Collectra workflows.
 
@@ -210,12 +269,18 @@ class Image(Artefact):
         format (str | None): Image format (PNG, JPEG, etc.) or None if unknown.
     """
 
-    data: str | Path | ImagePil.Image = field(default="")  # Path to the image file
-    raw_width: int = field(init=False, default=0)  # Image width in pixels
-    raw_height: int = field(init=False, default=0)  # Image height in pixels
-    ext: str | None = field(default="")  # Image format (e.g., PNG, JPEG)
-    embeddings: str | list[str] = field(default_factory=list)  # Optional embedding data
-    orientation: Orientation = field(default=Orientation.NORTH)  # Image orientation
+    data: str | Path | ImagePil.Image = ""  # Path to the image file
+    raw_width: int = 0  # Displayed image width in pixels
+    raw_height: int = 0  # Displayed image height in pixels
+    ext: str | None = ""  # Image format (e.g., PNG, JPEG)
+    orientation: Orientation = Orientation.NORTH  # Image orientation
+
+    @field_validator("orientation", mode="before")
+    @classmethod
+    def _orientation_from_text(cls, value):
+        if isinstance(value, str):
+            return Orientation.from_string(value)
+        return value
 
     @classmethod
     def cli_commands(cls, node: ArtefactNode, ext: str) -> ImageArtefactCommands:
@@ -244,8 +309,8 @@ class Image(Artefact):
         shutil.copy(self.get_path(), path)
 
     @staticmethod
-    def image_types() -> list[str]:
-        return [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp"]
+    def file_extensions() -> set[str]:
+        return {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp"}
 
     @property
     def width(self) -> int | float:
@@ -255,8 +320,8 @@ class Image(Artefact):
     def height(self) -> int | float:
         return self.raw_height
 
-    def __post_init__(self):
-        """Create an Image instance from a file path.
+    def model_post_init(self, __context: Any) -> None:
+        """Load an Image's metadata from its file path.
 
         Loads image metadata (dimensions and format) from the specified file
         and returns a configured Image instance.
@@ -271,7 +336,7 @@ class Image(Artefact):
             FileNotFoundError: If the image file doesn't exist.
             PIL.UnidentifiedImageError: If the file is not a valid image.
         """
-        super().__post_init__()
+        super().model_post_init(__context)
         if not self.data:
             raise ValueError("Image data path is empty.")
         if not isinstance(self.data, (str, Path)):
@@ -280,10 +345,6 @@ class Image(Artefact):
             self.data = Path.cwd() / self.data
         if not self.data.exists() or not self.data.is_file():
             raise FileNotFoundError(f"Image file not found: {self.data}")
-        if not isinstance(self.embeddings, list):
-            self.embeddings = [self.embeddings]
-        if isinstance(self.orientation, str):
-            self.orientation = Orientation.from_string(self.orientation)
         stat = self.data.stat()
         self.raw_width, self.raw_height, self.ext = _image_metadata(
             str(self.data.resolve()), stat.st_mtime_ns, stat.st_size
@@ -316,7 +377,7 @@ class Image(Artefact):
         Returns:
             bool: True if the file extension indicates a supported image format.
         """
-        return path.suffix.lower() in Image.image_types()
+        return path.suffix.lower() in Image.file_extensions()
 
     def _load_buffer(self, img: ImagePil.Image) -> bytes:
         buffer = io.BytesIO()
@@ -357,7 +418,7 @@ class Image(Artefact):
         return f"image/{self.ext.lower()}" if self.ext else "image"
 
     def pil(self) -> ImagePil.Image:
-        image = ImagePil.open(self.get_path())
+        image = open_oriented(self.get_path())
         return image.rotate(self.orientation.to_degree(), expand=True)
 
     def display(self, context) -> dict:
@@ -454,7 +515,6 @@ class Image(Artefact):
         pass
 
 
-@dataclass
 class ImageCrop(Image):
     """Specialized image class for handling cropped regions of images.
 
@@ -469,12 +529,15 @@ class ImageCrop(Image):
         height_relative (float): Normalized height of crop region (0.0 to 1.0).
     """
 
-    x_center: float = field(default=0.5)
-    y_center: float = field(default=0.5)
-    width_relative: float = field(default=1.0)
-    height_relative: float = field(default=1.0)
-    confidence: float | None = field(default=None)
-    source_parent: "Image | ImageCrop | None" = field(init=False, default=None)
+    x_center: float = 0.5
+    y_center: float = 0.5
+    width_relative: float = 1.0
+    height_relative: float = 1.0
+    confidence: float | None = None
+    source_parent: Any = Field(default=None, repr=False)  # Image | ImageCrop | None
+
+    def attributes_to_ignore(self):
+        return super().attributes_to_ignore() | {"source_parent"}
 
     def display_bounds(self):
         return self.coordinates()
@@ -538,8 +601,7 @@ class ImageCrop(Image):
                 f"y_center={self.y_center}, width={self.width_relative}, "
                 f"height={self.height_relative}), pixel_box={coordinates}"
             )
-        with ImagePil.open(self.get_path()) as imf:
-            im_crop = imf.crop(coordinates)
+        im_crop = open_oriented(self.get_path()).crop(coordinates)
         return im_crop.rotate(self.orientation.to_degree(), expand=True)
 
     def coordinates(self) -> tuple[float, float, float, float]:
@@ -634,7 +696,6 @@ class ImageCrop(Image):
         return iou
 
 
-@dataclass
 class ImageSegmentation(Image):
     """An image region defined by a source-sized binary PNG mask.
 
@@ -643,10 +704,11 @@ class ImageSegmentation(Image):
     nonzero bounding box and retains source alpha within the region.
     """
 
-    mask: str | Path = field(default="")
+    mask: str | Path = ""
+    _mask_path: Path | None = PrivateAttr(default=None)
 
-    def __post_init__(self):
-        super().__post_init__()
+    def model_post_init(self, __context: Any) -> None:
+        super().model_post_init(__context)
         if not self.mask:
             raise ValueError("ImageSegmentation mask path is empty")
         self.mask = Path(self.mask)
@@ -664,17 +726,39 @@ class ImageSegmentation(Image):
                 raise ValueError("ImageSegmentation mask must be a PNG file")
             if mask.size != (self.raw_width, self.raw_height):
                 raise ValueError("Mask dimensions must match the source image")
-            pixels = np.asarray(mask)
-            if pixels.ndim != 2 or not np.isin(pixels, [0, 1]).all():
-                raise ValueError("Mask must contain only single-channel 0 and 1 pixels")
-            alpha = ImagePil.fromarray(pixels.astype("uint8") * 255)
+            if mask.mode in {"L", "P"}:
+                # A histogram validates binary values without large temporary
+                # NumPy arrays for every full-resolution mask in the viewer.
+                if any(mask.histogram()[2:]):
+                    raise ValueError(
+                        "Mask must contain only single-channel 0 and 1 pixels"
+                    )
+                alpha = mask.point([0, 255] + [0] * 254, mode="L")
+            elif mask.mode == "1":
+                alpha = mask.convert("L")
+            else:
+                pixels = np.asarray(mask)
+                if pixels.ndim != 2 or not np.isin(pixels, [0, 1]).all():
+                    raise ValueError(
+                        "Mask must contain only single-channel 0 and 1 pixels"
+                    )
+                alpha = ImagePil.fromarray(pixels.astype("uint8") * 255)
         if alpha.getbbox() is None:
             raise ValueError("ImageSegmentation mask is empty")
         return alpha
 
     def serialize(self) -> dict:
         serialized = super().serialize()
-        serialized["mask"] = str(self.mask)
+        # Results are serialized from inside their results folder (the working
+        # directory), and loaded from it, so masks there are stored relative
+        # to it and the folder stays portable. Masks elsewhere keep their path.
+        mask = Path(self.mask)
+        if mask.is_absolute():
+            try:
+                mask = self._mask_path.relative_to(Path.cwd().resolve())
+            except ValueError:
+                pass
+        serialized["mask"] = mask.as_posix()
         return serialized
 
     def display_bounds(self):
@@ -704,8 +788,7 @@ class ImageSegmentation(Image):
         )
 
     def pil(self) -> ImagePil.Image:
-        with ImagePil.open(self.get_path()) as image:
-            return self.masked_pil(image)
+        return self.masked_pil(open_oriented(self.get_path()))
 
     def _load_buffer(self, img: ImagePil.Image) -> bytes:
         buffer = io.BytesIO()

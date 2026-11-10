@@ -16,7 +16,7 @@ const adjacency = new Map([
 ]);
 const types = {
     specimen_sheet: 'collectra.Image',
-    detect: 'collectra.ObjectDetectionYOLO',
+    detect: 'collectra.ObjectDetectorYOLO',
     registration_number_image: 'collectra.ImageCrop',
     specific_epithet_image: 'collectra.ImageCrop',
     ocr: 'collectra.LLM',
@@ -82,7 +82,7 @@ describe('imageCropDescendantLabels', () => {
         ]);
         const type = (l) => ({
             img: 'collectra.Image',
-            detect: 'collectra.ObjectDetectionYOLO',
+            detect: 'collectra.ObjectDetectorYOLO',
             crop1: 'collectra.ImageCrop',
             analyze: 'collectra.LLM',
             crop2: 'collectra.ImageCrop',

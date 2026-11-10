@@ -10,3 +10,6 @@ Local changes:
 
 EasyMDE is configured with autoDownloadFontAwesome: false and spellChecker: false
 so it does not fetch additional dependencies at runtime.
+
+Bootstrap's `scss/` folder is bundled unmodified so that a pipeline's
+`theme: FILENAME.scss` can be compiled at load time (see collectra/gui/scss_theme.py).

@@ -76,7 +76,7 @@ def task_data(classes) -> tuple[str, dict]:
     task_name = "label_detector"
     return task_name, {
         f"{task_name}": {
-            "type": "collectra.ObjectDetectionYOLO",
+            "type": "collectra.ObjectDetectorYOLO",
             "model": "yolo11n.pt",
             "input": "specimen_sheet",
             "epochs": 1,

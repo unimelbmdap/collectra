@@ -3,7 +3,7 @@ from types import ModuleType
 from types import SimpleNamespace
 from typing import Optional
 
-from collectra import ObjectDetectionYOLO, Task
+from collectra import ObjectDetectorYOLO, Task
 from collectra.utils import load_class_from_string
 from utils.get_types import get_param_types, get_return_type
 
@@ -36,7 +36,7 @@ def test_object_detection_task(task_data, image, classes, tmp_path, monkeypatch)
     assert data[name], f"Task {name} should be in task_data"
     cls = load_class_from_string(data[name].pop("type"))
     task = cls(name=name, **data[name])
-    assert isinstance(task, ObjectDetectionYOLO)
+    assert isinstance(task, ObjectDetectorYOLO)
 
     crop = image.make_crop(0.5, 0.5, 0.25, 0.25, name="human")
     crop.add_source_parent(image)
@@ -44,7 +44,7 @@ def test_object_detection_task(task_data, image, classes, tmp_path, monkeypatch)
     # neural network. External training itself is not a unit-test concern.
     task.model = FakeYOLO()
     monkeypatch.setattr(task, "_init_model", lambda: None)
-    monkeypatch.setattr(task, "_prepare_assets", lambda *args: (["train"], ["val"]))
+    monkeypatch.setattr(task, "_prepare_assets", lambda *args, **kwargs: (["train"], ["val"]))
     seen = {}
 
     def fake_train_fold(train, validation, output_classes, log, kwargs):

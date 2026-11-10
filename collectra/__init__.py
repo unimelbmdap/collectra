@@ -10,26 +10,43 @@ _EXPORTS = {
     "NodeStatus": "collectra.commons.base",
     "TaskContext": "collectra.commons.base",
     "T": "collectra.commons.base",
-    "Collectra": "collectra.pipelines.base",
+    "Pipeline": "collectra.pipelines.base",
+    "Collectra": "collectra.pipelines.base",  # the former name of Pipeline
     "Task": "collectra.tasks.base",
     "TaskNode": "collectra.tasks.base",
     "YOLOTask": "collectra.tasks.machine_learning.yolo",
-    "ObjectDetectionYOLO": "collectra.tasks.object_detection.yolo",
+    "ObjectDetector": "collectra.tasks.object_detection.base",
+    "ObjectDetectionTask": "collectra.tasks.object_detection.base",  # the former name
+    "ObjectDetectorYOLO": "collectra.tasks.object_detection.yolo",
+    "ObjectDetectionYOLO": "collectra.tasks.object_detection.yolo",  # the former name
     "ImageClassifierYOLO": "collectra.tasks.image_classifier.yolo",
     "ImageClassifierTorchvision": "collectra.tasks.image_classifier.torchvision",
     "ImageClassifierHuggingFace": "collectra.tasks.image_classifier.huggingface",
-    "ObjectDetectionDETR": "collectra.tasks.object_detection.detr",
+    "ObjectDetectorDETR": "collectra.tasks.object_detection.detr",
+    "ObjectDetectionDETR": "collectra.tasks.object_detection.detr",  # the former name
     "DetectionTrainResult": "collectra.tasks.object_detection.detr",
-    "ObjectDetectionRFDETR": "collectra.tasks.object_detection.rfdetr",
+    "ObjectDetectorRFDETR": "collectra.tasks.object_detection.rfdetr",
+    "ObjectDetectorSam3": "collectra.tasks.object_detection.sam3",
+    "ObjectDetectionRFDETR": "collectra.tasks.object_detection.rfdetr",  # the former name
     "ImageOrienter": "collectra.tasks.machine_learning.orienters",
-    "ImageSegmentationSam3": "collectra.tasks.image_segmentation.sam3",
+    "ImageSegmenterSam3": "collectra.tasks.image_segmentation.sam3",
+    "ImageSegmentationSam3": "collectra.tasks.image_segmentation.sam3",  # the former name
+    "ImageSegmenterRFDETR": "collectra.tasks.image_segmentation.rfdetr",
+    "ImageSegmentationRFDETR": "collectra.tasks.image_segmentation.rfdetr",  # the former name
+    "ImageSegmenterYOLO": "collectra.tasks.image_segmentation.yolo",
+    "ImageSegmentationYOLO": "collectra.tasks.image_segmentation.yolo",  # the former name
     "LLM": "collectra.tasks.llms",
     "LLMCanonicaliser": "collectra.tasks.canonicalisers",
     "IRNResolver": "collectra.tasks.irn_resolvers",
     "OCRSuraya": "collectra.tasks.ocr",
+    "OCRHuggingFace": "collectra.tasks.ocr_huggingface",
     "LineDetectorSurya": "collectra.tasks.ocr",
     "LineDetectorRLSA": "collectra.tasks.line_detection",
     "ConcatenateText": "collectra.tasks.text",
+    "TextOutputTask": "collectra.tasks.text_output",
+    "Resource": "collectra.resources.base",
+    "Results": "collectra.commons.results",
+    "EntityLookup": "collectra.resources.entity_lookup",
     "Artefact": "collectra.types.base",
     "ArtefactNode": "collectra.types.base",
     "Image": "collectra.types.images",

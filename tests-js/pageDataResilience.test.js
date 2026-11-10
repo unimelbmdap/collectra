@@ -82,7 +82,7 @@ describe('Ancestors and Descendants follow the tab\'s selected instance', () => 
     });
 
     it('a label the pipeline knows has lineage even when no instance of it is on the page record', () => {
-        const nodes = [{ id: 'sheet', nodeType: 'data' }, { id: 'det', nodeType: 'detector' }, { id: 'locality', nodeType: 'data' }];
+        const nodes = [{ id: 'sheet', nodeType: 'Artefact' }, { id: 'det', nodeType: 'Task' }, { id: 'locality', nodeType: 'Artefact' }];
         const edges = [{ source: 'sheet', target: 'det' }, { source: 'det', target: 'locality' }];
         expect(lineageNeighbors('locality', 'ancestors', nodes, edges)).toEqual(['sheet']);
     });
@@ -135,6 +135,7 @@ describe('Artefacts and Tasks do not wait for the DAG to be drawn', () => {
 
 describe('the page record of artefacts is kept up to date, and never thrown away', () => {
     const source = between('async function refreshActiveNodeIds() {', '\n        }\n') + '\n        }\n';
+    const applySource = between('function applyPageNodeData(', '\n        }\n') + '\n        }\n';
 
     function setup(answer) {
         const context = {
@@ -142,12 +143,13 @@ describe('the page record of artefacts is kept up to date, and never thrown away
             pageNodeTypes: new Map([['old', 'collectra.Text']]),
             pageCropLabels: new Set(['old']),
             pageNodeIds: new Map([['old', ['old-1']]]),
+            pageNodeParents: null,
             lastDagNodes: [{ id: 'old' }],
             populateTabs: vi.fn(), setActive: vi.fn(), console: { error() {} },
             window: { pywebview: { api: { get_active_node_ids: vi.fn(answer) } } },
         };
         vm.createContext(context);
-        vm.runInContext(source, context);
+        vm.runInContext(applySource + source, context);
         return context;
     }
 

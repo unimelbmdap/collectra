@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from collectra import ObjectDetectionRFDETR, ObjectDetectionYOLO
+from collectra import ObjectDetectorRFDETR, ObjectDetectorYOLO
 from collectra.cli import invoke
 from collectra.tasks.object_detection.adaptation_commands import _output_path
 
@@ -12,9 +12,9 @@ from collectra.tasks.object_detection.adaptation_commands import _output_path
 @pytest.mark.parametrize(
     "task,command",
     [
-        (ObjectDetectionRFDETR, "adapt-input-channels"),
-        (ObjectDetectionRFDETR, "adapt-feature-fusion"),
-        (ObjectDetectionYOLO, "adapt-feature-fusion"),
+        (ObjectDetectorRFDETR, "adapt-input-channels"),
+        (ObjectDetectorRFDETR, "adapt-feature-fusion"),
+        (ObjectDetectorYOLO, "adapt-feature-fusion"),
     ],
 )
 def test_command_rejects_invalid_options_before_loading_models(tmp_path, task, command):

@@ -446,13 +446,24 @@ LiteralDumper.add_representer(str, str_presenter)
 
 
 def write_yaml(data, filepath: Path | str):
-    with open(filepath, "w") as f:
-        for file_key, data_item in data.items():
-            yaml.dump(
-                {file_key: data_item},
-                f,
-                Dumper=LiteralDumper,
-                sort_keys=False,
-                allow_unicode=True,
-            )
-            f.write("\n")
+    """Write ``data`` one entry at a time, replacing ``filepath`` in one step.
+
+    The entries go to a temporary file beside it, which then takes its place,
+    so a run stopped part way through leaves the previous file whole.
+    """
+    filepath = Path(filepath)
+    partial = filepath.with_name(f".{filepath.name}.partial")
+    try:
+        with open(partial, "w") as f:
+            for file_key, data_item in data.items():
+                yaml.dump(
+                    {file_key: data_item},
+                    f,
+                    Dumper=LiteralDumper,
+                    sort_keys=False,
+                    allow_unicode=True,
+                )
+                f.write("\n")
+        os.replace(partial, filepath)
+    finally:
+        partial.unlink(missing_ok=True)

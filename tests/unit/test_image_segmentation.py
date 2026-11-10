@@ -119,3 +119,14 @@ def test_cli_extract_uses_png(files):
     ImageArtefactCommands(node, "yaml").extract(output=files / "output")
     extracted = PILImage.open(files / "output/segment.png")
     assert extracted.tobytes() == item.pil().tobytes()
+
+
+def test_absolute_mask_inside_results_folder_serializes_relative(files, tmp_path_factory, monkeypatch):
+    # Prediction tasks create masks with absolute paths under the results folder.
+    item = make(files)
+    assert item.mask.is_absolute()
+    monkeypatch.chdir(files)
+    assert item.serialize()["mask"] == "masks/region.png"
+    # A mask outside the results folder keeps its absolute path.
+    monkeypatch.chdir(tmp_path_factory.mktemp("elsewhere"))
+    assert item.serialize()["mask"] == (files / "masks/region.png").resolve().as_posix()

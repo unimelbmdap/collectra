@@ -1,6 +1,6 @@
 """Core pipeline execution and workflow management for Collectra.
 
-This module contains the main Collectra workflow class.
+This module contains the main ``Pipeline`` class.
 
 It provides the core functionality for defining, excuting and managing
 workflows with task dependencies.
@@ -12,14 +12,16 @@ The module supports:
     - Training and inference execution modes
 
 Classes:
-    Collectra: Main workflow management class
+    Pipeline: Main workflow management class
 """
 
 from __future__ import annotations
 
-__all__ = ["Collectra"]
+__all__ = ["Pipeline"]
 
 import copy
+import tempfile
+from contextlib import nullcontext
 import datetime
 import json
 import shlex
@@ -27,19 +29,35 @@ import shutil
 import stat
 import sys
 import time
+import warnings
 from pathlib import Path
+from typing import Annotated, Any, ClassVar
 
+from cappa import Arg
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 import graphviz
 import networkx as nx
 import yaml
-from rich.progress import track
+from rich.markup import escape
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+    track,
+)
 
-from collectra.utils import change_dir, load_class_from_string, remove_exif, write_yaml
+from collectra.utils import change_dir, load_class_from_string, write_yaml
 from collectra.cli import command, group
 from utils.get_types import get_param_types, get_return_type, unpack_types
 
-from ..commons.base import TaskContext
+from ..commons.base import LenientAttributes, TaskContext
 from ..logger import get_logger
+from ..commons.results import Results, pop_header, put_header
+from ..resources.base import Resource
 from ..tasks.base import (
     Task,
     TaskNode,
@@ -57,24 +75,116 @@ from .node_graph_manager import NodeGraphManager
 logger = get_logger(__name__)
 
 
-class Collectra:
+class PreviousOutputs:
+    """What a task produced before a forced rerun, kept until the rerun succeeds.
+
+    Output items are emptied and the node's saved files are moved aside so the
+    rerun starts clean. If the rerun produces nothing, everything is put back.
+    """
+
+    def __init__(self, snapshots: list, moved: list, backup: Path | None):
+        self.snapshots = snapshots
+        self.moved = moved
+        self.backup = backup
+
+    def restore(self) -> None:
+        for output, items in self.snapshots:
+            output.items.update(items)
+        for kept, original in self.moved:
+            original.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(kept), str(original))
+        self.discard()
+
+    def discard(self) -> None:
+        if self.backup is not None:
+            shutil.rmtree(self.backup, ignore_errors=True)
+            self.backup = None
+
+
+class RunProgress:
+    """One overall bar for a multi-file run, with the file it is up to."""
+
+    def __init__(self, progress, label: str, total: int):
+        self.progress = progress
+        self.label = label
+        self.task = progress.add_task(escape(label), total=total)
+
+    def status(self, text: str) -> None:
+        self.progress.update(
+            self.task, description=f"{escape(self.label)} · {escape(text)}"
+        )
+
+    def file_done(self) -> None:
+        self.progress.advance(self.task)
+
+
+class StageGate:
+    """Holds files back at batchable tasks so a whole chunk can prefetch together."""
+
+    def __init__(self, batchable: set[str]):
+        self.batchable = batchable
+        self.current: set[str] = set()
+        self.deferred: dict[str, list[TaskNode]] = {}
+
+    def defer(self, node: TaskNode, value) -> bool:
+        """Hold ``node`` for the file at ``value``; False if it should run now."""
+        if node.name not in self.batchable or node.name in self.current:
+            return False
+        held = self.deferred.setdefault(str(value), [])
+        if node not in held:
+            held.append(node)
+        return True
+
+
+class Pipeline(LenientAttributes, BaseModel):
     """Main workflow management class for Collectra pipelines.
 
     This class orchestrates the execution of complex data processing workflows
     by managing task dependencies, data flow, and execution state.
     """
 
+    model_config = ConfigDict(
+        extra="allow", validate_assignment=True, arbitrary_types_allowed=True
+    )
+
     # Constants
-    RESULTS_FILE = "results.yaml"
-    METADATA_KEY = "collectra_results_metadata"
-    PIPELINE_FILE = "pipeline.yaml"
-    PIPELINE_METADATA_KEY = "collectra_pipeline_metadata"
+    RESULTS_FILE: ClassVar[str] = "results.yaml"
+    METADATA_KEY: ClassVar[str] = "collectra_results_metadata"
+    PIPELINE_FILE: ClassVar[str] = "pipeline.yaml"
+    PIPELINE_METADATA_KEY: ClassVar[str] = "collectra_pipeline_metadata"
 
     # Graph visualization colors
-    COLOR_PROCESSING = "orange"
-    COLOR_SUCCESS = "green"
-    COLOR_FAILURE = "red"
-    COLOR_FONT = "black"
+    COLOR_PROCESSING: ClassVar[str] = "orange"
+    COLOR_SUCCESS: ClassVar[str] = "green"
+    COLOR_FAILURE: ClassVar[str] = "red"
+    COLOR_FONT: ClassVar[str] = "black"
+
+    name: str
+    ext: str
+    version: str
+    path: Path
+    pipeline_metadata: dict = Field(default_factory=dict)
+    node_manager: NodeGraphManager = Field(default_factory=NodeGraphManager, repr=False)
+    # The pipeline definition: every other keyword is a task or artefact entry.
+    data: dict[str, Any] = Field(default_factory=dict, repr=False)
+    # Named helpers declared in the definition (lookups and the like); unlike
+    # tasks and artefacts they are not nodes of the graph.
+    resources: dict[str, Any] = Field(default_factory=dict, repr=False, exclude=True)
+
+    # Runtime state of a run in progress.
+    _stage_gate: StageGate | None = None
+    _run_progress: RunProgress | None = None
+    # (task, file, error) for each task that failed in the current run.
+    _failures: list[tuple[str, str, str]] = PrivateAttr(default_factory=list)
+    # True when the file used the deprecated ``collectra_pipeline_metadata``
+    # block; saving then keeps that form rather than rewriting the file.
+    _legacy_declaration: bool = PrivateAttr(default=False)
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def _version_is_text(cls, value):
+        # YAML reads ``version: 1`` as a number; a version is always text.
+        return str(value) if isinstance(value, (int, float)) else value
 
     def __init__(
         self,
@@ -92,40 +202,94 @@ class Collectra:
             ext (str): File extension that the workflow accepts.
             version (str): Version of the workflow.
             path (str, optional): Path to the workflow files. Defaults to name.
-            **kwargs: Additional configuration parameters.
+            **kwargs: The pipeline definition: task and artefact entries.
         """
-        self.name: str = name
-        self.ext: str = ext
-        self.version: str = version
-        self.pipeline_metadata = {
-            **(pipeline_metadata or {}),
-            "name": name,
-            "ext": ext,
-            "version": version,
-        }
-        self.node_manager: NodeGraphManager = NodeGraphManager()
-        self.path: Path = Path.cwd() / name if not path else Path(path)
-        self.data: dict = kwargs
+        super().__init__(
+            name=name,
+            ext=ext,
+            version=version,
+            path=Path(path) if path else Path.cwd() / str(name),
+            pipeline_metadata={
+                **(pipeline_metadata or {}),
+                "name": name,
+                "ext": ext,
+                "version": str(version),
+            },
+            data=kwargs,
+        )
+
+    # A pipeline is a long-lived object holding its graph: compare by identity.
+    def __eq__(self, other: object) -> bool:
+        return self is other
+
+    __hash__ = object.__hash__
 
     def __call__(self, task_name: str, **kwargs):
         """Allow instance to be called directly to run workflow."""
         self.run(task_name, **kwargs)
 
     @classmethod
-    def from_file(cls, pipeline_path: str | Path) -> "Collectra":
-        """Load a pipeline from a directory or a pipeline YAML file."""
+    def from_file(cls, pipeline_path: str | Path) -> "Pipeline":
+        """Load a pipeline from a directory or a pipeline YAML file.
+
+        The file declares its pipeline as an entry whose ``type`` is
+        ``collectra.Pipeline`` (or a subclass of it); the entry's name is the
+        pipeline's name and its other keys are the pipeline's attributes.
+        The older ``collectra_pipeline_metadata`` block is still read, with a
+        warning that it is deprecated.
+        """
         path = Path(pipeline_path).expanduser().resolve()
         config_path = path / cls.PIPELINE_FILE if path.is_dir() else path
         with config_path.open() as stream:
-            metadata = yaml.safe_load(stream) or {}
-        initials = metadata.pop(cls.PIPELINE_METADATA_KEY)
-        return cls(
-            initials["name"],
-            initials["ext"],
-            initials["version"],
+            config = yaml.safe_load(stream) or {}
+        legacy = cls.PIPELINE_METADATA_KEY in config
+        if legacy:
+            attributes = config.pop(cls.PIPELINE_METADATA_KEY)
+            pipeline_class, name = cls, attributes.get("name")
+            warnings.warn(
+                f"{config_path} declares its pipeline with "
+                f"{cls.PIPELINE_METADATA_KEY!r}, which is deprecated. Replace it "
+                f"with an entry named {name!r} that has 'type: collectra.Pipeline' "
+                "and the same attributes (ext, version, ...), as the first item.",
+                FutureWarning,
+                stacklevel=2,
+            )
+        else:
+            name, pipeline_class = cls._find_declaration(config, config_path)
+            attributes = {
+                key: value for key, value in config.pop(name).items() if key != "type"
+            }
+        for required in ("ext", "version"):
+            if required not in attributes:
+                raise ValueError(
+                    f"Pipeline {name!r} in {config_path} needs a {required!r}"
+                )
+        pipeline = pipeline_class(
+            name,
+            attributes["ext"],
+            attributes["version"],
             path=config_path.parent,
-            pipeline_metadata=initials,
-            **metadata,
+            pipeline_metadata=attributes,
+            **config,
+        )
+        pipeline._legacy_declaration = legacy
+        return pipeline
+
+    @classmethod
+    def _find_declaration(cls, config: dict, config_path: Path) -> tuple[str, type]:
+        """The name and class of the entry that declares the pipeline itself."""
+        for name, value in config.items():
+            if not isinstance(value, dict) or not isinstance(value.get("type"), str):
+                continue
+            try:
+                declared = load_class_from_string(value["type"])
+            except (ImportError, AttributeError):
+                continue  # a task whose class cannot be loaded is reported on connect
+            if isinstance(declared, type) and issubclass(declared, Pipeline):
+                return name, declared
+        raise ValueError(
+            f"{config_path} does not declare a pipeline. Add an entry such as:\n"
+            "MyPipeline:\n  type: collectra.Pipeline\n  ext: my\n  version: 1.0"
         )
 
     @command(name="run")
@@ -138,13 +302,19 @@ class Collectra:
         verbose: bool = False,
         usage: bool = False,
         render: bool = False,
+        force: Annotated[
+            bool,
+            Arg(
+                help="Rerun tasks whose outputs already exist, replacing those outputs. By default such tasks are skipped."
+            ),
+        ] = False,
     ) -> None:
         """Run the complete pipeline or start at a named task."""
         from collectra.logger import setup_logging
-        from collectra.utils import resolve_files, valid_raw_files
+        from collectra.utils import resolve_files
 
         setup_logging(verbose=verbose)
-        files = resolve_files(inputs, [f".{self.ext}", *valid_raw_files()])
+        files = resolve_files(inputs, self.file_extensions())
         if not files:
             logger.warning("No supported input files found for: %s", ", ".join(inputs))
             return
@@ -155,31 +325,89 @@ class Collectra:
             single=single,
             usage=usage,
             render=render,
+            force=force,
         )
 
+    @command(name="path")
+    def cli_path(self) -> None:
+        """Print the folder this pipeline lives in."""
+        print(self.path.resolve())
+
+    @command(name="code", available=lambda: shutil.which("code"))
+    def cli_code(self) -> None:
+        """Open this pipeline's folder in VS Code."""
+        import subprocess
+
+        code = shutil.which("code")
+        if code is None:
+            raise SystemExit("VS Code's `code` command was not found on your PATH")
+        result = subprocess.run([code, str(self.path.resolve())])
+        if result.returncode:
+            raise SystemExit(f"Could not open VS Code (exit code {result.returncode})")
+
     @command(name="gui")
-    def launch_gui(self, *inputs: Path, debug: bool = False) -> None:
+    def launch_gui(
+        self,
+        *inputs: Path,
+        debug: bool = False,
+        max_pixels: Annotated[
+            int,
+            Arg(
+                help="Maximum image and mask preview dimension in pixels (longest edge). Originals remain full resolution."
+            ),
+        ] = 4096,
+    ) -> None:
         """Open the GUI with optional result folders, results.yaml files, or parent directories."""
         from collectra.gui.backend import start
 
+        if max_pixels < 1:
+            raise ValueError("--max-pixels must be positive")
         self._ensure_workflow_connected()
-        start(pipeline=self, debug=debug, inputs=inputs)
+        start(pipeline=self, debug=debug, inputs=inputs, max_pixels=max_pixels)
 
     @command(name="partition")
     def cli_partition(
         self,
-        inputs: list[str],
-        train: str = "",
-        validation: str = "",
-        val: str = "",
-        test: str = "",
-        seed: int = 42,
-        partition: list[str] | None = None,
+        inputs: Annotated[
+            list[str],
+            Arg(help="Result folders, results.yaml files, or parent directories."),
+        ],
+        train: Annotated[
+            str,
+            Arg(help="Share of results labelled 'train' (e.g. 80%, 0.8, or 100)."),
+        ] = "",
+        validation: Annotated[
+            str,
+            Arg(help="Share of results labelled 'validation' (e.g. 20%, 0.2, or 25)."),
+        ] = "",
+        val: Annotated[
+            str, Arg(help="Share of results labelled 'val' (e.g. 20%, 0.2, or 25).")
+        ] = "",
+        test: Annotated[
+            str, Arg(help="Share of results labelled 'test' (e.g. 10%, 0.1, or 10).")
+        ] = "",
+        seed: Annotated[
+            int, Arg(help="Random seed used to shuffle results before splitting.")
+        ] = 42,
+        partition: Annotated[
+            list[str] | None,
+            Arg(
+                help="Custom partition as NAME=VALUE (e.g. holdout=5%); may be repeated."
+            ),
+        ] = None,
+        force: Annotated[
+            bool,
+            Arg(
+                help="Override existing partitions instead of refusing to change them."
+            ),
+        ] = False,
     ) -> None:
         """Assign result partitions using percentages, fractions, or file counts.
 
         For example: partition results --train 80% --validation 20%.
         Use repeated --partition NAME=VALUE options for custom labels.
+        All values must use the same form (percentages, fractions, or counts).
+        Fails if any result already has a partition unless --force is given.
         Unassigned results retain their existing partition.
         """
         from collectra.partition import partition_results
@@ -201,7 +429,7 @@ class Collectra:
             if label in partitions:
                 raise ValueError(f"Partition {label!r} was specified more than once")
             partitions[label] = value
-        partition_results(inputs, self.ext, partitions, seed)
+        partition_results(inputs, self.ext, partitions, seed, force=force)
 
     @command(name="install")
     def cli_install(self, name: str, bin_dir: Path | None = None) -> None:
@@ -218,8 +446,7 @@ class Collectra:
         # Kernel shebang parsing cannot quote an interpreter path containing
         # spaces. Let the shell invoke the exact interpreter as one argument.
         launcher.write_text(
-            "#!/bin/sh\n"
-            f'exec {shlex.join([sys.executable, "-c", code])} "$@"\n',
+            "#!/bin/sh\n" f'exec {shlex.join([sys.executable, "-c", code])} "$@"\n',
             encoding="utf-8",
         )
         launcher.chmod(
@@ -243,7 +470,9 @@ class Collectra:
         """
         from .app_launcher import install_app
 
-        pipeline_icon = self.pipeline_metadata.get("icon") or self.pipeline_metadata.get("logo")
+        pipeline_icon = self.pipeline_metadata.get(
+            "icon"
+        ) or self.pipeline_metadata.get("logo")
         if icon is None and pipeline_icon:
             icon = Path(pipeline_icon).expanduser()
             if not icon.is_absolute():
@@ -325,6 +554,7 @@ class Collectra:
                 - files: List of file paths to process.
                 - usage: Whether to track usage metrics.
                 - render: Whether to render workflow visualization.
+                - force: Rerun tasks whose outputs already exist.
                 - output: Output directory for results.
         """
         try:
@@ -380,10 +610,32 @@ class Collectra:
             "files": kwargs.pop("files", []),
             "usage": kwargs.pop("usage", False),
             "render": kwargs.pop("render", False),
+            "force": kwargs.pop("force", False),
             "output": kwargs.pop("output", None),
         }
         options["task_overrides"] = kwargs.copy()
         return options
+
+    def file_extensions(self) -> set[str]:
+        """File extensions this pipeline accepts as input.
+
+        Its own results-folder extension, plus those of the artefact types its
+        input node reads when it has a single input node.
+        """
+        extensions = {f".{self.ext}"}
+        self._ensure_workflow_connected()
+        roots = [
+            node
+            for node in self.node_manager.get_artefact_nodes()
+            if self._check_is_root(node.name)
+        ]
+        if len(roots) == 1:
+            for artefact_type in roots[0].types:
+                try:
+                    extensions |= artefact_type.file_extensions()
+                except NotImplementedError:
+                    pass
+        return extensions
 
     def _get_root_input(self) -> str:
         """Get the name of the root input artefact node for the workflow."""
@@ -395,26 +647,200 @@ class Collectra:
     def _process_files(self, starting_nodes: list[TaskNode], options: dict):
         """Process each file in the workflow.
 
+        Files are processed in chunks sized to the largest ``batch_size`` of any
+        task that can batch its work, so those tasks see a whole chunk at once.
+
         Args:
             starting_nodes: List of nodes to start execution from.
             options: Execution options (single, files, usage, render, output).
         """
-        for file_path in options["files"]:
+        files = options["files"]
+        self._failures = []
+        downstream = {} if options["single"] else self._batchable_tasks(starting_nodes)
+        batch_size = self._starting_batch_size(starting_nodes)
+        batch_size = max([batch_size, *(t.batch_size for t in downstream.values())])
+        overall = (
+            Progress(
+                SpinnerColumn(),
+                TextColumn("{task.description}"),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TimeElapsedColumn(),
+                TimeRemainingColumn(),
+            )
+            if len(files) > 1
+            else None
+        )
+        with overall if overall is not None else nullcontext():
+            if overall is not None:
+                label = ", ".join(node.name for node in starting_nodes) or self.name
+                self._run_progress = RunProgress(overall, label, len(files))
             try:
-                self._process_single_file(starting_nodes, file_path, options)
-            except Exception as e:
-                logger.error("Error processing file: %s", e, exc_info=True)
+                for start in range(0, len(files), batch_size):
+                    chunk = files[start : start + batch_size]
+                    self._process_chunk(starting_nodes, chunk, options, downstream)
+            finally:
+                self._run_progress = None
+        self._report_failures()
 
-    def _process_single_file(
-        self, starting_nodes: list[TaskNode], file_path: str, options: dict
+    def _report_failures(self) -> None:
+        """Say at the end of a run which tasks failed, since each was only logged."""
+        if not self._failures:
+            return
+        lines = "\n".join(
+            f"  {task} on {file}: {error}" for task, file, error in self._failures
+        )
+        logger.error("%d task failure(s) in this run:\n%s", len(self._failures), lines)
+
+    def _process_chunk(
+        self,
+        starting_nodes: list[TaskNode],
+        chunk: list,
+        options: dict,
+        downstream: dict[str, Task],
     ):
-        """Process a single file through the workflow.
+        """Run a chunk of files, pausing each at batchable tasks until all arrive.
 
-        Args:
-            starting_nodes: Nodes to start from.
-            file_path: Path to file to process.
-            options: Execution options.
+        Every file runs until it reaches a batchable task further down the DAG
+        and is saved there. Once the whole chunk has arrived the task prefetches
+        all of its inputs together, and each file resumes from its saved results.
         """
+        stage = [(file_path, starting_nodes) for file_path in chunk]
+        stage_options = options
+        prefetch = self._starting_batch_size(starting_nodes) > 1
+        self._stage_gate = StageGate(set(downstream)) if downstream else None
+        try:
+            while stage:
+                if prefetch:
+                    self._announce_batch(stage)
+                    self._prefetch_stage(stage, stage_options)
+                deferred: list[tuple[str, list[TaskNode]]] = []
+                for file_path, nodes in stage:
+                    if self._run_progress:
+                        self._run_progress.status(Path(str(file_path)).name)
+                    if self._stage_gate:
+                        self._stage_gate.current = {node.name for node in nodes}
+                        self._stage_gate.deferred = {}
+                    try:
+                        self._process_single_file(nodes, file_path, stage_options)
+                    except Exception as e:
+                        logger.error("Error processing file: %s", e, exc_info=True)
+                    held = self._stage_gate.deferred if self._stage_gate else {}
+                    deferred.extend(held.items())
+                    if self._run_progress and not held:
+                        self._run_progress.file_done()
+                # Later stages resume from each file's saved folder, in place.
+                stage = deferred
+                stage_options = {**options, "output": None}
+                prefetch = True
+        finally:
+            self._stage_gate = None
+            self._clear_prefetch(
+                [*starting_nodes, *self._task_nodes_by_name(downstream)]
+            )
+
+    def _announce_batch(self, stage: list[tuple[str, list[TaskNode]]]) -> None:
+        """Say on the overall bar that a batch is being prepared with the model."""
+        if not self._run_progress:
+            return
+        names = sorted(
+            {
+                node.name
+                for _, nodes in stage
+                for node in nodes
+                if node.get_task().batch_size > 1
+            }
+        )
+        if names:
+            count = len(stage)
+            self._run_progress.status(
+                f"waiting on batch of {count} file{'s' if count != 1 else ''} "
+                f"({', '.join(names)})"
+            )
+
+    def _task_nodes_by_name(self, tasks: dict[str, Task]) -> list[TaskNode]:
+        return [self.node_manager.resolve_node(name) for name in tasks]
+
+    def _starting_batch_size(self, starting_nodes: list[TaskNode]) -> int:
+        """Number of files to run through the starting tasks per batch."""
+        sizes = [
+            int(getattr(node.get_task(), "batch_size", 1) or 1)
+            for node in starting_nodes
+            if isinstance(node, TaskNode)
+        ]
+        return max([1, *sizes])
+
+    def _batchable_tasks(self, starting_nodes: list[TaskNode]) -> dict[str, Task]:
+        """Tasks below ``starting_nodes`` that batch their work via ``prefetch``."""
+        start_names = {node.name for node in starting_nodes}
+        found: dict[str, Task] = {}
+        seen: set[str] = set()
+        queue = list(starting_nodes)
+        while queue:
+            node = queue.pop()
+            if node.name in seen:
+                continue
+            seen.add(node.name)
+            queue.extend(self.node_manager.get_children(node))
+            if not isinstance(node, TaskNode) or node.name in start_names:
+                continue
+            task = node.get_task()
+            if (
+                isinstance(task, Task)
+                and task.batch_size > 1
+                and type(task).prefetch is not Task.prefetch
+            ):
+                found[node.name] = task
+        return found
+
+    def _prefetch_stage(self, stage: list[tuple[str, list[TaskNode]]], options: dict):
+        """Let each file's pending tasks batch their model work up front.
+
+        The files are then processed one at a time as usual, with each task
+        reusing what it cached, so results are saved after every batch.
+        """
+        gathered: dict[str, list] = {}
+        nodes_by_name: dict[str, TaskNode] = {}
+        for file_path, nodes in stage:
+            try:
+                self._setup_file(nodes, file_path, options)
+                for node in nodes:
+                    task = node.get_task()
+                    if not isinstance(task, Task) or task.batch_size <= 1:
+                        continue
+                    if not options["force"] and self._has_output(node):
+                        continue
+                    self._apply_task_run_overrides(task, options["task_overrides"])
+                    parents = self.node_manager.get_parents_artefact(node)
+                    nodes_by_name[node.name] = node
+                    gathered.setdefault(node.name, []).extend(
+                        list(entry) for entry in task.prepare_inputs(parents)
+                    )
+            except Exception as e:
+                logger.warning("Could not prepare %s for batching: %s", file_path, e)
+        for name, node in nodes_by_name.items():
+            try:
+                with change_dir(self.path):
+                    node.get_task().prefetch(gathered[name])
+            except Exception as e:
+                logger.warning(
+                    "Batched run of %s failed, running files individually: %s",
+                    name,
+                    e,
+                    exc_info=True,
+                )
+                node.get_task().clear_prefetch()
+
+    def _clear_prefetch(self, starting_nodes: list[TaskNode]):
+        for node in starting_nodes:
+            task = node.get_task()
+            if isinstance(task, Task):
+                task.clear_prefetch()
+
+    def _setup_file(
+        self, starting_nodes: list[TaskNode], file_path: str, options: dict
+    ) -> tuple[str, str | Path]:
+        """Create the collectra file for ``file_path`` and load it into the graph."""
         key = (
             "file"
             if Path(file_path).suffix == f".{self.ext}"
@@ -437,8 +863,20 @@ class Collectra:
         # Set context for all tasks
         self._set_task_contexts(context)
 
-        input_data = {key: value}
-        self._init_input_data(starting_nodes, **input_data)
+        self._init_input_data(starting_nodes, **{key: value})
+        return key, value
+
+    def _process_single_file(
+        self, starting_nodes: list[TaskNode], file_path: str, options: dict
+    ):
+        """Process a single file through the workflow.
+
+        Args:
+            starting_nodes: Nodes to start from.
+            file_path: Path to file to process.
+            options: Execution options.
+        """
+        key, value = self._setup_file(starting_nodes, file_path, options)
         self.render("workflow_run", file=str(value), render=options["render"])
 
         self._run_nodes(
@@ -447,8 +885,37 @@ class Collectra:
             key=key,
             value=value,
             render=options["render"],
+            force=options["force"],
             task_overrides=options["task_overrides"],
         )
+        self._warn_unready_starting_tasks(starting_nodes, value)
+
+    def _warn_unready_starting_tasks(self, starting_nodes: list[TaskNode], value):
+        """Explain why a task the user asked for never ran for this file.
+
+        Tasks reached part-way through the DAG may legitimately wait for their
+        other inputs, so only the tasks the run started from are reported.
+        """
+        for node in starting_nodes:
+            if node.status == NodeStatus.READY:
+                continue
+            missing = [
+                parent.name
+                for parent in self.node_manager.get_parents_artefact(node)
+                if parent.status != NodeStatus.READY
+            ]
+            lines = [
+                f"  • [bold red]{escape(name)}[/bold red]" for name in missing[:10]
+            ]
+            if len(missing) > 10:
+                lines.append(f"  … and {len(missing) - 10} more")
+            logger.warning(
+                "Task '%s' did not run for %s. "
+                "A task only runs once all of its inputs exist.\nMissing input data:\n%s",
+                node.name,
+                Path(str(value)).name,
+                "\n".join(lines) or "  • its inputs",
+            )
 
     def _create_collectra_file(
         self, key: str, value: str | Path, output_dir: str | Path | None = None
@@ -457,7 +924,7 @@ class Collectra:
 
         Handles three cases:
         - Existing collectra folder with results.yaml
-        - Single image file
+        - Single image file (resuming its results folder if it already has one)
         - Directory without results.yaml
         """
         self._validate_file_inputs(key, value)
@@ -470,6 +937,10 @@ class Collectra:
         # Case B: Single image file
         if self._is_image_file(savef):
             savef = self._handle_image_file(savef, output_dir)
+            if (savef / self.RESULTS_FILE).exists():
+                # An earlier run made this folder: keep its results, so that
+                # rerunning over the images resumes rather than starting again.
+                return "file", savef
 
         # Case C: Directory without results.yaml - create results file
         if savef.is_dir():
@@ -496,7 +967,7 @@ class Collectra:
 
     def _is_image_file(self, path: Path) -> bool:
         """Check if path is an image file."""
-        return path.is_file() and path.suffix.lower() in Image.image_types()
+        return path.is_file() and path.suffix.lower() in Image.file_extensions()
 
     def _handle_existing_folder(
         self, savef: Path, output_dir: str | Path | None
@@ -508,14 +979,7 @@ class Collectra:
             shutil.copytree(savef, output_path, dirs_exist_ok=True)
             savef = output_path
 
-        self._remove_exif_from_images(savef)
         return savef
-
-    def _remove_exif_from_images(self, directory: Path):
-        """Remove EXIF data from all images in directory."""
-        for img_file in directory.glob("*"):
-            if img_file.suffix.lower() in Image.image_types():
-                remove_exif(img_file, img_file)
 
     def _handle_image_file(
         self, file_path: Path, output_dir: str | Path | None
@@ -528,25 +992,27 @@ class Collectra:
             else file_path.parent / folder_name
         )
         savef.mkdir(parents=True, exist_ok=True)
+        if (savef / self.RESULTS_FILE).exists():
+            return savef  # already ingested; its results refer to that copy
 
-        remove_exif(file_path, savef / file_path.name)
+        # Keep the file exactly as supplied, EXIF orientation included: every
+        # reader in Collectra applies it rather than stripping it.
+        shutil.copy2(file_path, savef / file_path.name)
         return savef
 
     def _create_results_file(self, directory: Path, key: str, value: str | Path):
         """Create a new results.yaml file in the given directory."""
         with change_dir(directory):
-            results = {
-                self.METADATA_KEY: {
-                    "workflow": self.name,
-                    "version": self.version,
-                    "timestamp": datetime.datetime.now().isoformat(),
+            results = put_header(
+                Results(workflow=self.name, version=self.version),
+                {
+                    key: {
+                        "type": "collectra.Image",
+                        "id": f"{key}",
+                        "data": value.name if isinstance(value, Path) else str(value),
+                    },
                 },
-                key: {
-                    "type": "collectra.Image",
-                    "id": f"{key}",
-                    "data": value.name if isinstance(value, Path) else str(value),
-                },
-            }
+            )
             self._write_results_file(results)
 
     def _populate_active_paths(
@@ -692,21 +1158,21 @@ class Collectra:
         if resultsf.exists():
             with open(resultsf, "r") as f:
                 results = yaml.safe_load(f)
-            results[self.METADATA_KEY][
-                "timestamp"
-            ] = datetime.datetime.now().isoformat()
+            # Rewriting the file brings an old-style header up to date, and
+            # refreshes its timestamp.
+            results = put_header(
+                pop_header(results, source=resultsf.resolve()), results
+            )
         else:
-            results = {
-                self.METADATA_KEY: {
-                    "workflow": self.name,
-                    "version": self.version,
-                    "timestamp": datetime.datetime.now().isoformat(),
+            results = put_header(
+                Results(workflow=self.name, version=self.version),
+                {
+                    key: {
+                        "type": "collectra.Image",
+                        "data": value.name if isinstance(value, Path) else str(value),
+                    },
                 },
-                key: {
-                    "type": "collectra.Image",
-                    "data": value.name if isinstance(value, Path) else str(value),
-                },
-            }
+            )
 
         return results
 
@@ -803,12 +1269,116 @@ class Collectra:
             return
 
         children = self._get_node_children(node)
-        results = self._run_task(node, **kwargs)
+        force = kwargs.get("force", False)
+        if not force and self._has_output(node):
+            existing = [
+                f"{output.name} ({len(output.items)})"
+                for output in self._output_nodes(node)
+                if self._holds_output(output)
+            ]
+            logger.warning(
+                "Skipping task '%s' for %s: output already exists in %s. "
+                "Use --force to rerun it and replace that output.",
+                node.name,
+                Path(str(kwargs.get("value", ""))).name or "this file",
+                ", ".join(existing),
+            )
+            self._update_node_status(node, True)
+            self._run_nodes(children, **kwargs)
+            return
+
+        if self._stage_gate and self._stage_gate.defer(node, kwargs.get("value", "")):
+            return
+
+        previous = self._take_outputs(node, kwargs.get("value")) if force else None
+        try:
+            results = self._run_task(node, **kwargs)
+        except Exception as error:
+            # Only this task's branch stops: with no output, the tasks that need
+            # it are never ready, while the rest of the DAG carries on.
+            if previous is not None:
+                previous.restore()
+            self._task_failed(node, kwargs.get("value", ""), error, render)
+            return
+        except BaseException:
+            if previous is not None:
+                previous.restore()
+            raise
+        if previous is not None:
+            # A failed rerun must not destroy the output it was meant to replace.
+            previous.discard() if results else previous.restore()
 
         self._update_node_status(node, bool(results))
         self.render("workflow_run", file=kwargs.get("value", ""), render=render)
 
         self._run_nodes(children, *results, **kwargs)
+
+    def _task_failed(
+        self, node: TaskNode, folder, error: Exception, render: bool = False
+    ) -> None:
+        """Log a task's failure and mark it, leaving the rest of the run to go on."""
+        name = Path(str(folder)).name or "this file"
+        logger.error(
+            "Task '%s' failed for %s: %s", node.name, name, error, exc_info=error
+        )
+        self._failures.append((node.name, name, f"{type(error).__name__}: {error}"))
+        self._update_node_status(node, False)
+        self.render("workflow_run", file=folder, render=render)
+
+    def _output_nodes(self, node: TaskNode) -> list[ArtefactNode]:
+        return [
+            child
+            for child in self.node_manager.get_children(node)
+            if isinstance(child, ArtefactNode)
+        ]
+
+    @staticmethod
+    def _holds_output(output: ArtefactNode) -> bool:
+        """Whether a node has items, or a saved empty result.
+
+        A task that ran and found nothing saves its output as an empty entry,
+        which loads as a ready node with no items. That is a finished result.
+        """
+        return bool(output.items) or output.status == NodeStatus.READY
+
+    def _has_output(self, node: TaskNode) -> bool:
+        """Whether any of a task's output nodes already holds a result."""
+        return any(self._holds_output(output) for output in self._output_nodes(node))
+
+    def _take_outputs(self, node: TaskNode, folder) -> PreviousOutputs:
+        """Empty a task's output nodes before a forced rerun replaces them.
+
+        Each artefact is dropped from its node. If it keeps its content in a
+        file, that exact file, as the artefact records it, is moved aside until
+        the rerun succeeds. Nothing is inferred from folder names, so results
+        written by hand or by older versions are handled the same way.
+        """
+        outputs = self._output_nodes(node)
+        snapshots = [(output, dict(output.items)) for output in outputs]
+        moved: list[tuple[Path, Path]] = []
+        backup = None
+        root = Path(str(folder)).resolve() if folder else None
+        for output in outputs:
+            for item in output.items.values():
+                for file in item.stored_files(root) if root else []:
+                    if not file.resolve().is_relative_to(root):
+                        logger.warning(
+                            "Not deleting %s: it is outside the results folder %s",
+                            file,
+                            root,
+                        )
+                        continue
+                    already = any(file == original for _, original in moved)
+                    if already or not file.is_file():
+                        continue
+                    if backup is None:
+                        backup = Path(tempfile.mkdtemp(prefix="collectra-previous-"))
+                    kept = backup / str(len(moved))
+                    shutil.move(str(file), str(kept))
+                    moved.append((kept, file))
+        for output, _ in snapshots:
+            output.items.clear()
+        return PreviousOutputs(snapshots, moved, backup)
 
     def _execute_artefact_node(
         self, node: ArtefactNode, args: tuple, kwargs: dict, render: bool
@@ -826,6 +1396,11 @@ class Collectra:
                 and node.check_type(type(arg))
             ):
                 self._check_existing(node, arg)
+        self._name_new_items(node, args)
+        folder = kwargs.get("value")
+        if folder:
+            for item in node.items.values():
+                item.finalise(Path(str(folder)), node.name)
 
         # Mark as READY even if no items matched — parent task has completed
         if node.status == NodeStatus.NOT_READY:
@@ -890,6 +1465,51 @@ class Collectra:
         ]
         return ready_tasks
 
+    def _name_new_items(self, node: ArtefactNode, results: tuple) -> None:
+        """Give automatically identified items in ``node`` their final ids.
+
+        A lone item takes the node's name; otherwise items are numbered
+        ``node-1``, ``node-2``... skipping ids already in use. Ids that were
+        loaded or chosen explicitly never change, so existing references hold.
+        ``results`` is everything the task produced, so references to a renamed
+        item from its siblings are updated too.
+        """
+        fresh = [
+            item for item in node.items.values() if getattr(item, "_auto_id", False)
+        ]
+        if not fresh:
+            return
+        fresh_objects = {id(item) for item in fresh}
+        taken = {
+            item.id for item in node.items.values() if id(item) not in fresh_objects
+        }
+        renamed: dict[str, str] = {}
+        number = 1
+        for item in fresh:
+            if len(node.items) == 1:
+                new_id = node.name
+            else:
+                while f"{node.name}-{number}" in taken:
+                    number += 1
+                new_id = f"{node.name}-{number}"
+            taken.add(new_id)
+            renamed[item.id] = new_id
+        for result in results:
+            if not isinstance(result, Artefact):
+                continue
+            if isinstance(result.parents, str):
+                result.parents = renamed.get(result.parents, result.parents)
+            else:
+                result.parents = [
+                    renamed.get(parent, parent) for parent in result.parents
+                ]
+        ordered = list(node.items.values())
+        for item in fresh:
+            item.id = renamed[item.id]
+            item._auto_id = False
+        node.items.clear()
+        node.items.update({item.id: item for item in ordered})
+
     def _check_existing(self, node: ArtefactNode, new_item: Artefact) -> None:
         """Check if an identical item already exists in the artefact node.
 
@@ -904,6 +1524,8 @@ class Collectra:
         for existing_id, existing_item in items.items():
             if self._is_identical_item(existing_item, new_item):
                 new_item.id = existing_item.id
+                # Still provisional if the replaced item had not been named yet.
+                new_item._auto_id = getattr(existing_item, "_auto_id", False)
                 items[existing_id] = new_item
                 return
 
@@ -978,12 +1600,18 @@ class Collectra:
         if len(entries) == 0:
             logger.warning("No input data found for task %s, skipping.", task.name)
             return results
-        with change_dir(self.path):
-            for entry in track(
+        # Inside an overall bar a per-task bar would only add noise.
+        listed = (
+            entries
+            if self._run_progress
+            else track(
                 entries,
                 total=len(entries),
                 description=f"Running {task.name}",
-            ):
+            )
+        )
+        with change_dir(self.path):
+            for entry in listed:
                 if not isinstance(entry, list):
                     entry = list(entry)
                 entry_result = self._execute_entries(entry, task)
@@ -1049,13 +1677,33 @@ class Collectra:
 
     @property
     def metadata(self) -> dict:
-        """Get pipeline metadata dictionary.
+        """The pipeline's declaration, as it is written at the top of pipeline.yaml.
 
         Returns:
-            Dictionary containing pipeline name, extension, and version
-            under the PIPELINE_METADATA_KEY.
+            The pipeline entry (``{name: {type, ext, version, ...}}``), or for a
+            file that still uses the deprecated form, its metadata block.
         """
-        return {self.PIPELINE_METADATA_KEY: self.pipeline_metadata.copy()}
+        if self._legacy_declaration:
+            return {self.PIPELINE_METADATA_KEY: self.pipeline_metadata.copy()}
+        extras = {
+            key: value
+            for key, value in self.pipeline_metadata.items()
+            if key not in ("name", "ext", "version")
+        }
+        cls = type(self)
+        declared_type = (
+            "collectra.Pipeline"
+            if cls is Pipeline
+            else f"{cls.__module__}.{cls.__qualname__}"
+        )
+        return {
+            self.name: {
+                "type": declared_type,
+                "ext": self.ext,
+                "version": self.version,
+                **extras,
+            }
+        }
 
     def gui_graph(self) -> dict:
         """Return the live workflow graph in the shape expected by the GUI."""
@@ -1071,22 +1719,19 @@ class Collectra:
                 task = node.get_task()
                 detail = task.get_class_path()
                 params = getattr(task, "params", {})
-                if "LLM" in detail:
-                    node_type = "llm"
-                elif "ObjectDetection" in detail or "ImageClassifier" in detail:
-                    node_type = "detector"
-                else:
-                    node_type = "processor"
+                node_type = "Task"
+                types = []
             else:
-                type_names = sorted(type_.get_class_path() for type_ in node.types)
-                detail = ", ".join(type_names)
-                node_type = "data" if node.items else "implicit"
+                types = sorted(type_.get_class_path() for type_ in node.types)
+                detail = ", ".join(types)
+                node_type = "Artefact"
 
             nodes.append(
                 {
                     "id": name,
                     "label": name,
                     "nodeType": node_type,
+                    "types": types,
                     "detail": detail,
                     "inputs": inputs,
                     "outputs": outputs,
@@ -1109,6 +1754,8 @@ class Collectra:
                 with open(self.PIPELINE_FILE, "r") as f:
                     file_data = yaml.safe_load(f) or dict()
                     file_data.pop(self.PIPELINE_METADATA_KEY, None)
+                    if self.name not in self.data:
+                        file_data.pop(self.name, None)  # the pipeline's own entry
                 # compare diffs between current data and file data, prioritizing file data for any keys that exist in both
                 data_diff = dict()
                 for key, data in file_data.items():
@@ -1187,6 +1834,18 @@ class Collectra:
         with change_dir(self.path):
             self._build_nodes_and_relations(relations)
             self._create_graph_edges(relations)
+            for node in self.node_manager.get_task_nodes():
+                node.get_task().validate_resources(self.resources)
+
+    def resource(self, name: str):
+        """The resource declared under ``name`` (available once connected)."""
+        try:
+            return self.resources[name]
+        except KeyError:
+            raise KeyError(
+                f"No resource named {name!r}. Available: "
+                f"{', '.join(sorted(self.resources)) or 'none'}"
+            ) from None
 
     def _build_nodes_and_relations(self, relations: dict):
         """Build workflow nodes and track their relationships."""
@@ -1197,6 +1856,11 @@ class Collectra:
 
             cls_ = load_class_from_string(data.pop("type"))
             data = self._check_data_assignment(self.data, data)
+            if issubclass(cls_, Resource):
+                # Kept by name, reused across connects, and never a graph node.
+                if type(self.resources.get(name)) is not cls_:
+                    self.resources[name] = cls_(name, **data)
+                continue
             obj = self._create_or_reuse_object(name, cls_, data)
 
             if isinstance(obj, Task):
@@ -1299,3 +1963,8 @@ class Collectra:
             )
 
         return dot_str
+
+
+# The class was called ``Collectra`` before it became ``Pipeline``; the old name
+# still works so existing scripts keep running.
+Collectra = Pipeline

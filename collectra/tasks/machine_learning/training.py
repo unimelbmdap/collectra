@@ -13,9 +13,11 @@ from rich.table import Table
 
 from collectra.types.base import ArtefactNode
 from collectra.types.images import Image, ImageCrop
+from collectra.commons.results import peek_header
 from collectra.utils import change_dir
 
 from ...logger import get_logger
+from .class_names import read_class_names, write_class_names
 
 logger = get_logger(__name__)
 
@@ -25,8 +27,15 @@ def print_distribution_table(
     classes: list[str],
     train_counts: dict[str, int],
     validation_counts: dict[str, int],
+    train_images: tuple[int, int] | None = None,
+    validation_images: tuple[int, int] | None = None,
 ) -> None:
-    """Print class counts and each class's held-out validation percentage."""
+    """Print class counts and each class's held-out validation percentage.
+
+    ``train_images`` and ``validation_images`` are optional
+    ``(with objects, background)`` image counts. Background images have no
+    objects but are still used as negative training examples.
+    """
     table = Table(title=title, show_lines=True)
     table.add_column(
         "Class Name", justify="left", style="green", header_style="bold green"
@@ -64,6 +73,22 @@ def print_distribution_table(
         f"{total_percentage:.1f}%",
         style="bold",
     )
+    if train_images is not None and validation_images is not None:
+        rows = [
+            ("Images with objects", train_images[0], validation_images[0]),
+            ("Background images (no objects)", train_images[1], validation_images[1]),
+            ("Total images", sum(train_images), sum(validation_images)),
+        ]
+        for label, train_count, validation_count in rows:
+            total = train_count + validation_count
+            percentage = 100 * validation_count / total if total else 0.0
+            table.add_row(
+                label,
+                str(train_count),
+                str(validation_count),
+                f"{percentage:.1f}%",
+                style="bold" if label == "Total images" else None,
+            )
     Console().print(table)
 
 
@@ -119,8 +144,7 @@ def _file_partition(item_file: Path) -> str:
         return ""
     with open(result_file, "r") as f:
         file_data = yaml.safe_load(f) or {}
-    metadata = file_data.get("collectra_results_metadata") or {}
-    return metadata.get("partition") or ""
+    return peek_header(file_data, source=result_file).partition or ""
 
 
 def _limit_training_files(
@@ -192,9 +216,9 @@ def save_training_result(task, results, *, log: str, **kwargs) -> None:
     new_model_path = f"{task.name}-{Path(log).name}.pt"
     shutil.copy(best_model_path, new_model_path)
     pipeline.data[task.name]["model"] = new_model_path
-    classes_src = best_model_path.parent / "classes.json"
-    if classes_src.exists():
-        shutil.copy(classes_src, f"{Path(new_model_path).stem}.classes.json")
+    classes = read_class_names(best_model_path)
+    if classes is not None:
+        write_class_names(Path(f"{Path(new_model_path).stem}.classes.yaml"), classes)
 
 
 def train_from_files(
@@ -268,7 +292,7 @@ def run_training_command(
         trainer,
         prepare_inputs=prepare_inputs,
         include_unlabelled=include_unlabelled,
-        project=f"{pipeline.path.name}-{task.name}",
+        project=f"{pipeline.name}-{task.name}",
         log=log,
         base_folder=Path.cwd(),
         validation=validation,

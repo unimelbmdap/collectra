@@ -8,7 +8,7 @@ const fn = (name, kind = 'function') => {
     return html.slice(from, html.indexOf('\n        }\n', from)) + '\n        }\n';
 };
 
-const graph = { success: true, ext: 'grapto', nodes: [{ id: 'a', nodeType: 'data' }], edges: [] };
+const graph = { success: true, ext: 'grapto', nodes: [{ id: 'a', nodeType: 'Artefact' }], edges: [] };
 
 function dagPage({ withElements, initThrows }) {
     const els = {};
@@ -62,7 +62,7 @@ describe('opening the page at start-up', () => {
         const context = {
             workflowAssetsLoaded: true, collectraFolders: [], currentFolderIndex: 0, console: { error() {} },
             populateSidebar: vi.fn(), clearCurrentView: vi.fn(), updateNavButtons: vi.fn(), displayGlobalStats: vi.fn(),
-            clearDag: vi.fn(), loadWorkflowAssets: async () => {},
+            clearDag: vi.fn(), refreshTables: vi.fn(), loadWorkflowAssets: async () => {},
             loadAndRenderDag: dagBehaviour,
             loadCollectraFolder: async (index) => { loaded.push(index); },
             document: { getElementById: () => element() },

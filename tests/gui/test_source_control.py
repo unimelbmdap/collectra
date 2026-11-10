@@ -206,3 +206,40 @@ def test_linked_worktree_repository(repository, tmp_path):
     result = run_git(worktree / "results/page.collectra", "status")
     assert result["success"]
     assert result["repository"] == str(worktree.resolve())
+
+
+@pytest.fixture
+def diverged(repository, tmp_path):
+    root, folder = repository
+    remote = tmp_path / "remote.git"
+    remote.mkdir()
+    git(remote, "init", "--bare")
+    git(root, "remote", "add", "origin", str(remote))
+    branch = git(root, "branch", "--show-current").strip()
+    git(root, "push", "-u", "origin", branch)
+    other = tmp_path / "other"
+    subprocess.run(
+        ["git", "clone", "--branch", branch, str(remote), str(other)],
+        check=True,
+        capture_output=True,
+    )
+    git(other, "config", "user.email", "test@example.com")
+    git(other, "config", "user.name", "Test")
+    (other / "remote-change.txt").write_text("remote")
+    git(other, "add", ".")
+    git(other, "commit", "-m", "Remote change")
+    git(other, "push")
+    (root / "local-change.txt").write_text("local")
+    git(root, "add", ".")
+    git(root, "commit", "-m", "Local change")
+    return root, folder
+
+
+def test_pull_merges_diverged_branches_without_asking(diverged, monkeypatch):
+    root, folder = diverged
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(root / "no-global-config"))
+    result = run_git(folder, "pull")
+    assert result["success"]
+    assert (root / "remote-change.txt").exists()
+    assert (root / "local-change.txt").exists()
+    assert git(root, "rev-list", "--merges", "--count", "HEAD").strip() == "1"

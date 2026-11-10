@@ -17,7 +17,7 @@ from platformdirs import user_cache_dir
 logger = logging.getLogger(__name__)
 
 VERSION = 1
-TAB_KINDS = {"dag", "node"}
+TAB_KINDS = {"dag", "table", "node"}
 DIRECTIONS = {"left", "right", "above", "below"}
 MAX_LAYOUT_OPS = 200
 PIXEL_FLEX = re.compile(r"^0 [01] \d+(\.\d+)?(px|%)$")
@@ -86,8 +86,8 @@ def _sanitize_sizes(sizes):
 def _sanitize_tab(tab):
     if not isinstance(tab, dict) or tab.get("kind") not in TAB_KINDS:
         return None
-    if tab["kind"] == "dag":
-        return {"kind": "dag"}
+    if tab["kind"] in ("dag", "table"):
+        return {"kind": tab["kind"]}
     group = tab.get("group")
     if not isinstance(group, str) or not group:
         return None

@@ -33,13 +33,19 @@ Command overview
 
    * - Task class
      - Commands
-   * - ObjectDetectionYOLO
+   * - ObjectDetectorYOLO
      - ``run``, ``train``
-   * - ObjectDetectionRFDETR
+   * - ObjectDetectorRFDETR
      - ``run``, ``train``
-   * - ObjectDetectionDETR
+   * - ObjectDetectorDETR
      - ``run``, ``train``
-   * - ImageSegmentationSam3
+   * - ObjectDetectorSam3
+     - ``run``, ``train``
+   * - ImageSegmenterSam3
+     - ``run``, ``train``
+   * - ImageSegmenterRFDETR
+     - ``run``, ``train``
+   * - ImageSegmenterYOLO
      - ``run``, ``train``
    * - LineDetectorRLSA
      - ``run``
@@ -53,6 +59,8 @@ Command overview
      - ``run``, ``train``
    * - OCRSuraya
      - ``run``
+   * - OCRHuggingFace
+     - ``run``, ``train``
    * - LLM
      - ``run``
    * - LLMCanonicaliser

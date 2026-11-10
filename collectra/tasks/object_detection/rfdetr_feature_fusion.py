@@ -17,6 +17,8 @@ from torch import nn
 from rfdetr.models.backbone.backbone import Backbone
 from rfdetr.models.backbone.dinov2 import DinoV2
 
+from .rfdetr_channels import absolute_checkpoint
+
 SPEC_KEY = "backbone.0.encoder.fusion_spec"
 FORMAT_VERSION = 1
 
@@ -318,7 +320,9 @@ def expand_rfdetr_feature_fusion(
     import rfdetr
 
     if variant is None:
-        detector = rfdetr.RFDETR.from_checkpoint(str(input_model), device="cpu")
+        detector = rfdetr.RFDETR.from_checkpoint(
+            absolute_checkpoint(input_model), device="cpu"
+        )
     else:
         names = {
             "nano": "RFDETRNano",
@@ -333,11 +337,12 @@ def expand_rfdetr_feature_fusion(
         if not name.startswith("RFDETR") or not hasattr(rfdetr, name):
             raise ValueError(f"Unknown RF-DETR variant: {variant}")
         detector = getattr(rfdetr, name)(
-            pretrain_weights=str(input_model), device="cpu"
+            pretrain_weights=absolute_checkpoint(input_model), device="cpu"
         )
     adapt_model(detector, num_views, reference_view, hidden_dim)
     save_adapted_model(detector, output_model)
     return detector
+
 
 def validate_saved_model(path: Path, expected_views: int) -> None:
     import torch

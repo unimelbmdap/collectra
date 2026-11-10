@@ -10,19 +10,25 @@ Classes:
 __all__ = ["Task", "TaskNode"]
 
 import re
-from dataclasses import dataclass
 from itertools import product
 from pathlib import Path
-from typing import TYPE_CHECKING, Generic
+from typing import Annotated, Any, Generic
 
-from collectra.commons import BaseEntity, Node, NodeStatus, T, TaskContext
+from cappa import Arg
+from pydantic import BaseModel, ConfigDict, Field
+
+from collectra.commons import (
+    EntityMixin,
+    LenientAttributes,
+    Node,
+    NodeStatus,
+    T,
+    TaskContext,
+)
 from collectra.cli import command
 
-if TYPE_CHECKING:
-    from collectra.pipelines.base import Collectra
 
-
-class Task(BaseEntity, Generic[T]):
+class Task(LenientAttributes, EntityMixin, BaseModel, Generic[T]):
     """Abstract base class for all tasks in Collectra workflows.
 
     Defines the common interface and behavior that all tasks must implement.
@@ -32,16 +38,42 @@ class Task(BaseEntity, Generic[T]):
         input (list[str]): List of input parameter names.
         output (list[str]): List of output names.
         context (TaskContext): Runtime context for task execution.
+        fusion (bool): Opt-in feature fusion for task types that support it.
     """
 
+    model_config = ConfigDict(
+        extra="allow",
+        validate_assignment=True,
+        arbitrary_types_allowed=True,
+        protected_namespaces=(),
+    )
+
+    name: str
     collective: bool = False
+    fusion: bool = False
+    batch_size: int = Field(default=1, ge=1)
+    # Runtime wiring, set by the pipeline: neither validated, printed nor dumped.
+    pipeline: Any = Field(default=None, exclude=True, repr=False)
+    context: TaskContext = Field(default_factory=TaskContext, exclude=True, repr=False)
 
     def __init__(self, name: str, **kwargs) -> None:
-        super().__init__(name)
-        self.pipeline: Collectra | None = None
-        self.context: TaskContext = TaskContext()
-        for key, value in kwargs.items():
-            setattr(self, key, value)
+        super().__init__(name=name, **kwargs)
+
+    def attributes_to_ignore(self) -> set:
+        return super().attributes_to_ignore() | {"pipeline", "context"}
+
+    def validate_resources(self, resources: dict[str, Any]) -> None:
+        """Check that the pipeline resources this task refers to exist.
+
+        Called when the pipeline connects. Tasks that name resources override
+        this to raise a clear error early rather than fail on the first file.
+        """
+
+    # Tasks are stateful, long-lived objects held by graph nodes: compare by identity.
+    def __eq__(self, other: object) -> bool:
+        return self is other
+
+    __hash__ = object.__hash__
 
     @property
     def input_dict(self) -> dict[str, list]:
@@ -108,6 +140,18 @@ class Task(BaseEntity, Generic[T]):
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
+    def prefetch(self, entries: list[list]) -> None:
+        """Optionally compute results for many input entries in one batch.
+
+        The pipeline calls this with the entries of several files (each entry is
+        the list of artefacts a later ``run`` call will receive) when
+        ``batch_size`` is above 1. Tasks that can batch their work override this
+        to cache results for ``run`` to reuse; the default does nothing.
+        """
+
+    def clear_prefetch(self) -> None:
+        """Discard anything cached by ``prefetch``."""
+
     def get_output_name(self) -> str:
         name = (
             f"{self.get_name()}_output"
@@ -135,8 +179,24 @@ class Task(BaseEntity, Generic[T]):
         verbose: bool = False,
         usage: bool = False,
         render: bool = False,
+        force: Annotated[
+            bool,
+            Arg(
+                help="Rerun tasks whose outputs already exist, replacing those outputs. By default such tasks are skipped."
+            ),
+        ] = False,
+        batch_size: Annotated[
+            int | None,
+            Arg(
+                help="Inputs to send to the model at once, for tasks that can batch their work. Omit to keep the task's own setting."
+            ),
+        ] = None,
     ) -> None:
         """Run this task for the supplied input files."""
+        if batch_size is not None:
+            if batch_size < 1:
+                raise ValueError("--batch-size must be at least 1")
+            self.batch_size = batch_size
         if self.pipeline is None:
             raise RuntimeError(f"Task {self.name!r} is not attached to a pipeline")
         self.pipeline.cli_run(
@@ -147,10 +207,10 @@ class Task(BaseEntity, Generic[T]):
             verbose=verbose,
             usage=usage,
             render=render,
+            force=force,
         )
 
 
-@dataclass
 class TaskNode(Node):
 
     task: Task

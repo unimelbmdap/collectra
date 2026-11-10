@@ -15,7 +15,7 @@ from rfdetr.datasets.transforms import Normalize
 from torchvision.transforms.v2 import ToDtype, ToImage
 
 from collectra import Image
-from collectra.tasks.object_detection.rfdetr import ObjectDetectionRFDETR
+from collectra.tasks.object_detection.rfdetr import ObjectDetectorRFDETR
 from collectra.tasks.object_detection.rfdetr_data import _adapt_dataset
 
 
@@ -44,7 +44,7 @@ def test_tiff_train_predict_pixels_and_boxes_match(tmp_path, dtype, planar):
                           ToImage(), ToDtype(torch.float32, scale=True), Normalize()])
     dataset = _adapt_dataset(CocoDetection(tmp_path, annotations, transforms))
     actual, target = dataset[0]
-    task = ObjectDetectionRFDETR(name="test")
+    task = ObjectDetectorRFDETR(name="test")
     task.model = SimpleNamespace(model_config=SimpleNamespace(num_channels=15))
     raw = task._tiff_tensor(Image(name="views", data=path))
     expected = torch.nn.functional.interpolate(raw.flip(-1)[None], size=(16, 20),
@@ -61,7 +61,7 @@ def test_tiff_train_predict_pixels_and_boxes_match(tmp_path, dtype, planar):
 
 @pytest.mark.parametrize("backend", ["cpu", "auto", "gpu", "torchvision"])
 def test_tiff_training_uses_supported_backend_and_best_total(tmp_path, monkeypatch, backend):
-    task = ObjectDetectionRFDETR(name="test")
+    task = ObjectDetectorRFDETR(name="test")
     captured = {}
     log = tmp_path / "run"
     weights = log / "weights"
@@ -69,7 +69,7 @@ def test_tiff_training_uses_supported_backend_and_best_total(tmp_path, monkeypat
     (weights / "checkpoint_best_regular.pth").write_bytes(b"regular")
     (weights / "checkpoint_best_total.pth").write_bytes(b"ema winner")
     task.model = SimpleNamespace(train=lambda **kwargs: captured.update(kwargs))
-    monkeypatch.setattr(task, "_write_coco_dataset", lambda *args: None)
+    monkeypatch.setattr(task, "_write_coco_dataset", lambda *args, **kwargs: None)
     monkeypatch.setattr(task, "_reload", lambda: None)
     task._train_fold([{"image_path": "views.tiff"}], [], ["object"], log,
                      {"augmentation_backend": backend})

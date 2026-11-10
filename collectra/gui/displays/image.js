@@ -35,7 +35,7 @@ function installImageDisplay(PanelController) {
                 this.zoomToBoxGeometry(match.target.selector.geometry);
             } else {
                 this.pageAnno.cancelSelected?.();
-                if (this.displayView?.segmentation) this.zoomToBoxGeometry(this.displayView.segmentation.bounds);
+                if (this.displayView?.segmentation) this.zoomToBoxGeometry(segmentationBoundsInPreview(this, this.displayView.segmentation));
                 else if (this.pageViewer) this.pageViewer.viewport.goHome();
             }
         };
@@ -279,7 +279,7 @@ function installImageDisplay(PanelController) {
                 // flushAnnotationUpdate() (Enter/Escape below) can reach this panel.
                 this._updateAnnotationTimer = null;
                 this._updateAnnotationFlush = null;
-                this.pageAnno.on('updateAnnotation', (updated) => {
+                const queueUpdate = (updated, { debounce }) => {
                     if (pendingAnnotation && pendingAnnotation.id === updated.id) return; // still mid-create, nothing to persist
                     if (this._pushingClampedUpdate) return; // our own re-push below, not a new edit
                     this._updateAnnotationFlush = async () => {
@@ -302,8 +302,19 @@ function installImageDisplay(PanelController) {
                         }
                     };
                     clearTimeout(this._updateAnnotationTimer);
-                    this._updateAnnotationTimer = setTimeout(this._updateAnnotationFlush, 250);
-                });
+                    if (debounce) this._updateAnnotationTimer = setTimeout(this._updateAnnotationFlush, 250);
+                };
+                // Annotorious only emits 'updateAnnotation' when the box is deselected, so
+                // watch the store for live edits and commit them on pointerup (no timer —
+                // re-pushing mid-gesture would tear down the box being dragged).
+                this.pageAnno.on('updateAnnotation', (updated) => queueUpdate(updated, { debounce: true }));
+                this.pageAnno.state.store.observe((event) => {
+                    (event.changes.updated || []).forEach(({ oldValue, newValue }) => {
+                        const before = oldValue.target.selector.geometry;
+                        const after = newValue.target.selector.geometry;
+                        if (before && after && JSON.stringify(before) !== JSON.stringify(after)) queueUpdate(newValue, { debounce: false });
+                    });
+                }, { origin: 'LOCAL' });
                 display.addEventListener('pointerup', () => this.flushAnnotationUpdate());
 
                 // The display response already contains these annotations.
@@ -331,6 +342,36 @@ function installImageDisplay(PanelController) {
                 }
 
                 const viewer = this.pageViewer;
+                let renamedRows = null;
+                mountLinkControls({
+                    viewer, view,
+                    isCurrent: () => this._artefactToken === token,
+                    loadNames: () => window.pywebview.api.get_link_names(),
+                    rename: async (linkId, name) => {
+                        const result = await window.pywebview.api.set_link_name(linkId, name);
+                        if (result.success) renamedRows = result.rows;
+                        return result;
+                    },
+                    create: async name => {
+                        const result = await window.pywebview.api.create_link(view.target_id, name);
+                        if (result.success) renamedRows = result.rows;
+                        return result;
+                    },
+                    // Previews the delete (listing what goes with the link) and
+                    // asks first; resolves true only when the link was removed.
+                    remove: (linkId, name) => deleteNodeWithConfirm(linkId, name),
+                    onChanged: async () => {
+                        if (renamedRows) {
+                            Object.values(panelControllers).forEach(controller => controller.refreshPageAnnotations(renamedRows));
+                            renamedRows = null;
+                            await refreshActiveNodeIds();
+                            await syncInstanceTabs();
+                        }
+                        const refreshed = await window.pywebview.api.get_artefact_display(view.target_id, view.rgb_view_index || 0);
+                        if (!refreshed.success) throw new Error(refreshed.error);
+                        if (this._artefactToken === token) await this.renderPageArtefact(view.image_path, refreshed.view, refreshed);
+                    },
+                });
                 mountRgbViewControls({
                     viewer, view,
                     isCurrent: () => this._artefactToken === token,

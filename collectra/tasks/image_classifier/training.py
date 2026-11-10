@@ -6,7 +6,9 @@ import math
 import os
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from pydantic import BaseModel
+
+from collectra.commons import PositionalFields
 from pathlib import Path
 from rich.console import Console
 from rich.progress import (
@@ -21,6 +23,7 @@ from rich.progress import (
 
 from collectra.logger import get_logger
 from ..base import Task
+from ..machine_learning.class_names import write_class_names
 from ..machine_learning.training import print_distribution_table
 from collectra.types.images import Image, ImageCrop
 from collectra.types.links import Link
@@ -82,8 +85,7 @@ logger = get_logger(__name__)
 console = Console()
 
 
-@dataclass
-class ClassificationTrainResult:
+class ClassificationTrainResult(PositionalFields, BaseModel):
     save_dir: Path
     results_dict: dict
 
@@ -133,7 +135,9 @@ class TorchClassifierTask(Task):
                 train_dir,
                 val_dir,
             )
-            counts = {split: {name: 0 for name in classes} for split in ("train", "val")}
+            counts = {
+                split: {name: 0 for name in classes} for split in ("train", "val")
+            }
             for split, directory in (("train", train_dir), ("val", val_dir)):
                 for name in classes:
                     class_dir = directory / name
@@ -209,8 +213,11 @@ class TorchClassifierTask(Task):
             if export_workers > 0:
                 with ThreadPoolExecutor(max_workers=export_workers) as executor:
                     futures = {
-                        executor.submit(export_job, target, destination):
-                        (image_id, class_name, split)
+                        executor.submit(export_job, target, destination): (
+                            image_id,
+                            class_name,
+                            split,
+                        )
                         for image_id, class_name, split, target, destination in jobs
                     }
                     for future in as_completed(futures):
@@ -272,6 +279,8 @@ class TorchClassifierTask(Task):
             if not 0 <= flipud <= 1:
                 raise ValueError("flipud must be in [0, 1]")
             augmentation["flipud"] = flipud
+        if kwargs.get("rotate90"):
+            augmentation["rotate90"] = True
         if (
             epochs < 1
             or batch < 1
@@ -299,15 +308,14 @@ class TorchClassifierTask(Task):
         configured = kwargs.get("classes") or getattr(self, "output", [])
         if isinstance(configured, str):
             configured = [configured]
-        classes = sorted(
-            set(
-                configured
-                or [
-                    image.name
-                    for image in images
-                    if not kwargs.get("exclude") or image.partition != kwargs["exclude"]
-                ]
-            )
+        # The pipeline's outputs, in its order. Only without them are the classes
+        # found from the images.
+        classes = list(dict.fromkeys(configured)) or sorted(
+            {
+                image.name
+                for image in images
+                if not kwargs.get("exclude") or image.partition != kwargs["exclude"]
+            }
         )
         if not classes:
             raise ValueError("No classes provided/found for classifier training")
@@ -393,9 +401,7 @@ class TorchClassifierTask(Task):
         )
         weights_dir = log / "weights"
         weights_dir.mkdir(parents=True, exist_ok=True)
-        (weights_dir / "classes.json").write_text(
-            json.dumps({"classes": classes}, indent=2)
-        )
+        write_class_names(weights_dir / "classes.yaml", classes)
         wandb_run = None
         if bool(kwargs.get("wandb", False)):
             try:
@@ -429,7 +435,9 @@ class TorchClassifierTask(Task):
             ) as progress:
                 epoch_task_id = progress.add_task("Training epochs...", total=epochs)
                 for epoch in range(1, epochs + 1):
-                    progress.update(epoch_task_id, description=f"Training epoch {epoch}/{epochs}")
+                    progress.update(
+                        epoch_task_id, description=f"Training epoch {epoch}/{epochs}"
+                    )
                     logger.info("Starting epoch %d/%d", epoch, epochs)
                     self.model.train(
                         not freeze
@@ -444,11 +452,17 @@ class TorchClassifierTask(Task):
                         "epoch": epoch,
                         **{f"train_{k}": v for k, v in train_metrics.items()},
                     }
-                    metrics.update({f"val_{k}": v for k, v in (val_metrics or {}).items()})
+                    metrics.update(
+                        {f"val_{k}": v for k, v in (val_metrics or {}).items()}
+                    )
                     history.append(metrics)
                     checkpoint = self._checkpoint(epoch, metrics)
                     torch.save(checkpoint, weights_dir / "last.pt")
-                    score = val_metrics["accuracy"] if val_metrics else train_metrics["accuracy"]
+                    score = (
+                        val_metrics["accuracy"]
+                        if val_metrics
+                        else train_metrics["accuracy"]
+                    )
                     if not math.isfinite(score):
                         raise ValueError("Training produced a non-finite accuracy")
                     if score > best_accuracy:
@@ -509,7 +523,8 @@ class TorchClassifierTask(Task):
             shapes = {name: tuple(tensor.shape) for name, tensor in tensors.items()}
             if first_batch:
                 approximate_mib = sum(
-                    tensor.numel() * tensor.element_size() for tensor in tensors.values()
+                    tensor.numel() * tensor.element_size()
+                    for tensor in tensors.values()
                 ) / (1024 * 1024)
                 logger.info(
                     "%s first batch: input_shapes=%s, labels_shape=%s, dtypes=%s, approx_input_mib=%.1f",

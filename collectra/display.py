@@ -8,20 +8,26 @@ annotations use viewer-relative normalized coordinates. Text formats are
 
 import base64
 import io
-from dataclasses import fields
 from pathlib import Path
 
 from collectra.utils import load_class_from_string
 
 
 class DisplayContext:
-    def __init__(self, records: dict, directory: Path, rgb_view: int = 0):
+    def __init__(self, records: dict, directory: Path, rgb_view: int = 0, max_pixels: int | None = None):
+        from collectra.displays.preview import MAX_PREVIEW_EDGE
+
+        if max_pixels is None:
+            max_pixels = MAX_PREVIEW_EDGE
+        if type(max_pixels) is not int or max_pixels < 1:
+            raise ValueError("max_pixels must be a positive integer")
         if type(rgb_view) is not int or rgb_view < 0:
             raise ValueError("RGB view index must be a non-negative integer")
         self.records = records
         self.directory = Path(directory).resolve()
         self.instances = {}
         self.rgb_view = rgb_view
+        self.max_pixels = max_pixels
 
     def path(self, value):
         path = Path(value)
@@ -49,7 +55,7 @@ class DisplayContext:
                 if "path" not in record:
                     record.pop("data", None)
                 record["path"] = source
-        accepted = {f.name for f in fields(cls) if f.init}
+        accepted = set(cls.model_fields) - cls._runtime_fields
         item = cls(**{k: v for k, v in record.items() if k in accepted})
         self.instances[node_id] = item
         if type(item) is Link:
@@ -98,6 +104,12 @@ class DisplayContext:
         from collectra.displays.images import annotations
 
         return annotations(self, image)
+
+    def links(self, item):
+        """The Link nodes whose parent is ``item``, as ``{"id", "name"}``."""
+        from collectra.displays.images import links
+
+        return links(self, item)
 
     def image(self, item):
         from collectra.displays.images import image

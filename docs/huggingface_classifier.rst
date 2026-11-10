@@ -95,7 +95,7 @@ The training directory contains:
 * ``train/`` and ``val/``: exported images organized by class.
 * ``weights/best.pt`` and ``weights/last.pt``: Collectra checkpoints containing
   weights, model configuration, image-processor settings, and class names.
-* ``weights/classes.json``: ordered class names.
+* ``weights/classes.yaml``: ordered class names.
 * ``weights/huggingface/``: the best model and image processor in standard
   ``save_pretrained`` format, loadable directly by Transformers.
 * ``history.csv``: training and validation loss, top-1 accuracy, and top-5 accuracy

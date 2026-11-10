@@ -1,4 +1,4 @@
-ObjectDetectionDETR
+ObjectDetectorDETR
 ===================
 
 Uses a Transformers DETR model to detect objects and return labelled image crops.
@@ -6,7 +6,7 @@ Uses a Transformers DETR model to detect objects and return labelled image crops
 .. code-block:: yaml
 
     detect_objects:
-      type: collectra.ObjectDetectionDETR
+      type: collectra.ObjectDetectorDETR
       model: default
       input: image
       output: [person]

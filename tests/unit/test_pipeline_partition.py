@@ -5,7 +5,8 @@ import pytest
 import yaml
 
 from collectra.cli import invoke
-from collectra.pipelines.base import Collectra
+from collectra.commons.results import peek_header
+from collectra.pipelines.base import Pipeline
 
 
 @pytest.fixture
@@ -31,14 +32,12 @@ def dataset(tmp_path):
                 }
             )
         )
-    return Collectra.from_file(pipeline_path), parent
+    return Pipeline.from_file(pipeline_path), parent
 
 
 def assignments(parent):
     return {
-        path.parent.name: yaml.safe_load(path.read_text())[
-            "collectra_results_metadata"
-        ]["partition"]
+        path.parent.name: peek_header(yaml.safe_load(path.read_text())).partition
         for path in parent.glob("*.htr/results.yaml")
     }
 
@@ -61,6 +60,7 @@ def test_percentage_partition_parent_directory_and_reproducible_seed(dataset):
         "20%",
         "--seed",
         "17",
+        "--force",
     ]
     invoke(pipeline, command, name="htr")
     first = assignments(parent)
@@ -75,7 +75,17 @@ def test_fractional_partitions_and_val_label(dataset):
     pipeline, parent = dataset
     invoke(
         pipeline,
-        ["partition", str(parent), "--train", "0.6", "--val", "0.2", "--test", "0.2"],
+        [
+            "partition",
+            str(parent),
+            "--train",
+            "0.6",
+            "--val",
+            "0.2",
+            "--test",
+            "0.2",
+            "--force",
+        ],
     )
     assert Counter(assignments(parent).values()) == {"train": 6, "val": 2, "test": 2}
 
@@ -91,6 +101,7 @@ def test_custom_count_partitions_and_leftover_results(dataset):
             "training=3",
             "--partition",
             "heldout=2",
+            "--force",
         ],
     )
     assert Counter(assignments(parent).values()) == {
@@ -105,7 +116,14 @@ def test_individual_results_yaml_and_duplicate_inputs(dataset):
     folder = parent / "page-00.htr"
     invoke(
         pipeline,
-        ["partition", str(folder), str(folder / "results.yaml"), "--test", "1"],
+        [
+            "partition",
+            str(folder),
+            str(folder / "results.yaml"),
+            "--test",
+            "1",
+            "--force",
+        ],
     )
     assert Counter(assignments(parent).values()) == {"test": 1, "original": 9}
 
@@ -118,6 +136,7 @@ def test_individual_results_yaml_and_duplicate_inputs(dataset):
         ["--partition", "bad"],
         ["--train", "1", "--partition", "train=2"],
         ["--train", "abc"],
+        ["--train", "80%"],
     ],
 )
 def test_invalid_partitions_leave_files_unchanged(dataset, options):

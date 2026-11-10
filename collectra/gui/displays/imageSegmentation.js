@@ -1,4 +1,13 @@
 // Source-aligned instance masks, coloured with their pipeline DAG label.
+function segmentationBoundsInPreview(controller, segmentation) {
+    const content = controller.pageViewer.world.getItemAt(0).getContentSize();
+    const bounds = segmentation.bounds;
+    return {x: bounds.x * content.x / segmentation.width,
+        y: bounds.y * content.y / segmentation.height,
+        w: bounds.w * content.x / segmentation.width,
+        h: bounds.h * content.y / segmentation.height};
+}
+
 function setSegmentationHovered(controller, id) {
     controller._hoveredSegmentationId = id;
     for (const canvas of controller._segmentationOverlays || []) {

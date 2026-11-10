@@ -1,19 +1,28 @@
 from __future__ import annotations
 
-import json
 import shutil
 from pathlib import Path
-from typing import Annotated, TYPE_CHECKING
+from typing import Annotated, TYPE_CHECKING, Any
+
+from pydantic import Field
 
 from cappa import Arg
 
 from collectra.cli import command
 from .adaptation_commands import RFDETRAdaptationCommands
+from .base import (
+    Batch,
+    Epochs,
+    LearningRate,
+    ObjectDetector,
+    RunResolution,
+    Threshold,
+    TrainResolution,
+    WeightDecay,
+)
 from collectra.types.images import (
     Image,
     ImageCrop,
-    image_channel_count,
-    image_size,
     read_tiff_channels,
 )
 from collectra.utils import change_dir
@@ -21,11 +30,16 @@ from collectra.utils import change_dir
 from ...logger import get_logger
 from ..base import Task
 from collectra.utils import threading_locked
+from ..machine_learning.class_names import (
+    read_class_names,
+    sidecar_candidates,
+    write_class_names,
+)
 from ..machine_learning.training import (
     prepare_object_detection_inputs,
-    print_distribution_table,
     run_training_command,
 )
+from .coco_data import CocoDetectionData
 from .detr import DetectionTrainResult
 
 if TYPE_CHECKING:
@@ -33,7 +47,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-__all__ = ["ObjectDetectionRFDETR"]
+__all__ = ["ObjectDetectorRFDETR", "ObjectDetectionRFDETR"]
 
 _MODEL_VARIANTS = {
     "base": "RFDETRBase",
@@ -63,8 +77,25 @@ def _backend_class(name: str):
     return globals().get(name) or __getattr__(name)
 
 
+def class_head_size(model) -> int | None:
+    """The number of outputs of the model's last classification layer, if it has one.
+
+    RF-DETR gives that layer one output for each class plus one for the background.
+    """
+    head = getattr(
+        getattr(getattr(model, "model", None), "model", None), "class_embed", None
+    )
+    return getattr(head, "out_features", None)
+
+
 def load_rfdetr_model(model_path: str | Path) -> RFDETR:
-    from .rfdetr_channels import multichannel_checkpoints, sync_channels
+    from .rfdetr_channels import (
+        absolute_checkpoint,
+        multichannel_checkpoints,
+        sync_channels,
+    )
+
+    model_path = absolute_checkpoint(model_path)
 
     # Fusion checkpoints retain a three-channel projection but consume many
     # RGB views. Ordinary RF-DETR loading would silently discard fusion weights.
@@ -110,11 +141,12 @@ def load_rfdetr_model(model_path: str | Path) -> RFDETR:
     logger.error("Failed to load RF-DETR model from %s. Errors: %s", model_path, errors)
 
 
-class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
+class ObjectDetectorRFDETR(CocoDetectionData, RFDETRAdaptationCommands, ObjectDetector):
     """RF-DETR task backed by the Roboflow rfdetr package."""
 
-    model: str | Path | object | None
+    model: Any = None  # a path or a loaded RF-DETR model
     original_model_path: str | Path | None = None
+    batch_size: int = Field(default=1, ge=1)
 
     def __init__(
         self,
@@ -126,19 +158,9 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
         self._device = None
         self._categories: list[str] = []
 
-    def _select_device(self) -> str:
-        import platform
-
-        import torch
-
-        return (
-            "mps"
-            if platform.system() == "Darwin"
-            else "cuda" if torch.cuda.is_available() else "cpu"
-        )
-
-    def _init_model(self) -> None:
-        self._load()
+    def _init_model(self, *, training: bool = False) -> None:
+        """Load the model; with ``training`` it is only a starting point."""
+        self._load(training=training)
 
         if not isinstance(self.model, _backend_class("RFDETR")):
             raise ValueError("Model must be an RFDETR instance")
@@ -149,24 +171,57 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
             return
 
         self.model = load_rfdetr_model(self.original_model_path)
-        self._load_categories_from_json(Path(self.original_model_path))
+        self._set_categories(Path(self.original_model_path))
 
-    def _classes_sidecar_candidates(self, checkpoint_path: Path) -> list[Path]:
-        weights_dir = checkpoint_path.parent
-        return [
-            weights_dir / f"{checkpoint_path.stem}.classes.json",
-            weights_dir / "classes.json",
-        ]
+    def _load_categories_from_sidecar(self, checkpoint_path: Path) -> None:
+        classes = read_class_names(checkpoint_path)
+        if classes is not None:
+            self._categories = classes
 
-    def _load_categories_from_json(self, checkpoint_path: Path) -> None:
-        for classes_file in self._classes_sidecar_candidates(checkpoint_path):
-            if classes_file.exists():
-                with open(classes_file, "r") as f:
-                    metadata = json.load(f)
-                self._categories = metadata.get("classes", self._categories)
+    def _output_names(self) -> list[str]:
+        """Names of this task's output nodes, in the order the pipeline lists them."""
+        pipeline = self.pipeline
+        if pipeline is None or not pipeline.node_manager.has_node(self.name):
+            return []
+        node = pipeline.node_manager.resolve_node(self.name)
+        return [str(output.name) for output in pipeline._output_nodes(node)]
+
+    def _set_categories(self, checkpoint_path: Path, *, training: bool = False) -> None:
+        """Name the model's classes: the pipeline's outputs, else the sidecar.
+
+        The pipeline is the source of truth. A sidecar that disagrees is warned
+        about and ignored. To predict, the last layer must fit the names.
+        Training replaces that layer, so a checkpoint used as its starting
+        point may have any number of classes.
+        """
+        self._load_categories_from_sidecar(checkpoint_path)
+        outputs = self._output_names()
+        if outputs:
+            if self._categories and self._categories != outputs:
+                logger.warning(
+                    "Class names in the sidecar next to %s (%s) differ from the outputs "
+                    "of task %r (%s); using the pipeline's outputs.",
+                    checkpoint_path,
+                    ", ".join(self._categories),
+                    self.name,
+                    ", ".join(outputs),
+                )
+            self._categories = outputs
+        size = class_head_size(self.model)
+        if self._categories and size is not None and size != len(self._categories) + 1:
+            if training:
+                logger.info(
+                    "Checkpoint %s has %d classes; training replaces its last layer.",
+                    checkpoint_path,
+                    size - 1,
+                )
                 return
+            raise ValueError(
+                f"Task {self.name!r} has {len(self._categories)} output(s) "
+                f"({', '.join(self._categories)}) but the model has {size - 1} classes."
+            )
 
-    def _load(self) -> None:
+    def _load(self, *, training: bool = False) -> None:
         if isinstance(self.model, _backend_class("RFDETR")):
             return
 
@@ -207,9 +262,9 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
             self.original_model_path = checkpoint_path
             self.model = load_rfdetr_model(self.original_model_path)
             self._categories = []
-            self._load_categories_from_json(checkpoint_path)
-            candidates = self._classes_sidecar_candidates(checkpoint_path)
-            if not any(c.exists() for c in candidates):
+            self._set_categories(checkpoint_path, training=training)
+            candidates = sidecar_candidates(checkpoint_path)
+            if not self._categories and not any(c.exists() for c in candidates):
                 logger.warning(
                     "No classes sidecar found alongside checkpoint %s "
                     "(looked for %s); inference labels will fall back to "
@@ -249,8 +304,93 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
         pixels = scale_tiff_pixels(pixels)
         return torch.from_numpy(np.ascontiguousarray(pixels.transpose(2, 0, 1)))
 
+    @command(name="run")
+    def cli_run(
+        self,
+        inputs: list[str],
+        output: Path | None = None,
+        verbose: bool = False,
+        usage: bool = False,
+        render: bool = False,
+        model: Annotated[
+            Path | None,
+            Arg(help="Model checkpoint path. Omit to keep the configured model."),
+        ] = None,
+        resolution: RunResolution = None,
+        threshold: Threshold = None,
+        batch_size: Annotated[
+            int,
+            Arg(
+                help="Number of files to run through the model at once; results are saved after each batch."
+            ),
+        ] = 16,
+        force: Annotated[
+            bool,
+            Arg(
+                help="Rerun tasks whose outputs already exist, replacing those outputs. By default such tasks are skipped."
+            ),
+        ] = False,
+    ) -> None:
+        """Run this object detector for the supplied input files."""
+        if batch_size < 1:
+            raise ValueError("--batch-size must be at least 1")
+        if model is not None:
+            self.model = model
+        if resolution is not None:
+            self.resolution = resolution
+        if threshold is not None:
+            self.threshold = threshold
+        self.batch_size = batch_size
+        super().cli_run(
+            inputs,
+            output=output,
+            verbose=verbose,
+            usage=usage,
+            render=render,
+            force=force,
+        )
+
+    def _predict(self, images: list[Image]) -> list[tuple]:
+        """Run the model over ``images`` together as ``(detections, width, height)``."""
+        threshold = self.threshold
+        inputs = []
+        sizes = []
+        for image in images:
+            if image.get_path().suffix.lower() in {".tif", ".tiff"}:
+                model_input = self._tiff_tensor(image)
+                height, width = model_input.shape[1:]
+            else:
+                model_input = image.pil().convert("RGB")
+                width, height = model_input.size
+            inputs.append(model_input)
+            sizes.append((width, height))
+
+        kwargs = {}
+        resolution = self.inference_resolution
+        if resolution is not None:
+            kwargs["shape"] = (int(resolution), int(resolution))
+        detections = self.model.predict(
+            inputs if len(inputs) > 1 else inputs[0],
+            threshold=threshold,
+            include_source_image=False,
+            **kwargs,
+        )
+        if not isinstance(detections, list):
+            detections = [detections]
+        return [(d, w, h) for d, (w, h) in zip(detections, sizes)]
+
+    def _predict_batch(self, images: list[Image]) -> list[tuple]:
+        return self._predict(images)
+
+    def _before_prefetch(self) -> None:
+        logger.info(
+            "RF-DETR inference resolution: %s",
+            self.inference_resolution
+            or getattr(self.model.model_config, "resolution", "model default"),
+        )
+
     @threading_locked()
-    def run(self, *args: Image) -> list[Image]:
+    def run(self, *args: Image) -> list[ImageCrop]:
         if len(args) != 1:
             raise ValueError("This task only supports a single Image input.")
         if not isinstance(args[0], Image):
@@ -259,19 +399,11 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
         image = args[0]
         self._init_model()
 
-        threshold = float(getattr(self, "threshold", 0.5))
-        if image.get_path().suffix.lower() in {".tif", ".tiff"}:
-            model_input = self._tiff_tensor(image)
-            height, width = model_input.shape[1:]
-        else:
-            model_input = image.pil().convert("RGB")
-            width, height = model_input.size
+        predicted = self._take_prefetched(image)
+        detections, width, height = predicted or self._predict([image])[0]
 
-        detections = self.model.predict(
-            model_input, threshold=threshold, include_source_image=False
-        )
-
-        results: list[Image] = []
+        confidences = getattr(detections, "confidence", None)
+        results: list[ImageCrop] = []
         for i in range(len(detections.xyxy)):
             x1, y1, x2, y2 = detections.xyxy[i]
             x1 = max(0.0, min(float(width), float(x1)))
@@ -302,6 +434,9 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
                     y_center=y_center,
                     width_relative=width_relative,
                     height_relative=height_relative,
+                    confidence=(
+                        float(confidences[i]) if confidences is not None else None
+                    ),
                     orientation=image.orientation,
                     name=class_name,
                 )
@@ -379,172 +514,6 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
             params["aug_config"] = presets[augmentation]
         return params
 
-    def _check_distribution(
-        self,
-        classes: list[str],
-        train_samples: list[dict],
-        val_samples: list[dict],
-    ) -> None:
-        train_classes = {name: 0 for name in classes}
-        val_classes = {name: 0 for name in classes}
-        label_to_name = {index: name for index, name in enumerate(classes)}
-
-        for sample in train_samples:
-            for label in sample["labels"]:
-                class_name = label_to_name.get(label, "")
-                if class_name:
-                    train_classes[class_name] += 1
-
-        for sample in val_samples:
-            for label in sample["labels"]:
-                class_name = label_to_name.get(label, "")
-                if class_name:
-                    val_classes[class_name] += 1
-
-        print_distribution_table(
-            "Class Distribution", classes, train_classes, val_classes
-        )
-
-    def _prepare_assets(
-        self,
-        classes: list[str],
-        validation_flag: str,
-        exclude_flag: str,
-        *images: ImageCrop,
-    ) -> tuple[list[dict], list[dict]]:
-        class_to_idx = {name: idx for idx, name in enumerate(classes)}
-        grouped: dict[Path, dict] = {}
-
-        for img in images:
-            if exclude_flag and img.partition == exclude_flag:
-                continue
-
-            base_img: Image | ImageCrop = img
-            if isinstance(img, ImageCrop):
-                if img.source_parent:
-                    base_img = img.source_parent
-                    if isinstance(img.source_parent, ImageCrop):
-                        img.set_rel_to_src_parent()
-
-            image_path = base_img.get_path()
-            if image_path not in grouped:
-                grouped[image_path] = {
-                    "image_path": image_path,
-                    "partition": img.partition,
-                    "boxes": [],
-                    "labels": [],
-                }
-
-            if not isinstance(img, ImageCrop):
-                continue
-            if img.name not in class_to_idx:
-                continue
-
-            width, height = base_img.width, base_img.height
-            box_w = float(img.width_relative) * width
-            box_h = float(img.height_relative) * height
-            cx = float(img.x_center) * width
-            cy = float(img.y_center) * height
-
-            x1 = max(0.0, cx - box_w / 2.0)
-            y1 = max(0.0, cy - box_h / 2.0)
-            x2 = min(float(width), cx + box_w / 2.0)
-            y2 = min(float(height), cy + box_h / 2.0)
-            if x2 <= x1 or y2 <= y1:
-                continue
-
-            grouped[image_path]["boxes"].append([x1, y1, x2, y2])
-            grouped[image_path]["labels"].append(class_to_idx[img.name])
-
-        train_samples: list[dict] = []
-        val_samples: list[dict] = []
-        for sample in grouped.values():
-            if validation_flag and sample["partition"] == validation_flag:
-                val_samples.append(sample)
-            elif not exclude_flag or sample["partition"] != exclude_flag:
-                train_samples.append(sample)
-        return train_samples, val_samples
-
-    def _write_coco_dataset(
-        self,
-        train_samples: list[dict],
-        val_samples: list[dict],
-        classes: list[str],
-        dataset_dir: Path,
-    ) -> Path:
-        categories = [
-            {"id": idx, "name": name, "supercategory": "object"}
-            for idx, name in enumerate(classes)
-        ]
-
-        channel_counts: dict[str, int] = {}
-        for split_name, samples in [("train", train_samples), ("valid", val_samples)]:
-            split_dir = dataset_dir / split_name
-            split_dir.mkdir(parents=True, exist_ok=True)
-
-            images_list: list[dict] = []
-            annotations_list: list[dict] = []
-            annotation_id = 0
-
-            for image_id, sample in enumerate(samples):
-                src_path = Path(sample["image_path"])
-                dest_name = f"{image_id}_{src_path.name}"
-                dest_path = split_dir / dest_name
-                shutil.copy2(src_path, dest_path)
-
-                w, h = image_size(dest_path)
-                channel_counts[str(src_path)] = image_channel_count(dest_path)
-
-                images_list.append(
-                    {
-                        "id": image_id,
-                        "file_name": dest_name,
-                        "width": w,
-                        "height": h,
-                    }
-                )
-
-                for box, label in zip(sample["boxes"], sample["labels"]):
-                    x1, y1, x2, y2 = box
-                    coco_bbox = [x1, y1, x2 - x1, y2 - y1]
-                    area = (x2 - x1) * (y2 - y1)
-
-                    annotations_list.append(
-                        {
-                            "id": annotation_id,
-                            "image_id": image_id,
-                            "category_id": int(label),
-                            "bbox": coco_bbox,
-                            "area": float(area),
-                            "iscrowd": 0,
-                        }
-                    )
-                    annotation_id += 1
-
-            coco_json = {
-                "images": images_list,
-                "annotations": annotations_list,
-                "categories": categories,
-            }
-
-            annotations_path = split_dir / "_annotations.coco.json"
-            with open(annotations_path, "w") as f:
-                json.dump(coco_json, f, indent=2)
-
-        if len(set(channel_counts.values())) > 1:
-            details = ", ".join(
-                f"{name}: {count} channels" for name, count in channel_counts.items()
-            )
-            raise ValueError(
-                f"Inconsistent input channel counts in prepared dataset: {details}"
-            )
-        if channel_counts:
-            logger.info(
-                "RF-DETR dataset images have %d channels",
-                next(iter(channel_counts.values())),
-            )
-        return dataset_dir
-
     def _train_fold(
         self,
         train_samples: list[dict],
@@ -559,7 +528,13 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
 
         dataset_dir = log / "dataset"
         dataset_dir.mkdir(parents=True, exist_ok=True)
-        self._write_coco_dataset(train_samples, val_samples, classes, dataset_dir)
+        self._write_coco_dataset(
+            train_samples,
+            val_samples,
+            classes,
+            dataset_dir,
+            rgb=kwargs.get("rgb", False),
+        )
 
         params_kwargs = dict(kwargs)
         params_kwargs["log"] = f"{log.name}"
@@ -582,9 +557,14 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
 
         from .rfdetr_channels import multichannel_checkpoints
         from .rfdetr_data import multichannel_datasets
+        from .rfdetr_curves import wandb_detection_curves
 
         model = self.model
-        with multichannel_datasets(), multichannel_checkpoints():
+        with (
+            multichannel_datasets(),
+            multichannel_checkpoints(),
+            wandb_detection_curves(params["wandb"] and bool(val_samples), log, classes),
+        ):
             model.train(
                 dataset_dir=str(dataset_dir),
                 **params,
@@ -594,9 +574,7 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
         self.model = model
 
         # Persist class names alongside checkpoint for later reloading
-        classes_metadata = {"classes": classes}
-        with open(weights_dir / "classes.json", "w") as f:
-            json.dump(classes_metadata, f, indent=2)
+        write_class_names(weights_dir / "classes.yaml", classes)
 
         # RF-DETR's total checkpoint selects the validation winner across
         # regular and EMA weights. Prefer it so best.pt keeps that winner.
@@ -645,24 +623,21 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
             str,
             Arg(help="Partition value identifying examples to exclude from training."),
         ] = "",
-        epochs: Annotated[
-            int,
-            Arg(help="Number of training epochs."),
-        ] = 1,
-        batch: Annotated[
-            int,
-            Arg(help="Number of images per device in each training batch."),
-        ] = 4,
+        epochs: Epochs = None,
+        batch: Batch = None,
         grad_accum_steps: Annotated[
             int,
             Arg(
                 help="Accumulate gradients over this many batches before an optimizer step."
             ),
         ] = 4,
-        learning_rate: Annotated[
-            float,
-            Arg(help="Learning rate for training."),
-        ] = 1e-4,
+        learning_rate: LearningRate = None,
+        rgb: Annotated[
+            bool,
+            Arg(
+                help="Convert all prepared training images to 3-channel RGB, so images with differing channel counts (grayscale, RGBA) can be trained together."
+            ),
+        ] = False,
         wandb: Annotated[
             bool,
             Arg(help="Log training metrics to Weights & Biases."),
@@ -671,10 +646,7 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
             bool,
             Arg(help="Stop training when validation performance stops improving."),
         ] = False,
-        weight_decay: Annotated[
-            float,
-            Arg(help="Weight decay used for regularization."),
-        ] = 1e-4,
+        weight_decay: WeightDecay = None,
         drop_path: Annotated[
             float,
             Arg(help="Stochastic depth drop probability used for regularization."),
@@ -759,10 +731,7 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
                 help="Checkpoint path or pretrained variant: nano, small, base, medium, large, xlarge, or 2xlarge (full RFDETR class names also accepted). XL variants require rfdetr[plus]. 'default' selects Base; omit to keep the configured model."
             ),
         ] = "",
-        resolution: Annotated[
-            float | None,
-            Arg(help="Change default resolution. Valid options will depend on the model type."),
-        ] = None,
+        resolution: TrainResolution = None,
         max_items: Annotated[
             int,
             Arg(
@@ -771,6 +740,13 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
         ] = 0,
     ):
         """Train this RF-DETR object detector."""
+        settings = self._settings_for_run(
+            epochs=epochs,
+            batch=batch,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            resolution=resolution,
+        )
         return run_training_command(
             self,
             inputs,
@@ -781,13 +757,14 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
             exclude=exclude,
             prepare_inputs=prepare_object_detection_inputs,
             include_unlabelled=True,
-            epochs=epochs,
-            batch=batch,
+            epochs=settings["epochs"],
+            batch=settings["batch"],
             grad_accum_steps=grad_accum_steps,
-            lr=learning_rate,
+            lr=settings["learning_rate"],
+            rgb=rgb,
             wandb=wandb,
             early_stopping=early_stopping,
-            weight_decay=weight_decay,
+            weight_decay=settings["weight_decay"],
             drop_path=drop_path,
             augmentation=augmentation,
             augmentation_backend=augmentation_backend,
@@ -806,7 +783,7 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
             lr_component_decay=lr_component_decay,
             warmup_epochs=warmup_epochs,
             model=model,
-            resolution=resolution,
+            resolution=settings["resolution"],
             max_items=max_items,
         )
 
@@ -814,7 +791,7 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
         if kwargs.get("model"):
             self.model = kwargs["model"]
 
-        self._init_model()
+        self._init_model(training=True)
         log = kwargs.get("log", None)
         if log is None:
             raise ValueError(
@@ -862,3 +839,7 @@ class ObjectDetectionRFDETR(RFDETRAdaptationCommands, Task):
             f"Best RF-DETR model saved to: {results.save_dir / 'weights' / 'best.pt'}"
         )
         return results
+
+
+# The former name of ObjectDetectorRFDETR.
+ObjectDetectionRFDETR = ObjectDetectorRFDETR

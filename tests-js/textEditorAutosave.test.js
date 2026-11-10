@@ -33,7 +33,7 @@ it.each(['plain', 'markdown', 'xml'])('autosaves %s editor changes to the captur
     const controller = new Controller();
     Object.assign(controller, {
         el: {textDisplay: {style: {}, querySelector: () => ({})}, headerId: {}},
-        stopTextAutosave() {}, clearNodeTools() {}, moveEditorToolbar() {}, renderPager() {},
+        stopTextAutosave() {}, clearNodeTools() {}, moveEditorToolbar() {}, mountTextZoom() {}, renderPager() {},
     });
     await controller.renderTextNodeAsPage('text', null, {format, editable: true, text: 'initial'});
     expect(update).not.toHaveBeenCalled();

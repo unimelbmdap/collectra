@@ -1,15 +1,25 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from pydantic import BaseModel, Field
+
+from collectra.commons import PositionalFields
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from collectra.cli import command
-from collectra.types.images import Image, ImageCrop
+from collectra.types.images import Image, ImageCrop, open_oriented
 from collectra.utils import change_dir
 
 from ...logger import get_logger
 from ..base import Task
+from .base import (
+    Batch,
+    Epochs,
+    LearningRate,
+    ObjectDetector,
+    TrainResolution,
+    WeightDecay,
+)
 from collectra.utils import threading_locked
 from ..machine_learning.training import (
     prepare_object_detection_inputs,
@@ -22,20 +32,20 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-__all__ = ["ObjectDetectionDETR", "DetectionTrainResult"]
+__all__ = ["ObjectDetectorDETR", "ObjectDetectionDETR", "DetectionTrainResult"]
 
 
-@dataclass
-class DetectionTrainResult:
+class DetectionTrainResult(PositionalFields, BaseModel):
     save_dir: Path
     results_dict: dict
 
 
-class ObjectDetectionDETR(Task):
+class ObjectDetectorDETR(ObjectDetector):
     """DETR task backed by Hugging Face Transformers."""
 
-    model: str | Path | nn.Module | None
+    model: Any = None  # a path or a loaded torch module
     original_model_path: str | Path | None = None
+    batch: int = Field(default=2, ge=1)  # DETR is memory hungry
 
     def __init__(
         self,
@@ -49,16 +59,14 @@ class ObjectDetectionDETR(Task):
         self._categories: list[str] = []
         self._model_name = "facebook/detr-resnet-50"
 
-    def _select_device(self):
-        import platform
+    def _load_processor(self, model_name: str, resolution: int | None):
+        """The image processor, resizing to ``resolution`` when one is given."""
+        from transformers import DetrImageProcessor
 
-        import torch
-
-        return (
-            "mps"
-            if platform.system() == "Darwin"
-            else "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        kwargs = {}
+        if resolution is not None:
+            kwargs["size"] = {"shortest_edge": resolution, "longest_edge": resolution}
+        return DetrImageProcessor.from_pretrained(model_name, **kwargs)
 
     def _init_model(self) -> None:
         from torch import nn
@@ -78,7 +86,7 @@ class ObjectDetectionDETR(Task):
         from transformers import DetrForObjectDetection, DetrImageProcessor
 
         self._model_name = model_name
-        self._processor = DetrImageProcessor.from_pretrained(model_name)
+        self._processor = self._load_processor(model_name, self.inference_resolution)
         model = DetrForObjectDetection.from_pretrained(model_name)
         self._categories = [
             model.config.id2label[i] for i in sorted(model.config.id2label.keys())
@@ -101,7 +109,9 @@ class ObjectDetectionDETR(Task):
             model_name = self._model_name
 
         self._model_name = model_name
-        self._processor = DetrImageProcessor.from_pretrained(self._model_name)
+        self._processor = self._load_processor(
+            self._model_name, self.inference_resolution
+        )
 
         if classes:
             id2label = {idx: name for idx, name in enumerate(classes)}
@@ -163,7 +173,7 @@ class ObjectDetectionDETR(Task):
         self._load_model_from_hf(model_value)
 
     @threading_locked()
-    def run(self, *args: Image) -> list[Image]:
+    def run(self, *args: Image) -> list[ImageCrop]:
         import torch
 
         if len(args) != 1:
@@ -178,7 +188,7 @@ class ObjectDetectionDETR(Task):
         if not isinstance(self.model, nn.Module) or self._processor is None:
             raise ValueError("DETR model is not initialised properly.")
 
-        threshold = float(getattr(self, "threshold", 0.5))
+        threshold = self.threshold
         pil_image = image.pil().convert("RGB")
         width, height = pil_image.size
 
@@ -356,7 +366,7 @@ class ObjectDetectionDETR(Task):
         self._device = params["device"]
         self._model_name = params["model_name"]
 
-        self._processor = DetrImageProcessor.from_pretrained(self._model_name)
+        self._processor = self._load_processor(self._model_name, self.resolution)
 
         class DetrDataset(Dataset):
             def __init__(self, samples: list[dict], processor: DetrImageProcessor):
@@ -368,9 +378,7 @@ class ObjectDetectionDETR(Task):
 
             def __getitem__(self, idx: int):
                 sample = self.samples[idx]
-                from PIL import Image as PILImage
-
-                with PILImage.open(sample["image_path"]).convert("RGB") as pil_image:
+                with open_oriented(sample["image_path"]).convert("RGB") as pil_image:
                     annotations = {
                         "image_id": idx,
                         "annotations": [],
@@ -586,16 +594,24 @@ class ObjectDetectionDETR(Task):
         keep_log: bool = True,
         validation: str = "",
         exclude: str = "",
-        epochs: int = 1,
-        batch: int = 2,
+        epochs: Epochs = None,
+        batch: Batch = None,
         workers: int = 0,
-        learning_rate: float = 1e-4,
-        weight_decay: float = 1e-4,
+        learning_rate: LearningRate = None,
+        weight_decay: WeightDecay = None,
         pretrained: bool = True,
         model_name: str = "facebook/detr-resnet-50",
         wandb: bool = False,
+        resolution: TrainResolution = None,
     ):
         """Train this DETR object detector."""
+        settings = self._settings_for_run(
+            epochs=epochs,
+            batch=batch,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            resolution=resolution,
+        )
         return run_training_command(
             self,
             inputs,
@@ -606,11 +622,12 @@ class ObjectDetectionDETR(Task):
             exclude=exclude,
             prepare_inputs=prepare_object_detection_inputs,
             include_unlabelled=True,
-            epochs=epochs,
-            batch=batch,
+            epochs=settings["epochs"],
+            batch=settings["batch"],
             workers=workers,
-            lr=learning_rate,
-            weight_decay=weight_decay,
+            lr=settings["learning_rate"],
+            weight_decay=settings["weight_decay"],
+            resolution=settings["resolution"],
             pretrained=pretrained,
             model_name=model_name,
             wandb=wandb,
@@ -654,3 +671,7 @@ class ObjectDetectionDETR(Task):
 
         print(f"Best DETR model saved to: {results.save_dir / 'weights' / 'best.pt'}")
         return results
+
+
+# The former name of ObjectDetectorDETR.
+ObjectDetectionDETR = ObjectDetectorDETR

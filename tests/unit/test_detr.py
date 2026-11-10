@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import torch
 
-from collectra import Image, ImageCrop, ObjectDetectionDETR
+from collectra import Image, ImageCrop, ObjectDetectorDETR
 from collectra.tasks.object_detection.detr import DetectionTrainResult
 
 
@@ -15,7 +15,7 @@ def one_crop(image: Image) -> ImageCrop:
 
 def test_train_detr_temp_dir(image, tmp_path, monkeypatch):
     """Exercise DETR training orchestration without training Transformers."""
-    task = ObjectDetectionDETR(name="label-detector", model="unused")
+    task = ObjectDetectorDETR(name="label-detector", model="unused")
     crop = one_crop(image)
     seen = {}
     monkeypatch.setattr(task, "_prepare_assets", lambda *args: ([{"train": 1}], []))
@@ -65,7 +65,7 @@ class FakeDetrModel(torch.nn.Module):
 
 def test_run_detr(image, monkeypatch):
     """Exercise conversion of backend boxes into Collectra ImageCrops."""
-    task = ObjectDetectionDETR(name="label-detector", model=FakeDetrModel())
+    task = ObjectDetectorDETR(name="label-detector", model=FakeDetrModel())
     task._processor = FakeProcessor()
     task._device = "cpu"
     task._categories = ["human"]

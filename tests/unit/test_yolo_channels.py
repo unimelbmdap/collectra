@@ -9,7 +9,7 @@ import tifffile
 import yaml
 from PIL import Image as PILImage
 
-from collectra import Image, ObjectDetectionYOLO
+from collectra import Image, ObjectDetectorYOLO
 from collectra.types.images import image_channel_count
 
 
@@ -36,7 +36,7 @@ def tiff(tmp_path, name, shape, **kwargs):
 def test_raster_config_channels(tmp_path, mode, expected):
     train = raster(tmp_path, "train_image.png", mode)
     val = raster(tmp_path, "val_image.png", mode)
-    task = ObjectDetectionYOLO("detector", model="unrelated-checkpoint.pt")
+    task = ObjectDetectorYOLO("detector", model="unrelated-checkpoint.pt")
     config = yaml.safe_load(
         task._prepare_yolo_config(tmp_path, ["Palynomorph"], [train], [val]).read_text()
     )
@@ -65,7 +65,7 @@ def test_multichannel_tiff_config_and_image_dimensions(
 ):
     # 75 is larger than both spatial dimensions, so a smallest-axis guess is wrong.
     name = tiff(tmp_path, "hyperspectral" + suffix, shape, **options)
-    task = ObjectDetectionYOLO("detector", model="three-channel-model.pt")
+    task = ObjectDetectorYOLO("detector", model="three-channel-model.pt")
     path = task._prepare_yolo_config(tmp_path, ["Palynomorph"], [name], [])
     assert yaml.safe_load(path.read_text())["channels"] == 75
     image = Image(name="Palynomorph", data=tmp_path / name)
@@ -98,7 +98,7 @@ def test_inconsistent_channels_fail_before_ultralytics(tmp_path, monkeypatch, sp
         train = Mock()
 
     monkeypatch.setattr(ultralytics.models, "YOLO", FakeYOLO)
-    task = ObjectDetectionYOLO("detector", model=FakeYOLO())
+    task = ObjectDetectorYOLO("detector", model=FakeYOLO())
     rgb = raster(tmp_path, "rgb.png", "RGB")
     gray = raster(tmp_path, "gray.png", "L")
     multi = tiff(tmp_path, "multi.tif", (75, 9, 11), metadata={"axes": "CYX"})
@@ -116,8 +116,8 @@ def test_inconsistent_channels_fail_before_ultralytics(tmp_path, monkeypatch, sp
 
 
 def test_tif_extensions_and_distribution_are_not_double_counted(tmp_path, monkeypatch):
-    assert {".tif", ".tiff"} <= set(Image.image_types())
-    assert len(Image.image_types()) == len(set(Image.image_types()))
+    assert {".tif", ".tiff"} <= set(Image.file_extensions())
+    assert len(Image.file_extensions()) == len(set(Image.file_extensions()))
     assert Image.is_image_file(Path("image.tif"))
     assert Image.is_image_file(Path("image.TIFF"))
     train = tiff(tmp_path, "train.tif", (9, 11))
@@ -126,17 +126,22 @@ def test_tif_extensions_and_distribution_are_not_double_counted(tmp_path, monkey
     monkeypatch.setattr(
         "collectra.tasks.object_detection.yolo.print_distribution_table", distribution
     )
-    ObjectDetectionYOLO("detector")._check_distribution(
+    ObjectDetectorYOLO("detector")._check_distribution(
         tmp_path, {"classes": ["Palynomorph"], "train": [train], "val": [val]}
     )
     distribution.assert_called_once_with(
-        "Class Distribution", ["Palynomorph"], {"Palynomorph": 1}, {"Palynomorph": 1}
+        "Class Distribution",
+        ["Palynomorph"],
+        {"Palynomorph": 1},
+        {"Palynomorph": 1},
+        train_images=(1, 0),
+        validation_images=(1, 0),
     )
 
 
 def test_unreadable_image_error_identifies_file(tmp_path):
     with pytest.raises(ValueError, match="missing.tif"):
-        ObjectDetectionYOLO("detector")._prepare_yolo_config(
+        ObjectDetectorYOLO("detector")._prepare_yolo_config(
             tmp_path, ["Palynomorph"], ["missing.tif"], []
         )
 
@@ -158,7 +163,7 @@ def test_prepared_data_is_copied_without_rgb_conversion(tmp_path):
     image = Image(name="Palynomorph", data=source, partition="train")
     log = tmp_path / "run"
     log.mkdir()
-    task = ObjectDetectionYOLO("detector")
+    task = ObjectDetectorYOLO("detector")
     crop = image.make_crop(0.5, 0.5, 0.5, 0.5, name="Palynomorph")
     crop.partition = "train"
     crop.add_source_parent(image)
@@ -166,3 +171,20 @@ def test_prepared_data_is_copied_without_rgb_conversion(tmp_path):
     config = task._prepare_yolo_config(log, ["Palynomorph"], train, val)
     assert yaml.safe_load(config.read_text())["channels"] == 75
     assert (log / train[0]).read_bytes() == source.read_bytes()
+
+
+def test_convert_to_rgb_unifies_channel_counts(tmp_path):
+    from PIL import Image as PILImage
+
+    from collectra.types.images import convert_image_to_rgb, image_channel_count
+
+    paths = []
+    for mode in ("L", "RGBA", "RGB"):
+        path = tmp_path / f"{mode}.png"
+        PILImage.new(mode, (8, 8)).save(path)
+        paths.append(path)
+    assert len({image_channel_count(p) for p in paths}) == 3
+
+    for path in paths:
+        convert_image_to_rgb(path)
+    assert {image_channel_count(p) for p in paths} == {3}

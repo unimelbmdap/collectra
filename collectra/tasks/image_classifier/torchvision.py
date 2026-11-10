@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from pydantic import BaseModel
+
+from collectra.commons import PositionalFields
 from pathlib import Path
 from typing import Annotated
 
@@ -62,8 +64,7 @@ def _target_tiff_pixels(image, *, tiff_maxworkers: int | None = None):
     return np.rot90(pixels, k=target.orientation.to_degree() // 90, axes=(0, 1))
 
 
-@dataclass
-class _NormalizeClassifierPixels:
+class _NormalizeClassifierPixels(PositionalFields, BaseModel):
     mean: list[float]
     std: list[float]
 
@@ -82,6 +83,18 @@ class _NormalizeClassifierPixels:
                 f"Normalization statistics do not match {channels} image channels"
             )
         return F.normalize(pixels, self.mean, self.std)
+
+
+class _RandomRotate90:
+    """Rotate a PIL image or CHW tensor by a random multiple of 90 degrees."""
+
+    def __call__(self, pixels):
+        import torch
+
+        turns = int(torch.randint(4, ()).item())
+        if isinstance(pixels, torch.Tensor):
+            return torch.rot90(pixels, turns, dims=(-2, -1))
+        return pixels.rotate(90 * turns, expand=True)
 
 
 def _replace_head(model, num_classes: int):
@@ -144,9 +157,18 @@ def _ensure_supported_multichannel_architecture(
 ) -> None:
     if input_channels == 3:
         return
-    #supported = {"resnet18", "resnet34", "resnet50"}
-    supported = {"resnet18", "resnet34", "resnet50", "resnet101", "resnet152",
-                 "convnext_base", "convnext_tiny", "convnext_small", "convnext_large"}
+    # supported = {"resnet18", "resnet34", "resnet50"}
+    supported = {
+        "resnet18",
+        "resnet34",
+        "resnet50",
+        "resnet101",
+        "resnet152",
+        "convnext_base",
+        "convnext_tiny",
+        "convnext_small",
+        "convnext_large",
+    }
     if architecture not in supported:
         raise ValueError(
             f"{input_channels}-channel input adaptation is currently supported only for "
@@ -159,8 +181,12 @@ class ImageClassifierTorchvision(TorchClassifierTask):
 
     prepare_training_inputs = staticmethod(prepare_classification_inputs)
 
-    def __init__(self, name: str, model: str | Path = "resnet18", **kwargs):
-        super().__init__(name, model=model, **kwargs)
+    def __init__(
+        self, name: str, model: str | Path = "resnet18", fusion: bool = False, **kwargs
+    ):
+        if not isinstance(fusion, bool):
+            raise ValueError("fusion must be a YAML boolean (true or false)")
+        super().__init__(name, model=model, fusion=fusion, **kwargs)
         self.original_model_path: Path | None = None
         self._categories: list[str] = []
         self._architecture = ""
@@ -170,13 +196,20 @@ class ImageClassifierTorchvision(TorchClassifierTask):
         self._input_channels = 3
 
     def _transforms(
-        self, *, training: bool = False, fliplr: float = 0.0, flipud: float = 0.0
+        self,
+        *,
+        training: bool = False,
+        fliplr: float = 0.0,
+        flipud: float = 0.0,
+        rotate90: bool = False,
     ):
         from torchvision import transforms as T
 
         config = self._preprocessing
         interpolation = T.InterpolationMode(config["interpolation"])
-        steps = [
+        # Rotate before resizing so non-square crops keep their configured shape.
+        steps = [_RandomRotate90()] if training and rotate90 else []
+        steps += [
             T.Resize(
                 config["resize_size"], interpolation=interpolation, antialias=True
             ),
@@ -239,6 +272,20 @@ class ImageClassifierTorchvision(TorchClassifierTask):
                 f"Inconsistent input channel counts in classifier dataset: {details}"
             )
         channels = next(iter(detected.values()))
+        if self.fusion:
+            if channels < 3 or channels % 3:
+                raise ValueError(
+                    "fusion requires stacked RGB views with a channel count divisible by 3"
+                )
+            from .torchvision_fusion import RGBViewFusionClassifier
+
+            if (
+                isinstance(self.model, RGBViewFusionClassifier)
+                and self.model.input_channels != channels
+            ):
+                raise ValueError(
+                    f"Fusion checkpoint expects {self.model.input_channels} channels; dataset has {channels}"
+                )
         self._preprocessing["channels"] = channels
         self._input_channels = channels
         if (
@@ -299,8 +346,14 @@ class ImageClassifierTorchvision(TorchClassifierTask):
                 self._architecture, weights=None, **self._model_kwargs
             )
             self._input_channels = checkpoint.get("input_channels", 3)
+            fusion_spec = checkpoint.get("fusion")
 
-            if self._input_channels != 3:
+            if self._input_channels != 3 and not fusion_spec:
+                if self.fusion:
+                    raise ValueError(
+                        "Cannot enable fusion on a first-layer-adapted checkpoint; "
+                        "start from an RGB model or a fusion checkpoint"
+                    )
                 _ensure_supported_multichannel_architecture(
                     self._architecture, self._input_channels
                 )
@@ -311,6 +364,11 @@ class ImageClassifierTorchvision(TorchClassifierTask):
 
             _disable_auxiliary_heads(model)
             _replace_head(model, len(self._categories))
+            if fusion_spec:
+                from .torchvision_fusion import restore_fusion
+
+                model = restore_fusion(model, self._input_channels, fusion_spec)
+                self.fusion = True
             model.load_state_dict(checkpoint["state_dict"])
             self.original_model_path = path.resolve()
         else:
@@ -487,6 +545,10 @@ class ImageClassifierTorchvision(TorchClassifierTask):
             float,
             Arg(help="Probability of vertical flipping during training, from 0 to 1."),
         ] = 0.0,
+        rotate90: Annotated[
+            bool,
+            Arg(help="Randomly rotate training images by 0, 90, 180 or 270 degrees."),
+        ] = False,
     ):
         """Fine-tune a torchvision image classifier using its weights' prescribed image preprocessing."""
         result = run_training_command(
@@ -510,6 +572,7 @@ class ImageClassifierTorchvision(TorchClassifierTask):
             min_size=min_size,
             fliplr=fliplr,
             flipud=flipud,
+            rotate90=rotate90,
             workers=workers,
             wandb=wandb,
             device=device,
@@ -526,6 +589,7 @@ class ImageClassifierTorchvision(TorchClassifierTask):
             "architecture": self._architecture,
             "model_kwargs": self._model_kwargs,
             "input_channels": self._input_channels,
+            "fusion": self.model.fusion_spec if self.fusion else None,
             "classes": self._categories,
             "preprocessing": self._preprocessing,
             "state_dict": {
@@ -541,7 +605,16 @@ class ImageClassifierTorchvision(TorchClassifierTask):
 
         self._load(pretrained=pretrained)
 
-        if self._input_channels != 3:
+        if self.fusion:
+            from .torchvision_fusion import RGBViewFusionClassifier
+
+            if not isinstance(self.model, RGBViewFusionClassifier):
+                self.model = RGBViewFusionClassifier(self.model, self._input_channels)
+            elif self.model.input_channels != self._input_channels:
+                raise ValueError(
+                    "Fusion checkpoint channel count differs from training inputs"
+                )
+        elif self._input_channels != 3:
             _ensure_supported_multichannel_architecture(
                 self._architecture,
                 self._input_channels,
@@ -557,6 +630,8 @@ class ImageClassifierTorchvision(TorchClassifierTask):
         self._categories = classes
         self.model.to(self._device)
         self.model.requires_grad_(not freeze)
+        if freeze and self.fusion:
+            self.model.attention.requires_grad_(True)
         if freeze:
             for name in ("fc", "classifier", "heads", "head"):
                 head = getattr(self.model, name, None)
@@ -606,14 +681,12 @@ def _adapt_rgb_input_channels(model, input_channels: int):
 
     else:
         raise ValueError(
-            f"Could not find first Conv2d for model type "
-            f"{type(model).__name__}"
+            f"Could not find first Conv2d for model type " f"{type(model).__name__}"
         )
 
     if not isinstance(old_conv, torch.nn.Conv2d):
         raise ValueError(
-            f"Expected first layer to be Conv2d, "
-            f"got {type(old_conv).__name__}"
+            f"Expected first layer to be Conv2d, " f"got {type(old_conv).__name__}"
         )
     # end KT addition
 
@@ -666,10 +739,7 @@ def _adapt_rgb_input_channels(model, input_channels: int):
     )
 
     with torch.no_grad():
-        new_conv.weight.copy_(
-            old_conv.weight.repeat(1, num_views, 1, 1)
-            / num_views
-        )
+        new_conv.weight.copy_(old_conv.weight.repeat(1, num_views, 1, 1) / num_views)
 
         if old_conv.bias is not None:
             new_conv.bias.copy_(old_conv.bias)

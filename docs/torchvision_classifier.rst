@@ -58,11 +58,16 @@ weights' resize, crop, interpolation, and normalization settings. Training adds
 horizontal flips with probability ``--fliplr`` (default 0.5); use ``--fliplr 0``
 when flipping is inappropriate for the images.
 ``--flipud`` similarly controls vertical flips during training (default 0.0).
-Neither flip augmentation is applied during validation or inference.
+``--rotate90`` randomly rotates each training image by 0, 90, 180 or 270
+degrees (off by default). It suits images without a canonical orientation, such
+as microscopy. All channels, and therefore all stacked views, rotate together.
+None of these augmentations is applied during validation or inference.
 
 By default all model parameters are fine-tuned using AdamW. ``--freeze-backbone``
 trains only the final projection and freezes the rest of the model, including
-batch-normalization statistics. ``--learning-rate``, ``--weight-decay``,
+batch-normalization statistics. With RGB-view fusion enabled, it trains the
+attention module and final projection while freezing the shared encoder.
+``--learning-rate``, ``--weight-decay``,
 ``--early-stop``, ``--device``, and ``--workers`` control training. Each CLI option
 has a description in ``train --help``.
 
@@ -78,7 +83,7 @@ The output directory contains:
 * ``weights/best.pt``: the checkpoint with the lowest validation loss (or training
   loss when validation is not requested).
 * ``weights/last.pt``: the last completed epoch's checkpoint.
-* ``weights/classes.json``: the ordered class names.
+* ``weights/classes.yaml``: the ordered class names.
 * ``history.csv``: loss, top-1 accuracy, and top-5 accuracy for each epoch.
 * ``metrics.json``: best-epoch metrics and the number of completed epochs.
 
@@ -123,14 +128,66 @@ are scaled by their dtype maximum (255 for uint8, 65535 for uint16); floating-po
 and signed integer values are cast to float32 without rescaling. Resizing, center
 cropping, and optional flips preserve all channels.
 
-RGB mean/std statistics are not repeated across spectral bands. When a model's
-preprocessing contains three-channel statistics but the dataset has a different
-channel count, training uses identity normalization and records the channel count
-and normalization in the checkpoint. Matching per-channel statistics, or one
-shared mean/std value, are applied when present in the preprocessing configuration.
-Ordinary RGB inputs retain their existing preprocessing.
+For channel counts divisible by three, RGB mean/std statistics repeat in channel
+order, treating the input as stacked RGB views. Other channel counts use identity
+normalization when only RGB statistics are available. Matching per-channel
+statistics, or one shared mean/std value, are applied when present. The actual
+channel count and normalization are recorded in the checkpoint. Ordinary RGB
+inputs retain their existing preprocessing.
 
 All exported training and validation images must have the same channel count.
 Mixed counts produce an error listing the affected filenames and counts.
-The model and its checkpoint reconstruction must already support the input channel
-count; this data-handling support does not adapt model input layers.
+By default, supported ResNet and ConvNeXt models adapt the first convolution by
+repeating and averaging its RGB weights across the views. The subsequent model
+processes the combined features normally. This remains the default with
+``fusion: false``.
+
+Attention fusion of RGB views
+-------------------------------
+
+Set the task's ``fusion`` attribute to ``true`` to combine views after shared
+feature extraction instead of combining channels in the first convolution:
+
+.. code-block:: yaml
+
+    specimen_classifier:
+      type: collectra.ImageClassifierTorchvision
+      input: [specimen]
+      output: [Pollen, Spore]
+      model: resnet18
+      fusion: true
+
+Input channels must be ordered ``R1,G1,B1,R2,G2,B2,...`` and their count must be a
+positive multiple of three. The number of views is inferred from the dataset:
+15 channels means five RGB views; 75 channels means 25. All views receive the
+same spatial crop and augmentation, and each RGB triplet uses the model's RGB
+normalization statistics.
+
+The views are reshaped into a single batch and passed through **one shared RGB
+encoder**. The input convolution stays three-channel; encoder weights are shared
+across views. Immediately before the encoder's global average pooling, learned
+softmax attention combines the views' spatial feature maps **at each position**,
+so every location can draw on whichever views are informative there (for
+example, the sharpest focal plane in a z-stack). The fused map is then pooled and
+classified once.
+
+Fusion is view-agnostic: no view is privileged. The attention scores each view
+against the mean of all views, and has no per-view bias, so reordering the views
+does not change the prediction. Attention starts uniform, so a new fusion model
+initially classifies the mean of the views' feature maps; identical views always
+reproduce the RGB model's prediction. Training cost grows with the number of
+views, so choose the batch size accordingly.
+
+Fusion supports convolutional torchvision classifiers with an ``avgpool`` layer
+and a final linear projection, including ResNet, ConvNeXt and EfficientNet.
+Vision transformers, and convolutional-only heads such as SqueezeNet's, are not
+supported in fusion mode. Start from an RGB architecture/checkpoint; a
+checkpoint whose first convolution was already expanded to multiple views
+cannot be converted to this architecture by toggling the flag.
+
+Saved checkpoints contain the view count, attention configuration and all fusion
+weights. Checkpoints from the earlier reference-view fusion are not supported;
+retrain them. Loading a fusion checkpoint reconstructs it automatically, even when
+``fusion`` is omitted from the task YAML. Fine-tuning preserves its attention
+weights; changing classes replaces only the final projection. A dataset with a
+different view count is rejected rather than silently discarding learned views.

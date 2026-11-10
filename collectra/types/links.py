@@ -1,29 +1,32 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
+
+from pydantic import Field
 
 from .base import Artefact
 
-__all__ = ["Link"]
+__all__ = ["Link", "is_link_type"]
 
 
-@dataclass
 class Link(Artefact):
     """A soft reference to the artefact identified by its first parent."""
 
-    target: Artefact | None = field(default=None, repr=False, compare=False)
+    target: Artefact | None = Field(default=None, repr=False, exclude=True)
+
+    _not_compared: ClassVar[frozenset[str]] = frozenset({"source_file", "target"})
+
+    @staticmethod
+    def file_extensions() -> set[str]:
+        return set()
 
     @property
     def parent_id(self) -> str:
-        if isinstance(self.parents, str):
-            return self.parents
         return self.parents[0] if self.parents else ""
 
-    @property
-    def __class__(self) -> type:
-        """Present the resolved target type to ``isinstance`` consumers."""
+    def _stand_in_type(self) -> type:
+        """The class of the artefact this link resolves to, for ``isinstance``."""
         target = self.__dict__.get("target")
         seen = {id(self)}
         while type(target) is Link:
@@ -65,7 +68,11 @@ class Link(Artefact):
         return self.resolve().display(context)
 
     def __getattr__(self, name: str) -> Any:
-        # Dataclass initialization probes attributes before ``target`` exists.
+        # Pydantic's own lookup (private and extra attributes) comes first.
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            pass
         target = self.__dict__.get("target")
         if target is None:
             raise AttributeError(name)
@@ -99,3 +106,13 @@ class Link(Artefact):
                 return self.resolve().evaluate(gold.resolve())
             return float(bool(self.parent_id) and self.parent_id == gold.parent_id)
         return self.resolve().evaluate(gold)
+
+
+def is_link_type(declared: str) -> bool:
+    """Whether a ``type`` string from a results file names a Link (or a subclass)."""
+    from collectra.utils import load_class_from_string
+
+    try:
+        return issubclass(load_class_from_string(declared), Link)
+    except (ImportError, AttributeError, ValueError):
+        return declared.endswith(".Link")

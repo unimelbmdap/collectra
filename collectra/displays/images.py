@@ -3,6 +3,7 @@
 from collections import OrderedDict
 from collectra.utils import load_class_from_string
 from .image_segmentation import display_bounds
+from .preview import bounded, open_preview
 
 # Share the few most recent encodings across contexts and panels.
 _PREVIEW_CACHE_SIZE = 6
@@ -71,8 +72,9 @@ def annotations(context, image):
             if bounds is None:
                 continue
             left, top, right, bottom = bounds
-            overlay = PILImage.new("RGBA", (right - left, bottom - top), "white")
-            overlay.putalpha(alpha.crop(bounds))
+            cropped = bounded(alpha.crop(bounds), mask=True, max_pixels=context.max_pixels)
+            overlay = PILImage.new("RGBA", cropped.size, "white")
+            overlay.putalpha(cropped)
             rows.append(
                 {
                     "id": node_id,
@@ -160,11 +162,10 @@ def image(context, item):
     else:
         if context.rgb_view:
             raise ValueError("This image has only one RGB view")
-        with PILImage.open(path) as source:
-            preview = source.convert(
-                "RGBA" if isinstance(item, ImageSegmentation) else "RGB"
-            )
-    preview = preview.crop(display_bounds(item)).rotate(
+        preview = open_preview(path, display_bounds(item), "RGBA" if isinstance(item, ImageSegmentation) else "RGB", max_pixels=context.max_pixels)
+    if path.suffix.lower() in {".tif", ".tiff"}:
+        preview = bounded(preview.crop(display_bounds(item)), max_pixels=context.max_pixels)
+    preview = preview.rotate(
         item.orientation.to_degree(), expand=True
     )
     source = context.publish_image(preview)
@@ -189,11 +190,26 @@ def _preview_key(context, item, path):
             stat.st_mtime_ns,
             stat.st_size,
             context.rgb_view,
+            context.max_pixels,
             tuple(item.display_bounds()),
             item.orientation.to_degree(),
         )
     except OSError:
         return None
+
+
+def links(context, item):
+    """The Link children of ``item``: each one's id and name (its label)."""
+    from collectra.types.links import is_link_type
+
+    found = []
+    for node_id, record in context.records.items():
+        parents = record.get("parents") or []
+        if isinstance(parents, str):
+            parents = [parents]
+        if is_link_type(record.get("type", "")) and item.id in parents:
+            found.append({"id": node_id, "name": record.get("label", node_id)})
+    return found
 
 
 def _image_view(context, item, path, source, view_count):
@@ -208,6 +224,7 @@ def _image_view(context, item, path, source, view_count):
         "annotations": context.annotations(item),
         "can_create_crop": True,
         "can_rotate": True,
+        "links": context.links(item),
         "rgb_view_index": context.rgb_view,
         "rgb_view_count": view_count,
     }

@@ -1,22 +1,26 @@
 import json
 import webbrowser
-from dataclasses import dataclass
+from typing import Any
+from pydantic import BaseModel, ConfigDict, Field
 from pathlib import Path
 
 import yaml
 from jinja2 import Environment, PackageLoader, select_autoescape
 
+from collectra.commons.results import pop_header
 from collectra.utils import change_dir
 
 __all__ = ["Editor"]
 
 
-@dataclass
-class Editor:
+class Editor(BaseModel):
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     file: Path
+    env: Any = Field(default=None, exclude=True, repr=False)
 
-    def __post_init__(self):
+    def model_post_init(self, __context: Any) -> None:
         self.env = Environment(
             loader=PackageLoader("collectra.editor"), autoescape=select_autoescape()
         )
@@ -29,7 +33,7 @@ class Editor:
                 raise Exception(f"{self.file} is an invalid file. Exiting...")
             with open(results, "r") as f:
                 data = yaml.safe_load(f)
-            header = data.pop("collectra_results_metadata", "")
+            header = pop_header(data, source=results)
             src_img = ""
             bounding_boxes: list = list()
             text_items: list = list()

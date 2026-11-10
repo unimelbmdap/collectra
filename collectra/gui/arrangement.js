@@ -15,8 +15,8 @@ function serializeArrangement(panels, focused, labelOf, {layout = [], sizes = {}
         let active = 0;
         for (const tab of panel.tabs) {
             let saved = null;
-            if (tab.kind === 'dag') {
-                saved = {kind: 'dag'};
+            if (tab.kind === 'dag' || tab.kind === 'table') {
+                saved = {kind: tab.kind};
             } else if (tab.kind === 'node') {
                 const group = tab.groupKey || (tab.nodeId ? labelOf(tab.nodeId) : null);
                 if (group) saved = {kind: 'node', group};
@@ -95,6 +95,10 @@ function restorePanelTabs(panel, spec, {makeId, instancesFor, labelFor}) {
             if (seen.has('dag')) return;
             seen.add('dag');
             tab = new TabType({id: makeId(), nodeId: null, label: 'DAG', kind: 'dag'});
+        } else if (saved.kind === 'table') {
+            if (seen.has('table')) return;
+            seen.add('table');
+            tab = new TabType({id: makeId(), nodeId: null, label: 'Table', kind: 'table'});
         } else if (saved.kind === 'node' && saved.group) {
             if (seen.has(saved.group)) return;
             seen.add(saved.group);
