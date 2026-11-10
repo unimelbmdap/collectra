@@ -28,6 +28,27 @@ class RunPlan:
         return [task.name for task in self.tasks if task.action != "skip"]
 
 
+@dataclass(frozen=True)
+class TaskOutcome:
+    """What happened to one task in a run, and why."""
+
+    name: str
+    status: Literal["ran", "re-ran", "skipped", "failed", "cancelled"]
+    detail: str
+
+
+@dataclass(frozen=True)
+class RunReport:
+    """What happened to every task of a page run, in pipeline order."""
+
+    outcomes: list[TaskOutcome]
+
+    @property
+    def failed(self) -> list[TaskOutcome]:
+        """The tasks that failed."""
+        return [outcome for outcome in self.outcomes if outcome.status == "failed"]
+
+
 def plan_tasks(
     missing: set[str], children: dict[str, set[str]], order: list[str]
 ) -> RunPlan:

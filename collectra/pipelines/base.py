@@ -29,6 +29,7 @@ import sys
 import tempfile
 import time
 import warnings
+from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Annotated, Any, ClassVar
@@ -71,9 +72,14 @@ from ..types.images import Image, ImageCrop
 from ..types.links import Link
 from ..types.texts import Text
 from .node_graph_manager import NodeGraphManager
-from .run_plan import RunPlan, plan_tasks
+from .run_plan import RunPlan, RunReport, TaskOutcome, plan_tasks
 
 logger = get_logger(__name__)
+
+
+def _never() -> bool:
+    """The default stop check of a run: it never stops."""
+    return False
 
 
 class PreviousOutputs:
@@ -177,6 +183,9 @@ class Pipeline(LenientAttributes, BaseModel):
     _run_progress: RunProgress | None = None
     # (task, file, error) for each task that failed in the current run.
     _failures: list[tuple[str, str, str]] = PrivateAttr(default_factory=list)
+    # (status, detail) for each task that ran, was skipped, failed or was
+    # stopped in the current run, by task name.
+    _outcomes: dict[str, tuple[str, str]] = PrivateAttr(default_factory=dict)
     # True when the file used the deprecated ``collectra_pipeline_metadata``
     # block; saving then keeps that form rather than rewriting the file.
     _legacy_declaration: bool = PrivateAttr(default=False)
@@ -613,6 +622,10 @@ class Pipeline(LenientAttributes, BaseModel):
             "render": kwargs.pop("render", False),
             "force": kwargs.pop("force", False),
             "output": kwargs.pop("output", None),
+            # Tasks to rerun as if forced, and a check made before each task
+            # starts that stops the run when it returns True.
+            "rerun": set(kwargs.pop("rerun", set())),
+            "stop": kwargs.pop("stop", _never),
         }
         options["task_overrides"] = kwargs.copy()
         return options
@@ -657,6 +670,7 @@ class Pipeline(LenientAttributes, BaseModel):
         """
         files = options["files"]
         self._failures = []
+        self._outcomes = {}
         downstream = {} if options["single"] else self._batchable_tasks(starting_nodes)
         batch_size = self._starting_batch_size(starting_nodes)
         batch_size = max([batch_size, *(t.batch_size for t in downstream.values())])
@@ -809,7 +823,8 @@ class Pipeline(LenientAttributes, BaseModel):
                     task = node.get_task()
                     if not isinstance(task, Task) or task.batch_size <= 1:
                         continue
-                    if not options["force"] and self._has_output(node):
+                    forced = options["force"] or node.name in options["rerun"]
+                    if not forced and self._has_output(node):
                         continue
                     self._apply_task_run_overrides(task, options["task_overrides"])
                     parents = self.node_manager.get_parents_artefact(node)
@@ -887,6 +902,8 @@ class Pipeline(LenientAttributes, BaseModel):
             value=value,
             render=options["render"],
             force=options["force"],
+            rerun=options["rerun"],
+            stop=options["stop"],
             task_overrides=options["task_overrides"],
         )
         self._warn_unready_starting_tasks(starting_nodes, value)
@@ -902,6 +919,32 @@ class Pipeline(LenientAttributes, BaseModel):
             ValueError: The results do not match this pipeline's tasks.
         """
         folder = Path(folder)
+        self._check_page(folder)
+        options = {"output": None, "usage": False, "render": False, "single": False}
+        self._setup_file(self._get_root_starting_nodes(), str(folder), options)
+        flow = self.node_manager.flow
+        tasks = {node.name: node for node in self.node_manager.get_task_nodes()}
+        order = [name for name in nx.topological_sort(flow) if name in tasks]
+        children = {
+            name: {
+                grandchild.name
+                for output in self._output_nodes(node)
+                for grandchild in self.node_manager.get_children(output)
+                if isinstance(grandchild, TaskNode)
+            }
+            for name, node in tasks.items()
+        }
+        missing = {name for name, node in tasks.items() if not self._has_output(node)}
+        return plan_tasks(missing, children, order)
+
+    def _check_page(self, folder: Path) -> None:
+        """Check a results folder holds this pipeline's results and its image.
+
+        Raises:
+            FileNotFoundError: The folder has no results, or the image copy
+                its results refer to is missing.
+            ValueError: The results do not match this pipeline's tasks.
+        """
         results_file = folder / self.RESULTS_FILE
         if not results_file.exists():
             raise FileNotFoundError(f"{results_file} does not exist.")
@@ -919,27 +962,59 @@ class Pipeline(LenientAttributes, BaseModel):
             entry.get("data", entry.get("path")) if isinstance(entry, dict) else None
         )
         # A run can record the copy by bare name or by the path it was fed.
-        copy = Path(str(image)).name if image else None
-        if copy and not (folder / copy).exists():
+        name = Path(str(image)).name if image else None
+        if name and not (folder / name).exists():
             raise FileNotFoundError(
-                f"{copy} is missing from {folder}; the results refer to it."
+                f"{name} is missing from {folder}; the results refer to it."
             )
-        options = {"output": None, "usage": False, "render": False, "single": False}
-        self._setup_file(self._get_root_starting_nodes(), str(folder), options)
-        flow = self.node_manager.flow
-        tasks = {node.name: node for node in self.node_manager.get_task_nodes()}
-        order = [name for name in nx.topological_sort(flow) if name in tasks]
-        children = {
-            name: {
-                grandchild.name
-                for output in self._output_nodes(node)
-                for grandchild in self.node_manager.get_children(output)
-                if isinstance(grandchild, TaskNode)
-            }
-            for name, node in tasks.items()
-        }
-        missing = {name for name, node in tasks.items() if not self._has_output(node)}
-        return plan_tasks(missing, children, order)
+
+    def run_page(
+        self,
+        folder: Path,
+        plan: RunPlan,
+        should_stop: Callable[[], bool] = lambda: False,
+    ) -> RunReport:
+        """Run a results folder's planned tasks in place, and say what happened.
+
+        Tasks with output are skipped; the plan's re-run tasks replace their
+        output. ``should_stop`` is checked before each task starts; once it
+        returns True no further task starts. The page's image is read from
+        the copy inside the folder.
+
+        Raises:
+            FileNotFoundError: The folder has no results, or the image copy
+                its results refer to is missing.
+            ValueError: The results do not match this pipeline's tasks.
+        """
+        folder = Path(folder)
+        self._check_page(folder)
+        stopped = False
+
+        def stop() -> bool:
+            nonlocal stopped
+            stopped = stopped or bool(should_stop())
+            return stopped
+
+        rerun = {task.name for task in plan.tasks if task.action == "rerun"}
+        self.run(files=[str(folder)], rerun=rerun, stop=stop)
+        outcomes = []
+        for task in plan.tasks:
+            status, detail = self._outcomes.get(task.name, ("", ""))
+            if status == "ran" and task.name in rerun:
+                upstream = task.reason.removesuffix(" runs") + " ran"
+                status = "re-ran"
+                detail = f"{detail or 'replaced existing output'} ({upstream})"
+            elif status == "ran":
+                detail = detail or task.reason
+            elif not status:
+                status = "cancelled"
+                detail = (
+                    "stopped before it started"
+                    if stopped
+                    else "did not run: its inputs were not produced"
+                )
+            outcomes.append(TaskOutcome(task.name, status, detail))
+        return RunReport(outcomes)
 
     def _warn_unready_starting_tasks(self, starting_nodes: list[TaskNode], value):
         """Explain why a task the user asked for never ran for this file.
@@ -1320,7 +1395,7 @@ class Pipeline(LenientAttributes, BaseModel):
             return
 
         children = self._get_node_children(node)
-        force = kwargs.get("force", False)
+        force = kwargs.get("force") or node.name in kwargs.get("rerun", set())
         if not force and self._has_output(node):
             existing = [
                 f"{output.name} ({len(output.items)})"
@@ -1334,11 +1409,16 @@ class Pipeline(LenientAttributes, BaseModel):
                 Path(str(kwargs.get("value", ""))).name or "this file",
                 ", ".join(existing),
             )
+            self._outcomes[node.name] = ("skipped", "kept existing output")
             self._update_node_status(node, True)
             self._run_nodes(children, **kwargs)
             return
 
         if self._stage_gate and self._stage_gate.defer(node, kwargs.get("value", "")):
+            return
+
+        if kwargs.get("stop", _never)():
+            self._outcomes[node.name] = ("cancelled", "stopped before it started")
             return
 
         previous = self._take_outputs(node, kwargs.get("value")) if force else None
@@ -1355,9 +1435,12 @@ class Pipeline(LenientAttributes, BaseModel):
             if previous is not None:
                 previous.restore()
             raise
+        detail = ""
         if previous is not None:
             # A failed rerun must not destroy the output it was meant to replace.
             previous.discard() if results else previous.restore()
+            detail = "" if results else "produced nothing, kept existing output"
+        self._outcomes[node.name] = ("ran", detail)
 
         self._update_node_status(node, bool(results))
         self.render("workflow_run", file=kwargs.get("value", ""), render=render)
@@ -1373,6 +1456,7 @@ class Pipeline(LenientAttributes, BaseModel):
             "Task '%s' failed for %s: %s", node.name, name, error, exc_info=error
         )
         self._failures.append((node.name, name, f"{type(error).__name__}: {error}"))
+        self._outcomes[node.name] = ("failed", f"{type(error).__name__}: {error}")
         self._update_node_status(node, False)
         self.render("workflow_run", file=folder, render=render)
 
