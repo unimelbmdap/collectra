@@ -2031,6 +2031,7 @@
 
     <script src="nodeColors.js"></script>
     <script src="deleteDialog.js"></script>
+    <script src="runDialog.js"></script>
     <script src="instancePager.js"></script>
     <script src="collapseToggle.js"></script>
     <script src="hoverTimer.js"></script>
@@ -2112,6 +2113,11 @@
                 <button class="panel-toolbar-btn" id="artefactSearchToggle" onclick="toggleArtefactSearch()" title="Search artefacts (Cmd/Ctrl+F)" aria-label="Search artefacts">
                     <i class="fa fa-search" aria-hidden="true"></i>
                 </button>
+                <button class="panel-toolbar-btn" id="runToolbarBtn" onclick="showRunDialog()" title="Run" aria-label="Run pipeline on this page" disabled>
+                    <svg data-icon="play" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M4.5 2.8v10.4L13 8z"/>
+                    </svg>
+                </button>
                 <button class="panel-toolbar-btn" id="dagToolbarBtn" onclick="openDagTab()" title="DAG" aria-label="DAG">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19.5 17C19.36 17 19.24 17 19.11 17.04L17.5 13.8C17.95 13.35 18.25 12.71 18.25 12C18.25 10.62 17.13 9.5 15.75 9.5C15.61 9.5 15.5 9.5 15.35 9.54L13.74 6.3C14.21 5.84 14.5 5.21 14.5 4.5C14.5 3.12 13.38 2 12 2S9.5 3.12 9.5 4.5C9.5 5.2 9.79 5.84 10.26 6.29L8.65 9.54C8.5 9.5 8.39 9.5 8.25 9.5C6.87 9.5 5.75 10.62 5.75 12C5.75 12.71 6.04 13.34 6.5 13.79L4.89 17.04C4.76 17 4.64 17 4.5 17C3.12 17 2 18.12 2 19.5C2 20.88 3.12 22 4.5 22S7 20.88 7 19.5C7 18.8 6.71 18.16 6.24 17.71L7.86 14.46C8 14.5 8.12 14.5 8.25 14.5C8.38 14.5 8.5 14.5 8.63 14.46L10.26 17.71C9.79 18.16 9.5 18.8 9.5 19.5C9.5 20.88 10.62 22 12 22S14.5 20.88 14.5 19.5C14.5 18.12 13.38 17 12 17C11.87 17 11.74 17 11.61 17.04L10 13.8C10.45 13.35 10.75 12.71 10.75 12C10.75 11.3 10.46 10.67 10 10.21L11.61 6.96C11.74 7 11.87 7 12 7C12.13 7 12.26 7 12.39 6.96L14 10.21C13.54 10.66 13.25 11.3 13.25 12C13.25 13.38 14.37 14.5 15.75 14.5C15.88 14.5 16 14.5 16.13 14.46L17.76 17.71C17.29 18.16 17 18.8 17 19.5C17 20.88 18.12 22 19.5 22S22 20.88 22 19.5C22 18.12 20.88 17 19.5 17M4.5 20.5C3.95 20.5 3.5 20.05 3.5 19.5S3.95 18.5 4.5 18.5 5.5 18.95 5.5 19.5 5.05 20.5 4.5 20.5M13 19.5C13 20.05 12.55 20.5 12 20.5S11 20.05 11 19.5 11.45 18.5 12 18.5 13 18.95 13 19.5M7.25 12C7.25 11.45 7.7 11 8.25 11S9.25 11.45 9.25 12 8.8 13 8.25 13 7.25 12.55 7.25 12M11 4.5C11 3.95 11.45 3.5 12 3.5S13 3.95 13 4.5 12.55 5.5 12 5.5 11 5.05 11 4.5M14.75 12C14.75 11.45 15.2 11 15.75 11S16.75 11.45 16.75 12 16.3 13 15.75 13 14.75 12.55 14.75 12M19.5 20.5C18.95 20.5 18.5 20.05 18.5 19.5S18.95 18.5 19.5 18.5 20.5 18.95 20.5 19.5 20.05 20.5 19.5 20.5Z"/></svg>
                 </button>
@@ -2173,6 +2179,17 @@
                 <div class="lineage-popover" id="tasksPopover" style="display:none;">
                     <div class="lineage-popover-header">Tasks</div>
                     <div class="lineage-list" id="tasksList"></div>
+                </div>
+                <div class="lineage-popover" id="runProgressPopover" style="display:none;">
+                    <div class="lineage-popover-header">Run</div>
+                    <div class="lineage-list">
+                        <div class="lineage-item" id="runProgressText" role="status" aria-live="polite"></div>
+                        <div class="lineage-empty" id="runProgressPaused">Editing this page is paused until the run finishes.</div>
+                        <div class="modal-buttons">
+                            <button class="btn-cancel" id="runStopBtn" onclick="stopRun()">Stop</button>
+                            <button class="btn-cancel" id="runCloseBtn" onclick="closeRunProgress()" hidden>Close</button>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="panels-row">
@@ -2329,6 +2346,23 @@
             <div class="modal-buttons">
                 <button class="btn-cancel" id="deleteModalCancel">Cancel</button>
                 <button class="btn-confirm" id="deleteModalConfirm">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="runModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="runModalTitle">
+        <div class="modal-popup">
+            <h3 id="runModalTitle"></h3>
+            <div class="modal-field">
+                <label class="modal-field-label" for="runNoteInput">Note</label>
+                <input type="text" id="runNoteInput" maxlength="200" placeholder="Optional, saved in run-log.txt" autocomplete="off" onkeydown="handleRunNoteKey(event)">
+            </div>
+            <p id="runModalSummary" class="delete-summary" hidden></p>
+            <ul id="runModalTasks" class="delete-children" hidden></ul>
+            <div class="modal-field-error" id="runModalError" role="alert" hidden></div>
+            <div class="modal-buttons">
+                <button class="btn-cancel" id="runModalCancel" onclick="closeRunDialog()">Cancel</button>
+                <button class="btn-confirm" id="runModalConfirm" onclick="startRun()">Run</button>
             </div>
         </div>
     </div>
@@ -3602,6 +3636,169 @@
             repositionLineagePopovers();
         }
 
+        // ── RUN BUTTON ───────────────────────────────────────────────────────
+        // Runs the pipeline on the open page in the backend, after a panel that
+        // says which tasks run, re-run or are skipped. While it runs, the
+        // progress popover polls the backend about once a second; the backend
+        // refuses edits to the running page, so the page is reloaded only once
+        // the run ends, and only if it is still the page open.
+        let runActive = false;
+        let runStopRequested = false;
+        let runStartedYamlPath = '';
+
+        function runErrorText(e) {
+            return (e && e.message) || String(e);
+        }
+
+        async function showRunDialog() {
+            if (runActive) { showRunProgress(); return; }
+            let preview;
+            try {
+                preview = await window.pywebview.api.get_run_preview();
+            } catch (e) {
+                preview = {can_run: false, tasks: [], message: runErrorText(e)};
+            }
+            const content = runDialogContent(preview);
+            document.getElementById('runModalTitle').textContent = content.title;
+            const summary = document.getElementById('runModalSummary');
+            summary.textContent = content.message || content.warning || content.kept;
+            summary.hidden = !summary.textContent;
+            const list = document.getElementById('runModalTasks');
+            list.replaceChildren(...content.rows.map((row) => {
+                const item = document.createElement('li');
+                const text = document.createElement('span');
+                text.className = 'delete-child-id';
+                text.textContent = row.text;
+                item.append(text);
+                return item;
+            }));
+            list.hidden = !content.rows.length;
+            document.getElementById('runModalError').hidden = true;
+            const note = document.getElementById('runNoteInput');
+            note.value = '';
+            const confirmBtn = document.getElementById('runModalConfirm');
+            confirmBtn.textContent = content.canRun ? content.runLabel : 'Run';
+            confirmBtn.disabled = !content.canRun;
+            document.getElementById('runModal').classList.add('visible');
+            (content.canRun ? note : document.getElementById('runModalCancel')).focus();
+        }
+
+        function closeRunDialog() {
+            document.getElementById('runModal').classList.remove('visible');
+        }
+
+        function handleRunNoteKey(e) {
+            if (e.key === 'Enter') { e.preventDefault(); startRun(); }
+            if (e.key === 'Escape') closeRunDialog();
+        }
+
+        async function startRun() {
+            const confirmBtn = document.getElementById('runModalConfirm');
+            if (confirmBtn.disabled) return;
+            confirmBtn.disabled = true;
+            const note = document.getElementById('runNoteInput').value.trim();
+            let result;
+            try {
+                result = await window.pywebview.api.start_run(note);
+            } catch (e) {
+                result = {success: false, error: runErrorText(e)};
+            }
+            if (!result || !result.success) {
+                const error = document.getElementById('runModalError');
+                error.textContent = (result && result.error) || 'The run could not start.';
+                error.hidden = false;
+                confirmBtn.disabled = false;
+                return;
+            }
+            closeRunDialog();
+            runActive = true;
+            runStopRequested = false;
+            runStartedYamlPath = selectedYamlPath;
+            setRunButtonRunning(true);
+            document.getElementById('runProgressText').textContent = '';
+            document.getElementById('runStopBtn').hidden = false;
+            document.getElementById('runStopBtn').disabled = false;
+            document.getElementById('runCloseBtn').hidden = true;
+            document.getElementById('runProgressPaused').hidden = false;
+            showRunProgress();
+            await pollRun();
+        }
+
+        function setRunButtonRunning(on) {
+            const btn = document.getElementById('runToolbarBtn');
+            btn.classList.toggle('active', on);
+            btn.title = on ? 'Run in progress' : 'Run';
+        }
+
+        function showRunProgress() {
+            document.getElementById('runProgressPopover').style.display = 'block';
+        }
+
+        function closeRunProgress() {
+            document.getElementById('runProgressPopover').style.display = 'none';
+        }
+
+        async function pollRun() {
+            const text = document.getElementById('runProgressText');
+            let status;
+            try {
+                status = await window.pywebview.api.get_run_status();
+            } catch (e) {
+                text.textContent = `Could not read the run's progress: ${runErrorText(e)}`;
+                setTimeout(pollRun, 1000);
+                return;
+            }
+            text.textContent = runStatusText(status, runStopRequested);
+            if (status.running) {
+                setTimeout(pollRun, 1000);
+                return;
+            }
+            await finishRun(status);
+        }
+
+        async function finishRun(status) {
+            runActive = false;
+            setRunButtonRunning(false);
+            document.getElementById('runStopBtn').hidden = true;
+            document.getElementById('runCloseBtn').hidden = false;
+            document.getElementById('runProgressPaused').hidden = true;
+            if (!runIsForOpenPage(status, selectedYamlPath, runStartedYamlPath)) return;
+            try {
+                await reloadOpenPage();
+            } catch (e) {
+                const text = document.getElementById('runProgressText');
+                text.textContent += ` The page could not be redrawn: ${runErrorText(e)}`;
+            }
+        }
+
+        // The backend has already reloaded the page; this redraws it.
+        async function reloadOpenPage() {
+            if (currentFolderIndex >= 0) {
+                if (folderLoading) return; // a page switch is redrawing it already
+                folderLoading = true;
+                try {
+                    await loadCollectraFolderInner(currentFolderIndex);
+                } finally {
+                    folderLoading = false;
+                }
+            } else {
+                await loadYaml();
+                await Promise.all(Object.values(panelControllers).map((c) => c.showActiveTabContent()));
+            }
+            refreshTables();
+        }
+
+        async function stopRun() {
+            runStopRequested = true;
+            document.getElementById('runStopBtn').disabled = true;
+            try {
+                await window.pywebview.api.stop_run();
+            } catch (e) {
+                console.error('Error stopping the run:', e);
+            }
+        }
+        // ── END RUN BUTTON
+
         function closeAllToolbarPopovers(exceptTarget) {
             TOOLBAR_POPOVERS.forEach(({ id, btnId, state }) => {
                 if (exceptTarget && (exceptTarget.closest('#' + id) || exceptTarget.closest('#' + btnId))) return;
@@ -4631,6 +4828,7 @@
                 // not at the end, after steps that can fail.
                 document.getElementById('artefactsToolbarBtn').disabled = false;
                 document.getElementById('tasksToolbarBtn').disabled = false;
+                document.getElementById('runToolbarBtn').disabled = false;
                 // Rows drawn before this (e.g. tabs restored at start-up) had no lineage to
                 // go on, so their Ancestors/Descendants buttons are redrawn now. One row that
                 // cannot be drawn must not stop the pipeline from loading.
