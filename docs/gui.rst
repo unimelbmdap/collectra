@@ -216,8 +216,8 @@ Running the pipeline on a page
 ------------------------------
 
 The play button (▶) in the panel toolbar, right after the search icon, runs
-the pipeline on the page that is open. It is disabled until a page is open.
-Clicking it opens a confirmation panel that lists every task of the pipeline
+the pipeline on the page that is open. It is enabled once the pipeline has
+loaded; with no page open, the panel says to open one first. Clicking it opens a confirmation panel that lists every task of the pipeline
 with what the run will do:
 
 * **will run**: the task has no output on this page yet.
@@ -231,6 +231,14 @@ existing output, including any edits you made by hand**, and the panel warns
 you when there are any. If nothing would re-run, the panel says your edits are
 kept. If every task already has output, or the pipeline cannot run on this page,
 the panel says so and the run button in it is disabled.
+
+The pipeline runs only on pages whose folder name ends in the pipeline's
+extension (for example ``page.mypipe``); a renamed folder, or a page made by
+another pipeline, is refused and left untouched. If the results were made by
+another pipeline, or by another version of this one, the panel warns you, and
+the run's log entry notes it, but the run is not blocked. The image is read from
+the copy in the page's folder when the original it was made from has been moved
+or deleted.
 
 The panel has an optional **Note** (at most 200 characters; whitespace is
 collapsed) that is saved with the run in ``run-log.txt``. Confirm with the
@@ -251,7 +259,11 @@ task has output and does not redo it automatically. The failure is recorded in
 
 While a run is going:
 
-* Edits to the page being run are refused. Other open pages stay editable.
+* The page being run cannot be edited: its text is read-only, its boxes and
+  masks cannot be changed, and a notice in the toolbar says editing is paused
+  until the run finishes. Other open pages stay editable.
+* Restarting Collectra and installing updates are refused. Closing the window
+  stops the run and waits up to 30 seconds for the task in progress to finish.
 * Git actions that change things (**Get updates**, **Save changes**,
   **Share my changes**) are refused for every page, because Git works on the
   whole project. Looking at **What's changed** still works.
@@ -275,7 +287,11 @@ pipeline whose ``crop`` task had no output and whose ``ocr`` task depends on it:
       result  2 ran, 1 skipped, 0 failed, 12.3 s
 
 The first line has the start time and the pipeline's name and version. The note
-line appears only if you wrote a note. A task that failed is shown as
+line appears only if you wrote a note, and a ``warning:`` line only if the
+results were made by another pipeline or version, for example
+``warning: pipeline version 1.4.2, results made with 1.3.0``. A re-run task that
+produced nothing keeps its output and is shown as ``re-ran, produced nothing,
+kept existing output``. A task that failed is shown as
 ``failed: <reason>``, and one that did not start because the run was stopped (or
 because an input it needs was not produced) as ``cancelled: <reason>``; the
 summary then also counts failed and cancelled tasks. Entries are separated by a
