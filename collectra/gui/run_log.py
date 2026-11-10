@@ -39,6 +39,8 @@ def begin_entry(
     note = clean_note(note)
     if note:
         lines.append(f"  note: {note}")
+    for warning in plan.warnings:
+        lines.append(f"  warning: {warning}")
     for task in plan.tasks:
         lines.append(f"  {task.name}  planned to {task.action}: {task.reason}")
     _append(folder, lines)
@@ -48,7 +50,8 @@ def _outcome_line(name: str, status: str, detail: str) -> str:
     """The one-line description of what happened to a task."""
     detail = " ".join(detail.split())
     if status == "re-ran":
-        text = "re-ran, replaced existing output"
+        kept = "produced nothing, kept existing output"
+        text = f"re-ran, {kept if kept in detail else 'replaced existing output'}"
         match = re.search(r"upstream (\S+) ran", detail)
         if match:
             text += f" (upstream {match.group(1)} ran)"

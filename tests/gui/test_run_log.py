@@ -140,3 +140,32 @@ def test_cancelled_detail_is_kept(tmp_path):
 def test_finish_entry_unwritable_raises(tmp_path):
     with pytest.raises(OSError):
         finish_entry(tmp_path / "nope", RunReport([]), 1)
+
+
+def test_rerun_that_produced_nothing_says_it_kept_the_output(tmp_path):
+    detail = "produced nothing, kept existing output (upstream a ran)"
+    finish_entry(tmp_path, RunReport([TaskOutcome("b", "re-ran", detail)]), 1)
+    text = (tmp_path / LOG_NAME).read_text(encoding="utf-8")
+    assert "b  re-ran, produced nothing, kept existing output (upstream a ran)\n" in (
+        text
+    )
+    assert "replaced" not in text
+
+
+def test_plan_warnings_go_in_the_started_block(tmp_path):
+    plan = RunPlan(
+        PLAN.tasks,
+        warnings=("pipeline version 1.4.2, results made with 1.3.0",),
+    )
+    begin(tmp_path, plan=plan, note="mine")
+    lines = (tmp_path / LOG_NAME).read_text(encoding="utf-8").splitlines()
+    assert "  note: mine" in lines
+    assert "  warning: pipeline version 1.4.2, results made with 1.3.0" in lines
+    assert lines.index("  warning: pipeline version 1.4.2, results made with 1.3.0") < (
+        lines.index("  ocr  planned to run: no output yet")
+    )
+
+
+def test_no_warning_line_without_warnings(tmp_path):
+    begin(tmp_path)
+    assert "warning" not in (tmp_path / LOG_NAME).read_text(encoding="utf-8")
