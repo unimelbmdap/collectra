@@ -18,10 +18,16 @@ function runDialogContent(preview) {
         message = 'Every task already has output; there is nothing to run.';
     }
     const canRun = !message;
+    // A page that can run may still carry a warning, such as results made by
+    // another version of the pipeline.
+    const warnings = [
+        canRun ? preview.message : '',
+        rerun ? 'Re-run tasks replace their existing output, including edits.' : '',
+    ];
     return {
         title: 'Run the pipeline on this page?',
         rows,
-        warning: rerun ? 'Re-run tasks replace their existing output, including edits.' : '',
+        warning: warnings.filter(Boolean).join(' '),
         kept: canRun && !rerun ? 'Your edits are kept.' : '',
         canRun,
         runLabel: `Run ${count} ${count === 1 ? 'task' : 'tasks'}`,

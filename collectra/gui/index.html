@@ -2097,6 +2097,7 @@
                         <rect x="2.7" y="3.2" width="3.1" height="9.6" fill="currentColor" stroke="none" opacity="0.4"/>
                     </svg>
                 </button>
+                <span class="lineage-empty" id="runPausedNotice" role="status" hidden>Editing this page is paused until the run finishes.</span>
                 <div class="artefact-search" id="artefactSearchBar" role="search">
                     <div class="artefact-search-field">
                         <i class="fa fa-search artefact-search-icon" aria-hidden="true"></i>
@@ -3645,6 +3646,24 @@
         let runActive = false;
         let runStopRequested = false;
         let runStartedYamlPath = '';
+        let runLastStatus = null;
+
+        // Whether the page open now is the one being run, so cannot be edited.
+        function runLocksOpenPage() {
+            return runActive && runIsForOpenPage(runLastStatus || {folder: ''}, selectedYamlPath, runStartedYamlPath);
+        }
+
+        // Shows the paused notice and makes the editors read-only while the open
+        // page is being run; other pages stay editable. Applied again on every
+        // poll, so opening another page during the run is picked up.
+        function applyRunEditLock() {
+            const locked = runLocksOpenPage();
+            document.getElementById('runPausedNotice').hidden = !locked;
+            Object.values(panelControllers).forEach((controller) => {
+                controller.setTextRunLocked?.(locked);
+                controller.setImageRunLocked?.(locked);
+            });
+        }
 
         function runErrorText(e) {
             return (e && e.message) || String(e);
@@ -3714,6 +3733,8 @@
             runActive = true;
             runStopRequested = false;
             runStartedYamlPath = selectedYamlPath;
+            runLastStatus = null;
+            applyRunEditLock();
             setRunButtonRunning(true);
             document.getElementById('runProgressText').textContent = '';
             document.getElementById('runStopBtn').hidden = false;
@@ -3749,7 +3770,9 @@
                 return;
             }
             text.textContent = runStatusText(status, runStopRequested);
+            runLastStatus = status;
             if (status.running) {
+                applyRunEditLock();
                 setTimeout(pollRun, 1000);
                 return;
             }
@@ -3758,6 +3781,7 @@
 
         async function finishRun(status) {
             runActive = false;
+            applyRunEditLock();
             setRunButtonRunning(false);
             document.getElementById('runStopBtn').hidden = true;
             document.getElementById('runCloseBtn').hidden = false;

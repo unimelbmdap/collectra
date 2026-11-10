@@ -55,7 +55,8 @@ function installImageDisplay(PanelController) {
             const focused = this.selectedNodeId ? resolveDagLabel(this.selectedNodeId) : null;
             const noValidChildType = !inFullPage && !!focused && cropTypeOptionsForController(this).labels.length === 0;
             const maskEditing = !!this._maskEditor?.isActive();
-            const disabled = inFullPage || noValidChildType || !this.displayView?.can_create_crop || maskEditing;
+            const runLocked = typeof runLocksOpenPage === 'function' && runLocksOpenPage();
+            const disabled = inFullPage || noValidChildType || !this.displayView?.can_create_crop || maskEditing || runLocked;
             const armed = !disabled && !!(this.pageAnno && this.pageAnno.isDrawingEnabled());
             if (noValidChildType && this.pageAnno && this.pageAnno.isDrawingEnabled()) {
                 this.pageAnno.setDrawingEnabled(false);
@@ -83,6 +84,15 @@ function installImageDisplay(PanelController) {
                 else if (!disabled && btn.element.disabled) btn.enable();
             }
             if (this.el.imageDisplay) this.el.imageDisplay.classList.toggle('draw-box-cursor', armed);
+        };
+        // A run of the open page rewrites it, so its boxes cannot be drawn,
+        // moved or resized meanwhile; they can still be selected.
+        PanelController.prototype.setImageRunLocked = function(locked) {
+            if (this.pageAnno) {
+                if (locked && this.pageAnno.isDrawingEnabled()) this.pageAnno.setDrawingEnabled(false);
+                this.pageAnno.setUserSelectAction(locked ? 'SELECT' : 'EDIT');
+            }
+            if (this.pageViewer) this.syncDrawBoxButton();
         };
         PanelController.prototype.showPageImage = function() {
             this.stopTextAutosave();
@@ -155,6 +165,7 @@ function installImageDisplay(PanelController) {
                 });
 
                 this.pageAnno = AnnotoriousOSD.createOSDAnnotator(this.pageViewer, { drawingEnabled: false, drawingMode: 'drag' });
+                if (typeof runLocksOpenPage === 'function' && runLocksOpenPage()) this.pageAnno.setUserSelectAction('SELECT');
 
                 const drawBoxBtn = createDrawBoxButton(() => {
                     if (this.pageViewer.isFullPage()) return; // live check

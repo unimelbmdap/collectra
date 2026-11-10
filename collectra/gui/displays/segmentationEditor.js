@@ -189,6 +189,8 @@ async function mountSegmentationEditor(controller, view, {token, resultsPath, on
         modifiers(event);
         if (!mode || !current() || event.button !== 0
             || document.querySelector('.modal-overlay.visible')) return;
+        // A run of the open page rewrites it; no stroke is painted meanwhile.
+        if (typeof runLocksOpenPage === 'function' && runLocksOpenPage()) return;
         suppress(event);
         if (saving || maskUpdating) return;
         const p = point(event);

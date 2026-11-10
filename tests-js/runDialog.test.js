@@ -126,3 +126,26 @@ describe('runIsForOpenPage (reload only the page the run belongs to)', () => {
         expect(runIsForOpenPage({folder: '/private/var/page1'}, '/var/page2/results.yaml', '/var/page1/results.yaml')).toBe(false);
     });
 });
+
+describe('runDialogContent with a warning from the backend', () => {
+    const warning = 'Warning: these results were made by the Other pipeline, not demo.';
+
+    it('shows the warning and can still run', () => {
+        const content = runDialogContent(preview([task('ocr', 'run', 'no output yet')], {message: warning}));
+        expect(content.canRun).toBe(true);
+        expect(content.message).toBe('');
+        expect(content.warning).toBe(warning);
+    });
+
+    it('puts the warning before the re-run warning', () => {
+        const content = runDialogContent(preview([task('ocr', 'run', 'no output yet'),
+            task('c', 'rerun', 'upstream ocr runs')], {message: warning}));
+        expect(content.warning).toBe(`${warning} Re-run tasks replace their existing output, including edits.`);
+    });
+
+    it('still says there is nothing to run when every task has output', () => {
+        const content = runDialogContent(preview([task('d', 'skip', 'already has output')], {message: warning}));
+        expect(content.canRun).toBe(false);
+        expect(content.message).toBe('Every task already has output; there is nothing to run.');
+    });
+});

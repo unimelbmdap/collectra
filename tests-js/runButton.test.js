@@ -109,9 +109,10 @@ function element(tag = 'div') {
 function page({preview, start = {success: true}, statuses = [], openYaml = '/data/p1/results.yaml', folderIndex = 0} = {}) {
     const ids = ['runToolbarBtn', 'runModal', 'runModalTitle', 'runModalSummary', 'runModalTasks', 'runNoteInput',
         'runModalError', 'runModalCancel', 'runModalConfirm', 'runProgressPopover', 'runProgressText',
-        'runProgressPaused', 'runStopBtn', 'runCloseBtn'];
+        'runProgressPaused', 'runStopBtn', 'runCloseBtn', 'runPausedNotice'];
     const els = Object.fromEntries(ids.map((id) => [id, element()]));
     els.runCloseBtn.hidden = true;
+    els.runPausedNotice.hidden = true;
     const queue = [...statuses];
     const api = {
         get_run_preview: vi.fn().mockResolvedValue(preview || {success: true, can_run: true, message: '',
@@ -129,7 +130,8 @@ function page({preview, start = {success: true}, statuses = [], openYaml = '/dat
         loadCollectraFolderInner: vi.fn().mockResolvedValue(undefined),
         loadYaml: vi.fn().mockResolvedValue(undefined),
         refreshTables: vi.fn(),
-        panelControllers: {bottom: {showActiveTabContent: vi.fn()}},
+        panelControllers: {bottom: {showActiveTabContent: vi.fn(), setTextRunLocked: vi.fn(), setImageRunLocked: vi.fn()},
+            side: {}},
         setTimeout, clearTimeout, console,
     };
     vm.createContext(context);
@@ -306,4 +308,71 @@ it('the toolbar button shows the progress instead of a new panel while a run is 
     expect(p.api.get_run_preview).not.toHaveBeenCalled();
     expect(p.els.runProgressPopover.style.display).toBe('block');
     expect(p.els.runModal.classList.contains('visible')).toBe(false);
+});
+
+
+describe('editing the running page', () => {
+    const noticeAt = html.indexOf('id="runPausedNotice"');
+
+    it('has a paused notice in the toolbar row, outside the progress popover, hidden at first', () => {
+        const tag = html.slice(html.lastIndexOf('<', noticeAt), html.indexOf('>', noticeAt) + 1);
+        expect(tag).toContain('class="lineage-empty"');
+        expect(tag).toContain('role="status"');
+        expect(tag).toMatch(/\shidden>$/);
+        const row = html.indexOf('<div class="global-toolbar-row">');
+        expect(noticeAt).toBeGreaterThan(row);
+        expect(noticeAt).toBeLessThan(html.indexOf('id="artefactSearchBar"'));
+        const popover = html.indexOf('id="runProgressPopover"');
+        expect(noticeAt < popover).toBe(true);
+        expect(html.slice(noticeAt, html.indexOf('</span>', noticeAt)))
+            .toContain('Editing this page is paused until the run finishes.');
+    });
+
+    it('shows the notice while the run goes on, even once the progress is closed', async () => {
+        const p = page({statuses: [running(0), running(1), finished()]});
+        await p.context.showRunDialog();
+        await p.context.startRun();
+        expect(p.els.runPausedNotice.hidden).toBe(false);
+        p.context.closeRunProgress();
+        expect(p.els.runPausedNotice.hidden).toBe(false);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(p.els.runPausedNotice.hidden).toBe(false);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(p.els.runPausedNotice.hidden).toBe(true);
+    });
+
+    it('makes the editors read-only while running and editable again afterwards', async () => {
+        const p = page({statuses: [running(0), finished()]});
+        const bottom = p.context.panelControllers.bottom;
+        await p.context.showRunDialog();
+        await p.context.startRun();
+        expect(bottom.setTextRunLocked).toHaveBeenLastCalledWith(true);
+        expect(bottom.setImageRunLocked).toHaveBeenLastCalledWith(true);
+        expect(p.context.runLocksOpenPage()).toBe(true);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(bottom.setTextRunLocked).toHaveBeenLastCalledWith(false);
+        expect(bottom.setImageRunLocked).toHaveBeenLastCalledWith(false);
+        expect(p.context.runLocksOpenPage()).toBe(false);
+    });
+
+    it('leaves another page editable, and locks the running page again on return', async () => {
+        const p = page({statuses: [running(0), running(0), running(1), finished()]});
+        const bottom = p.context.panelControllers.bottom;
+        await p.context.showRunDialog();
+        await p.context.startRun();
+        p.context.selectedYamlPath = '/data/p2/results.yaml';
+        expect(p.context.runLocksOpenPage()).toBe(false);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(bottom.setTextRunLocked).toHaveBeenLastCalledWith(false);
+        expect(p.els.runPausedNotice.hidden).toBe(true);
+        p.context.selectedYamlPath = '/data/p1/results.yaml';
+        expect(p.context.runLocksOpenPage()).toBe(true);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(bottom.setTextRunLocked).toHaveBeenLastCalledWith(true);
+        expect(p.els.runPausedNotice.hidden).toBe(false);
+    });
+
+    it('is not locked before any run', () => {
+        expect(page().context.runLocksOpenPage()).toBe(false);
+    });
 });
