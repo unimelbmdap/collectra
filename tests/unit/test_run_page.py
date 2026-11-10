@@ -346,3 +346,18 @@ def test_report_lists_only_failures_as_failed():
         [TaskOutcome("a", "ran", ""), TaskOutcome("b", "failed", "Boom: x")]
     )
     assert report.failed == [TaskOutcome("b", "failed", "Boom: x")]
+
+
+def test_cli_force_with_a_failed_save_behaves_as_it_always_has(
+    tmp_path, folder, monkeypatch
+):
+    """Pinned: ``--force`` drops the old output before saving the new one."""
+    old = saved(folder, "label")
+    path = yaml.safe_load((folder / "results.yaml").read_text())["label"]["path"]
+    fail_saving(monkeypatch, "label")
+    RAN.append("earlier")  # so the forced run writes different text
+    build(tmp_path).run(files=[str(folder)], force=True)
+    data = yaml.safe_load((folder / "results.yaml").read_text())
+    assert data["label"]["path"] == path
+    assert (folder / path).read_text() != old
+    assert (folder / path).read_text().startswith("label of words")

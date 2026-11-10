@@ -1466,6 +1466,12 @@ class Pipeline(LenientAttributes, BaseModel):
             previous.restore()
             previous = None
             detail = "produced nothing, kept existing output"
+        elif previous is not None and node.name not in kwargs.get("rerun", set()):
+            # A forced run (the CLI's --force) drops the old output before the
+            # new one is saved, as it always has. Only a page run's re-runs
+            # keep it until the new output is saved.
+            previous.discard()
+            previous = None
 
         self._update_node_status(node, bool(results))
         self.render("workflow_run", file=kwargs.get("value", ""), render=render)
