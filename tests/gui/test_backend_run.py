@@ -34,6 +34,7 @@ class FakePipeline:
         )
         self.plan_error = None
         self.run_error = None
+        self.bad_report = None
         self.fail = set()
         self.entered = queue.Queue()
         self.gate = threading.Semaphore(0)
@@ -51,6 +52,8 @@ class FakePipeline:
         self.log_at_start = log.read_text() if log.exists() else None
         if self.run_error:
             raise self.run_error
+        if self.bad_report is not None:
+            return self.bad_report
         outcomes = []
         for task in plan.tasks:
             if task.action == "skip":
@@ -377,7 +380,7 @@ def write_calls(results):
             "page", [], str(results), "north"
         ),
         "rotate_image_clockwise": lambda b: b.rotate_image_clockwise("page"),
-        "git_action": lambda b: b.git_action("status"),
+        "git_action": lambda b: b.git_action("pull"),
         "update_page_text": lambda b: b.update_page_text("markdown", "# edited"),
         "update_node_data": lambda b: b.update_node_data("words", "edited"),
         "update_node_coordinates": lambda b: b.update_node_coordinates(
@@ -492,3 +495,173 @@ def test_run_guard_without_folder_uses_open_page(backend, pipeline, page):
     finish(backend, pipeline, tasks=2)
     assert backend._run_guard() is None
     assert GUIBackend(pipeline)._run_guard() is None
+
+
+# One shared lock, atomic with every write
+
+
+def page_writers(results):
+    return {k: v for k, v in write_calls(results).items() if k != "git_action"}
+
+
+@pytest.mark.parametrize("name", sorted(page_writers(Path("r/results.yaml"))))
+def test_every_page_writer_holds_the_shared_edit_lock(backend, page, name):
+    call = page_writers(page / "results.yaml")[name]
+    backend._text_save_lock.acquire()
+    try:
+        thread = threading.Thread(target=call, args=(backend,), daemon=True)
+        thread.start()
+        thread.join(0.1)
+        assert thread.is_alive(), f"{name} wrote without the shared lock"
+    finally:
+        backend._text_save_lock.release()
+    thread.join(TIMEOUT)
+    assert not thread.is_alive()
+
+
+def test_start_run_waits_for_a_write_in_progress(backend, pipeline, page):
+    inside, release = threading.Event(), threading.Event()
+    save = backend._save_collectra_file
+
+    def slow_save():
+        inside.set()
+        assert release.wait(TIMEOUT)
+        save()
+
+    results = {}
+    with patch.object(backend, "_save_collectra_file", side_effect=slow_save):
+        writer = threading.Thread(
+            target=lambda: results.update(
+                edit=backend.update_node_data("words", "typed")
+            ),
+            daemon=True,
+        )
+        writer.start()
+        assert inside.wait(TIMEOUT)
+        starter = threading.Thread(
+            target=lambda: results.update(start=backend.start_run()), daemon=True
+        )
+        starter.start()
+        starter.join(0.1)
+        assert starter.is_alive(), "start_run did not wait for the edit"
+        assert pipeline.folders == []
+        assert not (page / run_log.LOG_NAME).exists()
+        release.set()
+        writer.join(TIMEOUT)
+        starter.join(TIMEOUT)
+    assert results["edit"]["success"]
+    assert results["start"] == {"success": True}
+    wait_started(pipeline)
+    finish(backend, pipeline, tasks=2)
+    assert pipeline.folders == [page.resolve()]
+
+
+# Git
+
+
+def test_start_run_is_refused_while_git_runs(backend, pipeline, page):
+    backend._git_lock.acquire()
+    try:
+        result = backend.start_run()
+    finally:
+        backend._git_lock.release()
+    assert result == {
+        "success": False,
+        "error": "A Git operation is running; try again when it finishes",
+    }
+    assert pipeline.folders == []
+    assert not (page / run_log.LOG_NAME).exists()
+    assert backend.get_run_status()["running"] is False
+    assert backend.start_run()["success"]
+    wait_started(pipeline)
+    finish(backend, pipeline, tasks=2)
+
+
+@pytest.mark.parametrize("action", ["pull", "save", "merge", "abort", "push"])
+def test_changing_git_actions_are_refused_on_every_page_during_a_run(
+    tmp_path, backend, pipeline, action
+):
+    other = make_page(tmp_path, "p2")
+    assert backend.start_run()["success"]
+    wait_started(pipeline)
+    assert backend.load_yaml(str(other / "results.yaml"))["success"]
+    with patch("collectra.gui.source_control.run_git") as run_git:
+        assert backend.git_action(action, "message") == GUARD
+    run_git.assert_not_called()
+    finish(backend, pipeline, tasks=2)
+    with patch("collectra.gui.source_control.run_git", return_value={"ok": 1}):
+        assert backend.git_action(action, "message") == {"ok": 1}
+
+
+def test_git_status_stays_allowed_during_a_run(backend, pipeline):
+    assert backend.start_run()["success"]
+    wait_started(pipeline)
+    with patch("collectra.gui.source_control.run_git", return_value={"ok": 1}):
+        assert backend.git_action("status") == {"ok": 1}
+    finish(backend, pipeline, tasks=2)
+
+
+# Ending a run safely
+
+
+def test_failed_reload_refuses_edits_until_the_page_is_reloaded(
+    backend, pipeline, page
+):
+    assert backend.start_run()["success"]
+    wait_started(pipeline)
+    with patch.object(
+        backend, "_load_yaml", return_value={"success": False, "error": "bad yaml"}
+    ):
+        status = finish(backend, pipeline, tasks=2)
+    assert status["error"] == ("The page could not be reloaded after the run: bad yaml")
+    stale = {
+        "success": False,
+        "error": "The run changed this page; open it again before editing",
+    }
+    for name, call in page_writers(page / "results.yaml").items():
+        assert call(backend) == stale, name
+    assert yaml.safe_load((page / "results.yaml").read_text())["words"]["data"] == (
+        "from tidy"
+    )
+    assert backend.load_yaml(str(page / "results.yaml"))["success"]
+    assert backend._run_guard() is None
+    assert backend.update_node_data("words", "after")["success"]
+
+
+def test_a_run_page_result_that_is_not_a_report_still_ends_the_run(
+    backend, pipeline, page
+):
+    pipeline.bad_report = "not a report"
+    assert backend.start_run()["success"]
+    status = finish(backend, pipeline)
+    assert status["running"] is False
+    assert status["error"] == "run_page returned str, not a RunReport"
+    assert status["summary"] == "0 ran, 1 skipped, 2 failed"
+    assert "  ocr  failed: TypeError: run_page returned str" in log_text(page)
+    assert backend._run_guard(page) is None
+    assert not backend._run_lock.locked()
+
+
+def test_an_error_while_ending_the_run_still_releases_the_lock(backend, pipeline, page):
+    assert backend.start_run()["success"]
+    wait_started(pipeline)
+    with patch.object(run_log, "summarize", side_effect=RuntimeError("oops")):
+        status = finish(backend, pipeline, tasks=2)
+    assert status["running"] is False
+    assert status["error"] == "The run could not be recorded: oops"
+    assert not backend._run_lock.locked()
+    assert backend.start_run()["success"]
+    wait_started(pipeline)
+    finish(backend, pipeline, tasks=2)
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_a_base_exception_in_the_run_is_recorded_and_re_raised(backend, pipeline, page):
+    pipeline.run_error = SystemExit("shutting down")
+    assert backend.start_run()["success"]
+    status = finish(backend, pipeline)
+    assert status["running"] is False
+    assert status["error"] == "shutting down"
+    assert status["summary"] == "0 ran, 1 skipped, 2 failed"
+    assert "  ocr  failed: SystemExit: shutting down" in log_text(page)
+    assert not backend._run_lock.locked()

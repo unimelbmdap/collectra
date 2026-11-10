@@ -15,6 +15,7 @@ import re
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -43,6 +44,7 @@ class ImageFormat(enum.Enum):
 
 
 RUN_IN_PROGRESS = "A run is in progress on this page"
+STALE_PAGE = "The run changed this page; open it again before editing"
 
 
 @dataclass
@@ -57,6 +59,23 @@ class _RunState:
     stop: bool = False
     summary: str | None = None
     error: str | None = None
+
+
+def _crashed_report(plan, error: BaseException):
+    """The report of a run that broke: planned skips kept, the rest failed."""
+    from collectra.pipelines.run_plan import RunReport, TaskOutcome
+
+    detail = f"{type(error).__name__}: {error}"
+    return RunReport(
+        [
+            (
+                TaskOutcome(task.name, "skipped", "kept existing output")
+                if task.action == "skip"
+                else TaskOutcome(task.name, "failed", detail)
+            )
+            for task in plan.tasks
+        ]
+    )
 
 
 class GUIBackend:
@@ -83,6 +102,8 @@ class GUIBackend:
         self._run_lock = threading.Lock()
         self._run_state: _RunState | None = None
         self._run_thread: threading.Thread | None = None
+        # A page the run changed but that could not be reloaded afterwards.
+        self._stale_folder: Path | None = None
         self._restart_requested = False
         self._restart_required = False
         self._pipeline = pipeline
@@ -176,11 +197,12 @@ class GUIBackend:
 
         if not self._yaml_path:
             return {"success": False, "error": "Open a results folder first"}
-        if guard := self._run_guard():
-            return guard
         if not self._git_lock.acquire(blocking=False):
             return {"success": False, "error": "A Git operation is already running"}
         try:
+            # Git works on the whole repository, which may hold the running page.
+            if action != "status" and self._run_lock.locked():
+                return {"success": False, "error": RUN_IN_PROGRESS}
             return run_git(Path(self._yaml_path).parent, action, message, repository)
         finally:
             self._git_lock.release()
@@ -196,9 +218,22 @@ class GUIBackend:
             if self._yaml_path is None:
                 return None
             folder = Path(self._yaml_path).parent
-        if state is not None and state.running and state.folder == folder.resolve():
+        folder = folder.resolve()
+        if state is not None and state.running and state.folder == folder:
             return {"success": False, "error": RUN_IN_PROGRESS}
+        if folder == self._stale_folder:
+            return {"success": False, "error": STALE_PAGE}
         return None
+
+    @contextmanager
+    def _editing(self, folder: Path | None = None):
+        """Hold the shared edit lock for a write; yields the guard's error or None.
+
+        start_run takes the same lock, so a write that passed the guard has
+        finished before a run begins.
+        """
+        with self._text_save_lock:
+            yield self._run_guard(folder)
 
     def get_run_preview(self) -> dict:
         """Which tasks a run of the open page would run, re-run or skip."""
@@ -243,10 +278,14 @@ class GUIBackend:
             return {"success": False, "error": "A run is already in progress"}
         previous = self._run_state
         try:
+            if self._git_lock.locked():
+                raise RuntimeError(
+                    "A Git operation is running; try again when it finishes"
+                )
             folder = self._run_folder()
-            plan = self._pipeline.plan_page_run(folder)
             with self._text_save_lock:
-                # Taken while no text or mask edit is half-way through.
+                # Taken once no edit is half-way through; later edits are refused.
+                plan = self._pipeline.plan_page_run(folder)
                 self._run_state = _RunState(folder, total=len(plan.to_run))
             run_log.begin_entry(
                 folder,
@@ -268,7 +307,7 @@ class GUIBackend:
         return {"success": True}
 
     def _run_in_background(self, state: _RunState, plan) -> None:
-        from collectra.pipelines.run_plan import RunReport, TaskOutcome
+        from collectra.pipelines.run_plan import RunReport
 
         def should_stop() -> bool:
             # Called before each planned task starts.
@@ -277,41 +316,50 @@ class GUIBackend:
             return state.stop
 
         began = time.monotonic()
-        report = None
+        crash = None
         try:
             report = self._pipeline.run_page(state.folder, plan, should_stop)
-        except Exception as error:
-            state.error = str(error)
-            detail = f"{type(error).__name__}: {error}"
-            report = RunReport(
-                [
-                    (
-                        TaskOutcome(task.name, "skipped", "kept existing output")
-                        if task.action == "skip"
-                        else TaskOutcome(task.name, "failed", detail)
-                    )
-                    for task in plan.tasks
-                ]
-            )
-        finally:
-            if report is not None:
-                state.summary = run_log.summarize(report)
-                state.done = sum(
-                    outcome.status in ("ran", "re-ran", "failed")
-                    for outcome in report.outcomes
+            if not isinstance(report, RunReport):
+                raise TypeError(
+                    f"run_page returned {type(report).__name__}, not a RunReport"
                 )
-                try:
-                    run_log.finish_entry(state.folder, report, time.monotonic() - began)
-                except Exception as error:
-                    state.error = f"The results were kept, but the run log: {error}"
+        except BaseException as error:
+            crash = error
+            state.error = str(error)
+            report = _crashed_report(plan, error)
+        try:
+            state.summary = run_log.summarize(report)
+            state.done = sum(
+                outcome.status in ("ran", "re-ran", "failed")
+                for outcome in report.outcomes
+            )
+            try:
+                run_log.finish_entry(state.folder, report, time.monotonic() - began)
+            except Exception as error:
+                state.error = f"The results were kept, but the run log: {error}"
+            self._reload_after_run(state)
+        except Exception as error:
+            state.error = f"The run could not be recorded: {error}"
+        finally:
             with self._text_save_lock:
-                if self._yaml_path and (
-                    Path(self._yaml_path).parent.resolve() == state.folder
-                ):
-                    # Later edits must not save the page as it was before the run.
-                    self._load_yaml(self._yaml_path)
                 state.running = False
             self._run_lock.release()
+        if crash is not None and not isinstance(crash, Exception):
+            raise crash
+
+    def _reload_after_run(self, state: _RunState) -> None:
+        """Reload the open page if it is the run's, so no edit saves the old one."""
+        with self._text_save_lock:
+            if self._yaml_path and (
+                Path(self._yaml_path).parent.resolve() == state.folder
+            ):
+                result = self._load_yaml(self._yaml_path)
+                if not result["success"]:
+                    self._stale_folder = state.folder
+                    state.error = (
+                        "The page could not be reloaded after the run: "
+                        f"{result['error']}"
+                    )
 
     def get_run_status(self) -> dict:
         """Progress of the latest run, for the frontend to poll."""
@@ -1058,42 +1106,46 @@ class GUIBackend:
 
     def rotate_image_clockwise(self, node_id: str) -> dict:
         """Persist a clockwise quarter-turn for an image and descendant images."""
-        from collectra.types.images import Image, Orientation
-        from collectra.types.links import Link
-        from collectra.utils import load_class_from_string
+        with self._editing() as refused:
+            if refused:
+                return refused
+            from collectra.types.images import Image, Orientation
+            from collectra.types.links import Link
+            from collectra.utils import load_class_from_string
 
-        if guard := self._run_guard():
-            return guard
-        changes = []
-        try:
-            context = self._display_context()
-            item = context.artefact(self._graph.resolve_id(node_id))
-            if isinstance(item, Link):
-                item = item.resolve()
-            if not isinstance(item, Image):
-                raise ValueError("Only image artefacts can be rotated")
-            pending, seen = [item.id], set()
-            while pending:
-                current = pending.pop()
-                if current in seen:
-                    continue
-                seen.add(current)
-                pending.extend(self._graph.children(current))
-                node = self._graph.get_node(current)
-                if node and issubclass(load_class_from_string(node.type), Image):
-                    orientation = Orientation.from_string(node.orientation)
-                    next_orientation = Orientation(
-                        (orientation.value + 1) % 4
-                    ).to_string()
-                    changes.append((node, node.orientation, next_orientation))
-            for node, previous, updated in changes:
-                node.orientation = updated
-            self._save_collectra_file()
-            return {"success": True, "updated_ids": [node.id for node, _, _ in changes]}
-        except Exception as error:
-            for node, previous, updated in changes:
-                node.orientation = previous
-            return {"success": False, "error": str(error)}
+            changes = []
+            try:
+                context = self._display_context()
+                item = context.artefact(self._graph.resolve_id(node_id))
+                if isinstance(item, Link):
+                    item = item.resolve()
+                if not isinstance(item, Image):
+                    raise ValueError("Only image artefacts can be rotated")
+                pending, seen = [item.id], set()
+                while pending:
+                    current = pending.pop()
+                    if current in seen:
+                        continue
+                    seen.add(current)
+                    pending.extend(self._graph.children(current))
+                    node = self._graph.get_node(current)
+                    if node and issubclass(load_class_from_string(node.type), Image):
+                        orientation = Orientation.from_string(node.orientation)
+                        next_orientation = Orientation(
+                            (orientation.value + 1) % 4
+                        ).to_string()
+                        changes.append((node, node.orientation, next_orientation))
+                for node, previous, updated in changes:
+                    node.orientation = updated
+                self._save_collectra_file()
+                return {
+                    "success": True,
+                    "updated_ids": [node.id for node, _, _ in changes],
+                }
+            except Exception as error:
+                for node, previous, updated in changes:
+                    node.orientation = previous
+                return {"success": False, "error": str(error)}
 
     def update_segmentation_mask(
         self, node_id: str, strokes: list, results_path: str, orientation: str
@@ -1226,6 +1278,7 @@ class GUIBackend:
             graph = CollectraGraph.from_collectra_file(collectra_file)
             self._collectra_file = collectra_file
             self._graph = graph
+            self._stale_folder = None
             previous_path = self._yaml_path
             self._yaml_path = str(self._collectra_file.results_path)
             if self._session_cache is not None and previous_path != self._yaml_path:
@@ -1293,22 +1346,23 @@ class GUIBackend:
         Returns:
             dict with 'success' or 'error'
         """
-        if self._yaml_path is None:
-            return {"success": False, "error": "No page loaded."}
+        with self._editing() as refused:
+            if refused:
+                return refused
+            if self._yaml_path is None:
+                return {"success": False, "error": "No page loaded."}
 
-        if guard := self._run_guard():
-            return guard
-        filenames = {"markdown": "markdown.md", "tei": "tei.xml"}
-        filename = filenames.get(kind)
-        if filename is None:
-            return {"success": False, "error": f"Unknown kind: {kind}"}
+            filenames = {"markdown": "markdown.md", "tei": "tei.xml"}
+            filename = filenames.get(kind)
+            if filename is None:
+                return {"success": False, "error": f"Unknown kind: {kind}"}
 
-        try:
-            page_dir = Path(self._yaml_path).parent
-            (page_dir / filename).write_text(content, encoding="utf-8")
-            return {"success": True}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+            try:
+                page_dir = Path(self._yaml_path).parent
+                (page_dir / filename).write_text(content, encoding="utf-8")
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
     def get_all_nodes(self) -> dict:
         """
@@ -1463,19 +1517,20 @@ class GUIBackend:
         Returns:
             dict with 'success' or 'error'
         """
-        if guard := self._run_guard():
-            return guard
-        try:
-            if self._graph is None:
-                raise ValueError("No graph loaded. Call load_yaml first.")
-            # node_id may be "" when creating a new Text node via crop_id — only
-            # resolve a real, non-empty id (an empty label would never match).
-            resolved_id = self._graph.resolve_id(node_id) if node_id else node_id
-            self._graph.set_data(resolved_id, new_data, crop_id)
-            self._save_collectra_file()
-            return self.get_all_nodes_for_grid()
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        with self._editing() as refused:
+            if refused:
+                return refused
+            try:
+                if self._graph is None:
+                    raise ValueError("No graph loaded. Call load_yaml first.")
+                # node_id may be "" when creating a new Text node via crop_id — only
+                # resolve a real, non-empty id (an empty label would never match).
+                resolved_id = self._graph.resolve_id(node_id) if node_id else node_id
+                self._graph.set_data(resolved_id, new_data, crop_id)
+                self._save_collectra_file()
+                return self.get_all_nodes_for_grid()
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
     def update_node_coordinates(
         self, node_id: str, crop_region: dict, view_id: str = ""
@@ -1490,21 +1545,24 @@ class GUIBackend:
         Returns:
             dict with 'success' and updated rows, or 'error'
         """
-        if guard := self._run_guard():
-            return guard
-        try:
-            if self._graph is None:
-                raise ValueError("No graph loaded. Call load_yaml first.")
-            if view_id:
-                context = self._display_context()
-                crop_region = context.region(
-                    context.artefact(view_id), crop_region, inverse=True
+        with self._editing() as refused:
+            if refused:
+                return refused
+            try:
+                if self._graph is None:
+                    raise ValueError("No graph loaded. Call load_yaml first.")
+                if view_id:
+                    context = self._display_context()
+                    crop_region = context.region(
+                        context.artefact(view_id), crop_region, inverse=True
+                    )
+                self._graph.set_crop_region(
+                    self._graph.resolve_id(node_id), crop_region
                 )
-            self._graph.set_crop_region(self._graph.resolve_id(node_id), crop_region)
-            self._save_collectra_file()
-            return self.get_all_nodes_for_grid()
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+                self._save_collectra_file()
+                return self.get_all_nodes_for_grid()
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
     def _next_annotation_id(self, label: str) -> str:
         """Matches the pipeline's scheme (label+N) — reuses the smallest
@@ -1549,86 +1607,96 @@ class GUIBackend:
         Returns:
             dict with updated grid data or 'error'
         """
-        if self._graph is None:
-            return {"success": False, "error": "No graph loaded. Call load_yaml first."}
+        with self._editing() as refused:
+            if refused:
+                return refused
+            if self._graph is None:
+                return {
+                    "success": False,
+                    "error": "No graph loaded. Call load_yaml first.",
+                }
 
-        if guard := self._run_guard():
-            return guard
-        if not image_path:
-            return {
-                "success": False,
-                "error": "Image path is required to create annotation.",
-            }
+            if not image_path:
+                return {
+                    "success": False,
+                    "error": "Image path is required to create annotation.",
+                }
 
-        try:
-            if view_id:
-                context = self._display_context()
-                image = context.artefact(view_id)
-                crop_region = context.region(image, crop_region, inverse=True)
-                image_path = str(image.get_path())
-                parent_id = parent_id or image.id
-            # Find root Image node
-            root_image_id = parent_id if view_id else None
-            for node_id in self._graph.nodes:
-                node_type = self._graph.get_type(node_id)
-                if "Image" in node_type and "ImageCrop" not in node_type:
-                    root_image_id = node_id
-                    break
+            try:
+                if view_id:
+                    context = self._display_context()
+                    image = context.artefact(view_id)
+                    crop_region = context.region(image, crop_region, inverse=True)
+                    image_path = str(image.get_path())
+                    parent_id = parent_id or image.id
+                # Find root Image node
+                root_image_id = parent_id if view_id else None
+                for node_id in self._graph.nodes:
+                    node_type = self._graph.get_type(node_id)
+                    if "Image" in node_type and "ImageCrop" not in node_type:
+                        root_image_id = node_id
+                        break
 
-            if root_image_id is None:
-                return {"success": False, "error": "No root Image node found in graph."}
+                if root_image_id is None:
+                    return {
+                        "success": False,
+                        "error": "No root Image node found in graph.",
+                    }
 
-            orientation = "north"
+                orientation = "north"
 
-            if parent_id:
-                parent_node = self._graph.get_node(parent_id)
-                if parent_node:
-                    orientation = parent_node.orientation
+                if parent_id:
+                    parent_node = self._graph.get_node(parent_id)
+                    if parent_node:
+                        orientation = parent_node.orientation
 
-            crop_id = crop_id.strip() or self._next_annotation_id(label)
-            if crop_id in self._graph.nodes:
-                return {"success": False, "error": f"Id '{crop_id}' already exists."}
+                crop_id = crop_id.strip() or self._next_annotation_id(label)
+                if crop_id in self._graph.nodes:
+                    return {
+                        "success": False,
+                        "error": f"Id '{crop_id}' already exists.",
+                    }
 
-            if self._yaml_path is None:
-                raise ValueError("YAML path is not set.")
+                if self._yaml_path is None:
+                    raise ValueError("YAML path is not set.")
 
-            asset_path = Path(image_path)
-            if view_id:
-                try:
-                    asset_path = asset_path.relative_to(context.directory)
-                except ValueError:
-                    pass
-            else:
-                asset_path = Path(asset_path.name)
-            # Create ImageCrop node
-            crop_data = {
-                "label": label,
-                "type": "collectra.ImageCrop",
-                "id": crop_id,
-                "parents": parent_id if parent_id else root_image_id,
-                "orientation": orientation,
-                "data": str(asset_path),
-                "name": name,
-                **crop_region,
-            }
-            self._graph.add_node(crop_data)
-            self._global_labels.add(label)
-            # Update global label counts if in parent folder mode
-            if self._collectra_folders:
-                self._global_label_counts[label] = (
-                    self._global_label_counts.get(label, 0) + 1
-                )
-            # Save and return updated grid
-            self._save_collectra_file()
-            result = self.get_all_nodes_for_grid()
-            # Include updated global stats in response
-            if self._collectra_folders:
-                result["global_label_counts"] = self._global_label_counts
-                result["global_total"] = sum(self._global_label_counts.values())
-            return result
+                asset_path = Path(image_path)
+                if view_id:
+                    try:
+                        asset_path = asset_path.relative_to(context.directory)
+                    except ValueError:
+                        pass
+                else:
+                    asset_path = Path(asset_path.name)
+                # Create ImageCrop node
+                crop_data = {
+                    "label": label,
+                    "type": "collectra.ImageCrop",
+                    "id": crop_id,
+                    "parents": parent_id if parent_id else root_image_id,
+                    "orientation": orientation,
+                    "data": str(asset_path),
+                    "name": name,
+                    **crop_region,
+                }
+                self._graph.add_node(crop_data)
+                self._global_labels.add(label)
+                # Update global label counts if in parent folder mode
+                if self._collectra_folders:
+                    self._global_label_counts[label] = (
+                        self._global_label_counts.get(label, 0) + 1
+                    )
+                # Save and return updated grid
+                self._save_collectra_file()
+                result = self.get_all_nodes_for_grid()
+                # Include updated global stats in response
+                if self._collectra_folders:
+                    result["global_label_counts"] = self._global_label_counts
+                    result["global_total"] = sum(self._global_label_counts.values())
+                return result
 
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
     def _node_and_descendants(self, node_id: str) -> list[str]:
         """The node followed by every descendant (any type, any depth),
@@ -2071,18 +2139,22 @@ class GUIBackend:
         Returns:
             dict with updated grid data and 'deleted_ids', or 'error'
         """
-        if self._graph is None:
-            return {"success": False, "error": "No graph loaded. Call load_yaml first."}
+        with self._editing() as refused:
+            if refused:
+                return refused
+            if self._graph is None:
+                return {
+                    "success": False,
+                    "error": "No graph loaded. Call load_yaml first.",
+                }
 
-        if guard := self._run_guard():
-            return guard
-        try:
-            node_id = self._graph.resolve_id(node_id)
-            if node_id not in self._graph.nodes:
-                return {"success": False, "error": f"Node '{node_id}' not found"}
-            return self._remove_nodes(self._node_and_descendants(node_id)[1:])
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+            try:
+                node_id = self._graph.resolve_id(node_id)
+                if node_id not in self._graph.nodes:
+                    return {"success": False, "error": f"Node '{node_id}' not found"}
+                return self._remove_nodes(self._node_and_descendants(node_id)[1:])
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
     def delete_annotation(self, node_id: str) -> dict:
         """
@@ -2100,20 +2172,24 @@ class GUIBackend:
         Returns:
             dict with updated grid data on success, or 'error' on failure
         """
-        if self._graph is None:
-            return {"success": False, "error": "No graph loaded. Call load_yaml first."}
+        with self._editing() as refused:
+            if refused:
+                return refused
+            if self._graph is None:
+                return {
+                    "success": False,
+                    "error": "No graph loaded. Call load_yaml first.",
+                }
 
-        if guard := self._run_guard():
-            return guard
-        try:
-            node_id = self._graph.resolve_id(node_id)
+            try:
+                node_id = self._graph.resolve_id(node_id)
 
-            # Collect every descendant before deleting anything — walking the
-            # graph while removing nodes from it would skip some.
-            return self._remove_nodes(self._node_and_descendants(node_id))
+                # Collect every descendant before deleting anything — walking the
+                # graph while removing nodes from it would skip some.
+                return self._remove_nodes(self._node_and_descendants(node_id))
 
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
     def rename_annotation(
         self,
@@ -2135,24 +2211,28 @@ class GUIBackend:
         Returns:
             dict with updated grid data on success, or 'error' on failure
         """
-        if self._graph is None:
-            return {"success": False, "error": "No graph loaded. Call load_yaml first."}
+        with self._editing() as refused:
+            if refused:
+                return refused
+            if self._graph is None:
+                return {
+                    "success": False,
+                    "error": "No graph loaded. Call load_yaml first.",
+                }
 
-        if guard := self._run_guard():
-            return guard
-        try:
-            node_id = self._graph.resolve_id(node_id)
-            if new_id and new_id != node_id:
-                self._graph.rename_id(node_id, new_id)
-                node_id = new_id
-            if label is not None:
-                self._graph.set_label(node_id, label)
-            self._graph.set_name(node_id, name)
-            self._save_collectra_file()
-            return self.get_all_nodes_for_grid()
+            try:
+                node_id = self._graph.resolve_id(node_id)
+                if new_id and new_id != node_id:
+                    self._graph.rename_id(node_id, new_id)
+                    node_id = new_id
+                if label is not None:
+                    self._graph.set_label(node_id, label)
+                self._graph.set_name(node_id, name)
+                self._save_collectra_file()
+                return self.get_all_nodes_for_grid()
 
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
     def get_link_names(self) -> dict:
         """The names a Link can be given: those used on this page and, when a
@@ -2173,38 +2253,42 @@ class GUIBackend:
         Returns:
             dict with updated grid data and the Link's (possibly new) 'id', or 'error'
         """
-        from collectra.types.links import is_link_type
+        with self._editing() as refused:
+            if refused:
+                return refused
+            from collectra.types.links import is_link_type
 
-        if self._graph is None:
-            return {"success": False, "error": "No graph loaded. Call load_yaml first."}
+            if self._graph is None:
+                return {
+                    "success": False,
+                    "error": "No graph loaded. Call load_yaml first.",
+                }
 
-        if guard := self._run_guard():
-            return guard
-        try:
-            link_id = self._graph.resolve_id(link_id)
-            node = self._graph.get_node(link_id)
-            if node is None:
-                return {"success": False, "error": f"Node '{link_id}' not found"}
-            if not is_link_type(node.type):
-                return {"success": False, "error": f"'{link_id}' is not a Link"}
-            name = (name or "").strip()
-            if not name:
-                return {"success": False, "error": "A Link needs a name"}
-            old_name = node.label
-            new_id = link_id
-            if name != old_name:
-                if link_id == old_name:
-                    new_id = name
-                    if new_id in self._graph.nodes:
-                        new_id = f"{name}-{uuid.uuid4().hex[:8]}"
-                    self._graph.rename_id(link_id, new_id)
-                self._graph.set_label(new_id, name)
-                self._graph.forget_label_if_unused(old_name)
-                self._global_link_names.add(name)
-                self._save_collectra_file()
-            return {**self.get_all_nodes_for_grid(), "id": new_id}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+            try:
+                link_id = self._graph.resolve_id(link_id)
+                node = self._graph.get_node(link_id)
+                if node is None:
+                    return {"success": False, "error": f"Node '{link_id}' not found"}
+                if not is_link_type(node.type):
+                    return {"success": False, "error": f"'{link_id}' is not a Link"}
+                name = (name or "").strip()
+                if not name:
+                    return {"success": False, "error": "A Link needs a name"}
+                old_name = node.label
+                new_id = link_id
+                if name != old_name:
+                    if link_id == old_name:
+                        new_id = name
+                        if new_id in self._graph.nodes:
+                            new_id = f"{name}-{uuid.uuid4().hex[:8]}"
+                        self._graph.rename_id(link_id, new_id)
+                    self._graph.set_label(new_id, name)
+                    self._graph.forget_label_if_unused(old_name)
+                    self._global_link_names.add(name)
+                    self._save_collectra_file()
+                return {**self.get_all_nodes_for_grid(), "id": new_id}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
     def create_link(self, parent_id: str, name: str) -> dict:
         """
@@ -2216,34 +2300,38 @@ class GUIBackend:
         Returns:
             dict with updated grid data and the Link's 'id', or 'error'
         """
-        if self._graph is None:
-            return {"success": False, "error": "No graph loaded. Call load_yaml first."}
-
-        if guard := self._run_guard():
-            return guard
-        try:
-            parent_id = self._graph.resolve_id(parent_id)
-            if self._graph.get_node(parent_id) is None:
-                return {"success": False, "error": f"Node '{parent_id}' not found"}
-            name = (name or "").strip()
-            if not name:
-                return {"success": False, "error": "A Link needs a name"}
-            link_id = name
-            if link_id in self._graph.nodes:
-                link_id = f"{name}-{uuid.uuid4().hex[:8]}"
-            self._graph.add_node(
-                {
-                    "label": name,
-                    "type": "collectra.Link",
-                    "id": link_id,
-                    "parents": parent_id,
+        with self._editing() as refused:
+            if refused:
+                return refused
+            if self._graph is None:
+                return {
+                    "success": False,
+                    "error": "No graph loaded. Call load_yaml first.",
                 }
-            )
-            self._global_link_names.add(name)
-            self._save_collectra_file()
-            return {**self.get_all_nodes_for_grid(), "id": link_id}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+
+            try:
+                parent_id = self._graph.resolve_id(parent_id)
+                if self._graph.get_node(parent_id) is None:
+                    return {"success": False, "error": f"Node '{parent_id}' not found"}
+                name = (name or "").strip()
+                if not name:
+                    return {"success": False, "error": "A Link needs a name"}
+                link_id = name
+                if link_id in self._graph.nodes:
+                    link_id = f"{name}-{uuid.uuid4().hex[:8]}"
+                self._graph.add_node(
+                    {
+                        "label": name,
+                        "type": "collectra.Link",
+                        "id": link_id,
+                        "parents": parent_id,
+                    }
+                )
+                self._global_link_names.add(name)
+                self._save_collectra_file()
+                return {**self.get_all_nodes_for_grid(), "id": link_id}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
     def _save_collectra_file(self) -> None:
         """Persist GUI edits through the shared Collectra file writer."""
