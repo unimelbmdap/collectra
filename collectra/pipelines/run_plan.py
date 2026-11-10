@@ -18,9 +18,14 @@ class TaskPlan:
 
 @dataclass(frozen=True)
 class RunPlan:
-    """The plan for every task of a pipeline, in pipeline order."""
+    """The plan for every task of a pipeline, in pipeline order.
+
+    ``warnings`` says how the page's results differ from the pipeline, such as
+    another version having made them; they do not stop the run.
+    """
 
     tasks: list[TaskPlan]
+    warnings: tuple[str, ...] = ()
 
     @property
     def to_run(self) -> list[str]:

@@ -149,3 +149,76 @@ def test_results_that_do_not_match_the_pipeline_are_reported(tmp_path, folder):
     edit_results(folder, lambda data: data.pop("page"))
     with pytest.raises(ValueError, match="do not match"):
         build(tmp_path).plan_page_run(folder)
+
+
+def snapshot(root: Path) -> dict[str, bytes]:
+    """Every file under a folder, by relative path, with its bytes."""
+    return {
+        str(path.relative_to(root)): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def test_planning_writes_nothing(tmp_path, folder):
+    edit_results(folder, lambda data: data.pop("shouted"))
+    before = snapshot(folder.parent)
+    build(tmp_path).plan_page_run(folder)
+    assert snapshot(folder.parent) == before
+
+
+def test_a_folder_not_named_for_this_pipeline_is_refused_untouched(tmp_path, folder):
+    renamed = folder.with_name("a_renamed")
+    folder.rename(renamed)
+    before = snapshot(renamed)
+    assert set(yaml.safe_load(before["results.yaml"])) >= {"page", "described"}
+    with pytest.raises(ValueError, match=r"a_renamed.*\.pln"):
+        build(tmp_path).plan_page_run(renamed)
+    assert snapshot(renamed) == before
+    assert RAN == []
+
+
+def test_a_page_of_another_pipeline_is_refused_untouched(tmp_path, folder):
+    other = folder.with_suffix(".other")
+    folder.rename(other)
+    before = snapshot(other)
+    with pytest.raises(ValueError, match="cannot be run with the Plan pipeline"):
+        build(tmp_path).plan_page_run(other)
+    assert snapshot(other) == before
+
+
+def test_a_matching_page_has_no_warnings(tmp_path, folder):
+    assert build(tmp_path).plan_page_run(folder).warnings == ()
+
+
+def test_a_plan_made_without_warnings_has_none():
+    assert RunPlan([]).warnings == ()
+
+
+def test_a_different_pipeline_version_is_warned_about_not_blocked(tmp_path, folder):
+    pipeline = build(tmp_path)
+    pipeline.version = "0.2.0"
+    plan = pipeline.plan_page_run(folder)
+    assert plan.warnings == ("pipeline version 0.2.0, results made with 0.1.0",)
+    assert [task.name for task in plan.tasks] == ["describe", "shout"]
+
+
+def test_results_made_by_another_workflow_are_warned_about(tmp_path, folder):
+    def rename(data):
+        data["results"]["workflow"] = "Other"
+
+    edit_results(folder, rename)
+    plan = build(tmp_path).plan_page_run(folder)
+    assert plan.warnings == ("these results were made by the Other pipeline, not Plan",)
+
+
+def test_results_without_a_header_have_no_warnings(tmp_path, folder):
+    edit_results(folder, lambda data: data.pop("results"))
+    assert build(tmp_path).plan_page_run(folder).warnings == ()
+
+
+def test_a_page_image_that_cannot_be_read_is_reported(tmp_path, folder):
+    (folder.parent / "a.jpg").unlink()
+    (folder / "a.jpg").write_bytes(b"not an image")
+    with pytest.raises(ValueError, match="The page image a.jpg could not be read"):
+        build(tmp_path).plan_page_run(folder)

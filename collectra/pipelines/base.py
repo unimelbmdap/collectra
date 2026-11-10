@@ -31,6 +31,7 @@ import time
 import warnings
 from collections.abc import Callable
 from contextlib import nullcontext
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated, Any, ClassVar
 
@@ -631,6 +632,9 @@ class Pipeline(LenientAttributes, BaseModel):
             # starts that stops the run when it returns True.
             "rerun": set(kwargs.pop("rerun", set())),
             "stop": kwargs.pop("stop", _never),
+            # A page run reads a page's image from its copy in the results
+            # folder when the image its results refer to cannot be read.
+            "page_copy": kwargs.pop("page_copy", False),
         }
         options["task_overrides"] = kwargs.copy()
         return options
@@ -885,6 +889,8 @@ class Pipeline(LenientAttributes, BaseModel):
         self._set_task_contexts(context)
 
         self._init_input_data(starting_nodes, **{key: value})
+        if options.get("page_copy"):
+            self._read_page_copy(Path(value))
         return key, value
 
     def _process_single_file(
@@ -924,8 +930,14 @@ class Pipeline(LenientAttributes, BaseModel):
             ValueError: The results do not match this pipeline's tasks.
         """
         folder = Path(folder)
-        self._check_page(folder)
-        options = {"output": None, "usage": False, "render": False, "single": False}
+        differences = self._check_page(folder)
+        options = {
+            "output": None,
+            "usage": False,
+            "render": False,
+            "single": False,
+            "page_copy": True,
+        }
         self._setup_file(self._get_root_starting_nodes(), str(folder), options)
         flow = self.node_manager.flow
         tasks = {node.name: node for node in self.node_manager.get_task_nodes()}
@@ -940,38 +952,105 @@ class Pipeline(LenientAttributes, BaseModel):
             for name, node in tasks.items()
         }
         missing = {name for name, node in tasks.items() if not self._has_output(node)}
-        return plan_tasks(missing, children, order)
+        return replace(plan_tasks(missing, children, order), warnings=differences)
 
-    def _check_page(self, folder: Path) -> None:
+    def _check_page(self, folder: Path) -> tuple[str, ...]:
         """Check a results folder holds this pipeline's results and its image.
+
+        Nothing is written: a folder a run would treat as a new input, and so
+        start new results in, is refused.
+
+        Returns:
+            What differs between this pipeline and the one that made the
+            results, said for the log and the preview; it does not stop a run.
 
         Raises:
             FileNotFoundError: The folder has no results, or the image copy
                 its results refer to is missing.
-            ValueError: The results do not match this pipeline's tasks.
+            ValueError: The folder is not named as this pipeline's pages are,
+                or the results do not match this pipeline's tasks.
         """
         results_file = folder / self.RESULTS_FILE
         if not results_file.exists():
             raise FileNotFoundError(f"{results_file} does not exist.")
+        if not self._is_existing_collectra_folder(folder):
+            raise ValueError(
+                f"{folder.name} cannot be run with the {self.name} pipeline: "
+                f"its pages are folders whose names end in .{self.ext}."
+            )
         self._ensure_workflow_connected()
         root = self._get_root_input()
-        saved = yaml.safe_load(results_file.read_text()) or {}
-        pop_header(saved, source=folder)
-        if root not in saved:
+        header, entry = self._page_entry(folder, root)
+        if entry is None:
             raise ValueError(
                 f"The results in {folder.name} do not match this pipeline: "
                 f"there is no '{root}' entry."
             )
-        entry = saved[root]
-        image = (
-            entry.get("data", entry.get("path")) if isinstance(entry, dict) else None
-        )
-        # A run can record the copy by bare name or by the path it was fed.
-        name = Path(str(image)).name if image else None
+        name = self._page_image_name(entry)
         if name and not (folder / name).exists():
             raise FileNotFoundError(
                 f"{name} is missing from {folder}; the results refer to it."
             )
+        differences = []
+        if header.workflow and header.workflow != self.name:
+            differences.append(
+                f"these results were made by the {header.workflow} pipeline, "
+                f"not {self.name}"
+            )
+        if header.version and self.version and header.version != str(self.version):
+            differences.append(
+                f"pipeline version {self.version}, results made with {header.version}"
+            )
+        return tuple(differences)
+
+    def _page_entry(self, folder: Path, root: str) -> tuple[Results, Any]:
+        """A page's results header and its root entry (None if it has none)."""
+        saved = yaml.safe_load((folder / self.RESULTS_FILE).read_text()) or {}
+        header = pop_header(saved, source=folder)
+        return header, saved.get(root)
+
+    @staticmethod
+    def _page_image_name(entry: Any) -> str | None:
+        """The file name of the image a root entry refers to.
+
+        A run can record the copy by bare name or by the path it was fed.
+        """
+        image = (
+            entry.get("data", entry.get("path")) if isinstance(entry, dict) else None
+        )
+        return Path(str(image)).name if image else None
+
+    def _read_page_copy(self, folder: Path) -> None:
+        """Load a page's image from its copy in ``folder`` if it did not load.
+
+        The image the results refer to may have been moved or deleted since
+        the page was made; the copy in the folder is the same file. The
+        results are left as they are.
+
+        Raises:
+            ValueError: Neither the image nor its copy could be read.
+        """
+        root = self._get_root_input()
+        node = self.node_manager.resolve_node(root)
+        if node.items:
+            return
+        _, entry = self._page_entry(folder, root)
+        name = self._page_image_name(entry)
+        if not name:
+            raise ValueError(f"The page image of {folder.name} could not be read.")
+        item = dict(entry)
+        item.pop("path", None)
+        item["name"] = root
+        item["data"] = folder / name
+        try:
+            image = load_class_from_string(item.pop("type"))(**item)
+        except Exception as error:
+            raise ValueError(
+                f"The page image {name} could not be read: {error}"
+            ) from error
+        image.source_file = folder
+        node.add_item(image)
+        self._resolve_links()
 
     def run_page(
         self,
@@ -1001,7 +1080,7 @@ class Pipeline(LenientAttributes, BaseModel):
             return stopped
 
         rerun = {task.name for task in plan.tasks if task.action == "rerun"}
-        self.run(files=[str(folder)], rerun=rerun, stop=stop)
+        self.run(files=[str(folder)], rerun=rerun, stop=stop, page_copy=True)
         errors = "; ".join(self._run_errors)
         statuses: dict[str, str] = {}
         outcomes = []

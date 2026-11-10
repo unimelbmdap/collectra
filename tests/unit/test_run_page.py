@@ -361,3 +361,58 @@ def test_cli_force_with_a_failed_save_behaves_as_it_always_has(
     assert data["label"]["path"] == path
     assert (folder / path).read_text() != old
     assert (folder / path).read_text().startswith("label of words")
+
+
+def test_a_page_whose_original_image_is_gone_runs_from_its_copy(tmp_path, folder):
+    (folder.parent / "a.jpg").unlink()
+    assert (folder / "a.jpg").exists()
+    drop(folder, "words", "label")
+    pipeline = build(tmp_path)
+    plan = pipeline.plan_page_run(folder)
+    assert plan.to_run == ["ocr", "classify"]
+    report = pipeline.run_page(folder, plan)
+    assert statuses(report) == {"detect": "skipped", "ocr": "ran", "classify": "ran"}
+    assert RAN == ["ocr", "classify"]
+    assert saved(folder, "words") == "words 1"
+    # The results still record the image as they did.
+    data = yaml.safe_load((folder / "results.yaml").read_text())
+    assert data["page"]["data"] == str(folder.parent / "a.jpg")
+
+
+def test_a_page_image_that_cannot_be_read_fails_its_tasks(tmp_path, folder):
+    (folder.parent / "a.jpg").unlink()
+    drop(folder, "words")
+    pipeline = build(tmp_path)
+    plan = pipeline.plan_page_run(folder)
+    (folder / "a.jpg").write_bytes(b"not an image")
+    report = pipeline.run_page(folder, plan)
+    assert RAN == []
+    ocr = outcome(report, "ocr")
+    assert ocr.status == "failed"
+    assert "The page image a.jpg could not be read" in ocr.detail
+    assert outcome(report, "classify").status == "failed"
+
+
+def test_the_cli_does_not_read_the_copy_when_the_original_is_gone(
+    tmp_path, folder, caplog
+):
+    (folder.parent / "a.jpg").unlink()
+    drop(folder, "words")
+    with caplog.at_level("ERROR", logger="collectra"):
+        build(tmp_path).run(files=[str(folder)])
+    assert RAN == []
+    assert build(tmp_path)._extract_run_options({})["page_copy"] is False
+
+
+def test_a_page_image_given_only_by_name_that_is_gone_fails_its_tasks(tmp_path, folder):
+    (folder.parent / "a.jpg").unlink()
+    drop(folder, "words")
+    pipeline = build(tmp_path)
+    plan = pipeline.plan_page_run(folder)
+    path = folder / "results.yaml"
+    data = yaml.safe_load(path.read_text())
+    data["page"] = "elsewhere.jpg"
+    path.write_text(yaml.safe_dump(data))
+    report = pipeline.run_page(folder, plan)
+    assert RAN == []
+    assert "The page image of a.pge could not be read" in outcome(report, "ocr").detail
