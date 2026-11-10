@@ -61,9 +61,8 @@ def _outcome_line(name: str, status: str, detail: str) -> str:
     return f"  {name}  {text}"
 
 
-def finish_entry(folder: Path, report: RunReport, seconds: float) -> None:
-    """Append one line per task outcome and a summary line."""
-    lines = [_outcome_line(o.name, o.status, o.detail) for o in report.outcomes]
+def summarize(report: RunReport) -> str:
+    """How many tasks ran, were skipped, failed and were cancelled."""
     statuses = [outcome.status for outcome in report.outcomes]
     ran = statuses.count("ran") + statuses.count("re-ran")
     summary = (
@@ -72,5 +71,11 @@ def finish_entry(folder: Path, report: RunReport, seconds: float) -> None:
     )
     if statuses.count("cancelled"):
         summary += f", {statuses.count('cancelled')} cancelled"
-    lines.append(f"  result  {summary}, {seconds:.1f} s")
+    return summary
+
+
+def finish_entry(folder: Path, report: RunReport, seconds: float) -> None:
+    """Append one line per task outcome and a summary line."""
+    lines = [_outcome_line(o.name, o.status, o.detail) for o in report.outcomes]
+    lines.append(f"  result  {summarize(report)}, {seconds:.1f} s")
     _append(folder, lines)

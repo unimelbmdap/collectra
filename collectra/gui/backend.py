@@ -13,7 +13,9 @@ import enum
 import platform
 import re
 import threading
+import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,8 +23,9 @@ import webview
 
 from collectra.commons.files import CollectraFile
 
-from .scss_theme import compile_theme
+from . import run_log
 from .data_display import CollectraAnnotationNode, CollectraGraph, NodeDisplayValue
+from .scss_theme import compile_theme
 
 if TYPE_CHECKING:
     from collectra.pipelines.base import Pipeline
@@ -37,6 +40,23 @@ class ImageFormat(enum.Enum):
     WEBP = "image/webp"
     TIFF = "image/tiff"
     TIF = "image/tiff"
+
+
+RUN_IN_PROGRESS = "A run is in progress on this page"
+
+
+@dataclass
+class _RunState:
+    """What the run started from the Run button is doing, for get_run_status."""
+
+    folder: Path
+    total: int
+    running: bool = True
+    started: int = 0
+    done: int = 0
+    stop: bool = False
+    summary: str | None = None
+    error: str | None = None
 
 
 class GUIBackend:
@@ -60,6 +80,9 @@ class GUIBackend:
         self._git_lock = threading.Lock()
         self._text_save_lock = threading.Lock()
         self._update_lock = threading.Lock()
+        self._run_lock = threading.Lock()
+        self._run_state: _RunState | None = None
+        self._run_thread: threading.Thread | None = None
         self._restart_requested = False
         self._restart_required = False
         self._pipeline = pipeline
@@ -153,12 +176,175 @@ class GUIBackend:
 
         if not self._yaml_path:
             return {"success": False, "error": "Open a results folder first"}
+        if guard := self._run_guard():
+            return guard
         if not self._git_lock.acquire(blocking=False):
             return {"success": False, "error": "A Git operation is already running"}
         try:
             return run_git(Path(self._yaml_path).parent, action, message, repository)
         finally:
             self._git_lock.release()
+
+    def _run_guard(self, folder: Path | None = None) -> dict | None:
+        """The error a write returns while a run is active on that folder.
+
+        Without a folder, the open page's folder is meant. Other pages stay
+        editable during a run.
+        """
+        state = self._run_state
+        if folder is None:
+            if self._yaml_path is None:
+                return None
+            folder = Path(self._yaml_path).parent
+        if state is not None and state.running and state.folder == folder.resolve():
+            return {"success": False, "error": RUN_IN_PROGRESS}
+        return None
+
+    def get_run_preview(self) -> dict:
+        """Which tasks a run of the open page would run, re-run or skip."""
+        try:
+            folder = self._run_folder()
+            if self._run_lock.locked():
+                raise RuntimeError("A run is already in progress")
+            plan = self._pipeline.plan_page_run(folder)
+        except Exception as error:
+            return {
+                "success": True,
+                "can_run": False,
+                "tasks": [],
+                "message": str(error),
+            }
+        return {
+            "success": True,
+            "can_run": True,
+            "tasks": [
+                {"name": task.name, "action": task.action, "reason": task.reason}
+                for task in plan.tasks
+            ],
+            "message": "",
+        }
+
+    def _run_folder(self) -> Path:
+        """The open page's folder, if a pipeline can run on it."""
+        if self._yaml_path is None:
+            raise RuntimeError("Open a page first")
+        if self._pipeline is None:
+            raise RuntimeError("No pipeline is loaded")
+        return Path(self._yaml_path).parent.resolve()
+
+    def start_run(self, note: str = "") -> dict:
+        """Run the pipeline on the open page in the background.
+
+        The log's "started" entry is written first; if it cannot be, nothing
+        runs. The run keeps the folder open now, even if another page is
+        opened while it runs.
+        """
+        if not self._run_lock.acquire(blocking=False):
+            return {"success": False, "error": "A run is already in progress"}
+        previous = self._run_state
+        try:
+            folder = self._run_folder()
+            plan = self._pipeline.plan_page_run(folder)
+            with self._text_save_lock:
+                # Taken while no text or mask edit is half-way through.
+                self._run_state = _RunState(folder, total=len(plan.to_run))
+            run_log.begin_entry(
+                folder,
+                pipeline=self._pipeline.name,
+                version=self._pipeline.version,
+                note=note,
+                plan=plan,
+            )
+        except Exception as error:
+            self._run_state = previous
+            self._run_lock.release()
+            return {"success": False, "error": str(error)}
+        self._run_thread = threading.Thread(
+            target=self._run_in_background,
+            args=(self._run_state, plan),
+            daemon=True,
+        )
+        self._run_thread.start()
+        return {"success": True}
+
+    def _run_in_background(self, state: _RunState, plan) -> None:
+        from collectra.pipelines.run_plan import RunReport, TaskOutcome
+
+        def should_stop() -> bool:
+            # Called before each planned task starts.
+            state.done = state.started
+            state.started += 1
+            return state.stop
+
+        began = time.monotonic()
+        report = None
+        try:
+            report = self._pipeline.run_page(state.folder, plan, should_stop)
+        except Exception as error:
+            state.error = str(error)
+            detail = f"{type(error).__name__}: {error}"
+            report = RunReport(
+                [
+                    (
+                        TaskOutcome(task.name, "skipped", "kept existing output")
+                        if task.action == "skip"
+                        else TaskOutcome(task.name, "failed", detail)
+                    )
+                    for task in plan.tasks
+                ]
+            )
+        finally:
+            if report is not None:
+                state.summary = run_log.summarize(report)
+                state.done = sum(
+                    outcome.status in ("ran", "re-ran", "failed")
+                    for outcome in report.outcomes
+                )
+                try:
+                    run_log.finish_entry(state.folder, report, time.monotonic() - began)
+                except Exception as error:
+                    state.error = f"The results were kept, but the run log: {error}"
+            with self._text_save_lock:
+                if self._yaml_path and (
+                    Path(self._yaml_path).parent.resolve() == state.folder
+                ):
+                    # Later edits must not save the page as it was before the run.
+                    self._load_yaml(self._yaml_path)
+                state.running = False
+            self._run_lock.release()
+
+    def get_run_status(self) -> dict:
+        """Progress of the latest run, for the frontend to poll."""
+        state = self._run_state
+        if state is None:
+            return {
+                "running": False,
+                "finished": False,
+                "folder": "",
+                "current": None,
+                "done": 0,
+                "total": 0,
+                "summary": None,
+                "error": None,
+            }
+        return {
+            "running": state.running,
+            "finished": not state.running,
+            "folder": str(state.folder),
+            "current": None,
+            "done": state.done,
+            "total": state.total,
+            "summary": state.summary,
+            "error": state.error,
+        }
+
+    def stop_run(self) -> dict:
+        """Ask the run to start no further task."""
+        state = self._run_state
+        if state is None or not state.running:
+            return {"success": False}
+        state.stop = True
+        return {"success": True}
 
     def get_arrangement(self) -> dict:
         """The saved panel/tab arrangement for this pipeline, or None."""
@@ -876,6 +1062,8 @@ class GUIBackend:
         from collectra.types.links import Link
         from collectra.utils import load_class_from_string
 
+        if guard := self._run_guard():
+            return guard
         changes = []
         try:
             context = self._display_context()
@@ -919,6 +1107,8 @@ class GUIBackend:
         try:
             with self._text_save_lock:
                 target = Path(results_path).resolve()
+                if guard := self._run_guard(target.parent):
+                    return guard
                 if target.name != "results.yaml" or not target.is_file():
                     raise ValueError("Mask edits must target a results.yaml file")
                 collectra_file = CollectraFile.from_data(target.parent)
@@ -967,6 +1157,8 @@ class GUIBackend:
 
             with self._text_save_lock:
                 target = Path(results_path or self._yaml_path).resolve()
+                if guard := self._run_guard(target.parent):
+                    return guard
                 if target.name != "results.yaml":
                     raise ValueError("Text edits must target a results.yaml file")
                 if self._yaml_path and target == Path(self._yaml_path).resolve():
@@ -1104,6 +1296,8 @@ class GUIBackend:
         if self._yaml_path is None:
             return {"success": False, "error": "No page loaded."}
 
+        if guard := self._run_guard():
+            return guard
         filenames = {"markdown": "markdown.md", "tei": "tei.xml"}
         filename = filenames.get(kind)
         if filename is None:
@@ -1269,6 +1463,8 @@ class GUIBackend:
         Returns:
             dict with 'success' or 'error'
         """
+        if guard := self._run_guard():
+            return guard
         try:
             if self._graph is None:
                 raise ValueError("No graph loaded. Call load_yaml first.")
@@ -1294,6 +1490,8 @@ class GUIBackend:
         Returns:
             dict with 'success' and updated rows, or 'error'
         """
+        if guard := self._run_guard():
+            return guard
         try:
             if self._graph is None:
                 raise ValueError("No graph loaded. Call load_yaml first.")
@@ -1354,6 +1552,8 @@ class GUIBackend:
         if self._graph is None:
             return {"success": False, "error": "No graph loaded. Call load_yaml first."}
 
+        if guard := self._run_guard():
+            return guard
         if not image_path:
             return {
                 "success": False,
@@ -1874,6 +2074,8 @@ class GUIBackend:
         if self._graph is None:
             return {"success": False, "error": "No graph loaded. Call load_yaml first."}
 
+        if guard := self._run_guard():
+            return guard
         try:
             node_id = self._graph.resolve_id(node_id)
             if node_id not in self._graph.nodes:
@@ -1901,6 +2103,8 @@ class GUIBackend:
         if self._graph is None:
             return {"success": False, "error": "No graph loaded. Call load_yaml first."}
 
+        if guard := self._run_guard():
+            return guard
         try:
             node_id = self._graph.resolve_id(node_id)
 
@@ -1934,6 +2138,8 @@ class GUIBackend:
         if self._graph is None:
             return {"success": False, "error": "No graph loaded. Call load_yaml first."}
 
+        if guard := self._run_guard():
+            return guard
         try:
             node_id = self._graph.resolve_id(node_id)
             if new_id and new_id != node_id:
@@ -1972,6 +2178,8 @@ class GUIBackend:
         if self._graph is None:
             return {"success": False, "error": "No graph loaded. Call load_yaml first."}
 
+        if guard := self._run_guard():
+            return guard
         try:
             link_id = self._graph.resolve_id(link_id)
             node = self._graph.get_node(link_id)
@@ -2011,6 +2219,8 @@ class GUIBackend:
         if self._graph is None:
             return {"success": False, "error": "No graph loaded. Call load_yaml first."}
 
+        if guard := self._run_guard():
+            return guard
         try:
             parent_id = self._graph.resolve_id(parent_id)
             if self._graph.get_node(parent_id) is None:
