@@ -25,7 +25,9 @@ def test_train_yolo_temp_dir(classes, image, tmp_path, monkeypatch):
     crop = image.make_crop(0.5, 0.5, 0.25, 0.25, name="human")
     crop.add_source_parent(image)
     monkeypatch.setattr(task, "_init_model", lambda: None)
-    monkeypatch.setattr(task, "_prepare_assets", lambda *args, **kwargs: (["train"], ["val"]))
+    monkeypatch.setattr(
+        task, "_prepare_assets", lambda *args, **kwargs: (["train"], ["val"])
+    )
 
     def fake_train_fold(train, validation, output_classes, log, kwargs):
         weights = log / "weights"
@@ -178,9 +180,7 @@ def test_prefetch_batches_the_model_and_run_reuses_results(image, monkeypatch):
 
         def __call__(self, sources, **kwargs):
             calls.append((len(sources), kwargs.get("batch")))
-            return [
-                SimpleNamespace(boxes=Boxes(), names={0: "human"}) for _ in sources
-            ]
+            return [SimpleNamespace(boxes=Boxes(), names={0: "human"}) for _ in sources]
 
     fake_models = ModuleType("ultralytics.models")
     fake_models.YOLO = BatchModel
@@ -199,3 +199,25 @@ def test_prefetch_batches_the_model_and_run_reuses_results(image, monkeypatch):
     task.clear_prefetch()
     task.run(crops[0])
     assert len(calls) == 3  # cache cleared, so the model is called again
+
+
+def test_run_yolo_orients_the_chosen_classes(image, monkeypatch):
+    from collectra.types.images import Orientation
+    from tests.unit.test_detector_orient import fake_orienter
+
+    fake_ops = ModuleType("torchvision.ops")
+    fake_ops.batched_nms = lambda *args, **kwargs: []
+    monkeypatch.setitem(sys.modules, "torchvision.ops", fake_ops)
+
+    class LoadingModel(FakeInferenceModel):
+        def __init__(self, path):
+            pass
+
+    fake_models = ModuleType("ultralytics.models")
+    fake_models.YOLO = LoadingModel
+    monkeypatch.setitem(sys.modules, "ultralytics.models", fake_models)
+    fake_orienter(monkeypatch, Orientation.WEST)
+    task = ObjectDetectorYOLO(
+        name="label-detector", model="configured.pt", output=["human"], orient=["human"]
+    )
+    assert task.run(image)[0].orientation == Orientation.WEST

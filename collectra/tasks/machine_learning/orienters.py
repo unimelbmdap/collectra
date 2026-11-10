@@ -13,15 +13,30 @@ from ..object_detection.batching import image_cache_key
 if TYPE_CHECKING:
     from torchvision.models import EfficientNet
 
-__all__ = ["ImageOrienter"]
+__all__ = ["ImageOrienter", "default_orienter_checkpoint"]
+
+# The published model of https://github.com/duartebarbosadev/deep-image-orientation-detection
+# (MIT licensed), used when no orientation model is given.
+DEFAULT_ORIENTER_REPO = "DuarteBarbosa/deep-image-orientation-detection"
+DEFAULT_ORIENTER_FILE = "orientation_model_v2_0.9882.pth"
+
+
+def default_orienter_checkpoint() -> Path:
+    """The default orientation checkpoint, downloaded once into the Hugging Face cache."""
+    from huggingface_hub import hf_hub_download
+
+    return Path(
+        hf_hub_download(repo_id=DEFAULT_ORIENTER_REPO, filename=DEFAULT_ORIENTER_FILE)
+    )
 
 
 class ImageOrienter(Task):
 
-    model: Any  # a path or a loaded torchvision EfficientNet
+    # A checkpoint path, a loaded torchvision EfficientNet, or None for the default.
+    model: Any = None
     _prefetched: dict = PrivateAttr(default_factory=dict)
 
-    def __init__(self, name, model: str | Path | EfficientNet, **kwargs):
+    def __init__(self, name, model: str | Path | EfficientNet | None = None, **kwargs):
         super().__init__(name, model=model, **kwargs)
         self.transforms = None
 
@@ -66,7 +81,8 @@ class ImageOrienter(Task):
             torch.nn.Linear(num_ftrs, 4),
         )
 
-        state_dict = torch.load(self.model, map_location=device)
+        checkpoint = default_orienter_checkpoint() if self.model is None else self.model
+        state_dict = torch.load(checkpoint, map_location=device)
         model.load_state_dict(state_dict)
         model.to(device)
         model.eval()

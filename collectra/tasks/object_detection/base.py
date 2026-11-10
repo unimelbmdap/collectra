@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import platform
 import warnings
+from pathlib import Path
 from typing import Annotated, Any, ClassVar
 
 from cappa import Arg
-from pydantic import Field, PrivateAttr, model_validator
+from pydantic import Field, PrivateAttr, field_validator, model_validator
 
-from collectra.types.images import Image
+from collectra.types.images import Image, ImageCrop, Orientation
 from collectra.utils import threading_locked
 
 from ..base import Task
@@ -67,6 +68,9 @@ class ObjectDetector(Task):
         batch: Training batch size.
         learning_rate: Training learning rate.
         weight_decay: Training weight decay.
+        orient: Output classes whose crops are oriented with an ImageOrienter.
+        orienter_model: The orientation checkpoint for ``orient``; without it
+            the published default model is used.
 
     A backend overrides a default where its own library needs another value.
     Names that used to be accepted (``imgsz``) are still read, with a warning.
@@ -78,6 +82,11 @@ class ObjectDetector(Task):
     batch: int = Field(default=4, ge=1)
     learning_rate: float = Field(default=1e-4, gt=0)
     weight_decay: float = Field(default=1e-4, ge=0)
+    orient: list[str] = Field(default_factory=list)
+    orienter_model: str | None = None
+
+    # Crops oriented in one pass of the orientation model.
+    ORIENT_BATCH: ClassVar[int] = 16
 
     # Old name -> current name. A backend adds its own.
     RENAMED_SETTINGS: ClassVar[dict[str, str]] = {"imgsz": "resolution"}
@@ -86,6 +95,12 @@ class ObjectDetector(Task):
     WIRING: ClassVar[frozenset[str]] = frozenset({"input", "output"})
 
     _prefetched: dict = PrivateAttr(default_factory=dict)
+    _orienter: Any = PrivateAttr(default=None)
+
+    @field_validator("orient", mode="before")
+    @classmethod
+    def _orient_one_class(cls, value: Any) -> Any:
+        return [value] if isinstance(value, str) else value
 
     @model_validator(mode="before")
     @classmethod
@@ -121,6 +136,48 @@ class ObjectDetector(Task):
                 UserWarning,
                 stacklevel=2,
             )
+        outputs = getattr(self, "output", None)
+        outputs = [outputs] if isinstance(outputs, str) else outputs
+        missing = [name for name in self.orient if outputs and name not in outputs]
+        if missing:
+            raise ValueError(
+                f"{type(self).__name__} {self.name!r} cannot orient "
+                f"{', '.join(missing)}: not among its outputs ({', '.join(outputs)})"
+            )
+
+    # --- orienting crops -------------------------------------------------------------
+
+    def _get_orienter(self):
+        """The ImageOrienter for ``orient``, made once and loaded when first needed."""
+        if self._orienter is None:
+            from ..machine_learning.orienters import ImageOrienter
+
+            model = None
+            if self.orienter_model:
+                model = Path(self.orienter_model).expanduser()
+                if not model.is_absolute() and self.pipeline is not None:
+                    model = Path(self.pipeline.path) / model
+            self._orienter = ImageOrienter(f"{self.name}_orienter", model=model)
+        self._orienter._init_model()
+        return self._orienter
+
+    def _orient_crops(self, crops: list[ImageCrop]) -> list[ImageCrop]:
+        """Orient the crops of the classes in ``orient``, in place; return ``crops``.
+
+        The orienter sees each crop as already turned by the orientation it
+        has (its image's), so the predicted turn is added to that one.
+        """
+        chosen = [crop for crop in crops if crop.name in self.orient]
+        if not chosen:
+            return crops
+        orienter = self._get_orienter()
+        for start in range(0, len(chosen), self.ORIENT_BATCH):
+            batch = chosen[start : start + self.ORIENT_BATCH]
+            for crop, turn in zip(batch, orienter._predict_batch(batch)):
+                crop.orientation = Orientation(
+                    (crop.orientation.value + turn.value) % 4
+                )
+        return crops
 
     # --- settings for one run -------------------------------------------------------
 

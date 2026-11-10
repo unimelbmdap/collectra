@@ -76,3 +76,18 @@ def test_run_detr(image, monkeypatch):
     assert len(detections) == 1
     assert isinstance(detections[0], ImageCrop)
     assert detections[0].name == "human"
+
+
+def test_run_detr_orients_the_chosen_classes(image, monkeypatch):
+    from collectra.types.images import Orientation
+    from tests.unit.test_detector_orient import fake_orienter
+
+    fake_orienter(monkeypatch, Orientation.WEST)
+    task = ObjectDetectorDETR(
+        name="label-detector", model=FakeDetrModel(), output=["human"], orient=["human"]
+    )
+    task._processor = FakeProcessor()
+    task._device = "cpu"
+    task._categories = ["human"]
+    monkeypatch.setattr(task, "_init_model", lambda: None)
+    assert task.run(image)[0].orientation == Orientation.WEST
