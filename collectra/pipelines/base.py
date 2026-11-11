@@ -1320,63 +1320,71 @@ class Pipeline(LenientAttributes, BaseModel):
         Raises:
             FileNotFoundError: An input does not exist.
         """
-        report = ImportReport()
-        accepted = self.file_extensions() - {f".{self.ext}"}
-        for item in map(Path, inputs):
+        items = [Path(item) for item in inputs]
+        for item in items:
             if not item.exists():
                 raise FileNotFoundError(f"Path {item} does not exist.")
+        report = ImportReport()
+        accepted = self.file_extensions() - {f".{self.ext}"}
+        for item in items:
             if item.is_dir() and item.suffix != f".{self.ext}":
                 children = sorted(item.iterdir(), key=lambda path: path.name.lower())
+                known = set(children)
             else:
                 children = [item]
+                known = set(item.parent.iterdir())
             for child in children:
                 if not child.name.startswith("."):
-                    self._import_input(child, accepted, report)
+                    try:
+                        if child.is_dir():
+                            self._open_folder(child, accepted, report)
+                        else:
+                            self._import_one(child, accepted, known, report)
+                    except OSError as error:
+                        report.failed.append(f"{child.name}: {error}")
         return report
 
-    def _import_input(self, path: Path, accepted: set[str], report: ImportReport):
-        """Import or open one file or folder, recording the outcome in report."""
-        if path.is_dir():
-            if path.suffix != f".{self.ext}":
-                return  # subfolders are not searched
-            if self._is_existing_collectra_folder(path):
-                if path not in report.pages:  # not already opened as a file's page
-                    report.pages.append(path)
-                    report.existing += 1
-                return
-            images = [
-                child
-                for child in sorted(path.iterdir())
-                if child.is_file()
-                and not child.name.startswith(".")
-                and child.suffix.lower() in accepted
-            ]
-            if len(images) != 1:
-                report.skipped_folders.append(f"{path.name}: {len(images)} images")
-                return
-        elif path.suffix.lower() not in accepted:
+    def _open_folder(self, path: Path, accepted: set[str], report: ImportReport):
+        """Open a results folder, or adopt in place one holding a single image."""
+        if path.suffix != f".{self.ext}":
+            return  # subfolders are not searched
+        if self._is_existing_collectra_folder(path):
+            if path not in report.pages:  # not already opened as a file's page
+                report.pages.append(path)
+                report.existing += 1
+            return
+        images = [
+            child
+            for child in sorted(path.iterdir())
+            if child.is_file()
+            and not child.name.startswith(".")
+            and child.suffix.lower() in accepted
+        ]
+        if len(images) != 1:
+            report.skipped_folders.append(f"{path.name}: {len(images)} images")
+            return
+        try:
+            self._create_results_file(path, self._get_root_input(), images[0])
+        except BaseException:
+            (path / self.RESULTS_FILE).unlink(missing_ok=True)
+            raise
+        logger.info("Adopted %s", path)
+        report.pages.append(path)
+        report.imported += 1
+
+    def _import_one(
+        self, path: Path, accepted: set[str], known: set[Path], report: ImportReport
+    ):
+        """Import a file, or open its page when it was imported before."""
+        if path.suffix.lower() not in accepted:
             reason = f"not an input the {self.name} pipeline accepts"
             report.skipped.append(f"{path.name}: {reason}")
             return
-        try:
-            if path.is_dir():
-                try:
-                    self._create_results_file(path, self._get_root_input(), images[0])
-                except BaseException:
-                    (path / self.RESULTS_FILE).unlink(missing_ok=True)
-                    raise
-                folder = path
-                logger.info("Adopted %s", path)
-            else:
-                known = set(path.parent.iterdir())
-                folder = self.import_file(path)
-        except OSError as error:
-            report.failed.append(f"{path.name}: {error}")
-            return
+        folder = self.import_file(path)
         if folder in report.pages:
             return  # a file's page opened earlier by its folder
         report.pages.append(folder)
-        if path.is_file() and folder in known:
+        if folder in known:
             report.existing += 1
         else:
             report.imported += 1

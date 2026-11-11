@@ -40,9 +40,8 @@ def source(tmp_path):
 
 def snapshot(folder: Path) -> dict:
     return {
-        path: (path.read_bytes(), path.stat().st_mtime_ns)
-        for path in folder.rglob("*")
-        if path.is_file()
+        path: (None if path.is_dir() else path.read_bytes(), path.stat().st_mtime_ns)
+        for path in [folder, *folder.rglob("*")]
     }
 
 
@@ -210,3 +209,62 @@ def test_an_already_imported_file_is_opened(tmp_path, source, raw_img_path):
     report = pipeline.import_inputs([source / "one.jpg"])
     assert (report.pages, report.imported, report.existing) == ([folder], 0, 1)
     assert snapshot(source) == before
+
+
+def test_an_unreadable_folder_is_reported_and_the_rest_import(
+    tmp_path, source, raw_img_path, monkeypatch
+):
+    (source / "A.imp").mkdir()
+    shutil.copy(raw_img_path, source / "b.jpg")
+    iterdir = Path.iterdir
+
+    def deny(self):
+        if self.name == "A.imp":
+            raise PermissionError("denied")
+        return iterdir(self)
+
+    monkeypatch.setattr(Path, "iterdir", deny)
+    report = build(tmp_path).import_inputs([source])
+    assert report.failed == ["A.imp: denied"]
+    assert report.pages == [source / "b.imp"]
+
+
+def test_an_unreadable_results_check_is_reported(tmp_path, source, monkeypatch):
+    (source / "A.imp").mkdir()
+    pipeline = build(tmp_path)
+
+    def deny(path):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(pipeline, "_is_existing_collectra_folder", deny)
+    assert pipeline.import_inputs([source]).failed == ["A.imp: denied"]
+
+
+def test_folders_are_listed_once_whatever_the_number_of_files(
+    tmp_path, source, raw_img_path, monkeypatch
+):
+    pipeline = build(tmp_path)
+    calls = []
+    iterdir = Path.iterdir
+
+    def counting(self):
+        calls.append(self)
+        return iterdir(self)
+
+    monkeypatch.setattr(Path, "iterdir", counting)
+    for count in (2, 6):
+        folder = source / f"n{count}"
+        folder.mkdir()
+        for number in range(count):
+            shutil.copy(raw_img_path, folder / f"{number}.jpg")
+        calls.clear()
+        pipeline.import_inputs([folder])
+        assert calls.count(folder) == 1
+        assert len(calls) <= 1 + count  # import_file may list its own folder only
+
+
+def test_every_input_must_exist_before_any_is_imported(tmp_path, source, raw_img_path):
+    shutil.copy(raw_img_path, source / "one.jpg")
+    with pytest.raises(FileNotFoundError, match="gone"):
+        build(tmp_path).import_inputs([source / "one.jpg", source / "gone"])
+    assert not (source / "one.imp").exists()

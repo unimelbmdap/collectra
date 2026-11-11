@@ -60,25 +60,26 @@ class ImportReport(BaseModel):
             The notice, or an empty string when only existing pages were opened.
         """
 
-        def plural(count: int, noun: str) -> str:
-            return f"{count} {noun}" + ("" if count == 1 else "s")
-
         parts = []
         if self.imported:
-            parts.append(f"Imported {plural(self.imported, 'page')}")
+            parts.append(
+                f"Imported {self.imported} page{'s' if self.imported != 1 else ''}"
+            )
         if self.existing:
             parts.append(f"opened {self.existing} existing")
         if self.skipped:
+            count = len(self.skipped)
             parts.append(
-                f"skipped {plural(len(self.skipped), 'file')} {name} doesn't accept"
+                f"skipped {count} file{'s' if count != 1 else ''} "
+                f"{name} doesn't accept"
             )
         if self.skipped_folders:
+            count = len(self.skipped_folders)
             parts.append(
-                f"skipped {plural(len(self.skipped_folders), 'folder')} "
+                f"skipped {count} folder{'s' if count != 1 else ''} "
                 "without exactly one image"
             )
         if self.failed:
             parts.append(f"{len(self.failed)} failed")
-        if not (self.imported or self.skipped or self.skipped_folders or self.failed):
-            return ""
-        return ", ".join(parts)
+        changes = (self.imported, self.skipped, self.skipped_folders, self.failed)
+        return ", ".join(parts) if any(changes) else ""
