@@ -217,6 +217,12 @@ def load_adapted_model(path: str | Path, device: str = "cpu"):
     config.update(pretrain_weights=None, num_channels=3, device=device)
     config["num_classes"] = state["class_embed.weight"].shape[0] - 1
     detector = getattr(rfdetr, name)(**config)
+    # Settings read from the checkpoint are not the user's choices. rfdetr only
+    # adapts a model to new training data (such as its number of classes) when
+    # the setting was not given explicitly, as its own from_checkpoint does.
+    detector.model_config.model_fields_set.difference_update(
+        set(config) - {"pretrain_weights", "num_channels", "device"}
+    )
     adapt_model(detector, **spec)
     detector.model.model.load_state_dict(state, strict=True)
     detector.model.class_names = checkpoint.get("args", {}).get("class_names", [])
