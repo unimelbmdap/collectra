@@ -2055,6 +2055,7 @@
     <script src="nodeColors.js"></script>
     <script src="deleteDialog.js"></script>
     <script src="runDialog.js"></script>
+    <script src="importNotice.js"></script>
     <script src="instancePager.js"></script>
     <script src="collapseToggle.js"></script>
     <script src="hoverTimer.js"></script>
@@ -3153,6 +3154,16 @@
             el.className = 'result ' + (isError ? 'error' : 'success');
         }
 
+        // What opening raw inputs imported, in the load details.
+        function showImportNotice(result) {
+            const text = importNoticeText(result.import);
+            if (!text) return;
+            const el = document.getElementById('loadResult');
+            el.textContent = text;
+            el.className = 'result ' + (result.import.failed.length ? 'error' : 'success');
+            openInfoModal();
+        }
+
         function setNavBtnState(btn, enabled) {
             btn.disabled = !enabled;
             setBtnVariant(btn, enabled ? 'btn-primary' : 'btn-secondary');
@@ -3291,6 +3302,10 @@
                 return;
             }
 
+            const button = document.getElementById('selectCollectraBtn');
+            button.setAttribute('aria-label', 'Opening…');
+            button.title = 'Opening…';
+            button.disabled = true;
             try {
                 const result = await window.pywebview.api.select_collectra_path();
 
@@ -3308,9 +3323,14 @@
                 } else {
                     showResult('loadResult', { error: 'Unknown selection mode' }, true);
                 }
+                showImportNotice(result);
 
             } catch (e) {
                 showResult('loadResult', { error: e.message }, true);
+            } finally {
+                button.setAttribute('aria-label', 'Load');
+                button.title = '';
+                button.disabled = false;
             }
         }
 
@@ -6631,6 +6651,7 @@
                 } else {
                     await showPipelineWithoutResults();
                 }
+                showImportNotice(initial);
             } catch (error) {
                 showResult('loadResult', {error: error.message}, true);
             }
