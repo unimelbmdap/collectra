@@ -30,7 +30,7 @@ import sys
 import tempfile
 import time
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
@@ -74,7 +74,7 @@ from ..types.images import Image, ImageCrop
 from ..types.links import Link
 from ..types.texts import Text
 from .env import PipelineEnv
-from .importing import destination
+from .importing import ImportReport, destination
 from .node_graph_manager import NodeGraphManager
 from .run_plan import RunPlan, RunReport, TaskOutcome, plan_tasks
 
@@ -1300,6 +1300,86 @@ class Pipeline(LenientAttributes, BaseModel):
             raise
         logger.info("Imported %s as %s", source, folder)
         return folder
+
+    def import_inputs(self, inputs: Sequence[Path]) -> ImportReport:
+        """Turn the inputs a user opens into results folders.
+
+        An input is an existing results folder (opened, nothing written), a
+        ``<x>.<ext>`` folder without results (adopted in place when it holds
+        exactly one accepted file), an accepted file (imported next to itself),
+        or any other folder, whose direct children are handled the same way in
+        case-insensitive order. Hidden entries are ignored; one input failing
+        does not stop the others.
+
+        Args:
+            inputs: The files and folders to open.
+
+        Returns:
+            What was created, opened, skipped and failed.
+
+        Raises:
+            FileNotFoundError: An input does not exist.
+        """
+        report = ImportReport()
+        accepted = self.file_extensions() - {f".{self.ext}"}
+        for item in map(Path, inputs):
+            if not item.exists():
+                raise FileNotFoundError(f"Path {item} does not exist.")
+            if item.is_dir() and item.suffix != f".{self.ext}":
+                children = sorted(item.iterdir(), key=lambda path: path.name.lower())
+            else:
+                children = [item]
+            for child in children:
+                if not child.name.startswith("."):
+                    self._import_input(child, accepted, report)
+        return report
+
+    def _import_input(self, path: Path, accepted: set[str], report: ImportReport):
+        """Import or open one file or folder, recording the outcome in report."""
+        if path.is_dir():
+            if path.suffix != f".{self.ext}":
+                return  # subfolders are not searched
+            if self._is_existing_collectra_folder(path):
+                if path not in report.pages:  # not already opened as a file's page
+                    report.pages.append(path)
+                    report.existing += 1
+                return
+            images = [
+                child
+                for child in sorted(path.iterdir())
+                if child.is_file()
+                and not child.name.startswith(".")
+                and child.suffix.lower() in accepted
+            ]
+            if len(images) != 1:
+                report.skipped_folders.append(f"{path.name}: {len(images)} images")
+                return
+        elif path.suffix.lower() not in accepted:
+            reason = f"not an input the {self.name} pipeline accepts"
+            report.skipped.append(f"{path.name}: {reason}")
+            return
+        try:
+            if path.is_dir():
+                try:
+                    self._create_results_file(path, self._get_root_input(), images[0])
+                except BaseException:
+                    (path / self.RESULTS_FILE).unlink(missing_ok=True)
+                    raise
+                folder = path
+                logger.info("Adopted %s", path)
+            else:
+                known = set(path.parent.iterdir())
+                folder = self.import_file(path)
+        except OSError as error:
+            report.failed.append(f"{path.name}: {error}")
+            return
+        if folder in report.pages:
+            return  # a file's page opened earlier by its folder
+        report.pages.append(folder)
+        if path.is_file() and folder in known:
+            report.existing += 1
+        else:
+            report.imported += 1
 
     def _create_results_file(self, directory: Path, key: str, value: str | Path):
         """Create a new results.yaml file in the given directory."""
