@@ -3157,7 +3157,7 @@
             el.className = 'result ' + (isError ? 'error' : 'success');
         }
 
-        // What opening raw inputs imported, in the load details.
+        // Show what opening raw inputs imported
         function showImportNotice(result) {
             const text = importNoticeText(result.import);
             if (!text) return;
@@ -3728,8 +3728,8 @@
         }
 
         // ── RUN BUTTON ───────────────────────────────────────────────────────
-        // Runs the pipeline on the open page, or on every page in the list, in
-        // the backend, after a panel that says what runs. While it runs, the
+        // Runs the pipeline on the open page or every listed page in the
+        // backend, after a panel that says what runs. While it runs, the
         // progress popover polls the backend about once a second; the backend
         // refuses edits to the running page, so the page is reloaded only once
         // the run ends, and only if it is still the page open.
@@ -3737,18 +3737,17 @@
         let runStopRequested = false;
         let runStartedYamlPath = '';
         let runLastStatus = null;
-        let runCollection = false; // whether the panel is for the whole collection
-        let runOverwrite = false; // "Overwrite existing results", off whenever a panel opens
-        let runPreviewRequest = 0; // only the latest preview is shown
+        let runCollection = false; // Panel is for the whole collection
+        let runOverwrite = false; // Overwrite tick, off whenever a panel opens
+        let runPreviewRequest = 0; // Only the latest preview is shown
 
         // Whether the page open now is the one being run, so cannot be edited.
         function runLocksOpenPage() {
             return runActive && runIncludesOpenPage(runLastStatus || {folder: ''});
         }
 
-        // The backend reports resolved folders, which can be spelt differently
-        // from the list's paths, so a run of the collection counts every page of
-        // the list. A page left out of the run is then locked too: the safe way.
+        // Resolved folders can be spelt differently from the list's paths, so a
+        // collection run locks every listed page, even one left out of the run
         function runIncludesOpenPage(status) {
             if (status.unit === 'pages' && currentFolderIndex >= 0) return true;
             return runIsForOpenPage(status, selectedYamlPath, runStartedYamlPath);
@@ -3770,7 +3769,7 @@
             return (e && e.message) || String(e);
         }
 
-        // The menu under the Run button, built like the Split View menu.
+        // Run menu, built like the Split View menu
         function showRunMenu(mouseEvent) {
             if (runActive) { showRunProgress(); return; }
             if (document.getElementById('nodeContextMenu')?.dataset.owner === 'run') {
@@ -3812,13 +3811,13 @@
             await renderRunDialog();
         }
 
-        // Fills the panel from the backend's preview of the run.
+        // Fill the panel from the backend's run preview
         async function renderRunDialog() {
             const api = window.pywebview.api;
             const request = ++runPreviewRequest;
             const confirmBtn = document.getElementById('runModalConfirm');
             const tick = document.getElementById('runOverwriteInput');
-            // Previews take the backend's run lock, so one at a time.
+            // Previews take the run lock, so one at a time
             confirmBtn.disabled = true;
             if (tick) tick.disabled = true;
             let preview;
@@ -3861,7 +3860,7 @@
             const confirmBtn = document.getElementById('runModalConfirm');
             if (confirmBtn.disabled) return;
             confirmBtn.disabled = true;
-            // The tick waits, so the start sends what the panel shows
+            // Hold the tick so the start sends what the panel shows
             const tick = document.getElementById('runOverwriteInput');
             if (tick) tick.disabled = true;
             const note = document.getElementById('runNoteInput').value.trim();

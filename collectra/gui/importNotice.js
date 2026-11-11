@@ -1,5 +1,4 @@
-// What the page says after opening imported raw inputs: the summary, then
-// one line for each file that could not be imported.
+// The import summary, then a line for each file that failed
 function importNoticeText(info) {
     if (!info || !info.summary) return '';
     const failed = (info.failed || []).map((entry) => `Failed: ${entry}`);

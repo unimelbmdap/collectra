@@ -665,8 +665,7 @@ class Pipeline(LenientAttributes, BaseModel):
             # A page run reads a page's image from its copy in the results
             # folder when the image its results refer to cannot be read.
             "page_copy": kwargs.pop("page_copy", False),
-            # Called with each file once all its tasks are done; it must not
-            # raise, or the files after it do not run.
+            # Called once a file's tasks are done; raising stops the files after it
             "page_done": kwargs.pop("page_done", None),
         }
         options["task_overrides"] = kwargs.copy()
@@ -908,7 +907,7 @@ class Pipeline(LenientAttributes, BaseModel):
             else self._get_root_input()
         )
         if options.get("page_copy"):
-            # A page run never starts results in a folder that is not a page.
+            # Never start results in a folder that is not a page
             self._check_page(Path(file_path))
         key, value = self._create_collectra_file(key, file_path, options["output"])
 
@@ -1363,7 +1362,7 @@ class Pipeline(LenientAttributes, BaseModel):
             try:
                 name = self._page_image_name(self._page_entry(folder, root)[1])
             except (OSError, yaml.YAMLError, AttributeError, TypeError, ValueError):
-                return False  # no results, or results that cannot be read
+                return False  # No results, or unreadable ones
             image = folder / source.name
             return (
                 name == source.name
@@ -1411,7 +1410,7 @@ class Pipeline(LenientAttributes, BaseModel):
                 raise FileNotFoundError(f"Path {item} does not exist.")
         report = ImportReport()
         accepted = self.file_extensions() - {f".{self.ext}"}
-        known = {}  # each folder's entries before importing, listed once
+        known = {}  # Each folder's entries before importing
         for item in items:
             if item.is_dir() and item.suffix != f".{self.ext}":
                 children = sorted(item.iterdir(), key=lambda path: path.name.lower())
@@ -1436,9 +1435,9 @@ class Pipeline(LenientAttributes, BaseModel):
     def _open_folder(self, path: Path, accepted: set[str], report: ImportReport):
         """Open a results folder, or adopt in place one holding a single image."""
         if path.suffix != f".{self.ext}":
-            return  # subfolders are not searched
+            return  # Subfolders are not searched
         if self._is_existing_collectra_folder(path):
-            if path not in report.pages:  # not already opened as a file's page
+            if path not in report.pages:  # Not already opened as a file's page
                 report.pages.append(path)
                 report.existing += 1
             return
@@ -1471,7 +1470,7 @@ class Pipeline(LenientAttributes, BaseModel):
             return
         folder = self.import_file(path)
         if folder in report.pages:
-            return  # a file's page opened earlier by its folder
+            return  # Page already opened by its folder
         report.pages.append(folder)
         if folder in known:
             report.existing += 1

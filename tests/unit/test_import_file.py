@@ -134,7 +134,7 @@ def test_unaccepted_extension_is_refused(tmp_path, source, name):
 
 def test_failed_copy_leaves_nothing(tmp_path, source, raw_img_path, monkeypatch):
     shutil.copy(raw_img_path, source / "page.jpg")
-    # A folder that was already there is taken, and is kept on failure.
+    # An existing folder is taken, and kept on failure
     (source / "page.imp").mkdir()
     (source / "page.imp" / "mine.txt").write_text("kept")
 

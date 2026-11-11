@@ -1,7 +1,6 @@
 // What the Run confirmation panel shows for a run preview from the backend
 // (get_run_preview): one row per task saying whether it runs, re-runs or is
-// skipped, and whether the run can start. With overwrite ticked, every task
-// runs again and replaces its results.
+// skipped, and whether the run can start. Overwrite re-runs every task.
 const RUN_ROW_WORDS = {run: 'will run', rerun: 'will re-run', skip: 'skipped'};
 
 function runDialogContent(preview, overwrite = false) {
@@ -46,9 +45,7 @@ function agree(count, one, many) {
     return `${count} ${count === 1 ? one : many}`;
 }
 
-// What the panel shows for a run of the whole collection
-// (get_collection_preview): how many pages have tasks to run, on how many pages
-// each task runs, and the pages that cannot run.
+// The panel for a run of the whole collection (get_collection_preview)
 function collectionDialogContent(preview, overwrite = false) {
     const {pages = 0, to_replace = 0, first_time = 0, to_run = 0, tasks = [], unplannable = []} = preview || {};
     const planned = to_replace + first_time;
@@ -99,8 +96,7 @@ function runStatusText(status, stopping = false) {
 // Whether a finished run belongs to the page open now, so it should be
 // reloaded. The backend reports the resolved folder, which can be spelt
 // differently from the path the page was opened by, so the results file that
-// was open when the run started also counts. A run of the collection reports
-// its folders instead of one folder.
+// was open when the run started also counts. A collection run reports folders.
 function runIsForOpenPage(status, openYamlPath, startedYamlPath = '') {
     if (!status || !openYamlPath) return false;
     if (startedYamlPath && openYamlPath === startedYamlPath) return true;

@@ -98,12 +98,11 @@ Pass optional positional paths to populate the item list at startup::
 Inputs can be result folders, files inside a result folder (such as
 ``results.yaml``), parent directories containing result folders with the
 pipeline's extension, or raw input files and folders of them, such as images.
-Items retain argument order; parent-directory children are sorted, and
-duplicate folders appear only once. The first item opens automatically.
-Opening a raw input creates a page for it, as described under
-:ref:`gui-open-images`, and prints a one-line summary in the terminal. An
-input the pipeline does not accept is skipped when another input opened a page;
-if nothing opened, it is an error.
+Items retain argument order; parent-directory children are sorted, and duplicate
+folders appear only once. The first item opens automatically. Opening a raw
+input creates a page for it, as described under :ref:`gui-open-images`, and
+prints a one-line summary in the terminal. An input the pipeline does not accept
+is skipped when another input opened a page; if nothing opened, it is an error.
 
 Without paths, ``gui`` opens with the folder picker as before. ``--debug`` can
 be used with or without input paths. The Python equivalent is::

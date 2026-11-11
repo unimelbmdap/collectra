@@ -276,7 +276,7 @@ def test_a_log_that_cannot_be_written_starts_nothing(backend, pipeline, pages):
     assert backend.get_run_status()["running"] is False
     assert not backend._run_lock.locked()
     assert backend._run_guard(pages[0]) is None
-    # The page whose entry was already started says the run did not start.
+    # The page already started logs that the run did not start
     assert log_text(pages[0]).endswith(
         "  ocr  cancelled: the run did not start\n"
         "  tidy  cancelled: the run did not start\n"

@@ -425,9 +425,9 @@ class GUIBackend:
 
         Returns:
             Whether the collection can run; how many pages are listed, have
-            results, have none and have tasks to run; each task that would run, with the number
-            of pages it runs on and replaces output on; the pages that cannot
-            run, with the reason; and a message.
+            results, have none and have tasks to run; each task that would
+            run, with the number of pages it runs on and replaces output on;
+            the pages that cannot run, with the reason; and a message.
         """
         preview = {
             "success": True,
@@ -489,7 +489,7 @@ class GUIBackend:
 
         def prepare():
             with self._text_save_lock:
-                # Taken once no edit is half-way through; later edits are refused.
+                # Wait for any edit in progress, then refuse later ones
                 plans, _ = self._collection_plans(overwrite)
                 if message := self._nothing_to_run(plans):
                     raise RuntimeError(message)
@@ -506,7 +506,7 @@ class GUIBackend:
                         plan=plan,
                     )
                 except OSError as error:
-                    # The pages already started record that nothing ran.
+                    # Log the pages already started as not run
                     for begun in started:
                         cancelled = [
                             TaskOutcome(task.name, "cancelled", "the run did not start")
@@ -520,7 +520,7 @@ class GUIBackend:
                 started.append(folder)
             rerun = set()
             if overwrite:
-                # Each plan names every task of the pipeline.
+                # Every plan lists all the pipeline's tasks
                 rerun = {task.name for task in next(iter(plans.values())).tasks}
 
             def run():
@@ -931,7 +931,7 @@ class GUIBackend:
                 pending.append(path)
         report = self._import_report(pending)
         imported = self._notice(report)
-        pages = {}  # every page created or opened above, by its folder
+        pages = {}  # Pages created or opened above, by folder
         for page in report.pages if report else []:
             pages.setdefault(page.parent, []).append(page)
         seen = set()
@@ -946,7 +946,7 @@ class GUIBackend:
                     if child.is_dir() and child.suffix == f".{self._extension}"
                 ]
             else:
-                # Imported above; the first file of a folder lists its pages.
+                # Imported above; a folder's pages go to its first file
                 candidates = pages.pop(path.parent, [])
             for candidate in candidates:
                 scan = self._scan_collectra_folder(candidate)
@@ -1257,7 +1257,7 @@ class GUIBackend:
             return {"success": False, "error": str(e)}
 
     def _scan_parent_folder(self, parent_path: Path) -> dict:
-        # A folder holding results is never imported into.
+        # Never import into a folder with results
         imported = (
             {}
             if (parent_path / "results.yaml").is_file()

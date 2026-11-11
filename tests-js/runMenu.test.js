@@ -1,5 +1,4 @@
-// The menu under the Run button, the "Overwrite existing results" tick and the
-// panel for a run of the whole collection.
+// Run menu, overwrite tick and whole-collection panel
 const fs = require('node:fs');
 const vm = require('node:vm');
 const html = fs.readFileSync(require.resolve('../collectra/gui/index.html'), 'utf8');
@@ -223,7 +222,7 @@ describe('a run of the collection', () => {
         await vi.advanceTimersByTimeAsync(1000);
         expect(bottom.setTextRunLocked).toHaveBeenLastCalledWith(true);
         expect(p.els.runPausedNotice.hidden).toBe(false);
-        p.context.selectedYamlPath = '/data/p3/results.yaml'; // opened on its own, not from the list
+        p.context.selectedYamlPath = '/data/p3/results.yaml'; // Opened on its own, not from the list
         p.context.currentFolderIndex = -1;
         await vi.advanceTimersByTimeAsync(1000);
         expect(bottom.setTextRunLocked).toHaveBeenLastCalledWith(false);
@@ -334,7 +333,7 @@ describe('while the tick fetches the preview again', () => {
         p.api.get_collection_preview.mockReturnValueOnce(pending.promise);
         const toggled = p.context.toggleRunOverwrite(true);
         expect(p.els.runModalConfirm.disabled).toBe(true);
-        expect(p.els.runOverwriteInput.disabled).toBe(true); // no second preview while the backend plans
+        expect(p.els.runOverwriteInput.disabled).toBe(true); // No second preview while the backend plans
         await p.context.startRun();
         expect(p.api.start_collection_run).not.toHaveBeenCalled();
         pending.resolve(preview('ocr'));
