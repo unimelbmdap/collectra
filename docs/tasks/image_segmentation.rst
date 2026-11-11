@@ -341,6 +341,13 @@ ground-truth masks are omitted. An entirely empty foreground prediction and
 target score 1; no evaluated queries is an error for best-model selection.
 This measures pixel coverage, not instance matching or instance-segmentation AP.
 
+``train/mask_iou`` is the same measure on the training images, scored like
+validation: in evaluation mode and without augmentation, so the two can be
+compared to spot overfitting. It is worked out after each validation, or after
+each epoch when there are no validation images. This adds one inference pass
+over the training images per epoch. Box-only training (``bbox_ap`` selection)
+skips it.
+
 Validation runs after every epoch, including the first and last. When validation
 IoU strictly improves, ``OUTPUT/training/checkpoints/best.pt`` is replaced
 atomically with the model's raw state dictionary. ``best.json`` records its epoch,
@@ -488,6 +495,20 @@ It measures class-aware foreground overlap rather than instance matching;
 the native segmentation mAP metrics measure instance quality alongside it.
 RF-DETR's own step-level Lightning log is kept separately in
 ``OUTPUT/lightning/metrics.csv``.
+
+``train/mask_iou`` is the same IoU on the training images, predicted like
+validation (evaluation mode, no augmentation) after each validation, or after
+each epoch without validation images. It costs one extra inference pass over
+the training images per epoch. RF-DETR only builds unaugmented loaders for its
+``valid`` split, so the training images are read through
+``OUTPUT/train-eval``, a folder of links to the exported training split.
+
+``--eval-masks-head-resolution`` scores validation and ``train/mask_iou`` at
+the mask head's resolution instead of enlarging every predicted mask to the
+full page. Without it, matching masks on very large pages (around 50
+megapixels) can need over 20 GB of GPU memory and run out during validation,
+whatever the batch size. With it, the IoU is coarser, but it still picks the
+best epoch. Training, the saved weights and predictions are unchanged.
 
 Only the best ``best.pt`` is kept, selected by validation mask IoU, or training
 loss when no validation images exist. It contains model weights and the

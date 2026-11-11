@@ -242,10 +242,34 @@ def test_training_cli_flags_and_model_adoption(pipeline, sample, tmp_path, monke
     assert config["params"]["project"] == "Segments-segment"
     assert config["params"]["run"] == "run"
     assert config["params"]["use_ema"] is False
+    assert config["params"]["eval_masks_head_resolution"] is False
     assert config["has_validation"] is False
     task._samples.assert_called_once_with([str(tmp_path)], max_items=3, exclude="test")
     assert task.model.read_bytes() == b"best weights"
     assert pipeline.data["segment"]["model"] == task.model.name
+
+
+def test_training_eval_masks_head_resolution_flag(
+    pipeline, sample, tmp_path, monkeypatch
+):
+    task = pipeline.cli_tasks()["segment"]
+    monkeypatch.setattr(task, "_samples", Mock(return_value=[sample]))
+    fake_training(monkeypatch)
+    output = tmp_path / "run"
+    invoke(
+        pipeline,
+        [
+            "task",
+            "segment",
+            "train",
+            "--output",
+            str(output),
+            "--eval-masks-head-resolution",
+            str(tmp_path),
+        ],
+    )
+    config = json.loads((output / "rfdetr-training.json").read_text())
+    assert config["params"]["eval_masks_head_resolution"] is True
 
 
 def test_training_model_override(pipeline, sample, tmp_path, monkeypatch):
@@ -493,6 +517,25 @@ def test_cpu_epoch_loop_reports_metrics_and_saves_reloadable_weights(
         def configure_optimizers(self):
             return torch.optim.SGD(self.parameters(), lr=0.01)
 
+    def train_predictions(trainer, pl_module):
+        # One of four true pixels predicted: IoU 0.25 on the training images.
+        quarter = torch.tensor([[[[True, False], [False, False]]]])
+        yield (
+            [
+                {
+                    "masks": quarter,
+                    "labels": torch.tensor([0]),
+                    "scores": torch.tensor([0.9]),
+                }
+            ],
+            [
+                {
+                    "masks": torch.ones(1, 2, 2, dtype=torch.bool),
+                    "labels": torch.tensor([0]),
+                }
+            ],
+        )
+
     trainer = lightning.Trainer(
         max_epochs=2,
         accelerator="cpu",
@@ -501,7 +544,11 @@ def test_cpu_epoch_loop_reports_metrics_and_saves_reloadable_weights(
         enable_checkpointing=False,
         enable_model_summary=False,
         enable_progress_bar=False,
-        callbacks=[make_callback(tmp_path, 0.5, has_validation)],
+        callbacks=[
+            make_callback(
+                tmp_path, 0.5, has_validation, train_predictions=train_predictions
+            )
+        ],
         limit_val_batches=1 if has_validation else 0,
         num_sanity_val_steps=0,
     )
@@ -509,6 +556,7 @@ def test_cpu_epoch_loop_reports_metrics_and_saves_reloadable_weights(
     rows = list(csv.DictReader((tmp_path / "metrics.csv").open()))
     assert [int(row["epoch"]) for row in rows] == [1, 2]
     assert all(row["train/loss"] for row in rows)
+    assert [float(row["train/mask_iou"]) for row in rows] == [0.25, 0.25]
     checkpoint = torch.load(tmp_path / "best.pt", weights_only=True)
     assert "optimizer_states" not in checkpoint
     assert checkpoint["args"]["class_names"] == ["text_region"]
@@ -559,3 +607,125 @@ def test_the_automatic_device_prefers_cuda_then_mps_then_the_cpu(
     monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
     monkeypatch.setattr(torch.backends.mps, "is_available", lambda: mps)
     assert rfdetr._auto_device() == expected
+
+
+@pytest.fixture
+def train_eval(tmp_path, monkeypatch):
+    """rfdetr_train_predictions over a fake RF-DETR module and data module."""
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("rfdetr")
+    from contextlib import nullcontext
+
+    import rfdetr.training.module_data as module_data
+
+    from collectra.tasks.image_segmentation.rfdetr_training import (
+        rfdetr_train_predictions,
+    )
+
+    exported = tmp_path / "dataset"
+    (exported / "train").mkdir(parents=True)
+    built = []
+
+    class DataModule:
+        def __init__(self, model_config, train_config):
+            self.dataset_dir = Path(train_config["dataset_dir"])
+            self.stages = []
+            built.append(self)
+
+        def setup(self, stage):
+            self.stages.append(stage)
+
+        def val_dataloader(self):
+            return ["batch"]
+
+        def transfer_batch_to_device(self, batch, device, index):
+            orig_size = torch.tensor([4, 6])
+            return f"{batch} on {device}", [{"orig_size": orig_size}]
+
+    monkeypatch.setattr(module_data, "RFDETRDataModule", DataModule)
+
+    class Model(torch.nn.Module):
+        def forward(self, samples):
+            assert not self.training, "training images are scored in eval mode"
+            return f"outputs of {samples}"
+
+    model = Model().train()
+    pl_module = SimpleNamespace(
+        train_config=SimpleNamespace(
+            dataset_dir=str(exported),
+            model_copy=lambda update: update,
+        ),
+        model_config="model config",
+        device="cpu",
+        _resolve_eval_model=lambda: model,
+        postprocess=lambda outputs, sizes: (outputs, sizes.tolist()),
+    )
+    trainer = SimpleNamespace(
+        precision_plugin=SimpleNamespace(val_step_context=nullcontext)
+    )
+    output = tmp_path / "output"
+    output.mkdir()
+    return SimpleNamespace(
+        predict=rfdetr_train_predictions(output),
+        trainer=trainer,
+        pl_module=pl_module,
+        model=model,
+        built=built,
+        exported=exported,
+        output=output,
+    )
+
+
+def test_training_images_are_predicted_like_validation(train_eval):
+    batches = list(train_eval.predict(train_eval.trainer, train_eval.pl_module))
+    assert batches == [
+        (
+            ("outputs of batch on cpu", [[4, 6]]),
+            [{"orig_size": batches[0][1][0]["orig_size"]}],
+        )
+    ]
+    assert train_eval.model.training, "the model goes back to training mode"
+
+
+def test_the_training_view_links_both_splits_to_the_training_images(train_eval):
+    list(train_eval.predict(train_eval.trainer, train_eval.pl_module))
+    view = train_eval.output / "train-eval"
+    for split in ("train", "valid"):
+        assert (view / split).resolve() == train_eval.exported.resolve() / "train"
+    (module,) = train_eval.built
+    assert module.dataset_dir == view
+    assert module.stages == ["validate"]
+
+
+def test_the_data_module_is_built_once_for_the_whole_run(train_eval):
+    for _ in range(3):
+        list(train_eval.predict(train_eval.trainer, train_eval.pl_module))
+    assert len(train_eval.built) == 1
+
+
+def test_an_existing_view_of_the_same_images_is_reused(train_eval):
+    view = train_eval.output / "train-eval"
+    view.mkdir()
+    (view / "train").symlink_to(train_eval.exported.resolve() / "train")
+    list(train_eval.predict(train_eval.trainer, train_eval.pl_module))
+    assert (view / "valid").resolve() == train_eval.exported.resolve() / "train"
+
+
+def test_a_view_of_other_images_is_not_silently_used(train_eval, tmp_path):
+    other = tmp_path / "other"
+    other.mkdir()
+    view = train_eval.output / "train-eval"
+    view.mkdir()
+    (view / "train").symlink_to(other)
+    with pytest.raises(FileExistsError):
+        list(train_eval.predict(train_eval.trainer, train_eval.pl_module))
+
+
+def test_a_failed_prediction_still_restores_training_mode(train_eval):
+    def fail(outputs, sizes):
+        raise RuntimeError("out of memory")
+
+    train_eval.pl_module.postprocess = fail
+    with pytest.raises(RuntimeError):
+        list(train_eval.predict(train_eval.trainer, train_eval.pl_module))
+    assert train_eval.model.training

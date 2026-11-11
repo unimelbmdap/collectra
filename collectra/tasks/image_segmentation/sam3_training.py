@@ -1,5 +1,6 @@
 """Adapt Meta's installed image-training template for mask-supervised COCO data."""
 
+import copy
 from pathlib import Path
 from types import MethodType, SimpleNamespace
 
@@ -91,6 +92,19 @@ def training_config(
             load_segmentation=masks,
         )
         data["drop_last"] = False
+    if masks:
+        # After every epoch the training images are also scored like validation
+        # (no augmentation, eval mode), so train/mask_iou is comparable to
+        # val/mask_iou. Box-only training has no masks to score.
+        train_eval = copy.deepcopy(trainer["data"]["val"])
+        train_eval["dataset"].update(
+            img_folder=str(dataset / "train"),
+            ann_file=str(dataset / "train/_annotations.coco.json"),
+        )
+        trainer.update(
+            collectra_train_eval=train_eval,
+            collectra_mask_threshold=confidence_threshold,
+        )
     import json
 
     valid = json.loads((dataset / "valid/_annotations.coco.json").read_text())
