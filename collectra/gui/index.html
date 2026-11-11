@@ -2139,7 +2139,7 @@
                 <button class="panel-toolbar-btn" id="artefactSearchToggle" onclick="toggleArtefactSearch()" title="Search artefacts (Cmd/Ctrl+F)" aria-label="Search artefacts">
                     <i class="fa fa-search" aria-hidden="true"></i>
                 </button>
-                <button class="panel-toolbar-btn" id="runToolbarBtn" onclick="showRunDialog()" title="Run" aria-label="Run pipeline on this page" disabled>
+                <button class="panel-toolbar-btn" id="runToolbarBtn" onclick="showRunMenu(event)" title="Run" aria-label="Run pipeline on this page" disabled>
                     <svg data-icon="play" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M4.5 2.8v10.4L13 8z"/>
                     </svg>
@@ -2425,6 +2425,9 @@
             <div class="modal-field">
                 <label class="modal-field-label" for="runNoteInput">Note</label>
                 <input type="text" id="runNoteInput" maxlength="200" placeholder="Optional, saved in run-log.txt" autocomplete="off" onkeydown="handleRunNoteKey(event)">
+            </div>
+            <div class="modal-field">
+                <label title="Run every task again and replace what it produced before"><input type="checkbox" id="runOverwriteInput" onchange="toggleRunOverwrite(this.checked)"> Overwrite existing results</label>
             </div>
             <p id="runModalSummary" class="delete-summary" hidden></p>
             <ul id="runModalTasks" class="delete-children" hidden></ul>
@@ -3725,8 +3728,8 @@
         }
 
         // ── RUN BUTTON ───────────────────────────────────────────────────────
-        // Runs the pipeline on the open page in the backend, after a panel that
-        // says which tasks run, re-run or are skipped. While it runs, the
+        // Runs the pipeline on the open page, or on every page in the list, in
+        // the backend, after a panel that says what runs. While it runs, the
         // progress popover polls the backend about once a second; the backend
         // refuses edits to the running page, so the page is reloaded only once
         // the run ends, and only if it is still the page open.
@@ -3734,6 +3737,8 @@
         let runStopRequested = false;
         let runStartedYamlPath = '';
         let runLastStatus = null;
+        let runCollection = false; // whether the panel is for the whole collection
+        let runOverwrite = false; // "Overwrite existing results", off whenever a panel opens
 
         // Whether the page open now is the one being run, so cannot be edited.
         function runLocksOpenPage() {
@@ -3756,21 +3761,58 @@
             return (e && e.message) || String(e);
         }
 
-        async function showRunDialog() {
+        // The menu under the Run button, built like the Split View menu.
+        function showRunMenu(mouseEvent) {
             if (runActive) { showRunProgress(); return; }
+            buildArrangePopover(mouseEvent.currentTarget, 'Run', []);
+            const menu = document.getElementById('nodeContextMenu');
+            for (const [label, collection] of [['Run this image', false], ['Run whole collection', true]]) {
+                const button = document.createElement('button');
+                button.className = 'layout-menu-item';
+                button.textContent = label;
+                button.onclick = () => {
+                    closeNodeContextMenu();
+                    document.getElementById('runOverwriteInput').checked = false;
+                    return showRunDialog(collection);
+                };
+                menu.appendChild(button);
+            }
+        }
+
+        async function showRunDialog(collection = false) {
+            if (runActive) { showRunProgress(); return; }
+            runCollection = collection;
+            runOverwrite = false;
+            await renderRunDialog();
+            document.getElementById('runModalError').hidden = true;
+            const note = document.getElementById('runNoteInput');
+            note.value = '';
+            const confirmBtn = document.getElementById('runModalConfirm');
+            document.getElementById('runModal').classList.add('visible');
+            (confirmBtn.disabled ? document.getElementById('runModalCancel') : note).focus();
+        }
+
+        async function toggleRunOverwrite(on) {
+            runOverwrite = on;
+            await renderRunDialog();
+        }
+
+        // Fills the panel from the backend's preview of the run.
+        async function renderRunDialog() {
+            const api = window.pywebview.api;
             let preview;
             try {
-                preview = await window.pywebview.api.get_run_preview();
+                preview = await (runCollection ? api.get_collection_preview(runOverwrite) : api.get_run_preview(runOverwrite));
             } catch (e) {
                 preview = {can_run: false, tasks: [], message: runErrorText(e)};
             }
-            const content = runDialogContent(preview);
+            const content = (runCollection ? collectionDialogContent : runDialogContent)(preview, runOverwrite);
             document.getElementById('runModalTitle').textContent = content.title;
             const summary = document.getElementById('runModalSummary');
-            summary.textContent = content.message || content.warning || content.kept;
+            summary.textContent = content.message || [content.summary, content.warning || content.kept].filter(Boolean).join('. ');
             summary.hidden = !summary.textContent;
             const list = document.getElementById('runModalTasks');
-            list.replaceChildren(...content.rows.map((row) => {
+            list.replaceChildren(...content.rows.concat(content.unplannable || []).map((row) => {
                 const item = document.createElement('li');
                 const text = document.createElement('span');
                 text.className = 'delete-child-id';
@@ -3778,15 +3820,10 @@
                 item.append(text);
                 return item;
             }));
-            list.hidden = !content.rows.length;
-            document.getElementById('runModalError').hidden = true;
-            const note = document.getElementById('runNoteInput');
-            note.value = '';
+            list.hidden = !list.children.length;
             const confirmBtn = document.getElementById('runModalConfirm');
             confirmBtn.textContent = content.canRun ? content.runLabel : 'Run';
             confirmBtn.disabled = !content.canRun;
-            document.getElementById('runModal').classList.add('visible');
-            (content.canRun ? note : document.getElementById('runModalCancel')).focus();
         }
 
         function closeRunDialog() {
@@ -3803,9 +3840,11 @@
             if (confirmBtn.disabled) return;
             confirmBtn.disabled = true;
             const note = document.getElementById('runNoteInput').value.trim();
+            const api = window.pywebview.api;
+            const args = runOverwrite ? [note, true] : [note];
             let result;
             try {
-                result = await window.pywebview.api.start_run(note);
+                result = await (runCollection ? api.start_collection_run(...args) : api.start_run(...args));
             } catch (e) {
                 result = {success: false, error: runErrorText(e)};
             }

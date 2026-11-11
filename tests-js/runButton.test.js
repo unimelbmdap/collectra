@@ -25,7 +25,7 @@ describe('the Run toolbar button', () => {
 
     it('is a normal toolbar button with its labels, disabled until a page is loaded', () => {
         expect(openTag).toContain('class="panel-toolbar-btn"');
-        expect(openTag).toContain('onclick="showRunDialog()"');
+        expect(openTag).toContain('onclick="showRunMenu(event)"');
         expect(openTag).toContain('title="Run"');
         expect(openTag).toContain('aria-label="Run pipeline on this page"');
         expect(openTag).toMatch(/\sdisabled>$/);

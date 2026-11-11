@@ -1,4 +1,4 @@
-const {runDialogContent, runStatusText, runIsForOpenPage} = require('../collectra/gui/runDialog.js');
+const {runDialogContent, collectionDialogContent, runStatusText, runIsForOpenPage} = require('../collectra/gui/runDialog.js');
 
 const task = (name, action, reason) => ({name, action, reason});
 const preview = (tasks, extra = {}) => ({success: true, can_run: true, tasks, message: '', ...extra});
@@ -147,5 +147,112 @@ describe('runDialogContent with a warning from the backend', () => {
         const content = runDialogContent(preview([task('d', 'skip', 'already has output')], {message: warning}));
         expect(content.canRun).toBe(false);
         expect(content.message).toBe('Every task already has output; there is nothing to run.');
+    });
+});
+
+describe('runDialogContent with "Overwrite existing results" ticked', () => {
+    const ticked = preview([task('ocr', 'rerun', 'overwrite'), task('classify', 'rerun', 'overwrite'),
+        task('detect', 'run', 'no output yet')]);
+
+    it('warns that every task runs again and replaces its results', () => {
+        const content = runDialogContent(ticked, true);
+        expect(content.warning).toBe('All 3 tasks will run again on this image and replace their results, '
+            + 'including edits and annotations you made.');
+        expect(content.kept).toBe('');
+        expect(content.rows.map((row) => row.text)).toEqual(['ocr — will re-run (overwrite)',
+            'classify — will re-run (overwrite)', 'detect — will run (no output yet)']);
+        expect(content.runLabel).toBe('Run 3 tasks');
+    });
+
+    it('keeps the backend warning first', () => {
+        const content = runDialogContent({...ticked, message: 'Warning: old.'}, true);
+        expect(content.warning).toMatch(/^Warning: old\. All 3 tasks will run again/);
+    });
+
+    it('is unchanged when unticked', () => {
+        expect(runDialogContent(ticked, false)).toEqual(runDialogContent(ticked));
+        expect(runDialogContent(ticked).warning).toBe('Re-run tasks replace their existing output, including edits.');
+    });
+});
+
+describe('collectionDialogContent (the panel for the whole collection)', () => {
+    const collection = (extra = {}) => ({success: true, can_run: true, pages: 34, to_replace: 12, first_time: 20,
+        tasks: [{name: 'ocr', pages: 20, replace: 0}, {name: 'classify', pages: 1, replace: 1}],
+        unplannable: [], message: '', ...extra});
+
+    it('asks whether to run the whole collection and sums up its pages', () => {
+        const content = collectionDialogContent(collection());
+        expect(content.title).toBe('Run the whole collection?');
+        expect(content.summary).toBe('34 pages: 12 have results, 20 have none yet');
+        expect(content.canRun).toBe(true);
+        expect(content.message).toBe('');
+        expect(content.runLabel).toBe('Run 32 pages');
+    });
+
+    it('counts the pages that cannot run and lists them with the reason', () => {
+        const content = collectionDialogContent(collection({pages: 1, to_replace: 0, first_time: 0,
+            unplannable: [{name: 'p9', reason: 'the image copy is missing'}]}));
+        expect(content.summary).toBe('1 page: 0 have results, 0 have none yet, 1 cannot run');
+        expect(content.unplannable).toEqual([{text: 'p9 — cannot run (the image copy is missing)'}]);
+    });
+
+    it('says on how many pages each task runs, and replaces results, singular and plural', () => {
+        expect(collectionDialogContent(collection()).rows).toEqual([
+            {text: 'ocr — runs on 20 pages'},
+            {text: 'classify — runs on 1 page (replaces results on 1 page)'},
+        ]);
+        expect(collectionDialogContent(collection({tasks: [{name: 'ocr', pages: 3, replace: 2}]})).rows)
+            .toEqual([{text: 'ocr — runs on 3 pages (replaces results on 2 pages)'}]);
+    });
+
+    it('says nothing existing is replaced when unticked', () => {
+        expect(collectionDialogContent(collection()).warning).toBe('Nothing existing is replaced.');
+    });
+
+    it('says every task runs again on every page when ticked', () => {
+        expect(collectionDialogContent(collection(), true).warning).toBe('All tasks will run again on 32 pages '
+            + 'and replace their results, including edits and annotations you made.');
+    });
+
+    it('labels the Run button for one page', () => {
+        expect(collectionDialogContent(collection({to_replace: 1, first_time: 0})).runLabel).toBe('Run 1 page');
+    });
+
+    it('cannot run, and shows the backend message, when the backend says it cannot', () => {
+        const content = collectionDialogContent(collection({can_run: false, message: 'Every page already has its results'}));
+        expect(content.canRun).toBe(false);
+        expect(content.message).toBe('Every page already has its results');
+        const missing = collectionDialogContent({can_run: false, tasks: [], message: 'bridge gone'});
+        expect(missing.message).toBe('bridge gone');
+        expect(missing.rows).toEqual([]);
+        expect(missing.unplannable).toEqual([]);
+    });
+});
+
+describe('runStatusText for a run of the collection', () => {
+    const status = (extra) => ({running: true, finished: false, folder: '', folders: ['/p1', '/p2'], unit: 'pages',
+        current: null, done: 3, total: 34, summary: null, error: null, ...extra});
+
+    it('counts pages', () => {
+        expect(runStatusText(status())).toBe('Running… (3 of 34 pages done)');
+        expect(runStatusText(status(), true)).toBe('Stopping after the current task… (3 of 34 pages done)');
+    });
+
+    it('gives the summary unchanged when finished', () => {
+        expect(runStatusText(status({running: false, finished: true, summary: '34 pages: 5 ran, 0 skipped, 0 failed'})))
+            .toBe('Run finished: 34 pages: 5 ran, 0 skipped, 0 failed. See run-log.txt.');
+    });
+});
+
+describe('runIsForOpenPage for a run of the collection', () => {
+    const status = {folder: '', folders: ['/data/page1', '/data/page2'], unit: 'pages'};
+
+    it('is true when the open page is one of the run folders', () => {
+        expect(runIsForOpenPage(status, '/data/page2/results.yaml')).toBe(true);
+    });
+
+    it('is false when the open page is not in the run', () => {
+        expect(runIsForOpenPage(status, '/data/page3/results.yaml')).toBe(false);
+        expect(runIsForOpenPage({...status, folders: []}, '/data/page3/results.yaml')).toBe(false);
     });
 });
