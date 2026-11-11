@@ -2139,7 +2139,7 @@
                 <button class="panel-toolbar-btn" id="artefactSearchToggle" onclick="toggleArtefactSearch()" title="Search artefacts (Cmd/Ctrl+F)" aria-label="Search artefacts">
                     <i class="fa fa-search" aria-hidden="true"></i>
                 </button>
-                <button class="panel-toolbar-btn" id="runToolbarBtn" onclick="showRunMenu(event)" title="Run" aria-label="Run pipeline on this page" disabled>
+                <button class="panel-toolbar-btn" id="runToolbarBtn" onclick="showRunMenu(event)" title="Run" aria-label="Run" disabled>
                     <svg data-icon="play" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M4.5 2.8v10.4L13 8z"/>
                     </svg>
@@ -3861,6 +3861,9 @@
             const confirmBtn = document.getElementById('runModalConfirm');
             if (confirmBtn.disabled) return;
             confirmBtn.disabled = true;
+            // The tick waits, so the start sends what the panel shows
+            const tick = document.getElementById('runOverwriteInput');
+            if (tick) tick.disabled = true;
             const note = document.getElementById('runNoteInput').value.trim();
             const api = window.pywebview.api;
             const args = runOverwrite ? [note, true] : [note];
@@ -3874,7 +3877,7 @@
                 const error = document.getElementById('runModalError');
                 error.textContent = (result && result.error) || 'The run could not start.';
                 error.hidden = false;
-                confirmBtn.disabled = false;
+                await renderRunDialog();
                 return;
             }
             closeRunDialog();
