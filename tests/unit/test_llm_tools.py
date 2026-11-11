@@ -219,12 +219,12 @@ def test_lookups_beyond_the_limit_are_refused_and_the_model_must_answer(tmp_path
     )
 
 
-def test_a_model_that_never_stops_calling_tools_gives_no_answer(tmp_path, caplog):
+def test_a_model_that_never_stops_calling_tools_is_an_error(tmp_path):
     _, task, _ = build(
         tmp_path, [call("x", str(i)) for i in range(20)], max_tool_calls=2
     )
-    assert task.run(note()) is None
-    assert any("final answer" in r.getMessage() for r in caplog.records)
+    with pytest.raises(RuntimeError, match="final answer after 2 lookups"):
+        task.run(note())
 
 
 def test_lookups_are_logged_with_the_task_tool_and_query(tmp_path, caplog):
@@ -353,7 +353,8 @@ def test_a_conversation_that_fails_in_prefetch_is_retried_alone(tmp_path):
     task.prefetch(entries("a", "b"))
     assert len(task._prefetched) == 1  # only "a" was kept
     assert task.run(*entries("a")[0])() == "answer:a"
-    assert task.run(*entries("b")[0]) is None  # fails again alone: logged, no output
+    with pytest.raises(RuntimeError, match="rate limited"):  # fails again alone
+        task.run(*entries("b")[0])
     assert model.turns >= 3
 
 
@@ -506,10 +507,10 @@ def test_a_plain_text_reply_is_told_to_submit_the_answer(tmp_path):
     assert "LLMOutputs" in nudge.content
 
 
-def test_a_model_that_never_submits_gives_no_answer(tmp_path, caplog):
+def test_a_model_that_never_submits_is_an_error(tmp_path):
     task, _ = build_structured(tmp_path, [answer("hmm")] * 10, max_tool_calls=1)
-    assert task.run(note()) is None
-    assert "did not give a final answer" in caplog.text
+    with pytest.raises(RuntimeError, match="did not give a final answer"):
+        task.run(note())
 
 
 def test_structured_conversations_are_prefetched_and_reused(tmp_path):

@@ -205,7 +205,7 @@ def test_a_single_output_is_still_free_text():
     assert result.name == "only"
 
 
-def test_a_reply_the_schema_rejects_gives_no_output_rather_than_empty_ones():
+def test_a_reply_the_schema_rejects_is_an_error_rather_than_empty_output():
     class Strict(FakeLLM):
         def with_structured_output(self, model, include_raw=False):
             chain = super().with_structured_output(model, include_raw)
@@ -220,7 +220,8 @@ def test_a_reply_the_schema_rejects_gives_no_output_rather_than_empty_ones():
             )
             return chain
 
-    assert reader(Strict()).run(label()) is None
+    with pytest.raises(ValueError, match="bad"):
+        reader(Strict()).run(label())
 
 
 def test_a_model_without_tool_calling_raises_a_clear_error():
@@ -263,7 +264,8 @@ def test_an_unreadable_batch_reply_is_retried_alone():
     task.prefetch(entries("good", "bad"))
     assert [t() for t in task.run(*entries("good")[0])][1] == "5"
     assert llm.structured.invoked == []
-    assert task.run(*entries("bad")[0]) is None  # still unreadable when asked alone
+    with pytest.raises(Exception):  # still unreadable when asked alone
+        task.run(*entries("bad")[0])
     assert llm.structured.invoked == ["bad"]
 
 

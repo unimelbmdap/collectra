@@ -328,3 +328,22 @@ def test_a_task_that_found_nothing_is_not_rerun(tmp_path, files, monkeypatch, ca
     assert "described (0)" in message
     build(tmp_path, batch_size=1).run(files=files[:1], output=str(output), force=True)
     assert EVENTS == ["describe"]
+
+
+def test_a_task_that_failed_is_run_again(tmp_path, files, monkeypatch):
+    # Unlike finding nothing, a failure saves no output, so resuming retries it.
+    def fail(self, image: Image):
+        EVENTS.append("describe")
+        raise RuntimeError("the model is unavailable")
+
+    monkeypatch.setattr(Describe, "run", fail)
+    output = tmp_path / "out"
+    build(tmp_path, batch_size=1).run(files=files[:1], output=str(output))
+    assert "described" not in yaml.safe_load(
+        (output / "a.stg" / "results.yaml").read_text()
+    )
+    monkeypatch.undo()
+    EVENTS.clear()
+    build(tmp_path, batch_size=1).run(files=files[:1], output=str(output))
+    assert EVENTS == ["describe:a", "shout:a"]
+    assert saved(output / "a.stg", "described") == ["page a"]

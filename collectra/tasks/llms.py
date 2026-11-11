@@ -551,20 +551,16 @@ class LLM(TextOutputTask):
             that contain the input key as a substring will be populated with LLM results.
             Prints a success message when inference completes.
         """
-        try:
-            content = self._build_messages(args)
+        # A failed call or an unreadable reply raises: the pipeline then records
+        # the failure and saves no output, so the next run tries again. Returning
+        # nothing would be saved as "found nothing" and never retried.
+        content = self._build_messages(args)
 
-            cached = self._prefetched.get(self._cache_key(content))
-            response = self.invoke(cached.pop(0) if cached else None)
+        cached = self._prefetched.get(self._cache_key(content))
+        response = self.invoke(cached.pop(0) if cached else None)
 
-            if self.is_structured:
-                return [
-                    self.text_output(value, name=node)
-                    for node, value in response.items()
-                ]
-            return self.text_output(response)
-        except LLMSetupError:
-            raise  # a setup problem, not a bad reply: say so rather than log per page
-        except Exception as e:
-            logger.error("LLM task '%s' failed: %s", self.name, e, exc_info=True)
-            return None
+        if self.is_structured:
+            return [
+                self.text_output(value, name=node) for node, value in response.items()
+            ]
+        return self.text_output(response)

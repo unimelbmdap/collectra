@@ -175,14 +175,15 @@ def test_run_returns_text():
     assert result.data == "some response"
 
 
-def test_run_returns_none_on_exception():
+def test_run_raises_when_the_model_call_fails():
+    # So the pipeline records the failure and a later run tries again, rather
+    # than saving no output as if the model had found nothing.
     mock_self = MagicMock(spec=LLM)
     mock_self.name = "test_task"
     mock_self._build_messages.side_effect = RuntimeError("model failed")
 
-    result = LLM.run(mock_self)
-
-    assert result is None
+    with pytest.raises(RuntimeError, match="model failed"):
+        LLM.run(mock_self)
 
 
 # --- batching -------------------------------------------------------------
