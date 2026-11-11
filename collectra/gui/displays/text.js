@@ -49,6 +49,9 @@ function installTextDisplay(PanelController) {
                 // once, so a fixed id here would duplicate across the document.
                 this.clearNodeTools();
                 textDisplay.innerHTML = `<textarea class="mde-textarea"></textarea>`;
+                // While this page is being run its text is read-only; see setTextRunLocked.
+                this._textEditable = view ? view.editable : true;
+                const runLocked = typeof runLocksOpenPage === 'function' && runLocksOpenPage();
                 this.easyMDE = new EasyMDE({
                     autoDownloadFontAwesome: false,
                     element: textDisplay.querySelector('.mde-textarea'),
@@ -70,8 +73,9 @@ function installTextDisplay(PanelController) {
                         : ['bold','italic','|','heading','quote','unordered-list','ordered-list','|','preview','side-by-side','fullscreen'],
                     previewClass: ['editor-preview'],
                     ...(tei ? { previewRender: () => '' } : {}),
-                    readOnly: view ? !view.editable : false,
+                    readOnly: !this._textEditable || runLocked,
                 });
+                this.easyMDE.gui?.toolbar?.classList.toggle('disabled-for-preview', runLocked);
                 requestAnimationFrame(() => this.easyMDE?.codemirror.refresh());
                 // The formatting tools go to the left of the row under the tabs
                 // (formatted text only — plain text has none).
@@ -111,6 +115,14 @@ function installTextDisplay(PanelController) {
             if (view.format === 'plain') this.easyMDE.codemirror.setOption('mode', 'text/plain');
             markSearchInEditor(this);
             this.renderPager(); // now that Save may exist
+        };
+
+        // A run of the open page rewrites it and reloads it when it ends, so
+        // the text cannot be edited meanwhile: typing would be lost.
+        PanelController.prototype.setTextRunLocked = function(locked) {
+            if (!this.easyMDE) return;
+            this.easyMDE.codemirror.setOption('readOnly', locked || !this._textEditable);
+            this.easyMDE.gui?.toolbar?.classList.toggle('disabled-for-preview', locked);
         };
 
         // The slot at the left of the row under the tabs, for the text-editing tools.

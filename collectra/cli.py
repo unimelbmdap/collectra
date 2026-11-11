@@ -20,6 +20,10 @@ CLI_KIND = "__collectra_cli_kind__"
 CLI_NAME = "__collectra_cli_name__"
 CLI_AVAILABLE = "__collectra_cli_available__"
 
+# Mark an optional parameter as positional: ``Annotated[str | None, Positional]``.
+# Other parameters with a default become ``--options``.
+Positional = object()
+
 
 def _member(
     kind: str,
@@ -55,6 +59,12 @@ def group(
 ):
     """Mark a method as a mapping of named child CLI objects."""
     decorator = _member("group", name)
+    return decorator(func) if func is not None else decorator
+
+
+def subcommands(func: Callable[..., Any] | None = None, *, name: str | None = None):
+    """Mark a method as returning one CLI object whose commands nest under it."""
+    decorator = _member("subcommands", name)
     return decorator(func) if func is not None else decorator
 
 
@@ -102,6 +112,11 @@ def _callable_schema(name: str, func: Callable[..., Any]) -> type:
             metadata = []
             if get_origin(annotation) is Annotated:
                 base_type, *metadata = get_args(annotation)
+            if any(item is Positional for item in metadata):
+                metadata = [item for item in metadata if item is not Positional]
+                option = Annotated[(base_type, *metadata, cappa.Arg())]
+                schema_fields.append((parameter.name, option, parameter.default))
+                continue
             if base_type is bool:
                 cli_name = parameter.name.replace("_", "-")
                 long = f"--{cli_name}/--no-{cli_name}"
@@ -165,6 +180,11 @@ def command_for_object(
     for cli_name, kind, member in _cli_members(obj):
         if kind == "command":
             options[cli_name] = command_for_callable(cli_name, member)
+            continue
+        if kind == "subcommands":
+            options[cli_name] = command_for_object(
+                member(), name=cli_name, help=inspect.getdoc(member)
+            )
             continue
 
         children = member()

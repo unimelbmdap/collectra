@@ -46,6 +46,7 @@ async function runNativeMenuAction(name) {
         'choose-layout': () => click('newPanelToolbarBtn'),
         'save-layout': showSaveLayoutDialog,
         'source-control': () => click('gitToolbarBtn'),
+        settings: () => click('settingsToolbarBtn'),
         'check-updates': () => showUpdatesDialog(),
         statistics: openStatsModal,
         'load-details': openInfoModal,

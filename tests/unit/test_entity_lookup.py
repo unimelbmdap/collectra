@@ -172,22 +172,22 @@ def test_it_becomes_a_tool_named_after_the_resource(tmp_path):
     assert tool.name == "genera_lookup"
     assert "Graptolite genera" in tool.description
     assert "not" in tool.description and "complete" in tool.description
-    assert list(tool.args) == ["query"]
+    assert list(tool.function_schema.json_schema["properties"]) == ["query"]
 
 
 def test_the_tool_lists_candidates_with_scores_and_exact_matches(tmp_path):
-    text = lookup(tmp_path).as_tool().invoke({"query": "Monograptus"})
+    text = lookup(tmp_path).as_tool().function(query="Monograptus")
     assert text.splitlines()[0].startswith("Candidates for 'Monograptus'")
     assert "Monograptus" in text and "Monograptus" != text
     assert "Didymograptus" in text or "Pristiograptus" in text
-    exact = lookup(tmp_path).as_tool().invoke({"query": "monograptus"})
+    exact = lookup(tmp_path).as_tool().function(query="monograptus")
     assert "exact match" in exact.splitlines()[1]
 
 
 def test_the_tool_says_so_when_nothing_matches(tmp_path):
-    text = lookup(tmp_path).as_tool().invoke({"query": "zzzzqqq"})
+    text = lookup(tmp_path).as_tool().function(query="zzzzqqq")
     assert "No candidates" in text and "not" in text and "exhaustive" in text
 
 
 def test_the_tool_asks_for_a_query_when_it_is_empty(tmp_path):
-    assert "query" in lookup(tmp_path).as_tool().invoke({"query": "  "}).lower()
+    assert "query" in lookup(tmp_path).as_tool().function(query="  ").lower()

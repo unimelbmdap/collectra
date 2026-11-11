@@ -20,24 +20,26 @@ from __future__ import annotations
 __all__ = ["Pipeline"]
 
 import copy
-import tempfile
-from contextlib import nullcontext
 import datetime
 import json
 import shlex
 import shutil
 import stat
 import sys
+import tempfile
 import time
 import warnings
+from collections.abc import Callable
+from contextlib import nullcontext
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated, Any, ClassVar
 
-from cappa import Arg
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 import graphviz
 import networkx as nx
 import yaml
+from cappa import Arg
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 from rich.markup import escape
 from rich.progress import (
     BarColumn,
@@ -50,13 +52,13 @@ from rich.progress import (
     track,
 )
 
+from collectra.cli import command, group, subcommands
 from collectra.utils import change_dir, load_class_from_string, write_yaml
-from collectra.cli import command, group
 from utils.get_types import get_param_types, get_return_type, unpack_types
 
 from ..commons.base import LenientAttributes, TaskContext
-from ..logger import get_logger
 from ..commons.results import Results, pop_header, put_header
+from ..logger import get_logger
 from ..resources.base import Resource
 from ..tasks.base import (
     Task,
@@ -70,9 +72,17 @@ from ..types.base import (
 from ..types.images import Image, ImageCrop
 from ..types.links import Link
 from ..types.texts import Text
+from ..usage import UsageLedger
+from .env import PipelineEnv
 from .node_graph_manager import NodeGraphManager
+from .run_plan import RunPlan, RunReport, TaskOutcome, plan_tasks
 
 logger = get_logger(__name__)
+
+
+def _never() -> bool:
+    """The default stop check of a run: it never stops."""
+    return False
 
 
 class PreviousOutputs:
@@ -176,9 +186,17 @@ class Pipeline(LenientAttributes, BaseModel):
     _run_progress: RunProgress | None = None
     # (task, file, error) for each task that failed in the current run.
     _failures: list[tuple[str, str, str]] = PrivateAttr(default_factory=list)
+    # (status, detail) for each task that ran, was skipped, failed or was
+    # stopped in the current run, by task name.
+    _outcomes: dict[str, tuple[str, str]] = PrivateAttr(default_factory=dict)
+    # Errors that stopped a file, or the whole run, after being logged.
+    _run_errors: list[str] = PrivateAttr(default_factory=list)
     # True when the file used the deprecated ``collectra_pipeline_metadata``
     # block; saving then keeps that form rather than rewriting the file.
     _legacy_declaration: bool = PrivateAttr(default=False)
+    # The environment variables the user stores for this pipeline.
+    _env: PipelineEnv | None = PrivateAttr(default=None)
+    _usage: UsageLedger = PrivateAttr(default_factory=UsageLedger)
 
     @field_validator("version", mode="before")
     @classmethod
@@ -264,6 +282,9 @@ class Pipeline(LenientAttributes, BaseModel):
                 raise ValueError(
                     f"Pipeline {name!r} in {config_path} needs a {required!r}"
                 )
+        # Before any task is imported: some libraries read the environment then.
+        env = PipelineEnv(name)
+        env.load()
         pipeline = pipeline_class(
             name,
             attributes["ext"],
@@ -273,6 +294,7 @@ class Pipeline(LenientAttributes, BaseModel):
             **config,
         )
         pipeline._legacy_declaration = legacy
+        pipeline._env = env
         return pipeline
 
     @classmethod
@@ -327,6 +349,29 @@ class Pipeline(LenientAttributes, BaseModel):
             render=render,
             force=force,
         )
+        self.usage.print_summary()
+
+    @property
+    def usage(self) -> UsageLedger:
+        """The LLM tokens and cost of the latest run, by task."""
+        return self._usage
+
+    @property
+    def env(self) -> PipelineEnv:
+        """The environment variables the user stores for this pipeline.
+
+        They are kept in the user's config folder, by the pipeline's name, and
+        ``from_file`` loads them into the environment.
+        """
+        if self._env is None:
+            self._env = PipelineEnv(self.name)
+        return self._env
+
+    @subcommands(name="env")
+    def cli_env(self) -> PipelineEnv:
+        """Set, show, delete or clear the environment variables stored for this
+        pipeline."""
+        return self.env
 
     @command(name="path")
     def cli_path(self) -> None:
@@ -557,13 +602,18 @@ class Pipeline(LenientAttributes, BaseModel):
                 - force: Rerun tasks whose outputs already exist.
                 - output: Output directory for results.
         """
+        self._outcomes = {}
+        self._run_errors = []
+        self._usage = UsageLedger()
         try:
             self._ensure_workflow_connected()
             starting_nodes = self._get_starting_nodes(task_name)
             run_options = self._extract_run_options(kwargs)
+            run_options["usage_ledger"] = self._usage
             self._process_files(starting_nodes, run_options)
         except Exception as e:
             logger.error("Workflow run failed: %s", e, exc_info=True)
+            self._run_errors.append(f"{type(e).__name__}: {e}")
 
     def _ensure_workflow_connected(self):
         """Ensure the workflow graph is connected before execution.
@@ -612,6 +662,13 @@ class Pipeline(LenientAttributes, BaseModel):
             "render": kwargs.pop("render", False),
             "force": kwargs.pop("force", False),
             "output": kwargs.pop("output", None),
+            # Tasks to rerun as if forced, and a check made before each task
+            # starts that stops the run when it returns True.
+            "rerun": set(kwargs.pop("rerun", set())),
+            "stop": kwargs.pop("stop", _never),
+            # A page run reads a page's image from its copy in the results
+            # folder when the image its results refer to cannot be read.
+            "page_copy": kwargs.pop("page_copy", False),
         }
         options["task_overrides"] = kwargs.copy()
         return options
@@ -725,6 +782,7 @@ class Pipeline(LenientAttributes, BaseModel):
                         self._process_single_file(nodes, file_path, stage_options)
                     except Exception as e:
                         logger.error("Error processing file: %s", e, exc_info=True)
+                        self._run_errors.append(f"{type(e).__name__}: {e}")
                     held = self._stage_gate.deferred if self._stage_gate else {}
                     deferred.extend(held.items())
                     if self._run_progress and not held:
@@ -808,7 +866,8 @@ class Pipeline(LenientAttributes, BaseModel):
                     task = node.get_task()
                     if not isinstance(task, Task) or task.batch_size <= 1:
                         continue
-                    if not options["force"] and self._has_output(node):
+                    forced = options["force"] or node.name in options["rerun"]
+                    if not forced and self._has_output(node):
                         continue
                     self._apply_task_run_overrides(task, options["task_overrides"])
                     parents = self.node_manager.get_parents_artefact(node)
@@ -855,8 +914,11 @@ class Pipeline(LenientAttributes, BaseModel):
                 if options["usage"]
                 else None
             ),
+            usage_ledger=options.get("usage_ledger"),
             render=options["render"],
-            file_path=Path(value),
+            # Absolute: tasks run inside the pipeline's folder, where a path
+            # relative to the caller's folder would point somewhere else.
+            file_path=Path(value).resolve(),
             single_run=options["single"],
         )
 
@@ -864,6 +926,8 @@ class Pipeline(LenientAttributes, BaseModel):
         self._set_task_contexts(context)
 
         self._init_input_data(starting_nodes, **{key: value})
+        if options.get("page_copy"):
+            self._read_page_copy(Path(value))
         return key, value
 
     def _process_single_file(
@@ -886,9 +950,205 @@ class Pipeline(LenientAttributes, BaseModel):
             value=value,
             render=options["render"],
             force=options["force"],
+            rerun=options["rerun"],
+            stop=options["stop"],
             task_overrides=options["task_overrides"],
         )
         self._warn_unready_starting_tasks(starting_nodes, value)
+
+    def plan_page_run(self, folder: Path) -> RunPlan:
+        """Which tasks running this results folder would run, re-run or skip.
+
+        The folder is loaded the way a run loads it, but no task runs.
+
+        Raises:
+            FileNotFoundError: The folder has no results, or the image copy
+                its results refer to is missing.
+            ValueError: The results do not match this pipeline's tasks.
+        """
+        folder = Path(folder)
+        differences = self._check_page(folder)
+        options = {
+            "output": None,
+            "usage": False,
+            "render": False,
+            "single": False,
+            "page_copy": True,
+        }
+        self._setup_file(self._get_root_starting_nodes(), str(folder), options)
+        flow = self.node_manager.flow
+        tasks = {node.name: node for node in self.node_manager.get_task_nodes()}
+        order = [name for name in nx.topological_sort(flow) if name in tasks]
+        children = {
+            name: {
+                grandchild.name
+                for output in self._output_nodes(node)
+                for grandchild in self.node_manager.get_children(output)
+                if isinstance(grandchild, TaskNode)
+            }
+            for name, node in tasks.items()
+        }
+        missing = {name for name, node in tasks.items() if not self._has_output(node)}
+        return replace(plan_tasks(missing, children, order), warnings=differences)
+
+    def _check_page(self, folder: Path) -> tuple[str, ...]:
+        """Check a results folder holds this pipeline's results and its image.
+
+        Nothing is written: a folder a run would treat as a new input, and so
+        start new results in, is refused.
+
+        Returns:
+            What differs between this pipeline and the one that made the
+            results, said for the log and the preview; it does not stop a run.
+
+        Raises:
+            FileNotFoundError: The folder has no results, or the image copy
+                its results refer to is missing.
+            ValueError: The folder is not named as this pipeline's pages are,
+                or the results do not match this pipeline's tasks.
+        """
+        results_file = folder / self.RESULTS_FILE
+        if not results_file.exists():
+            raise FileNotFoundError(f"{results_file} does not exist.")
+        if not self._is_existing_collectra_folder(folder):
+            raise ValueError(
+                f"{folder.name} cannot be run with the {self.name} pipeline: "
+                f"its pages are folders whose names end in .{self.ext}."
+            )
+        self._ensure_workflow_connected()
+        root = self._get_root_input()
+        header, entry = self._page_entry(folder, root)
+        if entry is None:
+            raise ValueError(
+                f"The results in {folder.name} do not match this pipeline: "
+                f"there is no '{root}' entry."
+            )
+        name = self._page_image_name(entry)
+        if name and not (folder / name).exists():
+            raise FileNotFoundError(
+                f"{name} is missing from {folder}; the results refer to it."
+            )
+        differences = []
+        if header.workflow and header.workflow != self.name:
+            differences.append(
+                f"these results were made by the {header.workflow} pipeline, "
+                f"not {self.name}"
+            )
+        if header.version and self.version and header.version != str(self.version):
+            differences.append(
+                f"pipeline version {self.version}, results made with {header.version}"
+            )
+        return tuple(differences)
+
+    def _page_entry(self, folder: Path, root: str) -> tuple[Results, Any]:
+        """A page's results header and its root entry (None if it has none)."""
+        saved = yaml.safe_load((folder / self.RESULTS_FILE).read_text()) or {}
+        header = pop_header(saved, source=folder)
+        return header, saved.get(root)
+
+    @staticmethod
+    def _page_image_name(entry: Any) -> str | None:
+        """The file name of the image a root entry refers to.
+
+        A run can record the copy by bare name or by the path it was fed.
+        """
+        image = (
+            entry.get("data", entry.get("path")) if isinstance(entry, dict) else None
+        )
+        return Path(str(image)).name if image else None
+
+    def _read_page_copy(self, folder: Path) -> None:
+        """Load a page's image from its copy in ``folder`` if it did not load.
+
+        The image the results refer to may have been moved or deleted since
+        the page was made; the copy in the folder is the same file. The
+        results are left as they are.
+
+        Raises:
+            ValueError: Neither the image nor its copy could be read.
+        """
+        root = self._get_root_input()
+        node = self.node_manager.resolve_node(root)
+        if node.items:
+            return
+        _, entry = self._page_entry(folder, root)
+        name = self._page_image_name(entry)
+        if not name:
+            raise ValueError(f"The page image of {folder.name} could not be read.")
+        item = dict(entry)
+        item.pop("path", None)
+        item["name"] = root
+        item["data"] = folder / name
+        try:
+            image = load_class_from_string(item.pop("type"))(**item)
+        except Exception as error:
+            raise ValueError(
+                f"The page image {name} could not be read: {error}"
+            ) from error
+        image.source_file = folder
+        node.add_item(image)
+        self._resolve_links()
+
+    def run_page(
+        self,
+        folder: Path,
+        plan: RunPlan,
+        should_stop: Callable[[], bool] = lambda: False,
+    ) -> RunReport:
+        """Run a results folder's planned tasks in place, and say what happened.
+
+        Tasks with output are skipped; the plan's re-run tasks replace their
+        output. ``should_stop`` is checked before each task starts; once it
+        returns True no further task starts. The page's image is read from
+        the copy inside the folder.
+
+        Raises:
+            FileNotFoundError: The folder has no results, or the image copy
+                its results refer to is missing.
+            ValueError: The results do not match this pipeline's tasks.
+        """
+        folder = Path(folder)
+        self._check_page(folder)
+        stopped = False
+
+        def stop() -> bool:
+            nonlocal stopped
+            stopped = stopped or bool(should_stop())
+            return stopped
+
+        rerun = {task.name for task in plan.tasks if task.action == "rerun"}
+        self.run(files=[str(folder)], rerun=rerun, stop=stop, page_copy=True)
+        errors = "; ".join(self._run_errors)
+        statuses: dict[str, str] = {}
+        outcomes = []
+        for task in plan.tasks:
+            status, detail = self._outcomes.get(task.name, ("", ""))
+            if not status and errors:
+                status, detail = "failed", f"did not run: {errors}"
+            elif not status:
+                status = "cancelled"
+                detail = (
+                    "stopped before it started"
+                    if stopped
+                    else "did not run: its inputs were not produced"
+                )
+            if task.name in rerun:
+                source = task.reason.removeprefix("upstream ").removesuffix(" runs")
+                upstream = f"upstream {source} ran"
+                if status == "ran":
+                    status = "re-ran"
+                    detail = f"{detail or 'replaced existing output'} ({upstream})"
+                elif statuses.get(source) in ("ran", "re-ran"):
+                    # Its input was replaced, but its output was not.
+                    detail = (
+                        f"{detail}; kept previous output, which may be out of date "
+                        f"({upstream})"
+                    )
+            elif status == "ran":
+                detail = detail or task.reason
+            statuses[task.name] = status
+            outcomes.append(TaskOutcome(task.name, status, detail))
+        return RunReport(outcomes)
 
     def _warn_unready_starting_tasks(self, starting_nodes: list[TaskNode], value):
         """Explain why a task the user asked for never ran for this file.
@@ -1218,15 +1478,22 @@ class Pipeline(LenientAttributes, BaseModel):
         child node execution.
         """
         single_run = kwargs.get("single", False)
-        render = kwargs.get("render", False)
-
-        self._mark_nodes_as_processing(nodes)
-        self.render("workflow_run", file=kwargs.get("value", ""), render=render)
-
-        child_tasks = self._execute_nodes(nodes, args, kwargs, render)
+        child_tasks = self._run_node_step(nodes, args, kwargs)
 
         if child_tasks and not single_run:
             self._run_nodes(child_tasks, *args, **kwargs)
+
+    def _run_node_step(
+        self,
+        nodes: list[TaskNode | ArtefactNode] | list[TaskNode] | list[ArtefactNode],
+        args: tuple,
+        kwargs: dict,
+    ) -> list[TaskNode]:
+        """Execute ``nodes`` themselves, returning the child tasks now ready."""
+        render = kwargs.get("render", False)
+        self._mark_nodes_as_processing(nodes)
+        self.render("workflow_run", file=kwargs.get("value", ""), render=render)
+        return self._execute_nodes(nodes, args, kwargs, render)
 
     def _mark_nodes_as_processing(
         self, nodes: list[TaskNode | ArtefactNode] | list[TaskNode] | list[ArtefactNode]
@@ -1269,7 +1536,7 @@ class Pipeline(LenientAttributes, BaseModel):
             return
 
         children = self._get_node_children(node)
-        force = kwargs.get("force", False)
+        force = kwargs.get("force") or node.name in kwargs.get("rerun", set())
         if not force and self._has_output(node):
             existing = [
                 f"{output.name} ({len(output.items)})"
@@ -1283,11 +1550,16 @@ class Pipeline(LenientAttributes, BaseModel):
                 Path(str(kwargs.get("value", ""))).name or "this file",
                 ", ".join(existing),
             )
+            self._outcomes[node.name] = ("skipped", "kept existing output")
             self._update_node_status(node, True)
             self._run_nodes(children, **kwargs)
             return
 
         if self._stage_gate and self._stage_gate.defer(node, kwargs.get("value", "")):
+            return
+
+        if kwargs.get("stop", _never)():
+            self._outcomes[node.name] = ("cancelled", "stopped before it started")
             return
 
         previous = self._take_outputs(node, kwargs.get("value")) if force else None
@@ -1304,14 +1576,39 @@ class Pipeline(LenientAttributes, BaseModel):
             if previous is not None:
                 previous.restore()
             raise
-        if previous is not None:
+        detail = ""
+        if previous is not None and not results:
             # A failed rerun must not destroy the output it was meant to replace.
-            previous.discard() if results else previous.restore()
+            previous.restore()
+            previous = None
+            detail = "produced nothing, kept existing output"
+        elif previous is not None and node.name not in kwargs.get("rerun", set()):
+            # A forced run (the CLI's --force) drops the old output before the
+            # new one is saved, as it always has. Only a page run's re-runs
+            # keep it until the new output is saved.
+            previous.discard()
+            previous = None
 
         self._update_node_status(node, bool(results))
         self.render("workflow_run", file=kwargs.get("value", ""), render=render)
 
-        self._run_nodes(children, *results, **kwargs)
+        try:
+            child_tasks = self._run_node_step(children, tuple(results), kwargs)
+        except BaseException as error:
+            # Nor must new output that could not be saved.
+            if previous is not None:
+                previous.restore()
+            self._outcomes[node.name] = (
+                "failed",
+                f"could not save its output: {type(error).__name__}: {error}",
+            )
+            raise
+        if previous is not None:
+            previous.discard()
+        self._outcomes[node.name] = ("ran", detail)
+
+        if child_tasks and not kwargs.get("single", False):
+            self._run_nodes(child_tasks, *results, **kwargs)
 
     def _task_failed(
         self, node: TaskNode, folder, error: Exception, render: bool = False
@@ -1322,6 +1619,7 @@ class Pipeline(LenientAttributes, BaseModel):
             "Task '%s' failed for %s: %s", node.name, name, error, exc_info=error
         )
         self._failures.append((node.name, name, f"{type(error).__name__}: {error}"))
+        self._outcomes[node.name] = ("failed", f"{type(error).__name__}: {error}")
         self._update_node_status(node, False)
         self.render("workflow_run", file=folder, render=render)
 
@@ -1610,12 +1908,19 @@ class Pipeline(LenientAttributes, BaseModel):
                 description=f"Running {task.name}",
             )
         )
-        with change_dir(self.path):
-            for entry in listed:
-                if not isinstance(entry, list):
-                    entry = list(entry)
-                entry_result = self._execute_entries(entry, task)
-                results.extend(entry_result)
+        try:
+            with change_dir(self.path):
+                for entry in listed:
+                    if not isinstance(entry, list):
+                        entry = list(entry)
+                    entry_result = self._execute_entries(entry, task)
+                    results.extend(entry_result)
+        finally:
+            # A task that fails leaves track()'s generator, and its refresh
+            # thread, open. Closing it now stops the thread at once; left to
+            # the garbage collector it can deadlock with the bar's own lock.
+            if listed is not entries:
+                listed.close()
         return results
 
     def _execute_entries(self, entries: list[Artefact], task: Task) -> list[Artefact]:

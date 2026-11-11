@@ -25,7 +25,7 @@ import shutil
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from PIL import Image as ImagePil
 from PIL import ImageOps
@@ -379,9 +379,30 @@ class Image(Artefact):
         """
         return path.suffix.lower() in Image.file_extensions()
 
+    # The formats language-model APIs accept. An image in any other format,
+    # such as a TIFF scan, is sent as a high-quality JPEG, which keeps crops of
+    # big scans under the APIs' size limits, or as PNG if JPEG cannot hold its
+    # pixels (transparency, 16-bit).
+    ENCODED_FORMATS: ClassVar[frozenset[str]] = frozenset(
+        {"JPEG", "PNG", "GIF", "WEBP"}
+    )
+    JPEG_MODES: ClassVar[frozenset[str]] = frozenset({"RGB", "L", "CMYK"})
+    CONVERTED_JPEG_QUALITY: ClassVar[int] = 95
+
+    def _encoded_format(self) -> str:
+        fmt = (self.ext or "").upper()
+        if fmt in self.ENCODED_FORMATS:
+            return fmt
+        with ImagePil.open(self.get_path()) as image:  # reads only the header
+            return "JPEG" if image.mode in self.JPEG_MODES else "PNG"
+
     def _load_buffer(self, img: ImagePil.Image) -> bytes:
+        fmt = self._encoded_format()
+        options = {}
+        if fmt == "JPEG" and (self.ext or "").upper() != "JPEG":
+            options["quality"] = self.CONVERTED_JPEG_QUALITY
         buffer = io.BytesIO()
-        img.save(buffer, format=self.ext)
+        img.save(buffer, format=fmt, **options)
         buffer.seek(0)
         return buffer.read()
 
@@ -410,12 +431,9 @@ class Image(Artefact):
         return base64.b64encode(self.load()).decode("utf-8")
 
     def mime(self) -> str:
-        """Get the MIME type for the image format.
-
-        Returns:
-            str: MIME type string (e.g., 'image/jpeg', 'image/png').
-        """
-        return f"image/{self.ext.lower()}" if self.ext else "image"
+        """The MIME type of ``load()``: the image's own format if language
+        models accept it (JPEG, PNG, GIF or WebP), otherwise JPEG or PNG."""
+        return f"image/{self._encoded_format().lower()}"
 
     def pil(self) -> ImagePil.Image:
         image = open_oriented(self.get_path())

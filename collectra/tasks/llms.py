@@ -1,41 +1,70 @@
-"""Large Language Model (LLM) integration tasks for Collectra workflows.
+"""Large Language Model (LLM) tasks for Collectra workflows, built on pydantic-ai.
 
-This module provides integration with various Large Language Models through
-the LangChain framework. It supports both text and multimodal (text+image)
-processing tasks with configurable prompts and model parameters.
+A task fills its prompt template with the texts and images it is given and
+asks a model for the answer: free text for one output node, or one field per
+node when there are several. It can call lookups (pipeline resources such as
+``EntityLookup``) before it answers.
 
-The module includes:
-    - LLM task class with configurable model backends
-    - Support for text and image inputs
-    - Template-based prompt formatting
-    - Integration with various LLM providers via llmloader
+The model is named as ``provider:model`` (``anthropic:claude-sonnet-5-5``,
+``openai:gpt-5``, ``ollama:qwen2.5vl:7b``...). A bare name such as
+``claude-sonnet-5-5`` still works for the main hosted providers.
 
 Classes:
     LLM: Task for Large Language Model inference operations
 """
 
-__all__ = ["LLM"]
+__all__ = ["LLM", "model_id"]
 
+import asyncio
 import hashlib
 import json
-from concurrent.futures import ThreadPoolExecutor
 import os
 import re
+import threading
+from dataclasses import dataclass
 from functools import cached_property
-from pathlib import Path
 from typing import Any
 
 import yaml
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from langchain_core.output_parsers import StrOutputParser
-from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator
+from pydantic import BaseModel, Field, create_model, field_validator
 
 from collectra.tasks.text_output import TextOutputTask
 from collectra.types.images import Image
 from collectra.types.texts import Text
 
 from ..logger import get_logger
+
+# pydantic-ai prints a banner the first time an agent runs; keep output clean.
+os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
+
+load_dotenv()
+
+logger = get_logger(__name__)
+
+DEFAULT_SYSTEM = "You are a helpful assistant."
+# How often the model may be asked to correct an answer that does not fit.
+RETRIES = 3
+
+# Bare model names that still work, by the provider that serves them.
+PROVIDERS = (
+    (("claude",), "anthropic"),
+    (("gpt", "o1", "o3", "o4", "chatgpt"), "openai"),
+    (("gemini", "gemma"), "google"),
+    (
+        (
+            "mistral",
+            "pixtral",
+            "codestral",
+            "ministral",
+            "magistral",
+            "devstral",
+            "open-mistral",
+        ),
+        "mistral",
+    ),
+    (("grok",), "xai"),
+)
 
 
 class LLMSetupError(RuntimeError):
@@ -50,17 +79,18 @@ class ToolCallingUnsupported(LLMSetupError):
     """The model cannot call tools, which a task with ``tools`` needs."""
 
 
-class ToolConversation(BaseModel):
-    """A finished exchange in which the model may have called tools.
-
-    ``replies`` are every model turn, kept so their token usage can be recorded;
-    ``final`` is the turn that holds the answer.
-    """
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    final: Any
-    replies: list[Any]
+def model_id(model: str) -> str:
+    """``model`` as ``provider:model``, adding the provider to a bare name."""
+    if ":" in model:
+        return model
+    for prefixes, provider in PROVIDERS:
+        if model.startswith(prefixes):
+            return f"{provider}:{model}"
+    raise LLMSetupError(
+        f"Cannot tell which provider serves model {model!r}. Give it as "
+        "provider:model, for example anthropic:claude-sonnet-5-5, openai:gpt-5, "
+        "or ollama:qwen2.5vl:7b for a local model."
+    )
 
 
 def _as_text(cls, value):
@@ -70,39 +100,71 @@ def _as_text(cls, value):
     return value if isinstance(value, str) else str(value)
 
 
-def get_llmloader():
-    try:
-        import llmloader
-    except ModuleNotFoundError as error:
-        if error.name != "llmloader":
-            raise
-        raise ImportError(
-            'LLM execution requires optional dependencies. Install with: pip install "collectra[ml]"'
-        ) from error
-    return llmloader
+# Every model call runs on one background event loop, whichever thread asks:
+# pydantic-ai's HTTP clients are shared, and must stay on the loop they began on.
+_loop: asyncio.AbstractEventLoop | None = None
+_loop_lock = threading.Lock()
 
 
-load_dotenv()
+def _run(coroutine):
+    """Run ``coroutine`` on the shared event loop and wait for its result."""
+    global _loop
+    with _loop_lock:
+        if _loop is None:
+            _loop = asyncio.new_event_loop()
+            threading.Thread(
+                target=_loop.run_forever, name="collectra-llm", daemon=True
+            ).start()
+    return asyncio.run_coroutine_threadsafe(coroutine, _loop).result()
 
-logger = get_logger(__name__)
+
+@dataclass
+class _Lookups:
+    """The lookups made in one conversation, to hold them to ``max_tool_calls``."""
+
+    made: int = 0
+
+
+def _limited_lookups(task: "LLM", tools: list):
+    """The task's lookups as tools, refused past the limit and never raising."""
+    from pydantic_ai import ModelRetry
+    from pydantic_ai.toolsets import FunctionToolset, WrapperToolset
+
+    class LimitedLookups(WrapperToolset):
+        async def call_tool(self, name, tool_args, ctx, tool):
+            lookups: _Lookups = ctx.deps
+            if lookups.made >= task.max_tool_calls:
+                return (
+                    f"Lookup limit reached ({task.max_tool_calls}). "
+                    "Give your final answer now, without further lookups."
+                )
+            lookups.made += 1
+            logger.info("Task '%s' called %s(%s)", task.name, name, tool_args)
+            try:
+                return str(await super().call_tool(name, tool_args, ctx, tool))
+            except ModelRetry:
+                raise
+            except Exception as error:
+                return f"Lookup failed: {error}"
+
+    return LimitedLookups(FunctionToolset(tools))
 
 
 class LLM(TextOutputTask):
     """Task for Large Language Model inference operations.
 
-    Integrates with various LLM providers to perform text generation and
-    multimodal processing tasks. Supports configurable prompts, temperature,
-    and token limits with template-based input formatting.
-
     Attributes:
         name (str): Name identifier for the LLM task.
-        model (str): Model identifier or path for the LLM.
+        model (str): The model, as ``provider:model`` or a bare hosted name.
         template (str | Path): Prompt template string or path to template file.
             ``prompt`` is accepted as an alias, matching other tasks' option name.
+        preamble (str): Text put before the template.
+        system (str): The system prompt.
         temperature (float | None): Sampling temperature for generation. Leave
             unset (None) to use the model's own default.
         max_tokens (int): Maximum number of tokens to generate.
-        variables (dict): Additional variables for template substitution.
+        cache (bool): Use prompt caching (default True). The fixed text before
+            the first image is cached too, so it is reused across pages.
         batch_size (int): Number of prompts sent to the model concurrently when
             the pipeline prefetches many files at once. 1 disables batching.
         output: One node name, or several. With several, the model answers in
@@ -127,11 +189,9 @@ class LLM(TextOutputTask):
         # None leaves the model at its own default: some models reject the setting.
         self.temperature = kwargs.get("temperature")
         self.max_tokens = kwargs.get("max_tokens", None)
+        self.cache = bool(kwargs.get("cache", True))
         self.model = model
-        self.parser = StrOutputParser()
-        if int(self.batch_size) < 1:
-            raise ValueError(f"LLM task {name!r} needs batch_size >= 1")
-        self.batch_size = int(self.batch_size)
+        self.batch_size = int(self.batch_size)  # the Task base requires >= 1
         self._prefetched: dict[str, list] = {}
         if len(self.output_names) != len(set(self.output_names)):
             raise ValueError(f"LLM task {name!r} lists the same output more than once")
@@ -143,19 +203,22 @@ class LLM(TextOutputTask):
         if self.max_tool_calls < 1:
             raise ValueError(f"LLM task {name!r} needs max_tool_calls >= 1")
 
-        init_messages = (
-            SystemMessage(content=kwargs.get("system", ""))
-            if kwargs.get("system", "")
-            else SystemMessage(content="You are a helpful assistant.")
-        )
-        self.messages: list[SystemMessage | HumanMessage] = [init_messages]
+        self.system: str = kwargs.get("system", "") or DEFAULT_SYSTEM
+        # The system prompt, then (once a prompt is built) the user's content.
+        self.messages: list = [self.system]
 
     @cached_property
     def llm(self):
-        """Load the LLM lazily so that it is only instantiated when first needed."""
-        return get_llmloader().load(
-            self.model, temperature=self.temperature, max_tokens=self.max_tokens
-        )
+        """The pydantic-ai model, loaded when it is first needed."""
+        try:
+            from pydantic_ai.models import infer_model
+        except ModuleNotFoundError as error:
+            if error.name != "pydantic_ai":
+                raise
+            raise ImportError(
+                'LLM execution requires optional dependencies. Install with: pip install "collectra[ml]"'
+            ) from error
+        return infer_model(model_id(self.model))
 
     @property
     def output_names(self) -> list[str]:
@@ -191,21 +254,56 @@ class LLM(TextOutputTask):
             **fields,
         )
 
+    def model_settings(self) -> dict[str, Any]:
+        """The settings sent with every request: only those that were set."""
+        settings: dict[str, Any] = {}
+        if self.temperature is not None:
+            settings["temperature"] = self.temperature
+        if self.max_tokens is not None:
+            settings["max_tokens"] = self.max_tokens
+        settings["cache"] = self.cache
+        return settings
+
     @cached_property
-    def structured_llm(self):
-        """The model wrapped to answer in ``output_model`` form, with the raw reply."""
-        try:
-            return self.llm.with_structured_output(self.output_model, include_raw=True)
-        except NotImplementedError as error:
+    def agent(self):
+        """The pydantic-ai agent that asks the model, with the task's tools."""
+        from pydantic_ai import Agent, ToolOutput
+
+        model = self.llm
+        supports_tools = model.profile.get("supports_tools", True)
+        if self.tools and not supports_tools:
+            raise ToolCallingUnsupported(
+                f"LLM task {self.name!r} uses tools, but model {self.model!r} "
+                "does not support tool calling. Use a model that does, or remove "
+                "the tools."
+            )
+        if self.is_structured and not supports_tools:
             raise StructuredOutputUnsupported(
                 f"LLM task {self.name!r} has {len(self.output_names)} outputs, which "
                 f"needs structured output, but model {self.model!r} does not support "
                 "tool calling. Use a model that does, or give the task one output."
-            ) from error
-
-    @property
-    def chain(self):
-        return self.structured_llm if self.is_structured else self.llm
+            )
+        toolsets = []
+        if self.tools:
+            toolsets.append(_limited_lookups(self, list(self._tool_objects().values())))
+        # With several outputs the answer itself is a tool call: the model is
+        # free to look things up first and submits when it is done.
+        output_type = (
+            ToolOutput(self.output_model, name=self.output_model.__name__)
+            if self.is_structured
+            else str
+        )
+        return Agent(
+            model,
+            output_type=output_type,
+            instructions=self.system,
+            toolsets=toolsets,
+            deps_type=_Lookups,
+            model_settings=self.model_settings(),
+            retries=RETRIES,
+            # An answer ends the conversation, even with lookups in the same reply.
+            end_strategy="early",
+        )
 
     def validate_resources(self, resources: dict[str, Any]) -> None:
         """Fail early, when the pipeline connects, if a named tool does not exist."""
@@ -225,86 +323,7 @@ class LLM(TextOutputTask):
         tools = [self.pipeline.resource(name).as_tool() for name in self.tools]
         return {tool.name: tool for tool in tools}
 
-    def _use_tool(self, tools: dict, call: dict, allowed: bool) -> str:
-        """Run one tool call the model made; any failure is told to the model."""
-        name = call["name"]
-        if name not in tools:
-            return f"Unknown tool {name!r}. Available tools: {', '.join(tools)}"
-        if not allowed:
-            return (
-                f"Lookup limit reached ({self.max_tool_calls}). "
-                "Give your final answer now, without further lookups."
-            )
-        logger.info("Task '%s' called %s(%s)", self.name, name, call["args"])
-        try:
-            return str(tools[name].invoke(call["args"]))
-        except Exception as error:
-            return f"Lookup failed: {error}"
-
-    def _converse(self, messages: list) -> ToolConversation:
-        """Let the model call tools until it gives a final answer.
-
-        Works on a copy of ``messages``, so concurrent conversations (batching)
-        do not share state. Lookups past ``max_tool_calls`` are refused with a
-        message, and a model that still will not answer gives up with an error.
-        """
-        tools = self._tool_objects()
-        try:
-            # With several outputs the answer itself is a tool call: the model
-            # is free to look things up first and submits when it is done.
-            answer_tool = self.output_model.__name__
-            offered = list(tools.values())
-            bound = self.llm.bind_tools(
-                offered + [self.output_model] if self.is_structured else offered
-            )
-        except NotImplementedError as error:
-            raise ToolCallingUnsupported(
-                f"LLM task {self.name!r} uses tools, but model {self.model!r} "
-                "does not support tool calling. Use a model that does, or remove "
-                "the tools."
-            ) from error
-        conversation, replies, lookups = list(messages), [], 0
-        for _ in range(self.max_tool_calls + 3):
-            reply = bound.invoke(conversation)
-            replies.append(reply)
-            calls = getattr(reply, "tool_calls", None) or []
-            if self.is_structured:
-                submitted = next((c for c in calls if c["name"] == answer_tool), None)
-                if submitted:
-                    parsed = self.output_model.model_validate(submitted["args"])
-                    final = {"raw": reply, "parsed": parsed}
-                    return ToolConversation(final=final, replies=replies)
-            elif not calls:
-                return ToolConversation(final=reply, replies=replies)
-            conversation.append(reply)
-            for call in reply.tool_calls:
-                allowed = lookups < self.max_tool_calls
-                lookups += allowed
-                conversation.append(
-                    ToolMessage(
-                        content=self._use_tool(tools, call, allowed),
-                        tool_call_id=call["id"],
-                        name=call["name"],
-                    )
-                )
-            if not calls:
-                conversation.append(
-                    HumanMessage(
-                        content=f"Give your answer by calling the {answer_tool} tool."
-                    )
-                )
-        raise RuntimeError(
-            f"LLM task {self.name!r}: the model did not give a final answer "
-            f"after {lookups} lookups"
-        )
-
-    def _is_unreadable(self, response) -> bool:
-        """A structured reply the schema could not parse (or a failed call)."""
-        if isinstance(response, Exception):
-            return True
-        return self.is_structured and (
-            not isinstance(response, dict) or response.get("parsed") is None
-        )
+    # --- the prompt ---------------------------------------------------------------
 
     def get_pattern_matches(self) -> tuple:
         prompt = f"{self.preamble}\n\n{self.template}".strip()
@@ -316,15 +335,9 @@ class LLM(TextOutputTask):
         pattern = r"\{(.*?)\}"
         return prompt, pattern
 
-    def image_content(self, image: Image):
-        return get_llmloader().LLMWrapper.format(
-            self.llm,
-            data_type="image",
-            data={
-                "data": image.get_encoding(),
-                "mime_type": image.mime(),
-            },
-        )
+    def image_content(self, image: Image) -> dict:
+        """The image as a content block, in a format models accept."""
+        return {"type": "image", "data": image.load(), "mime_type": image.mime()}
 
     def _add_content(self, value: Image | Text) -> dict:
         if isinstance(value, Image):
@@ -338,7 +351,7 @@ class LLM(TextOutputTask):
         return {"type": "text", "text": text}
 
     def pre_run(self) -> tuple:
-        self.messages = self.messages[:1]  # Reset to initial system message
+        self.messages = self.messages[:1]  # Reset to the system prompt
         prompt, pattern = self.get_pattern_matches()
         return prompt, pattern
 
@@ -347,8 +360,7 @@ class LLM(TextOutputTask):
         residual_inputs = len(args)
         if len(self.messages) != 2:
             raise ValueError("Expected one system message and one human message.")
-        human_message = self.messages[1]
-        for content in human_message.content:
+        for content in self.messages[1]:
             if isinstance(content, dict) and (
                 content.get("type") == "image" or content.get("type") == "text"
             ):
@@ -391,23 +403,82 @@ class LLM(TextOutputTask):
         """Fill the prompt template for ``args``, leaving ``self.messages`` ready to send."""
         prompt, pattern = self.pre_run()
         content = self.replace_inputs(pattern, prompt, *args)
-        self.messages.append(HumanMessage(content=content))
+        self.messages.append(content)
         self.check_inputs(*args)
         return content
+
+    def _user_content(self, content: list[dict]) -> list:
+        """The prompt's blocks as pydantic-ai content, in the same order.
+
+        With caching on, a cache point goes just before the first image, so the
+        fixed text of the template ahead of it is reused from page to page.
+        """
+        from pydantic_ai.messages import BinaryContent, CachePoint
+
+        parts: list = []
+        for block in content:
+            if block.get("type") == "image":
+                if self.cache and parts and all(isinstance(p, str) for p in parts):
+                    parts.append(CachePoint())
+                parts.append(
+                    BinaryContent(data=block["data"], media_type=block["mime_type"])
+                )
+            else:
+                parts.append(block["text"])
+        return parts
 
     @staticmethod
     def _cache_key(content: list[str | dict]) -> str:
         """Identify a prompt by its content (images are hashed, not stored)."""
+
+        def digest(value: bytes) -> str:  # only an image's bytes need this
+            return hashlib.sha256(value).hexdigest()
+
         return hashlib.sha256(
-            json.dumps(content, sort_keys=True, default=str).encode()
+            json.dumps(content, sort_keys=True, default=digest).encode()
         ).hexdigest()
 
-    def prefetch(self, entries: list[list]) -> None:
-        """Send the prompts for many entries to the model in concurrent batches.
+    # --- asking the model -------------------------------------------------------------
 
-        Raw responses are cached by prompt content and consumed by ``run``, so
-        usage is recorded against the file that is actually being processed. A
-        prompt that fails here is simply left for ``run`` to retry on its own.
+    async def _ask(self, content: list[dict]):
+        """One conversation with the model for ``content``; its run result."""
+        from pydantic_ai import UsageLimits
+        from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
+
+        lookups = _Lookups()
+        # Room for every allowed lookup, then a few turns to give the answer.
+        limits = UsageLimits(request_limit=self.max_tool_calls + 3)
+        try:
+            return await self.agent.run(
+                self._user_content(content), deps=lookups, usage_limits=limits
+            )
+        except UsageLimitExceeded as error:
+            raise RuntimeError(
+                f"LLM task {self.name!r}: the model did not give a final answer "
+                f"after {lookups.made} lookups"
+            ) from error
+        except UnexpectedModelBehavior as error:
+            raise RuntimeError(
+                f"LLM task {self.name!r}: the model did not give a final answer "
+                f"({error})"
+            ) from error
+
+    async def _ask_all(self, contents: list[list[dict]]) -> list:
+        """Ask for every prompt, ``batch_size`` at a time; failures are returned."""
+        slots = asyncio.Semaphore(self.batch_size)
+
+        async def one(content):
+            async with slots:
+                return await self._ask(content)
+
+        return await asyncio.gather(*(one(c) for c in contents), return_exceptions=True)
+
+    def prefetch(self, entries: list[list]) -> None:
+        """Send the prompts for many entries to the model, ``batch_size`` at a time.
+
+        Results are cached by prompt content and consumed by ``run``, so usage
+        is recorded against the file that is actually being processed. A prompt
+        that fails here is simply left for ``run`` to retry on its own.
         """
         self._prefetched = {}
         prompts: list[tuple[str, list]] = []
@@ -421,80 +492,55 @@ class LLM(TextOutputTask):
                     "LLM task '%s' could not prepare an entry: %s", self.name, e
                 )
                 continue
-            prompts.append((self._cache_key(content), list(self.messages)))
-        if self.tools:
-            self._prefetch_conversations(prompts)
-            return
-        for start in range(0, len(prompts), self.batch_size):
-            batch = prompts[start : start + self.batch_size]
-            responses = self.chain.batch(
-                [messages for _, messages in batch],
-                config={"max_concurrency": self.batch_size},
-                return_exceptions=True,
-            )
-            for (key, _), response in zip(batch, responses):
-                if self._is_unreadable(response):
-                    logger.warning(
-                        "LLM task '%s' batch item failed, will retry alone: %s",
-                        self.name,
-                        response,
-                    )
-                    continue
-                self._prefetched.setdefault(key, []).append(response)
-
-    def _prefetch_conversations(self, prompts: list[tuple[str, list]]) -> None:
-        """Run the tool conversations for many prompts side by side.
-
-        Each conversation is several model turns, so the one-call batch API does
-        not apply; they run in threads, ``batch_size`` at a time. A conversation
-        that fails is left for ``run`` to retry on its own.
-        """
+            prompts.append((self._cache_key(content), content))
         if not prompts:
             return
-        self.llm  # load the model once, before the threads need it
-        with ThreadPoolExecutor(max_workers=min(self.batch_size, len(prompts))) as pool:
-            futures = [pool.submit(self._converse, messages) for _, messages in prompts]
-            for (key, _), future in zip(prompts, futures):
-                try:
-                    conversation = future.result()
-                except ToolCallingUnsupported:
-                    raise
-                except Exception as error:
-                    logger.warning(
-                        "LLM task '%s' conversation failed, will retry alone: %s",
-                        self.name,
-                        error,
-                    )
-                    continue
-                self._prefetched.setdefault(key, []).append(conversation)
+        self.agent  # a setup problem is raised now, not logged for every prompt
+        results = _run(self._ask_all([content for _, content in prompts]))
+        for (key, _), result in zip(prompts, results):
+            if isinstance(result, Exception):
+                logger.warning(
+                    "LLM task '%s' prompt failed, will retry alone: %s",
+                    self.name,
+                    result,
+                )
+                continue
+            self._prefetched.setdefault(key, []).append(result)
 
     def clear_prefetch(self) -> None:
         self._prefetched = {}
 
-    def _fields(self, response: dict) -> dict[str, str]:
-        """The parsed structured reply as ``{node name: text}``, in output order."""
-        parsed = response.get("parsed") if isinstance(response, dict) else None
-        if parsed is None:
-            error = (
-                response.get("parsing_error") if isinstance(response, dict) else None
-            )
-            raise ValueError(
-                f"LLM task {self.name!r} could not read the model's structured "
-                f"reply: {error}"
-            )
+    def _fields(self, parsed: BaseModel) -> dict[str, str]:
+        """The structured answer as ``{node name: text}``, in output order."""
         values = {}
         for index, name in enumerate(self.output_names):
             value = getattr(parsed, f"field_{index}")
             values[name] = "" if value in ('""', "''") else value.strip()
         return values
 
-    def _record_usage(self, raw) -> None:
-        """Add one model reply's token usage to the usage file, if one is in use."""
+    def _record_usage(self, usage) -> None:
+        """Add one conversation's usage to the run's ledger and the usage file.
+
+        ``input_tokens`` includes the tokens read from and written to the cache.
+        """
+        if self.context.usage_ledger is not None:
+            self.context.usage_ledger.add(self.name, self.model, usage)
         if not self.context.usage_file:
             return
-        usage = get_llmloader().LLMWrapper.get_token_count(raw)
         usage_file = self.context.usage_file
-        data = {f"{self.name}": usage}
+        data = {
+            f"{self.name}": {
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "total_tokens": usage.input_tokens + usage.output_tokens,
+                "cache_read_tokens": usage.cache_read_tokens,
+                "cache_write_tokens": usage.cache_write_tokens,
+                "requests": usage.requests,
+            }
+        }
+        # In US dollars; left out when the model's prices are not known.
+        if usage.cost is not None:
+            data[self.name]["cost_usd"] = float(usage.cost)
         old_data = {}
         if usage_file.exists():
             with open(usage_file, "r") as f:
@@ -505,6 +551,8 @@ class LLM(TextOutputTask):
             else:
                 for item, item_value in value.items():
                     data[key][item] = data.get(key, {}).get(item, 0) + item_value
+        if "cost_usd" in data[self.name]:
+            data[self.name]["cost_usd"] = round(data[self.name]["cost_usd"], 6)
         usage_file.parent.mkdir(parents=True, exist_ok=True)
         with open(usage_file, "w") as f:
             yaml.dump(data, f)
@@ -515,56 +563,28 @@ class LLM(TextOutputTask):
         Returns text for a single output, or ``{node name: text}`` for several.
         """
         if response is None:
-            if self.tools:
-                response = self._converse(self.messages)
-            else:
-                response = self.chain.invoke(self.messages)
-
-        if isinstance(response, ToolConversation):
-            for reply in response.replies:
-                self._record_usage(reply)
-            response = response.final
-        else:
-            self._record_usage(response["raw"] if self.is_structured else response)
-
+            self.agent  # a setup problem is raised here, in the caller's thread
+            response = _run(self._ask(self.messages[1]))
+        self._record_usage(response.usage)
         if self.is_structured:
-            return self._fields(response)
-
-        response = self.parser.invoke(response)
-
-        return "" if response in ('""', "''") else response.strip()
+            return self._fields(response.output)
+        output = response.output
+        return "" if output in ('""', "''") else output.strip()
 
     def run(self, *args: Text | Image) -> Text | list[Text] | None:
-        """Execute LLM inference on the provided inputs with template-based prompt generation.
+        """Fill the template with ``args``, ask the model and return its answer.
 
-        For list inputs, each item is processed individually and results are collected
-        in a list. The method supports multimodal inputs (text + images) by creating
-        appropriate message structures for the LangChain conversation format.
-
-        Args:
-            **kwargs: Input data for LLM processing. Keys should match template
-                     placeholders. Values can be text strings, file paths (Path objects),
-                     Image objects, or lists of these types for batch processing.
-
-        Side Effects:
-            Updates self.output dictionary with generated text responses. Output keys
-            that contain the input key as a substring will be populated with LLM results.
-            Prints a success message when inference completes.
+        A failed call or an unreadable reply raises: the pipeline then records
+        the failure and saves no output, so the next run tries again. Returning
+        nothing would be saved as "found nothing" and never retried.
         """
-        try:
-            content = self._build_messages(args)
+        content = self._build_messages(args)
 
-            cached = self._prefetched.get(self._cache_key(content))
-            response = self.invoke(cached.pop(0) if cached else None)
+        cached = self._prefetched.get(self._cache_key(content))
+        response = self.invoke(cached.pop(0) if cached else None)
 
-            if self.is_structured:
-                return [
-                    self.text_output(value, name=node)
-                    for node, value in response.items()
-                ]
-            return self.text_output(response)
-        except LLMSetupError:
-            raise  # a setup problem, not a bad reply: say so rather than log per page
-        except Exception as e:
-            logger.error("LLM task '%s' failed: %s", self.name, e, exc_info=True)
-            return None
+        if self.is_structured:
+            return [
+                self.text_output(value, name=node) for node, value in response.items()
+            ]
+        return self.text_output(response)

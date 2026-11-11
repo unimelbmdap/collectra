@@ -428,7 +428,9 @@ Keep the existing input/output node names from your pipeline. ``model`` accepts
 ``2xlarge``, their package class names such as ``RFDETRSegSmall``, or a trained
 RF-DETR segmentation checkpoint. Relative checkpoint paths resolve against the
 pipeline directory. Optional ``resolution`` overrides the model's input size;
-RF-DETR validates its compatibility with the chosen architecture.
+RF-DETR validates its compatibility with the chosen architecture. Without
+``device``, the task uses CUDA if there is an NVIDIA GPU, otherwise Apple's
+``mps``, otherwise the CPU.
 
 RF-DETR learns fixed classes from annotation names; it is not text-prompted.
 SAM's ``prompt``, ``prompts`` and ``version`` settings may be removed. They are
@@ -550,7 +552,9 @@ The GUI and COCO mask export work without YOLO or Torch installed.
 
 All the shared segmentation flags apply: ``--epochs``, ``--batch`` (per GPU),
 ``--num-gpus``, ``--max-items``, ``--reuse-data`` and ``--no-keep-log``.
-``device`` accepts ``cuda``, ``cuda:N``, ``cpu`` or ``mps``. Multiple GPUs use
+``device`` accepts ``cuda``, ``cuda:N``, ``cpu`` or ``mps``; without it, the
+task uses CUDA if there is an NVIDIA GPU, otherwise ``mps``, otherwise the CPU.
+Multiple GPUs use
 consecutive CUDA devices starting at the configured index. GPU/DDP operation
 requires a compatible PyTorch/CUDA installation.
 

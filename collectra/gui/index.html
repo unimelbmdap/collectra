@@ -759,6 +759,29 @@
         .git-output { margin: 16px 0 0; max-height: 55vh; min-height: 160px; overflow: auto; font: inherit; font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--app-fg-bright, #e6e6e6); }
         .git-message { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; background: var(--app-bg, #1a1a1a); color: var(--app-fg-bright, #e6e6e6); border: 1px solid var(--app-border, #3c3c3c); padding: 8px; }
         #gitCommitModal { z-index: 1001; }
+        .modal-popup.settings-dialog { width: min(820px, 92vw); max-width: 92vw; min-width: 0; }
+        .settings-section-title { margin: 0 0 4px; font-size: 14px; color: var(--app-fg-bright, #e6e6e6); }
+        .settings-note { margin: 0 0 12px; font-size: 13px; opacity: 0.8; }
+        .settings-path { margin: 12px 0 0; font-size: 12px; opacity: 0.7; overflow-wrap: anywhere; }
+        .env-table-wrap { max-height: 40vh; overflow: auto; margin-bottom: 14px; }
+        .env-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .env-table th { text-align: left; font-weight: 600; opacity: 0.75; padding: 4px 8px; border-bottom: 1px solid var(--app-border, #3c3c3c); white-space: nowrap; }
+        .env-table td { padding: 5px 8px; border-bottom: 1px solid rgba(var(--app-secondary-rgb, 108, 117, 125), 0.25); vertical-align: middle; }
+        .env-table .env-name { font-weight: 600; color: var(--app-fg-bright, #e6e6e6); white-space: nowrap; }
+        .env-table .env-value { overflow-wrap: anywhere; }
+        .env-used .env-status { color: #2ea44f; }
+        .env-replacing .env-status { color: var(--app-primary, #F09226); font-weight: 600; }
+        .env-overridden .env-status { color: #d4a72c; }
+        .env-overridden .env-value { opacity: 0.55; text-decoration: line-through; }
+        .env-missing .env-status { color: var(--app-danger, #f14c4c); }
+        .env-delete { background: none; border: none; color: var(--app-fg-muted, #8a9698); font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+        .env-delete:hover { color: var(--app-danger, #f14c4c); background: rgba(var(--app-secondary-rgb, 108, 117, 125), 0.2); }
+        .env-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+        .modal-popup .env-add input[type="text"], .modal-popup .env-add input[type="password"] { flex: 1 1 180px; width: auto; margin: 0; padding: 8px; font-size: 13px; border: 1px solid var(--app-border, #2a2a2a); border-radius: 4px; background: var(--app-surface-alt, #0f0f0f); color: var(--app-fg-bright, #e6e6e6); }
+        .env-add label { font-size: 13px; display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+        .env-clear { justify-content: flex-start; align-items: center; gap: 8px; }
+        .env-clear-confirm { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+        .env-clear-confirm[hidden] { display: none; }
         .modal-popup.wide {
             min-width: 320px;
             max-width: 520px;
@@ -2031,6 +2054,7 @@
 
     <script src="nodeColors.js"></script>
     <script src="deleteDialog.js"></script>
+    <script src="runDialog.js"></script>
     <script src="instancePager.js"></script>
     <script src="collapseToggle.js"></script>
     <script src="hoverTimer.js"></script>
@@ -2039,6 +2063,7 @@
     <script src="tableView.js"></script>
     <script src="shiftDraw.js"></script>
     <script src="sourceControl.js"></script>
+    <script src="settingsDialog.js"></script>
     <script src="rgbViewControls.js"></script>
     <script src="linkControls.js"></script>
     <!-- Pure collapse/expand state for sidebar, right panel, and DAG toggles, unit tested in tests-js/ -->
@@ -2096,6 +2121,7 @@
                         <rect x="2.7" y="3.2" width="3.1" height="9.6" fill="currentColor" stroke="none" opacity="0.4"/>
                     </svg>
                 </button>
+                <span class="lineage-empty" id="runPausedNotice" role="status" hidden>Editing this page is paused until the run finishes.</span>
                 <div class="artefact-search" id="artefactSearchBar" role="search">
                     <div class="artefact-search-field">
                         <i class="fa fa-search artefact-search-icon" aria-hidden="true"></i>
@@ -2111,6 +2137,11 @@
                 </div>
                 <button class="panel-toolbar-btn" id="artefactSearchToggle" onclick="toggleArtefactSearch()" title="Search artefacts (Cmd/Ctrl+F)" aria-label="Search artefacts">
                     <i class="fa fa-search" aria-hidden="true"></i>
+                </button>
+                <button class="panel-toolbar-btn" id="runToolbarBtn" onclick="showRunDialog()" title="Run" aria-label="Run pipeline on this page" disabled>
+                    <svg data-icon="play" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M4.5 2.8v10.4L13 8z"/>
+                    </svg>
                 </button>
                 <button class="panel-toolbar-btn" id="dagToolbarBtn" onclick="openDagTab()" title="DAG" aria-label="DAG">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19.5 17C19.36 17 19.24 17 19.11 17.04L17.5 13.8C17.95 13.35 18.25 12.71 18.25 12C18.25 10.62 17.13 9.5 15.75 9.5C15.61 9.5 15.5 9.5 15.35 9.54L13.74 6.3C14.21 5.84 14.5 5.21 14.5 4.5C14.5 3.12 13.38 2 12 2S9.5 3.12 9.5 4.5C9.5 5.2 9.79 5.84 10.26 6.29L8.65 9.54C8.5 9.5 8.39 9.5 8.25 9.5C6.87 9.5 5.75 10.62 5.75 12C5.75 12.71 6.04 13.34 6.5 13.79L4.89 17.04C4.76 17 4.64 17 4.5 17C3.12 17 2 18.12 2 19.5C2 20.88 3.12 22 4.5 22S7 20.88 7 19.5C7 18.8 6.71 18.16 6.24 17.71L7.86 14.46C8 14.5 8.12 14.5 8.25 14.5C8.38 14.5 8.5 14.5 8.63 14.46L10.26 17.71C9.79 18.16 9.5 18.8 9.5 19.5C9.5 20.88 10.62 22 12 22S14.5 20.88 14.5 19.5C14.5 18.12 13.38 17 12 17C11.87 17 11.74 17 11.61 17.04L10 13.8C10.45 13.35 10.75 12.71 10.75 12C10.75 11.3 10.46 10.67 10 10.21L11.61 6.96C11.74 7 11.87 7 12 7C12.13 7 12.26 7 12.39 6.96L14 10.21C13.54 10.66 13.25 11.3 13.25 12C13.25 13.38 14.37 14.5 15.75 14.5C15.88 14.5 16 14.5 16.13 14.46L17.76 17.71C17.29 18.16 17 18.8 17 19.5C17 20.88 18.12 22 19.5 22S22 20.88 22 19.5C22 18.12 20.88 17 19.5 17M4.5 20.5C3.95 20.5 3.5 20.05 3.5 19.5S3.95 18.5 4.5 18.5 5.5 18.95 5.5 19.5 5.05 20.5 4.5 20.5M13 19.5C13 20.05 12.55 20.5 12 20.5S11 20.05 11 19.5 11.45 18.5 12 18.5 13 18.95 13 19.5M7.25 12C7.25 11.45 7.7 11 8.25 11S9.25 11.45 9.25 12 8.8 13 8.25 13 7.25 12.55 7.25 12M11 4.5C11 3.95 11.45 3.5 12 3.5S13 3.95 13 4.5 12.55 5.5 12 5.5 11 5.05 11 4.5M14.75 12C14.75 11.45 15.2 11 15.75 11S16.75 11.45 16.75 12 16.3 13 15.75 13 14.75 12.55 14.75 12M19.5 20.5C18.95 20.5 18.5 20.05 18.5 19.5S18.95 18.5 19.5 18.5 20.5 18.95 20.5 19.5 20.05 20.5 19.5 20.5Z"/></svg>
@@ -2133,8 +2164,13 @@
                     </svg>
                 </button>
                 <button class="panel-toolbar-btn" id="tasksToolbarBtn" onclick="toggleTasksPopover()" title="Tasks" aria-label="Show tasks" disabled>
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
-                        <path d="M2 3.5h2M2 8h2M2 12.5h2"/><path d="M6 3.5h8M6 8h8M6 12.5h8"/>
+                    <svg data-icon="bot" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="3" y="5" width="10" height="8" rx="2"/>
+                        <circle cx="8" cy="2.2" r=".7"/>
+                        <path d="M8 3v2"/>
+                        <path d="M1.5 8v2M14.5 8v2"/>
+                        <circle cx="6" cy="8.8" r=".6" fill="currentColor"/>
+                        <circle cx="10" cy="8.8" r=".6" fill="currentColor"/>
                     </svg>
                 </button>
                 <button class="panel-toolbar-btn" id="newPanelToolbarBtn" onclick="showSplitViewPopover(event)" title="Customize Layout" aria-label="Customize Layout">
@@ -2153,6 +2189,13 @@
                         <path d="M12 7.2v0.3c0 2.4-8 1.6-8 3.8"/>
                     </svg>
                 </button>
+                <button class="panel-toolbar-btn" id="settingsToolbarBtn" title="Settings" aria-label="Settings">
+                    <svg data-icon="cog" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="8" cy="8" r="2.2"/>
+                        <path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/>
+                        <circle cx="8" cy="8" r="4.6"/>
+                    </svg>
+                </button>
                 <div class="lineage-popover" id="ancestorsPopover" style="display:none;">
                     <div class="lineage-popover-header">Ancestors</div>
                     <div class="lineage-list" id="parentsList"><span class="lineage-empty">—</span></div>
@@ -2168,6 +2211,17 @@
                 <div class="lineage-popover" id="tasksPopover" style="display:none;">
                     <div class="lineage-popover-header">Tasks</div>
                     <div class="lineage-list" id="tasksList"></div>
+                </div>
+                <div class="lineage-popover" id="runProgressPopover" style="display:none;">
+                    <div class="lineage-popover-header">Run</div>
+                    <div class="lineage-list">
+                        <div class="lineage-item" id="runProgressText" role="status" aria-live="polite"></div>
+                        <div class="lineage-empty" id="runProgressPaused">Editing this page is paused until the run finishes.</div>
+                        <div class="modal-buttons">
+                            <button class="btn-cancel" id="runStopBtn" onclick="stopRun()">Stop</button>
+                            <button class="btn-cancel" id="runCloseBtn" onclick="closeRunProgress()" hidden>Close</button>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="panels-row">
@@ -2281,6 +2335,42 @@
         </div>
     </div>
 
+    <div id="settingsModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <div class="modal-popup settings-dialog">
+            <div class="modal-header">
+                <h3 id="settingsTitle">Settings</h3>
+                <button class="modal-close" id="settingsClose" aria-label="Close settings">×</button>
+            </div>
+            <h4 class="settings-section-title">Environment variables</h4>
+            <p class="settings-note">Kept for you, outside the pipeline, and set whenever it runs. A variable set in the shell is used instead, unless the stored one overrides it.</p>
+            <div class="env-table-wrap">
+                <table class="env-table" id="envTable" hidden>
+                    <thead><tr><th>Name</th><th>Value</th><th>Storage</th><th>Status</th><th>Override shell</th><th aria-label="Delete"></th></tr></thead>
+                    <tbody id="envRows"></tbody>
+                </table>
+                <p class="settings-note" id="envEmpty" hidden>No environment variables are stored.</p>
+            </div>
+            <form id="envAddForm" class="env-add" autocomplete="off">
+                <input type="text" id="envNameInput" placeholder="Name, e.g. ANTHROPIC_API_KEY" aria-label="Name" spellcheck="false" autocapitalize="off" autocorrect="off">
+                <input type="text" id="envValueInput" placeholder="Value" aria-label="Value" spellcheck="false" autocapitalize="off" autocorrect="off">
+                <label title="Keep the value in the system keyring, not in a file"><input type="checkbox" id="envPrivateInput"> Private</label>
+                <label title="Use this value even when the shell sets one"><input type="checkbox" id="envOverrideInput"> Override shell</label>
+                <button type="submit" class="btn-confirm" id="envAddBtn" disabled>Save</button>
+            </form>
+            <p class="settings-note" id="envPrivateNote" hidden>This computer has no keyring, so values cannot be kept private.</p>
+            <div id="envError" class="modal-field-error" role="alert" hidden></div>
+            <div class="modal-buttons env-clear">
+                <button type="button" class="btn-cancel" id="envClearBtn" disabled>Clear all</button>
+                <span class="env-clear-confirm" id="envClearConfirm" hidden>
+                    <span id="envClearQuestion"></span>
+                    <button type="button" class="btn-cancel" id="envClearNo">Cancel</button>
+                    <button type="button" class="btn-confirm" id="envClearYes">Delete all</button>
+                </span>
+            </div>
+            <p class="settings-path" id="envPath"></p>
+        </div>
+    </div>
+
     <!-- New-box Popup Modal -->
     <div id="labelModal" class="modal-overlay">
         <div class="modal-popup">
@@ -2324,6 +2414,23 @@
             <div class="modal-buttons">
                 <button class="btn-cancel" id="deleteModalCancel">Cancel</button>
                 <button class="btn-confirm" id="deleteModalConfirm">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="runModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="runModalTitle">
+        <div class="modal-popup">
+            <h3 id="runModalTitle"></h3>
+            <div class="modal-field">
+                <label class="modal-field-label" for="runNoteInput">Note</label>
+                <input type="text" id="runNoteInput" maxlength="200" placeholder="Optional, saved in run-log.txt" autocomplete="off" onkeydown="handleRunNoteKey(event)">
+            </div>
+            <p id="runModalSummary" class="delete-summary" hidden></p>
+            <ul id="runModalTasks" class="delete-children" hidden></ul>
+            <div class="modal-field-error" id="runModalError" role="alert" hidden></div>
+            <div class="modal-buttons">
+                <button class="btn-cancel" id="runModalCancel" onclick="closeRunDialog()">Cancel</button>
+                <button class="btn-confirm" id="runModalConfirm" onclick="startRun()">Run</button>
             </div>
         </div>
     </div>
@@ -3597,6 +3704,192 @@
             repositionLineagePopovers();
         }
 
+        // ── RUN BUTTON ───────────────────────────────────────────────────────
+        // Runs the pipeline on the open page in the backend, after a panel that
+        // says which tasks run, re-run or are skipped. While it runs, the
+        // progress popover polls the backend about once a second; the backend
+        // refuses edits to the running page, so the page is reloaded only once
+        // the run ends, and only if it is still the page open.
+        let runActive = false;
+        let runStopRequested = false;
+        let runStartedYamlPath = '';
+        let runLastStatus = null;
+
+        // Whether the page open now is the one being run, so cannot be edited.
+        function runLocksOpenPage() {
+            return runActive && runIsForOpenPage(runLastStatus || {folder: ''}, selectedYamlPath, runStartedYamlPath);
+        }
+
+        // Shows the paused notice and makes the editors read-only while the open
+        // page is being run; other pages stay editable. Applied again on every
+        // poll, so opening another page during the run is picked up.
+        function applyRunEditLock() {
+            const locked = runLocksOpenPage();
+            document.getElementById('runPausedNotice').hidden = !locked;
+            Object.values(panelControllers).forEach((controller) => {
+                controller.setTextRunLocked?.(locked);
+                controller.setImageRunLocked?.(locked);
+            });
+        }
+
+        function runErrorText(e) {
+            return (e && e.message) || String(e);
+        }
+
+        async function showRunDialog() {
+            if (runActive) { showRunProgress(); return; }
+            let preview;
+            try {
+                preview = await window.pywebview.api.get_run_preview();
+            } catch (e) {
+                preview = {can_run: false, tasks: [], message: runErrorText(e)};
+            }
+            const content = runDialogContent(preview);
+            document.getElementById('runModalTitle').textContent = content.title;
+            const summary = document.getElementById('runModalSummary');
+            summary.textContent = content.message || content.warning || content.kept;
+            summary.hidden = !summary.textContent;
+            const list = document.getElementById('runModalTasks');
+            list.replaceChildren(...content.rows.map((row) => {
+                const item = document.createElement('li');
+                const text = document.createElement('span');
+                text.className = 'delete-child-id';
+                text.textContent = row.text;
+                item.append(text);
+                return item;
+            }));
+            list.hidden = !content.rows.length;
+            document.getElementById('runModalError').hidden = true;
+            const note = document.getElementById('runNoteInput');
+            note.value = '';
+            const confirmBtn = document.getElementById('runModalConfirm');
+            confirmBtn.textContent = content.canRun ? content.runLabel : 'Run';
+            confirmBtn.disabled = !content.canRun;
+            document.getElementById('runModal').classList.add('visible');
+            (content.canRun ? note : document.getElementById('runModalCancel')).focus();
+        }
+
+        function closeRunDialog() {
+            document.getElementById('runModal').classList.remove('visible');
+        }
+
+        function handleRunNoteKey(e) {
+            if (e.key === 'Enter') { e.preventDefault(); startRun(); }
+            if (e.key === 'Escape') closeRunDialog();
+        }
+
+        async function startRun() {
+            const confirmBtn = document.getElementById('runModalConfirm');
+            if (confirmBtn.disabled) return;
+            confirmBtn.disabled = true;
+            const note = document.getElementById('runNoteInput').value.trim();
+            let result;
+            try {
+                result = await window.pywebview.api.start_run(note);
+            } catch (e) {
+                result = {success: false, error: runErrorText(e)};
+            }
+            if (!result || !result.success) {
+                const error = document.getElementById('runModalError');
+                error.textContent = (result && result.error) || 'The run could not start.';
+                error.hidden = false;
+                confirmBtn.disabled = false;
+                return;
+            }
+            closeRunDialog();
+            runActive = true;
+            runStopRequested = false;
+            runStartedYamlPath = selectedYamlPath;
+            runLastStatus = null;
+            applyRunEditLock();
+            setRunButtonRunning(true);
+            document.getElementById('runProgressText').textContent = '';
+            document.getElementById('runStopBtn').hidden = false;
+            document.getElementById('runStopBtn').disabled = false;
+            document.getElementById('runCloseBtn').hidden = true;
+            document.getElementById('runProgressPaused').hidden = false;
+            showRunProgress();
+            await pollRun();
+        }
+
+        function setRunButtonRunning(on) {
+            const btn = document.getElementById('runToolbarBtn');
+            btn.classList.toggle('active', on);
+            btn.title = on ? 'Run in progress' : 'Run';
+        }
+
+        function showRunProgress() {
+            document.getElementById('runProgressPopover').style.display = 'block';
+        }
+
+        function closeRunProgress() {
+            document.getElementById('runProgressPopover').style.display = 'none';
+        }
+
+        async function pollRun() {
+            const text = document.getElementById('runProgressText');
+            let status;
+            try {
+                status = await window.pywebview.api.get_run_status();
+            } catch (e) {
+                text.textContent = `Could not read the run's progress: ${runErrorText(e)}`;
+                setTimeout(pollRun, 1000);
+                return;
+            }
+            text.textContent = runStatusText(status, runStopRequested);
+            runLastStatus = status;
+            if (status.running) {
+                applyRunEditLock();
+                setTimeout(pollRun, 1000);
+                return;
+            }
+            await finishRun(status);
+        }
+
+        async function finishRun(status) {
+            runActive = false;
+            applyRunEditLock();
+            setRunButtonRunning(false);
+            document.getElementById('runStopBtn').hidden = true;
+            document.getElementById('runCloseBtn').hidden = false;
+            document.getElementById('runProgressPaused').hidden = true;
+            if (!runIsForOpenPage(status, selectedYamlPath, runStartedYamlPath)) return;
+            try {
+                await reloadOpenPage();
+            } catch (e) {
+                const text = document.getElementById('runProgressText');
+                text.textContent += ` The page could not be redrawn: ${runErrorText(e)}`;
+            }
+        }
+
+        // The backend has already reloaded the page; this redraws it.
+        async function reloadOpenPage() {
+            if (currentFolderIndex >= 0) {
+                if (folderLoading) return; // a page switch is redrawing it already
+                folderLoading = true;
+                try {
+                    await loadCollectraFolderInner(currentFolderIndex);
+                } finally {
+                    folderLoading = false;
+                }
+            } else {
+                await loadYaml();
+                await Promise.all(Object.values(panelControllers).map((c) => c.showActiveTabContent()));
+            }
+            refreshTables();
+        }
+
+        async function stopRun() {
+            runStopRequested = true;
+            document.getElementById('runStopBtn').disabled = true;
+            try {
+                await window.pywebview.api.stop_run();
+            } catch (e) {
+                console.error('Error stopping the run:', e);
+            }
+        }
+        // ── END RUN BUTTON
+
         function closeAllToolbarPopovers(exceptTarget) {
             TOOLBAR_POPOVERS.forEach(({ id, btnId, state }) => {
                 if (exceptTarget && (exceptTarget.closest('#' + id) || exceptTarget.closest('#' + btnId))) return;
@@ -4626,6 +4919,7 @@
                 // not at the end, after steps that can fail.
                 document.getElementById('artefactsToolbarBtn').disabled = false;
                 document.getElementById('tasksToolbarBtn').disabled = false;
+                document.getElementById('runToolbarBtn').disabled = false;
                 // Rows drawn before this (e.g. tabs restored at start-up) had no lineage to
                 // go on, so their Ancestors/Descendants buttons are redrawn now. One row that
                 // cannot be drawn must not stop the pipeline from loading.

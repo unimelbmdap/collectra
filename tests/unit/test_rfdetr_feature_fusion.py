@@ -20,6 +20,7 @@ from collectra.tasks.object_detection.rfdetr_channels import (
 from collectra.tasks.object_detection.rfdetr_feature_fusion import (
     ViewAttention,
     adapt_model,
+    feature_fusion_training,
     fusion_spec,
     load_adapted_model,
     save_adapted_model,
@@ -108,6 +109,56 @@ def test_checkpoint_roundtrip_and_collectra_dispatch(detector, tmp_path):
     torch.save(payload, broken)
     with pytest.raises(RuntimeError, match="Missing key"):
         load_adapted_model(broken)
+
+
+def test_a_reloaded_fusion_model_adapts_its_classes_to_new_training_data(
+    detector, tmp_path, monkeypatch
+):
+    """The class count comes from the checkpoint, not the user, so training may change it.
+
+    rfdetr keeps an explicitly set ``num_classes`` even when the dataset has a
+    different number of classes. Marking the checkpoint's value as explicit made
+    a 1-class detector trained from a COCO start keep its 90-class head.
+    """
+    adapt_model(detector, 2, reference_view=1, hidden_dim=4)
+    path = tmp_path / "fusion.pth"
+    save_adapted_model(detector, path)
+    loaded = load_adapted_model(path)
+    assert loaded.model_config.num_classes == 90
+    assert "num_classes" not in loaded.model_config.model_fields_set
+    monkeypatch.setattr(
+        RFDETR, "_detect_num_classes_for_training", staticmethod(lambda *a, **k: 1)
+    )
+    loaded._align_num_classes_from_dataset(str(tmp_path))
+    assert loaded.model_config.num_classes == 1
+
+
+def test_training_a_reloaded_fusion_model_builds_a_head_for_the_new_classes(
+    detector, tmp_path, monkeypatch
+):
+    adapt_model(detector, 2, reference_view=1, hidden_dim=4)
+    path = tmp_path / "fusion.pth"
+    save_adapted_model(detector, path)
+    loaded = load_adapted_model(path)
+    monkeypatch.setattr(
+        RFDETR, "_detect_num_classes_for_training", staticmethod(lambda *a, **k: 1)
+    )
+    # What RFDETR.train does before it builds the training module.
+    loaded._align_num_classes_from_dataset(str(tmp_path))
+    config = loaded.get_train_config(
+        dataset_dir=str(tmp_path), output_dir=str(tmp_path)
+    )
+    with feature_fusion_training(fusion_spec(loaded.model.model.state_dict())):
+        module = RFDETRModelModule(loaded.model_config, config)
+    assert module.model.class_embed.out_features == 2
+
+
+def test_a_reloaded_fusion_model_keeps_the_settings_it_needs(detector, tmp_path):
+    adapt_model(detector, 2, reference_view=1, hidden_dim=4)
+    path = tmp_path / "fusion.pth"
+    save_adapted_model(detector, path)
+    fields = load_adapted_model(path).model_config.model_fields_set
+    assert {"num_channels", "pretrain_weights", "device"} <= fields
 
 
 @pytest.mark.parametrize("truncated", [False, True])

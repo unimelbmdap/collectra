@@ -82,6 +82,11 @@ def test_native_menus_dispatch_distinct_viewer_actions():
     } <= set(names)
 
 
+def test_tools_menu_opens_settings():
+    titles = [item.title for item in actions(build_native_menu(Mock()))]
+    assert "Settings…" in titles
+
+
 def test_tools_menu_calls_version_control_history_and_changes():
     titles = [item.title for item in actions(build_native_menu(Mock()))]
     assert "History and Changes…" in titles
