@@ -16,8 +16,8 @@ import threading
 import time
 import uuid
 from collections.abc import Sequence
-from contextlib import contextmanager
-from dataclasses import dataclass
+from contextlib import contextmanager, suppress
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -46,6 +46,7 @@ class ImageFormat(enum.Enum):
 
 RUN_IN_PROGRESS = "A run is in progress on this page"
 STALE_PAGE = "The run changed this page; open it again before editing"
+NOTHING_TO_RUN = "Every page that can run already has its results"
 # How long closing the window waits for a stopping run to finish its task and
 # put back any output it had moved aside.
 RUN_STOP_TIMEOUT = 30
@@ -55,7 +56,8 @@ RUN_STOP_TIMEOUT = 30
 class _RunState:
     """What the run started from the Run button is doing, for get_run_status.
 
-    A single folder given as a Path is kept as a set of one.
+    A single folder given as a Path is kept as a set of one. Folders are
+    resolved, as the guard compares resolved folders.
     """
 
     folders: frozenset[Path]
@@ -70,7 +72,8 @@ class _RunState:
 
     def __post_init__(self):
         if isinstance(self.folders, Path):
-            self.folders = frozenset({self.folders})
+            self.folders = {self.folders}
+        self.folders = frozenset(folder.resolve() for folder in self.folders)
 
     @property
     def folder(self) -> Path | None:
@@ -351,6 +354,184 @@ class GUIBackend:
         self._run_thread.start()
         return {"success": True}
 
+    def _collection_plans(self, overwrite: bool) -> tuple[dict, list[dict]]:
+        """Plan every page in the list as a run of the collection runs it.
+
+        Without overwrite the run re-runs nothing, so a task the page's own
+        plan would re-run keeps its output.
+
+        Args:
+            overwrite: Re-run every task that has output, replacing it.
+
+        Returns:
+            The plan of each page that can run, by resolved folder, and the
+            name of each page that cannot, with the reason.
+        """
+        from collectra.pipelines.run_plan import TaskPlan
+
+        if self._pipeline is None:
+            raise RuntimeError("No pipeline is loaded")
+        if not self._collectra_folders:
+            raise RuntimeError("Open a page first")
+        plans, unplannable = {}, []
+        for page in self._collectra_folders:
+            folder = Path(page["path"]).resolve()
+            try:
+                plan = self._plan(folder, overwrite)
+            except Exception as error:
+                unplannable.append({"name": folder.name, "reason": str(error)})
+                continue
+            plans[folder] = replace(
+                plan,
+                tasks=[
+                    (
+                        TaskPlan(task.name, "skip", "already has output")
+                        if task.action == "rerun" and not overwrite
+                        else task
+                    )
+                    for task in plan.tasks
+                ],
+            )
+        return plans, unplannable
+
+    def get_collection_preview(self, overwrite: bool = False) -> dict:
+        """What a run of every page in the list would run and replace.
+
+        Planning holds the run lock, as get_run_preview does.
+
+        Args:
+            overwrite: Re-run every task that has output, replacing it.
+
+        Returns:
+            Whether the collection can run; how many pages are listed, have
+            results and have none; each task that would run, with the number
+            of pages it runs on and replaces output on; the pages that cannot
+            run, with the reason; and a message.
+        """
+        preview = {
+            "success": True,
+            "can_run": False,
+            "pages": len(self._collectra_folders),
+            "to_replace": 0,
+            "first_time": 0,
+            "tasks": [],
+            "unplannable": [],
+            "message": "",
+        }
+        try:
+            if not self._run_lock.acquire(blocking=False):
+                raise RuntimeError("A run is already in progress")
+            try:
+                plans, preview["unplannable"] = self._collection_plans(overwrite)
+            finally:
+                self._run_lock.release()
+        except Exception as error:
+            return {**preview, "message": str(error)}
+        tasks = {
+            task.name: {"name": task.name, "pages": 0, "replace": 0}
+            for plan in plans.values()
+            for task in plan.tasks
+        }
+        for task in (task for plan in plans.values() for task in plan.tasks):
+            if task.action != "skip":
+                tasks[task.name]["pages"] += 1
+                tasks[task.name]["replace"] += task.action == "rerun"
+        to_replace = sum(
+            any(task.action != "run" for task in plan.tasks) for plan in plans.values()
+        )
+        can_run = any(plan.to_run for plan in plans.values())
+        return {
+            **preview,
+            "can_run": can_run,
+            "to_replace": to_replace,
+            "first_time": len(plans) - to_replace,
+            "tasks": [task for task in tasks.values() if task["pages"]],
+            "message": "" if can_run else NOTHING_TO_RUN,
+        }
+
+    def start_collection_run(self, note: str = "", overwrite: bool = False) -> dict:
+        """Run the pipeline on every page in the list in the background.
+
+        Pages that cannot be planned are left out. Each page's "started" entry
+        is written first; if one cannot be, nothing runs.
+
+        Args:
+            note: A note for each page's run log.
+            overwrite: Re-run every task, replacing its output.
+
+        Returns:
+            Whether the run started, with the error if it did not.
+        """
+        from collectra.pipelines.run_plan import RunReport, TaskOutcome
+
+        if not self._run_lock.acquire(blocking=False):
+            return {"success": False, "error": "A run is already in progress"}
+        previous = self._run_state
+        try:
+            if self._git_lock.locked():
+                raise RuntimeError(
+                    "A Git operation is running; try again when it finishes"
+                )
+            with self._text_save_lock:
+                # Taken once no edit is half-way through; later edits are refused.
+                plans, _ = self._collection_plans(overwrite)
+                if not any(plan.to_run for plan in plans.values()):
+                    raise RuntimeError(NOTHING_TO_RUN)
+                state = _RunState(frozenset(plans), total=len(plans), unit="pages")
+                self._run_state = state
+            for index, (folder, plan) in enumerate(plans.items()):
+                try:
+                    run_log.begin_entry(
+                        folder,
+                        pipeline=self._pipeline.name,
+                        version=self._pipeline.version,
+                        note=note,
+                        plan=plan,
+                    )
+                except OSError as error:
+                    # The pages already started record that nothing ran.
+                    for begun in list(plans)[:index]:
+                        report = RunReport(
+                            [
+                                TaskOutcome(
+                                    task.name, "cancelled", "the run did not start"
+                                )
+                                for task in plans[begun].tasks
+                            ]
+                        )
+                        with suppress(OSError):
+                            run_log.finish_entry(begun, report, 0)
+                    raise RuntimeError(
+                        f"The run log of {folder.name} could not be written: {error}"
+                    ) from error
+        except Exception as error:
+            self._run_state = previous
+            self._run_lock.release()
+            return {"success": False, "error": str(error)}
+        # Each plan names every task of the pipeline.
+        rerun = (
+            {t.name for plan in plans.values() for t in plan.tasks}
+            if overwrite
+            else set()
+        )
+
+        def page_done(folder: Path) -> None:
+            state.done += 1
+
+        self._run_thread = threading.Thread(
+            target=self._record_run,
+            args=(
+                state,
+                plans,
+                lambda: self._pipeline.run_pages(
+                    plans, rerun, lambda: state.stop, page_done
+                ),
+            ),
+            daemon=True,
+        )
+        self._run_thread.start()
+        return {"success": True}
+
     def _run_in_background(self, state: _RunState, plan) -> None:
         from collectra.pipelines.run_plan import RunReport
 
@@ -360,28 +541,58 @@ class GUIBackend:
             state.started += 1
             return state.stop
 
+        def run() -> dict:
+            report = self._pipeline.run_page(state.folder, plan, should_stop)
+            if not isinstance(report, RunReport):
+                raise TypeError(
+                    f"run_page returned {type(report).__name__}, not a RunReport"
+                )
+            return {state.folder: report}
+
+        self._record_run(state, {state.folder: plan}, run)
+
+    def _record_run(self, state: _RunState, plans: dict, run) -> None:
+        """Run, log each page's report, reload the open page and end the run.
+
+        A run that breaks is recorded as failed on every page.
+
+        Args:
+            state: The run's state.
+            plans: The plan of each page in the run.
+            run: Runs the pages and returns the report of each.
+        """
+        from collectra.pipelines.run_plan import RunReport
+
         began = time.monotonic()
         crash = None
         try:
             try:
-                report = self._pipeline.run_page(state.folder, plan, should_stop)
-                if not isinstance(report, RunReport):
-                    raise TypeError(
-                        f"run_page returned {type(report).__name__}, not a RunReport"
-                    )
+                reports = run()
             except BaseException as error:
                 crash = error
                 state.error = str(error)
-                report = _crashed_report(plan, error)
-            state.summary = run_log.summarize(report)
-            state.done = sum(
-                outcome.status in ("ran", "re-ran", "failed")
-                for outcome in report.outcomes
-            )
-            try:
-                run_log.finish_entry(state.folder, report, time.monotonic() - began)
-            except Exception as error:
-                state.error = f"The results were kept, but the run log: {error}"
+                reports = {
+                    folder: _crashed_report(plan, error)
+                    for folder, plan in plans.items()
+                }
+            outcomes = [o for report in reports.values() for o in report.outcomes]
+            state.summary = run_log.summarize(RunReport(outcomes))
+            if state.unit == "pages":
+                state.summary = f"{len(plans)} pages: {state.summary}"
+            else:
+                state.done = sum(
+                    outcome.status in ("ran", "re-ran", "failed")
+                    for outcome in outcomes
+                )
+            seconds = time.monotonic() - began
+            for folder, report in reports.items():
+                try:
+                    run_log.finish_entry(folder, report, seconds)
+                except Exception as error:
+                    page = f" of {folder.name}" if state.unit == "pages" else ""
+                    state.error = (
+                        f"The results were kept, but the run log{page}: {error}"
+                    )
             self._reload_after_run(state)
         except Exception as error:
             state.error = f"The run could not be recorded: {error}"
