@@ -1,16 +1,8 @@
-"""Entity canonicalization and text processing tasks for Collectra workflows.
-
-This module provides specialized tasks for entity recognition and canonicalization
-operations. It includes functionality for matching text entities against known
-canonical forms using fuzzy string matching algorithms.
-
-The module supports:
-    - Entity canonicalization with configurable similarity thresholds
-    - Fuzzy string matching using difflib algorithms
-    - Entity lists loaded from files or provided directly
+"""Matching text to the canonical form of an entity, with BM25 and an LLM.
 
 Classes:
-    EntityCanonicalizer: Task for canonicalizing entities in text
+    LLMCanonicaliser: finds the entities closest to the text, then asks the LLM
+        which one the text refers to.
 """
 
 __all__ = ["LLMCanonicaliser"]
@@ -20,28 +12,27 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from collectra.tasks.bm25_index import BM25Index
 from collectra.tasks.llms import LLM as CollectraLLM
-from collectra.tasks.vector_store import VectorStore
 from collectra.types.texts import Text
 
 load_dotenv()
 
 
 class LLMCanonicaliser(CollectraLLM):
-    """Task for canonicalizing entities in text using fuzzy string matching.
+    """Asks the LLM which known entity the input text refers to.
 
-    Matches input text against a list of known entities and returns the best
-    canonical match if it exceeds the similarity threshold. Can load entity
-    lists from files or use provided lists directly.
+    With an entity file, the ``count`` entities that best match the text (by
+    BM25 over words and their character trigrams, so misspellings still match)
+    are offered to the LLM. A list of entities is offered whole.
 
     Attributes:
-        entities (list[str]|Path): List of canonical entities or path to file containing them.
-        threshold (float): Minimum similarity threshold for matches (0.0 to 1.0).
+        entities (list[str]|Path): The entities, or a file with one per line.
+        count (int): How many entities from a file to offer.
     """
 
     def __init__(self, name: str, model: str, **kwargs):
         super().__init__(name, model, **kwargs)
-        self.embedding_model = kwargs.get("embedding_model", "text-embedding-3-large")
         self.threshold = kwargs.get("threshold", 0.8)
         self.count = kwargs.get("count", 5)
         self.entities = kwargs.get("entities", [])
@@ -51,31 +42,21 @@ class LLMCanonicaliser(CollectraLLM):
                 self.entities = [entity for entity in str(self.entities).split(",")]
         else:
             self.entities = entities_path
+        self._index: BM25Index | None = None
 
-    def retrieve_entities(self, query_data: str) -> dict:
-        from langchain_openai import OpenAIEmbeddings
-
-        index_path = Path(self.entities.stem + "_index.embed")
-        embeddings = OpenAIEmbeddings(model=self.embedding_model)
-        if VectorStore.exists(index_path, self.embedding_model):
-            print(f"Loading existing vector store from {index_path}")
-            vector_store = VectorStore.load(index_path, embeddings)
-        else:
+    def _entity_index(self) -> BM25Index:
+        """The entity file's index, built the first time it is needed."""
+        if self._index is None:
             with open(self.entities, "r") as f:
-                raw_data = [line.strip() for line in f.readlines() if line.strip()]
-            ids = [str(i) for i in range(len(raw_data))]
-            vector_store = VectorStore.build(
-                index_path, embeddings, raw_data, ids, self.embedding_model
-            )
+                names = [line.strip() for line in f if line.strip()]
+            self._index = BM25Index([str(i) for i in range(len(names))], names)
+        return self._index
 
-        entities = dict()
-
-        results = vector_store.similarity_search_with_score(query_data, k=self.count)
-        for result in results:
-            if result[0].page_content in entities:
-                entities[result[0].page_content].append(result[0].id)
-            else:
-                entities[result[0].page_content] = [result[0].id]
+    def retrieve_entities(self, query_data: str) -> dict[str, list[str]]:
+        """The best-matching entities, best first, each with its line numbers."""
+        entities: dict[str, list[str]] = {}
+        for document, _ in self._entity_index().search(query_data, k=self.count):
+            entities.setdefault(document.page_content, []).append(document.id)
         return entities
 
     def run(self, *args: Text) -> Text:
@@ -103,10 +84,8 @@ class LLMCanonicaliser(CollectraLLM):
         if isinstance(self.entities, Path):
             entities_dict = self.retrieve_entities(query_data)
             entities = ", ".join(list(entities_dict.keys()))
-        elif isinstance(self.entities, list):
+        else:
             entities = ", ".join(self.entities)
-        elif isinstance(self.entities, str):
-            entities = self.entities
 
         messages = self.replace_inputs(pattern, prompt, *args, entities=entities)
 

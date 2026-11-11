@@ -12,7 +12,7 @@ def test_gui_and_pipeline_discovery_with_ml_backends_unavailable():
         import tempfile
         from pathlib import Path
 
-        blocked = {'torch', 'torchvision', 'timm', 'rfdetr', 'transformers', 'onnxruntime', 'ultralytics', 'ensemble_boxes', 'numba', 'llvmlite', 'llmloader', 'pydantic_ai', 'langchain_openai', 'sam3'}
+        blocked = {'torch', 'torchvision', 'timm', 'rfdetr', 'transformers', 'onnxruntime', 'ultralytics', 'ensemble_boxes', 'numba', 'llvmlite', 'llmloader', 'pydantic_ai', 'sam3'}
         class WithoutML(importlib.abc.MetaPathFinder):
             def find_spec(self, fullname, path=None, target=None):
                 if fullname.split('.')[0] in blocked:

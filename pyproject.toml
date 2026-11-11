@@ -27,7 +27,6 @@ dependencies = [
     "jinja2 (>=3.1.6)",
     "markdown (>=3.9)",
     "pytz (>=2025.2)",
-    "langchain (>=1.1.0)",
     "pandas (>=2.3.3)",
     "h5py (>=3.15.1)",
     "editdistance (>=0.6.0)",
@@ -58,7 +57,6 @@ ml = [
     "timm (>=1.0.9)",
     "rfdetr[train,loggers] (>=1.6.5.post0)",
     "pydantic-ai-slim[anthropic,google,mistral,openai]>=2.56.0",
-    "langchain-openai>=1.6.3",
 ]
 yolo = [
     "ultralytics (>=8.4.160)",

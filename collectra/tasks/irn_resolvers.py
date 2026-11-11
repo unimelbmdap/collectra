@@ -1,7 +1,7 @@
 """IRN (Internal Reference Number) resolver tasks for Collectra workflows.
 
-This module provides an IRN resolver that uses semantic similarity search
-(via an on-disk vector store + OpenAI embeddings) plus an LLM verification step to map
+This module provides an IRN resolver that finds candidate rows with BM25 search
+(over words and their character trigrams) plus an LLM verification step to map
 free-text query inputs to canonical IRN identifiers loaded from an xlsx
 source file.
 
@@ -14,15 +14,14 @@ Public API:
 __all__ = ["IRNResolver", "normalise_column_name", "render_card"]
 
 import hashlib
-import math
 import re
 from pathlib import Path
 
 import pandas as pd
 from dotenv import load_dotenv
 
+from collectra.tasks.bm25_index import BM25Index
 from collectra.tasks.canonicalisers import LLMCanonicaliser
-from collectra.tasks.vector_store import VectorStore
 from collectra.types.texts import Text
 
 from ..logger import get_logger
@@ -85,20 +84,11 @@ def normalise_column_name(raw: str) -> str:
 
 def _is_missing(value) -> bool:
     """Return True if value is None, NaN, or pandas-NA."""
-    if value is None:
-        return True
     try:
-        if pd.isna(value):
-            return True
+        return bool(pd.isna(value))
     except (TypeError, ValueError):
-        pass
-    if isinstance(value, float):
-        try:
-            if math.isnan(value):
-                return True
-        except (TypeError, ValueError):
-            pass
-    return False
+        # A list or other container: a value, even if it holds missing ones.
+        return False
 
 
 def render_card(template: str, row: dict) -> str:
@@ -127,8 +117,6 @@ def render_card(template: str, row: dict) -> str:
             if ch in sep_chars:
                 last_sep = ch
                 break
-        if last_sep is None:
-            return run
         leading = " " if run and run[0].isspace() else ""
         trailing = " " if run and run[-1].isspace() else ""
         return f"{leading}{last_sep}{trailing}"
@@ -147,11 +135,11 @@ def render_card(template: str, row: dict) -> str:
 class IRNResolver(LLMCanonicaliser):
     """Resolve a free-text query to an IRN identifier.
 
-    Builds one vector sub-index per entry in ``index_filters`` from rows of
+    Builds one BM25 sub-index per entry in ``index_filters`` from rows of
     a source xlsx file. At query time, tries each filter in order, retrieves
-    the top-``count`` candidates by embedding distance, applies acceptance
-    rules (``score_floor`` and optional ``score_gap_eps``), then asks the LLM
-    to either pick a candidate IRN or return empty string.
+    the top-``count`` candidates by BM25 score, applies acceptance rules
+    (``min_score`` and optional ``score_gap_eps``), then asks the LLM to
+    either pick a candidate IRN or return empty string.
 
     Attributes:
         source (Path): Path to the xlsx source file.
@@ -159,9 +147,10 @@ class IRNResolver(LLMCanonicaliser):
         query_template (str): str.format template using input Text names.
         irn_column (str): Name of the IRN column (default "IRN").
         count (int): Number of candidates to retrieve per filter (default 20).
-        embedding_model (str): Embedding model name.
-        score_floor (float): Maximum acceptable (squared L2) distance for top-1.
-        score_gap_eps (float): Minimum gap between top-1 and top-2 distances.
+        min_score (float): Lowest acceptable BM25 score for the top candidate.
+            Only candidates that share a word or trigram with the query are
+            found, so the default of 0 accepts any of them.
+        score_gap_eps (float): Minimum lead of the top score over the second.
         index_filters (list): Pandas-query strings (or None) - one per sub-index.
     """
 
@@ -174,6 +163,13 @@ class IRNResolver(LLMCanonicaliser):
             raise ValueError("IRNResolver requires a 'card_template' kwarg.")
         if "query_template" not in kwargs:
             raise ValueError("IRNResolver requires a 'query_template' kwarg.")
+        if "score_floor" in kwargs:
+            raise ValueError(
+                "IRNResolver no longer uses 'score_floor', a maximum embedding "
+                "distance. Candidates are now found with BM25, where higher "
+                "scores are better: use 'min_score' for the lowest acceptable "
+                "score of the best candidate."
+            )
 
         # The parent LLMCanonicaliser.__init__ wraps `entities` in
         # Path(...) and then checks .exists()/.suffix. We don't use the
@@ -190,10 +186,7 @@ class IRNResolver(LLMCanonicaliser):
 
         self.irn_column: str = kwargs.get("irn_column", "IRN")
         self.count: int = kwargs.get("count", 20)
-        self.embedding_model: str = kwargs.get(
-            "embedding_model", "text-embedding-3-large"
-        )
-        self.score_floor: float = kwargs.get("score_floor", 0.5)
+        self.min_score: float = kwargs.get("min_score", 0.0)
         self.score_gap_eps: float = kwargs.get("score_gap_eps", 0.0)
         self.index_filters: list = kwargs.get("index_filters", [None])
 
@@ -203,11 +196,8 @@ class IRNResolver(LLMCanonicaliser):
         else:
             self.preamble = NO_MATCH_INSTRUCTION
 
-        # Build/load one vector store per filter.
-        from langchain_openai import OpenAIEmbeddings
-
-        self._embeddings = OpenAIEmbeddings(model=self.embedding_model)
-        self._vector_stores: list[VectorStore] = []
+        # Build/load one index per filter.
+        self._indexes: list[BM25Index] = []
         self._build_indices()
 
     # ------------------------------------------------------------------
@@ -229,7 +219,7 @@ class IRNResolver(LLMCanonicaliser):
             sidecar = index_path / ".source_hash"
 
             reuse = (
-                VectorStore.exists(index_path, self.embedding_model)
+                BM25Index.exists(index_path)
                 and sidecar.exists()
                 and sidecar.read_text().strip() == current_hash
             )
@@ -240,9 +230,7 @@ class IRNResolver(LLMCanonicaliser):
                     index_path,
                     filter_str,
                 )
-                self._vector_stores.append(
-                    VectorStore.load(index_path, self._embeddings)
-                )
+                self._indexes.append(BM25Index.load(index_path))
                 continue
 
             # Need to (re)build this index.
@@ -279,6 +267,9 @@ class IRNResolver(LLMCanonicaliser):
                 irn_value = row_dict.get(id_col)
                 if _is_missing(irn_value):
                     continue
+                # A column with blank cells is read as floats: 12.0 is IRN 12.
+                if isinstance(irn_value, float) and irn_value.is_integer():
+                    irn_value = int(irn_value)
                 irn_str = str(irn_value).strip()
                 if not irn_str or irn_str in seen:
                     continue
@@ -289,10 +280,8 @@ class IRNResolver(LLMCanonicaliser):
                 texts.append(card)
                 seen.add(irn_str)
 
-            vector_store = VectorStore.build(
-                index_path, self._embeddings, texts, ids, self.embedding_model
-            )
-
+            index = BM25Index(ids, texts)
+            index.save(index_path)
             sidecar.write_text(current_hash)
             logger.info(
                 "Built IRN index at %s with %d rows for filter %r",
@@ -300,7 +289,7 @@ class IRNResolver(LLMCanonicaliser):
                 len(texts),
                 filter_str,
             )
-            self._vector_stores.append(vector_store)
+            self._indexes.append(index)
 
     # ------------------------------------------------------------------
     # Retrieval / run
@@ -309,8 +298,7 @@ class IRNResolver(LLMCanonicaliser):
         self, query_data: str, filter_index: int = 0
     ) -> list[tuple[str, str]]:
         """Retrieve top-``count`` (id, page_content) pairs for the given filter."""
-        vector_store = self._vector_stores[filter_index]
-        results = vector_store.similarity_search_with_score(query_data, k=self.count)
+        results = self._indexes[filter_index].search(query_data, k=self.count)
         out: list[tuple[str, str]] = []
         for doc, _score in results:
             out.append((str(doc.id), doc.page_content))
@@ -326,16 +314,15 @@ class IRNResolver(LLMCanonicaliser):
         args: tuple,
     ) -> str | None:
         """Try one filter; return matched IRN string or None."""
-        vector_store = self._vector_stores[filter_index]
-        results = vector_store.similarity_search_with_score(query_text, k=self.count)
+        results = self._indexes[filter_index].search(query_text, k=self.count)
         if not results:
             return None
-        if results[0][1] > self.score_floor:
+        if results[0][1] < self.min_score:
             return None
         if (
             self.score_gap_eps > 0
             and len(results) >= 2
-            and (results[1][1] - results[0][1]) < self.score_gap_eps
+            and (results[0][1] - results[1][1]) < self.score_gap_eps
         ):
             return None
 
@@ -370,7 +357,7 @@ class IRNResolver(LLMCanonicaliser):
         inputs_dict = {arg.name: str(arg.data) for arg in args}
         query_text = self._render_query(inputs_dict)
 
-        for filter_index in range(len(self._vector_stores)):
+        for filter_index in range(len(self._indexes)):
             matched = self._try_filter(filter_index, query_text, args)
             if matched is not None:
                 return self.text_output(matched)
