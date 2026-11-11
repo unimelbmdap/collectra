@@ -263,6 +263,47 @@ def test_folders_are_listed_once_whatever_the_number_of_files(
         assert len(calls) <= 1 + count  # import_file may list its own folder only
 
 
+def test_file_inputs_list_their_folder_once(
+    tmp_path, source, raw_img_path, monkeypatch
+):
+    pipeline = build(tmp_path)
+    calls = []
+    iterdir = Path.iterdir
+
+    def counting(self):
+        calls.append(self)
+        return iterdir(self)
+
+    monkeypatch.setattr(Path, "iterdir", counting)
+    for count in (2, 6):
+        folder = source / f"n{count}"
+        folder.mkdir()
+        for number in range(count):
+            shutil.copy(raw_img_path, folder / f"{number}.jpg")
+        files = sorted(folder.iterdir())
+        calls.clear()
+        assert pipeline.import_inputs(files).imported == count
+        assert calls.count(folder) == 1
+
+
+def test_a_page_folder_input_does_not_list_its_parent(
+    tmp_path, source, raw_img_path, monkeypatch
+):
+    folder = source / "A.imp"
+    folder.mkdir()
+    shutil.copy(raw_img_path, folder / "scan.jpg")
+    calls = []
+    iterdir = Path.iterdir
+
+    def counting(self):
+        calls.append(self)
+        return iterdir(self)
+
+    monkeypatch.setattr(Path, "iterdir", counting)
+    assert build(tmp_path).import_inputs([folder]).pages == [folder]
+    assert source not in calls
+
+
 def test_every_input_must_exist_before_any_is_imported(tmp_path, source, raw_img_path):
     shutil.copy(raw_img_path, source / "one.jpg")
     with pytest.raises(FileNotFoundError, match="gone"):

@@ -1296,7 +1296,7 @@ class Pipeline(LenientAttributes, BaseModel):
             shutil.copy2(source, folder / source.name)
             self._create_results_file(folder, root, source)
         except BaseException:
-            shutil.rmtree(folder)
+            shutil.rmtree(folder, ignore_errors=True)
             raise
         logger.info("Imported %s as %s", source, folder)
         return folder
@@ -1326,20 +1326,24 @@ class Pipeline(LenientAttributes, BaseModel):
                 raise FileNotFoundError(f"Path {item} does not exist.")
         report = ImportReport()
         accepted = self.file_extensions() - {f".{self.ext}"}
+        known = {}  # each folder's entries before importing, listed once
         for item in items:
             if item.is_dir() and item.suffix != f".{self.ext}":
                 children = sorted(item.iterdir(), key=lambda path: path.name.lower())
-                known = set(children)
+                known[item] = set(children)
             else:
                 children = [item]
-                known = set(item.parent.iterdir())
+                if not item.is_dir() and item.parent not in known:
+                    known[item.parent] = set(item.parent.iterdir())
             for child in children:
                 if not child.name.startswith("."):
                     try:
                         if child.is_dir():
                             self._open_folder(child, accepted, report)
                         else:
-                            self._import_one(child, accepted, known, report)
+                            self._import_one(
+                                child, accepted, known[child.parent], report
+                            )
                     except OSError as error:
                         report.failed.append(f"{child.name}: {error}")
         return report

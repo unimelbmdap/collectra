@@ -149,6 +149,24 @@ def test_failed_copy_leaves_nothing(tmp_path, source, raw_img_path, monkeypatch)
     assert (source / "page.imp" / "mine.txt").read_text() == "kept"
 
 
+def test_a_failing_cleanup_keeps_the_original_error(
+    tmp_path, source, raw_img_path, monkeypatch
+):
+    shutil.copy(raw_img_path, source / "page.jpg")
+
+    def fail(*args, **kwargs):
+        raise OSError("disk full")
+
+    def deny(path, ignore_errors=False):
+        if not ignore_errors:
+            raise OSError("cannot remove")
+
+    monkeypatch.setattr(shutil, "copy2", fail)
+    monkeypatch.setattr(shutil, "rmtree", deny)
+    with pytest.raises(OSError, match="disk full"):
+        build(tmp_path).import_file(source / "page.jpg")
+
+
 def test_destination_is_the_first_name_not_taken():
     assert destination(Path("/in/page.jpg"), "imp", lambda path: False) == Path(
         "/in/page.imp"

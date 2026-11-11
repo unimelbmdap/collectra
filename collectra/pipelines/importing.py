@@ -1,4 +1,4 @@
-"""Name the results folder an input file is imported into."""
+"""Name the results folders inputs are imported into, and report what was done."""
 
 from __future__ import annotations
 
@@ -59,7 +59,6 @@ class ImportReport(BaseModel):
         Returns:
             The notice, or an empty string when only existing pages were opened.
         """
-
         parts = []
         if self.imported:
             parts.append(
