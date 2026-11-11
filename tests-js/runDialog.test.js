@@ -169,7 +169,12 @@ describe('runDialogContent with "Overwrite existing results" ticked', () => {
         expect(content.warning).toMatch(/^Warning: old\. All 3 tasks will run again/);
     });
 
-    it('is unchanged when unticked', () => {
+    it('says "the task" for a one-task pipeline', () => {
+        expect(runDialogContent(preview([task('ocr', 'rerun', 'overwrite')]), true).warning)
+            .toBe('The task will run again on this image and replace its results, including edits and annotations you made.');
+    });
+
+        it('is unchanged when unticked', () => {
         expect(runDialogContent(ticked, false)).toEqual(runDialogContent(ticked));
         expect(runDialogContent(ticked).warning).toBe('Re-run tasks replace their existing output, including edits.');
     });

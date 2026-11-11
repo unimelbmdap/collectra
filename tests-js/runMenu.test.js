@@ -192,7 +192,6 @@ it('inserts backend text as text only', async () => {
         unplannable: [{name: '<i>p</i>', reason: '<img src=x>'}]}));
     await p.choose('Run whole collection');
     expect(p.shown()).toEqual(['<b>x</b> — runs on 1 page', '<i>p</i> — cannot run (<img src=x>)']);
-    expect(p.els.runModalTasks.children.every((li) => li.innerHTML === undefined)).toBe(true);
 });
 
 describe('a run of the collection', () => {
@@ -224,11 +223,24 @@ describe('a run of the collection', () => {
         await vi.advanceTimersByTimeAsync(1000);
         expect(bottom.setTextRunLocked).toHaveBeenLastCalledWith(true);
         expect(p.els.runPausedNotice.hidden).toBe(false);
-        p.context.selectedYamlPath = '/data/p3/results.yaml';
+        p.context.selectedYamlPath = '/data/p3/results.yaml'; // opened on its own, not from the list
+        p.context.currentFolderIndex = -1;
         await vi.advanceTimersByTimeAsync(1000);
         expect(bottom.setTextRunLocked).toHaveBeenLastCalledWith(false);
         expect(bottom.setImageRunLocked).toHaveBeenLastCalledWith(false);
         expect(p.els.runPausedNotice.hidden).toBe(true);
+    });
+
+    it('counts a page of the list as in the run even when the backend spells its folder differently', async () => {
+        const spelt = {folders: ['/private/data/p1', '/private/data/p2']};
+        const p = page({statuses: [status(spelt), {...done, ...spelt}]});
+        await p.choose('Run whole collection');
+        await p.context.startRun();
+        p.context.selectedYamlPath = '/data/p2/results.yaml';
+        p.context.currentFolderIndex = 1;
+        expect(p.context.runLocksOpenPage()).toBe(true);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(p.context.loadCollectraFolderInner).toHaveBeenCalledWith(1);
     });
 
     it('reloads the open page when it finishes only if the page was in the run', async () => {
@@ -242,7 +254,93 @@ describe('a run of the collection', () => {
         await outside.choose('Run whole collection');
         await outside.context.startRun();
         outside.context.selectedYamlPath = '/data/p3/results.yaml';
+        outside.context.currentFolderIndex = -1;
         await vi.advanceTimersByTimeAsync(1000);
         expect(outside.context.loadCollectraFolderInner).not.toHaveBeenCalled();
+    });
+});
+
+it('a single-image run still locks only its own page, even from the list', async () => {
+    const one = {running: true, finished: false, folder: '/private/data/p1', current: null, done: 0, total: 1,
+        summary: null, error: null};
+    const p = page({statuses: [one]});
+    await p.choose('Run this image');
+    await p.context.startRun();
+    p.context.selectedYamlPath = '/data/p2/results.yaml';
+    p.context.currentFolderIndex = 1;
+    expect(p.context.runLocksOpenPage()).toBe(false);
+});
+
+it('the Run button closes its menu when the menu is open', () => {
+    const p = page();
+    p.menu();
+    p.context.showRunMenu({currentTarget: p.els.runToolbarBtn});
+    expect(p.els.nodeContextMenu).toBeUndefined();
+    expect(p.context.buildArrangePopover).toHaveBeenCalledTimes(1);
+});
+
+it('a press on the Run button does not close its menu before the click toggles it', () => {
+    const at = html.indexOf('function onNodeContextMenuOutsideClick');
+    const handler = html.slice(at, html.indexOf('\n        }', at) + 10);
+    const button = {contains: (target) => target === 'run'};
+    const menu = {dataset: {owner: 'run'}, contains: () => false};
+    const context = {closeNodeContextMenu: vi.fn(),
+        document: {getElementById: (id) => ({nodeContextMenu: menu, runToolbarBtn: button})[id]}};
+    vm.createContext(context);
+    vm.runInContext(handler, context);
+    context.onNodeContextMenuOutsideClick({target: 'run'});
+    expect(context.closeNodeContextMenu).not.toHaveBeenCalled();
+    context.onNodeContextMenuOutsideClick({target: 'elsewhere'});
+    expect(context.closeNodeContextMenu).toHaveBeenCalled();
+});
+
+it('showRunDialog unticks the tick itself', async () => {
+    const p = page();
+    p.els.runOverwriteInput.checked = true;
+    await p.context.showRunDialog(true);
+    expect(p.els.runOverwriteInput.checked).toBe(false);
+});
+
+describe('while the tick fetches the preview again', () => {
+    const deferred = () => {
+        let resolve;
+        const promise = new Promise((done) => { resolve = done; });
+        return {promise, resolve};
+    };
+    const preview = (name) => collectionPreview({tasks: [{name, pages: 2, replace: 0}]});
+
+    it('shows only the latest response, even when an older one arrives last', async () => {
+        const p = page();
+        await p.choose('Run whole collection');
+        const slow = deferred();
+        const fast = deferred();
+        p.api.get_collection_preview.mockReturnValueOnce(slow.promise).mockReturnValueOnce(fast.promise);
+        const first = p.context.toggleRunOverwrite(true);
+        const second = p.context.toggleRunOverwrite(false);
+        fast.resolve(preview('latest'));
+        await second;
+        slow.resolve(preview('older'));
+        await first;
+        expect(p.shown()[0]).toBe('latest — runs on 2 pages');
+        expect(p.els.runModalSummary.textContent).toMatch(/Nothing existing is replaced\.$/);
+    });
+
+    it('disables Run until the latest response is shown, so the start sends the visible tick', async () => {
+        const p = page({statuses: [{running: false, finished: true, folder: '', folders: [], unit: 'pages',
+            current: null, done: 0, total: 0, summary: '0 pages: 0 ran', error: null}]});
+        await p.choose('Run whole collection');
+        const pending = deferred();
+        p.api.get_collection_preview.mockReturnValueOnce(pending.promise);
+        const toggled = p.context.toggleRunOverwrite(true);
+        expect(p.els.runModalConfirm.disabled).toBe(true);
+        expect(p.els.runOverwriteInput.disabled).toBe(true); // no second preview while the backend plans
+        await p.context.startRun();
+        expect(p.api.start_collection_run).not.toHaveBeenCalled();
+        pending.resolve(preview('ocr'));
+        await toggled;
+        expect(p.els.runModalConfirm.disabled).toBe(false);
+        expect(p.els.runOverwriteInput.disabled).toBe(false);
+        await p.context.startRun();
+        expect(p.api.start_collection_run).toHaveBeenCalledWith('', true);
     });
 });

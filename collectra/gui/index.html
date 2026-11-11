@@ -3739,10 +3739,19 @@
         let runLastStatus = null;
         let runCollection = false; // whether the panel is for the whole collection
         let runOverwrite = false; // "Overwrite existing results", off whenever a panel opens
+        let runPreviewRequest = 0; // only the latest preview is shown
 
         // Whether the page open now is the one being run, so cannot be edited.
         function runLocksOpenPage() {
-            return runActive && runIsForOpenPage(runLastStatus || {folder: ''}, selectedYamlPath, runStartedYamlPath);
+            return runActive && runIncludesOpenPage(runLastStatus || {folder: ''});
+        }
+
+        // The backend reports resolved folders, which can be spelt differently
+        // from the list's paths, so a run of the collection counts every page of
+        // the list. A page left out of the run is then locked too: the safe way.
+        function runIncludesOpenPage(status) {
+            if (status.unit === 'pages' && currentFolderIndex >= 0) return true;
+            return runIsForOpenPage(status, selectedYamlPath, runStartedYamlPath);
         }
 
         // Shows the paused notice and makes the editors read-only while the open
@@ -3764,15 +3773,19 @@
         // The menu under the Run button, built like the Split View menu.
         function showRunMenu(mouseEvent) {
             if (runActive) { showRunProgress(); return; }
+            if (document.getElementById('nodeContextMenu')?.dataset.owner === 'run') {
+                closeNodeContextMenu();
+                return;
+            }
             buildArrangePopover(mouseEvent.currentTarget, 'Run', []);
             const menu = document.getElementById('nodeContextMenu');
+            menu.dataset.owner = 'run';
             for (const [label, collection] of [['Run this image', false], ['Run whole collection', true]]) {
                 const button = document.createElement('button');
                 button.className = 'layout-menu-item';
                 button.textContent = label;
                 button.onclick = () => {
                     closeNodeContextMenu();
-                    document.getElementById('runOverwriteInput').checked = false;
                     return showRunDialog(collection);
                 };
                 menu.appendChild(button);
@@ -3783,6 +3796,8 @@
             if (runActive) { showRunProgress(); return; }
             runCollection = collection;
             runOverwrite = false;
+            const tick = document.getElementById('runOverwriteInput');
+            if (tick) tick.checked = false;
             await renderRunDialog();
             document.getElementById('runModalError').hidden = true;
             const note = document.getElementById('runNoteInput');
@@ -3800,12 +3815,20 @@
         // Fills the panel from the backend's preview of the run.
         async function renderRunDialog() {
             const api = window.pywebview.api;
+            const request = ++runPreviewRequest;
+            const confirmBtn = document.getElementById('runModalConfirm');
+            const tick = document.getElementById('runOverwriteInput');
+            // Previews take the backend's run lock, so one at a time.
+            confirmBtn.disabled = true;
+            if (tick) tick.disabled = true;
             let preview;
             try {
                 preview = await (runCollection ? api.get_collection_preview(runOverwrite) : api.get_run_preview(runOverwrite));
             } catch (e) {
                 preview = {can_run: false, tasks: [], message: runErrorText(e)};
             }
+            if (request !== runPreviewRequest) return;
+            if (tick) tick.disabled = false;
             const content = (runCollection ? collectionDialogContent : runDialogContent)(preview, runOverwrite);
             document.getElementById('runModalTitle').textContent = content.title;
             const summary = document.getElementById('runModalSummary');
@@ -3821,7 +3844,6 @@
                 return item;
             }));
             list.hidden = !list.children.length;
-            const confirmBtn = document.getElementById('runModalConfirm');
             confirmBtn.textContent = content.canRun ? content.runLabel : 'Run';
             confirmBtn.disabled = !content.canRun;
         }
@@ -3912,7 +3934,7 @@
             document.getElementById('runStopBtn').hidden = true;
             document.getElementById('runCloseBtn').hidden = false;
             document.getElementById('runProgressPaused').hidden = true;
-            if (!runIsForOpenPage(status, selectedYamlPath, runStartedYamlPath)) return;
+            if (!runIncludesOpenPage(status)) return;
             try {
                 await reloadOpenPage();
             } catch (e) {
@@ -4742,7 +4764,8 @@
 
         function onNodeContextMenuOutsideClick(e) {
             const menu = document.getElementById('nodeContextMenu');
-            if (menu?.dataset.owner === 'layout' && document.getElementById('newPanelToolbarBtn').contains(e.target)) return;
+            const toggle = {layout: 'newPanelToolbarBtn', run: 'runToolbarBtn'}[menu?.dataset.owner];
+            if (toggle && document.getElementById(toggle).contains(e.target)) return;
             if (menu && !menu.contains(e.target)) closeNodeContextMenu();
         }
 

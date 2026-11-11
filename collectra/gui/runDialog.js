@@ -23,8 +23,8 @@ function runDialogContent(preview, overwrite = false) {
     // another version of the pipeline.
     const warnings = [
         canRun ? preview.message : '',
-        overwrite ? `All ${rows.length} tasks will run again on this image and replace their results, `
-            + 'including edits and annotations you made.' : '',
+        overwrite ? `${rows.length === 1 ? 'The task' : `All ${rows.length} tasks`} will run again on this image `
+            + `and replace ${rows.length === 1 ? 'its' : 'their'} results, including edits and annotations you made.` : '',
         rerun && !overwrite ? 'Re-run tasks replace their existing output, including edits.' : '',
     ];
     return {
@@ -38,7 +38,9 @@ function runDialogContent(preview, overwrite = false) {
     };
 }
 
-const pagesText = (count) => `${count} ${count === 1 ? 'page' : 'pages'}`;
+function pagesText(count) {
+    return `${count} ${count === 1 ? 'page' : 'pages'}`;
+}
 
 // What the panel shows for a run of the whole collection
 // (get_collection_preview): how many pages have results, on how many pages
