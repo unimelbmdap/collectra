@@ -174,30 +174,48 @@ describe('runDialogContent with "Overwrite existing results" ticked', () => {
             .toBe('The task will run again on this image and replace its results, including edits and annotations you made.');
     });
 
-        it('is unchanged when unticked', () => {
+    it('is unchanged when unticked', () => {
         expect(runDialogContent(ticked, false)).toEqual(runDialogContent(ticked));
         expect(runDialogContent(ticked).warning).toBe('Re-run tasks replace their existing output, including edits.');
     });
 });
 
 describe('collectionDialogContent (the panel for the whole collection)', () => {
-    const collection = (extra = {}) => ({success: true, can_run: true, pages: 34, to_replace: 12, first_time: 20,
+    const collection = (extra = {}) => ({success: true, can_run: true, pages: 34, to_replace: 12, first_time: 20, to_run: 5,
         tasks: [{name: 'ocr', pages: 20, replace: 0}, {name: 'classify', pages: 1, replace: 1}],
         unplannable: [], message: '', ...extra});
 
     it('asks whether to run the whole collection and sums up its pages', () => {
         const content = collectionDialogContent(collection());
         expect(content.title).toBe('Run the whole collection?');
-        expect(content.summary).toBe('34 pages: 12 have results, 20 have none yet');
+        expect(content.summary).toBe('32 pages: 5 have tasks to run, 27 are complete');
         expect(content.canRun).toBe(true);
         expect(content.message).toBe('');
+        expect(content.runLabel).toBe('Run 5 pages');
+    });
+
+    it('counts the pages with results to replace and every planned page when ticked', () => {
+        const content = collectionDialogContent(collection(), true);
+        expect(content.summary).toBe('32 pages: 12 have results to replace, 20 run for the first time');
         expect(content.runLabel).toBe('Run 32 pages');
+        expect(collectionDialogContent(collection({to_replace: 1, first_time: 0, to_run: 0}), true).runLabel)
+            .toBe('Run 1 page');
+    });
+
+    it('cannot run when no page has a task to run', () => {
+        const content = collectionDialogContent(collection({to_run: 0}));
+        expect(content.summary).toBe('32 pages: 0 have tasks to run, 32 are complete');
+        expect(content.canRun).toBe(false);
+        expect(content.message).toBe('Every page that can run already has its results');
     });
 
     it('counts the pages that cannot run and lists them with the reason', () => {
-        const content = collectionDialogContent(collection({pages: 1, to_replace: 0, first_time: 0,
+        const content = collectionDialogContent(collection({pages: 2, to_replace: 0, first_time: 1, to_run: 1,
             unplannable: [{name: 'p9', reason: 'the image copy is missing'}]}));
-        expect(content.summary).toBe('1 page: 0 have results, 0 have none yet, 1 cannot run');
+        expect(content.summary).toBe('1 page: 1 have tasks to run, 0 are complete, 1 cannot run');
+        expect(collectionDialogContent(collection({to_replace: 1, first_time: 0, to_run: 0,
+            unplannable: [{name: 'p9', reason: 'x'}]}), true).summary)
+            .toBe('1 page: 1 have results to replace, 0 run for the first time, 1 cannot run');
         expect(content.unplannable).toEqual([{text: 'p9 — cannot run (the image copy is missing)'}]);
     });
 
@@ -220,7 +238,7 @@ describe('collectionDialogContent (the panel for the whole collection)', () => {
     });
 
     it('labels the Run button for one page', () => {
-        expect(collectionDialogContent(collection({to_replace: 1, first_time: 0})).runLabel).toBe('Run 1 page');
+        expect(collectionDialogContent(collection({to_run: 1})).runLabel).toBe('Run 1 page');
     });
 
     it('cannot run, and shows the backend message, when the backend says it cannot', () => {
