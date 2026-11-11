@@ -322,7 +322,7 @@ pipeline's normal multi-page run, so model
 tasks are batched as they are on the command line. By default it fills in only
 what is missing and **replaces nothing on any page**, not even a task that
 follows a missing one. The panel starts with a summary line, for example
-``5 pages: 2 have tasks to run, 3 are complete, 1 cannot run``, then lists each task
+``6 pages: 2 have tasks to run, 3 are complete, 1 cannot run``, then lists each task
 with the number of pages it runs on, for example ``crop — runs on 4 pages``. A
 page that cannot run is listed with the reason and left out, while the other
 pages run. The panel has the same **Note**, which is saved in each page's

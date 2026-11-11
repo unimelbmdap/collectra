@@ -114,7 +114,7 @@ it('"Run whole collection" opens the panel with the collection preview', async (
     expect(p.els.runModal.classList.contains('visible')).toBe(true);
     expect(p.els.runModalTitle.textContent).toBe('Run the whole collection?');
     expect(p.els.runModalSummary.textContent)
-        .toBe('2 pages: 2 have tasks to run, 0 are complete, 1 cannot run. Nothing existing is replaced.');
+        .toBe('3 pages: 2 have tasks to run, 0 are complete, 1 cannot run. Nothing existing is replaced.');
     expect(p.shown()).toEqual(['ocr — runs on 2 pages', 'p9 — cannot run (no image)']);
     expect(p.els.runModalConfirm.textContent).toBe('Run 2 pages');
     expect(p.els.runModalConfirm.disabled).toBe(false);
@@ -167,7 +167,7 @@ it('toggling the tick fetches the collection preview again', async () => {
     await p.context.toggleRunOverwrite(true);
     expect(p.api.get_collection_preview).toHaveBeenLastCalledWith(true);
     expect(p.shown()[0]).toBe('ocr — runs on 2 pages (replaces results on 1 page)');
-    expect(p.els.runModalSummary.textContent).toBe('2 pages: 1 have results to replace, 1 run for the first time, 1 cannot run. '
+    expect(p.els.runModalSummary.textContent).toBe('3 pages: 1 has results to replace, 1 runs for the first time, 1 cannot run. '
         + 'All tasks will run again on 2 pages and replace their results, including edits and annotations you made.');
 });
 

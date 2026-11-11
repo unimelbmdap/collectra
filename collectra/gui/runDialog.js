@@ -42,15 +42,20 @@ function pagesText(count) {
     return `${count} ${count === 1 ? 'page' : 'pages'}`;
 }
 
+function agree(count, one, many) {
+    return `${count} ${count === 1 ? one : many}`;
+}
+
 // What the panel shows for a run of the whole collection
 // (get_collection_preview): how many pages have tasks to run, on how many pages
 // each task runs, and the pages that cannot run.
 function collectionDialogContent(preview, overwrite = false) {
-    const {to_replace = 0, first_time = 0, to_run = 0, tasks = [], unplannable = []} = preview || {};
+    const {pages = 0, to_replace = 0, first_time = 0, to_run = 0, tasks = [], unplannable = []} = preview || {};
     const planned = to_replace + first_time;
     const cannot = unplannable.length ? `, ${unplannable.length} cannot run` : '';
-    const counts = overwrite ? `${to_replace} have results to replace, ${first_time} run for the first time`
-        : `${to_run} have tasks to run, ${planned - to_run} are complete`;
+    const counts = overwrite
+        ? `${agree(to_replace, 'has', 'have')} results to replace, ${agree(first_time, 'runs', 'run')} for the first time`
+        : `${agree(to_run, 'has', 'have')} tasks to run, ${agree(planned - to_run, 'is', 'are')} complete`;
     const count = overwrite ? planned : to_run;
     let message = '';
     if (!preview || !preview.can_run) {
@@ -60,7 +65,7 @@ function collectionDialogContent(preview, overwrite = false) {
     }
     return {
         title: 'Run the whole collection?',
-        summary: `${pagesText(planned)}: ${counts}${cannot}`,
+        summary: `${pagesText(pages)}: ${counts}${cannot}`,
         rows: tasks.map((task) => ({
             text: `${task.name} — runs on ${pagesText(task.pages)}`
                 + (task.replace ? ` (replaces results on ${pagesText(task.replace)})` : ''),

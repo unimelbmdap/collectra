@@ -181,7 +181,7 @@ describe('runDialogContent with "Overwrite existing results" ticked', () => {
 });
 
 describe('collectionDialogContent (the panel for the whole collection)', () => {
-    const collection = (extra = {}) => ({success: true, can_run: true, pages: 34, to_replace: 12, first_time: 20, to_run: 5,
+    const collection = (extra = {}) => ({success: true, can_run: true, pages: 32, to_replace: 12, first_time: 20, to_run: 5,
         tasks: [{name: 'ocr', pages: 20, replace: 0}, {name: 'classify', pages: 1, replace: 1}],
         unplannable: [], message: '', ...extra});
 
@@ -212,11 +212,20 @@ describe('collectionDialogContent (the panel for the whole collection)', () => {
     it('counts the pages that cannot run and lists them with the reason', () => {
         const content = collectionDialogContent(collection({pages: 2, to_replace: 0, first_time: 1, to_run: 1,
             unplannable: [{name: 'p9', reason: 'the image copy is missing'}]}));
-        expect(content.summary).toBe('1 page: 1 have tasks to run, 0 are complete, 1 cannot run');
-        expect(collectionDialogContent(collection({to_replace: 1, first_time: 0, to_run: 0,
+        expect(content.summary).toBe('2 pages: 1 has tasks to run, 0 are complete, 1 cannot run');
+        expect(collectionDialogContent(collection({pages: 2, to_replace: 1, first_time: 0, to_run: 0,
             unplannable: [{name: 'p9', reason: 'x'}]}), true).summary)
-            .toBe('1 page: 1 have results to replace, 0 run for the first time, 1 cannot run');
+            .toBe('2 pages: 1 has results to replace, 0 run for the first time, 1 cannot run');
         expect(content.unplannable).toEqual([{text: 'p9 — cannot run (the image copy is missing)'}]);
+    });
+
+    it('leads with the listed pages and makes the verbs agree with one page', () => {
+        const one = collection({pages: 1, to_replace: 0, first_time: 1, to_run: 0});
+        expect(collectionDialogContent(one).summary).toBe('1 page: 0 have tasks to run, 1 is complete');
+        expect(collectionDialogContent(one, true).summary).toBe('1 page: 0 have results to replace, 1 runs for the first time');
+        const listed = collection({pages: 4, to_replace: 0, first_time: 1, to_run: 0,
+            unplannable: [{name: 'p8', reason: 'x'}, {name: 'p9', reason: 'x'}, {name: 'p10', reason: 'x'}]});
+        expect(collectionDialogContent(listed).summary).toBe('4 pages: 0 have tasks to run, 1 is complete, 3 cannot run');
     });
 
     it('says on how many pages each task runs, and replaces results, singular and plural', () => {
