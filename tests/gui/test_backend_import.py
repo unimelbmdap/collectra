@@ -253,3 +253,53 @@ def test_a_real_import_at_startup(tmp_path, raw_img_path, capsys):
     assert [folder["name"] for folder in initial["folders"]] == ["one.imp"]
     assert (tmp_path / "one.imp" / "results.yaml").is_file()
     assert capsys.readouterr().out == "Imported 1 page\n"
+
+
+def test_a_picked_folder_holding_results_is_not_imported_into(tmp_path, raw_img_path):
+    renamed = tmp_path / "renamed"
+    renamed.mkdir()
+    (renamed / "results.yaml").write_text("page: {type: collectra.Image, id: page}\n")
+    shutil.copy(raw_img_path, renamed / "x.jpg")
+    today = picking(GUIBackend(SimpleNamespace(ext="imp")), renamed)
+    before = snapshot(renamed)
+    backend = picking(GUIBackend(build(tmp_path)), renamed)
+    assert backend.select_collectra_path() == {
+        **today.select_collectra_path(),
+        "mode": "parent",
+    }
+    assert backend.select_parent_folder() == today.select_parent_folder()
+    assert snapshot(renamed) == before
+
+
+def test_startup_adopts_a_page_folder_input(tmp_path, raw_img_path, capsys):
+    folder = tmp_path / "page.imp"
+    folder.mkdir()
+    shutil.copy(raw_img_path, folder / "page.jpg")
+    initial = GUIBackend(build(tmp_path), inputs=[folder]).get_initial_items()
+    assert [entry["path"] for entry in initial["folders"]] == [str(folder.resolve())]
+    assert sorted(path.name for path in folder.iterdir()) == [
+        "page.jpg",
+        "results.yaml",
+    ]
+    assert initial["import"]["imported"] == 1
+    assert capsys.readouterr().out == "Imported 1 page\n"
+
+
+def test_startup_skips_a_file_the_pipeline_does_not_accept(tmp_path, raw_img_path):
+    shutil.copy(raw_img_path, tmp_path / "a.jpg")
+    (tmp_path / "n.txt").write_text("notes")
+    pipeline = build(tmp_path)
+    inputs = [tmp_path / "a.jpg", tmp_path / "n.txt"]
+    initial = GUIBackend(pipeline, inputs=inputs).get_initial_items()
+    assert [entry["name"] for entry in initial["folders"]] == ["a.imp"]
+    assert initial["import"]["skipped"][0].startswith("n.txt: ")
+    assert "skipped 1 file" in initial["import"]["summary"]
+    with pytest.raises(ValueError, match="No GUI results found"):
+        GUIBackend(pipeline, inputs=[tmp_path / "n.txt"])
+
+
+def test_startup_checks_every_path_before_importing(tmp_path, raw_img_path):
+    shutil.copy(raw_img_path, tmp_path / "a.jpg")
+    with pytest.raises(FileNotFoundError, match="GUI input does not exist"):
+        GUIBackend(build(tmp_path), inputs=[tmp_path / "a.jpg", tmp_path / "gone"])
+    assert not (tmp_path / "a.imp").exists()

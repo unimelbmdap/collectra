@@ -674,8 +674,9 @@ class GUIBackend:
         imported = self._import_paths(pending) if pending else {}
         seen = set()
         for path in paths:
-            if path not in pending:
-                candidates = [path.parent if path.is_file() else path]
+            directory = path.parent if path.is_file() else path
+            if (directory / "results.yaml").is_file():
+                candidates = [directory]
             elif path.is_dir():
                 candidates = [
                     child
@@ -685,12 +686,10 @@ class GUIBackend:
             else:
                 # Imported above, so this finds its page without writing.
                 candidates = self._pipeline.import_inputs([path]).pages
-            matched = False
             for candidate in candidates:
                 scan = self._scan_collectra_folder(candidate)
                 if scan is None:
                     continue
-                matched = True
                 candidate = candidate.resolve()
                 if candidate in seen:
                     continue
@@ -702,8 +701,10 @@ class GUIBackend:
                         **scan,
                     }
                 )
-            if not matched:
-                raise ValueError(f"No GUI results found in: {path}")
+        if not self._collectra_folders:
+            raise ValueError(
+                f"No GUI results found in: {', '.join(str(path) for path in paths)}"
+            )
         self._parent_folder = str(Path(self._collectra_folders[0]["path"]).parent)
         self._save_folder_session()
         result = {**self._folder_list_result(), "provided": True, "mode": "parent"}
@@ -990,7 +991,12 @@ class GUIBackend:
             return {"success": False, "error": str(e)}
 
     def _scan_parent_folder(self, parent_path: Path) -> dict:
-        imported = self._import_paths([parent_path])
+        # A folder holding results is never imported into.
+        imported = (
+            {}
+            if (parent_path / "results.yaml").is_file()
+            else self._import_paths([parent_path])
+        )
         self._parent_folder = str(parent_path)
         self._collectra_folders = []
 
