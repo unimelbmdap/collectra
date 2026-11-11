@@ -15,6 +15,7 @@ import re
 import threading
 import time
 import uuid
+from collections.abc import Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -657,15 +658,24 @@ class GUIBackend:
         return self._initial_items or {"success": True, "provided": False}
 
     def _load_input_paths(self, inputs) -> dict:
-        """Resolve existing results without creating or rewriting any files."""
-        seen = set()
-        for value in inputs:
-            path = Path(value).expanduser().resolve()
+        """Open the startup inputs, importing those that are not results yet.
+
+        An input in a folder holding results.yaml opens that folder without
+        writing anything.
+        """
+        paths = [Path(value).expanduser().resolve() for value in inputs]
+        pending = []
+        for path in paths:
             if not path.exists():
                 raise FileNotFoundError(f"GUI input does not exist: {path}")
             directory = path.parent if path.is_file() else path
-            if (directory / "results.yaml").is_file():
-                candidates = [directory]
+            if not (directory / "results.yaml").is_file():
+                pending.append(path)
+        imported = self._import_paths(pending) if pending else {}
+        seen = set()
+        for path in paths:
+            if path not in pending:
+                candidates = [path.parent if path.is_file() else path]
             elif path.is_dir():
                 candidates = [
                     child
@@ -673,9 +683,8 @@ class GUIBackend:
                     if child.is_dir() and child.suffix == f".{self._extension}"
                 ]
             else:
-                raise ValueError(
-                    f"GUI input must belong to a folder containing results.yaml: {path}"
-                )
+                # Imported above, so this finds its page without writing.
+                candidates = self._pipeline.import_inputs([path]).pages
             matched = False
             for candidate in candidates:
                 scan = self._scan_collectra_folder(candidate)
@@ -697,7 +706,36 @@ class GUIBackend:
                 raise ValueError(f"No GUI results found in: {path}")
         self._parent_folder = str(Path(self._collectra_folders[0]["path"]).parent)
         self._save_folder_session()
-        return {**self._folder_list_result(), "provided": True, "mode": "parent"}
+        result = {**self._folder_list_result(), "provided": True, "mode": "parent"}
+        if imported:
+            print(imported["summary"])
+            result["import"] = imported
+        return result
+
+    def _import_paths(self, paths: Sequence[Path]) -> dict:
+        """Import the raw inputs among the paths a user opens.
+
+        Args:
+            paths: The files and folders being opened.
+
+        Returns:
+            dict with the summary notice, the counts, and the skipped and failed
+            names, or an empty dict when only existing results were opened.
+        """
+        import_inputs = getattr(self._pipeline, "import_inputs", None)
+        if import_inputs is None:
+            return {}
+        report = import_inputs(paths)
+        summary = report.summary(self._pipeline.name)
+        if not summary:
+            return {}
+        return {
+            "summary": summary,
+            "imported": report.imported,
+            "existing": report.existing,
+            "skipped": report.skipped + report.skipped_folders,
+            "failed": report.failed,
+        }
 
     @property
     def _extension(self) -> str:
@@ -843,6 +881,11 @@ class GUIBackend:
                 return {"success": False, "error": "No folder selected"}
 
             folder_path = Path(result[0])
+            imported = (
+                self._import_paths([folder_path])
+                if folder_path.suffix == f".{self._extension}"
+                else {}
+            )
 
             scan_result = self._scan_collectra_folder(folder_path)
             if scan_result is None:
@@ -851,11 +894,14 @@ class GUIBackend:
                     "error": "No results.yaml found in folder",
                 }
 
-            return {
+            folder_result = {
                 "success": True,
                 "folder_path": str(folder_path),
                 **scan_result,
             }
+            if imported:
+                folder_result["import"] = imported
+            return folder_result
 
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -914,6 +960,7 @@ class GUIBackend:
             self._graph = None
 
             if selected_path.suffix == f".{self._extension}":
+                imported = self._import_paths([selected_path])
                 scan_result = self._scan_collectra_folder(selected_path)
                 if scan_result is None:
                     return {
@@ -923,13 +970,16 @@ class GUIBackend:
                 self._collectra_folders = []
                 self._parent_folder = str(selected_path.parent)
                 self._save_folder_session([selected_path])
-                return {
+                single_result = {
                     "success": True,
                     "mode": "single",
                     "folder_path": str(selected_path),
                     "yaml_path": scan_result["yaml_path"],
                     "image_path": scan_result["image_path"],
                 }
+                if imported:
+                    single_result["import"] = imported
+                return single_result
 
             parent_result = self._scan_parent_folder(selected_path)
             if parent_result.get("success"):
@@ -940,6 +990,7 @@ class GUIBackend:
             return {"success": False, "error": str(e)}
 
     def _scan_parent_folder(self, parent_path: Path) -> dict:
+        imported = self._import_paths([parent_path])
         self._parent_folder = str(parent_path)
         self._collectra_folders = []
 
@@ -961,7 +1012,10 @@ class GUIBackend:
                 )
 
         self._save_folder_session()
-        return self._folder_list_result()
+        result = self._folder_list_result()
+        if imported:
+            result["import"] = imported
+        return result
 
     def _folder_list_result(self) -> dict:
         folders = [
