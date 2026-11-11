@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated
 import subprocess
 import sys
 
@@ -8,7 +9,7 @@ import cappa
 import collectra
 import pytest
 
-from collectra.cli import command, group, invoke
+from collectra.cli import Positional, command, group, invoke
 from collectra.main import find_pipeline
 from collectra.main import main
 from collectra.pipelines.base import Pipeline
@@ -596,3 +597,40 @@ def test_pipeline_gui_opens_selected_workflow(
     }
     start_webview.assert_called_once()
     assert start_webview.call_args.kwargs["debug"] is debug
+
+
+def test_subcommands_put_one_objects_commands_under_a_name(capsys):
+    from collectra.cli import subcommands
+
+    calls = []
+
+    class Settings:
+        @command
+        def show(self, reveal: bool = False):
+            """Show the settings."""
+            calls.append(("show", reveal))
+
+    class App:
+        @subcommands(name="settings")
+        def cli_settings(self):
+            """Manage the settings."""
+            return Settings()
+
+    root_help = help_for(App(), ["--help"], capsys)
+    assert "settings" in root_help and "Manage the settings" in root_help
+    assert "show" in help_for(App(), ["settings", "--help"], capsys)
+    invoke(App(), ["settings", "show", "--reveal"], name="collectra")
+    assert calls == [("show", True)]
+
+
+def test_a_positional_marker_keeps_an_optional_argument_positional():
+    calls = []
+
+    class App:
+        @command
+        def greet(self, name: str, greeting: Annotated[str | None, Positional] = None):
+            calls.append((name, greeting))
+
+    invoke(App(), ["greet", "Ada"], name="collectra")
+    invoke(App(), ["greet", "Ada", "hello"], name="collectra")
+    assert calls == [("Ada", None), ("Ada", "hello")]

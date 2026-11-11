@@ -485,6 +485,73 @@ class GUIBackend:
             ],
         }
 
+    # Settings: the environment variables stored for this pipeline. Each call
+    # returns the whole list, so the dialog only has to draw it again.
+
+    def _env_listing(self, change=None) -> dict:
+        from ..pipelines.env import EnvError
+
+        env = getattr(self._pipeline, "env", None)
+        if env is None:
+            return {
+                "success": False,
+                "error": "This pipeline has no settings.",
+                "variables": [],
+            }
+        error = None
+        try:
+            if change is not None:
+                change(env)
+        except EnvError as problem:
+            error = str(problem)
+        try:
+            entries = env.entries()
+        except EnvError as problem:
+            error, entries = error or str(problem), []
+        listing = {
+            "success": error is None,
+            "pipeline": env.name,
+            "path": str(env.path),
+            "keyring_available": env.keyring_available(),
+            "variables": [
+                {
+                    "name": entry.name,
+                    "value": entry.display(),
+                    "private": entry.private,
+                    "overridden": entry.overridden,
+                    "override": entry.override,
+                    "replaces_shell": entry.replaces_shell,
+                    "missing": entry.value is None,
+                }
+                for entry in entries
+            ],
+        }
+        if error is not None:
+            listing["error"] = error
+        return listing
+
+    def get_env_variables(self) -> dict:
+        """The stored variables, with private values masked."""
+        return self._env_listing()
+
+    def set_env_variable(
+        self, name: str, value: str, private: bool = False, override: bool = False
+    ) -> dict:
+        """Store a variable; it applies to runs started from this window too."""
+        return self._env_listing(
+            lambda env: env.store(name, value, private=private, override=override)
+        )
+
+    def set_env_override(self, name: str, override: bool) -> dict:
+        """Choose whether a stored variable replaces a value set in the shell."""
+        return self._env_listing(lambda env: env.set_override(name, override))
+
+    def delete_env_variable(self, name: str) -> dict:
+        return self._env_listing(lambda env: env.remove(name))
+
+    def clear_env_variables(self) -> dict:
+        return self._env_listing(lambda env: env.remove_all())
+
     def check_updates(self) -> dict:
         from .updates import collectra_repository, inspect_repository
 

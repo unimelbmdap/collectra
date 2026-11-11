@@ -96,6 +96,7 @@ def build_native_menu(window):
                 action("Check for Updates…", "check-updates"),
                 MenuSeparator(),
                 action("History and Changes…", "source-control"),
+                action("Settings…", "settings"),
                 action("Statistics…", "statistics"),
                 action("Load Details…", "load-details"),
             ],

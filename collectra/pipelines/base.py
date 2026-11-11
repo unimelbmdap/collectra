@@ -52,7 +52,7 @@ from rich.progress import (
     track,
 )
 
-from collectra.cli import command, group
+from collectra.cli import command, group, subcommands
 from collectra.utils import change_dir, load_class_from_string, write_yaml
 from utils.get_types import get_param_types, get_return_type, unpack_types
 
@@ -72,6 +72,7 @@ from ..types.base import (
 from ..types.images import Image, ImageCrop
 from ..types.links import Link
 from ..types.texts import Text
+from .env import PipelineEnv
 from .node_graph_manager import NodeGraphManager
 from .run_plan import RunPlan, RunReport, TaskOutcome, plan_tasks
 
@@ -192,6 +193,8 @@ class Pipeline(LenientAttributes, BaseModel):
     # True when the file used the deprecated ``collectra_pipeline_metadata``
     # block; saving then keeps that form rather than rewriting the file.
     _legacy_declaration: bool = PrivateAttr(default=False)
+    # The environment variables the user stores for this pipeline.
+    _env: PipelineEnv | None = PrivateAttr(default=None)
 
     @field_validator("version", mode="before")
     @classmethod
@@ -277,6 +280,9 @@ class Pipeline(LenientAttributes, BaseModel):
                 raise ValueError(
                     f"Pipeline {name!r} in {config_path} needs a {required!r}"
                 )
+        # Before any task is imported: some libraries read the environment then.
+        env = PipelineEnv(name)
+        env.load()
         pipeline = pipeline_class(
             name,
             attributes["ext"],
@@ -286,6 +292,7 @@ class Pipeline(LenientAttributes, BaseModel):
             **config,
         )
         pipeline._legacy_declaration = legacy
+        pipeline._env = env
         return pipeline
 
     @classmethod
@@ -340,6 +347,23 @@ class Pipeline(LenientAttributes, BaseModel):
             render=render,
             force=force,
         )
+
+    @property
+    def env(self) -> PipelineEnv:
+        """The environment variables the user stores for this pipeline.
+
+        They are kept in the user's config folder, by the pipeline's name, and
+        ``from_file`` loads them into the environment.
+        """
+        if self._env is None:
+            self._env = PipelineEnv(self.name)
+        return self._env
+
+    @subcommands(name="env")
+    def cli_env(self) -> PipelineEnv:
+        """Set, show, delete or clear the environment variables stored for this
+        pipeline."""
+        return self.env
 
     @command(name="path")
     def cli_path(self) -> None:

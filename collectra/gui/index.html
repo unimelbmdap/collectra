@@ -759,6 +759,29 @@
         .git-output { margin: 16px 0 0; max-height: 55vh; min-height: 160px; overflow: auto; font: inherit; font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--app-fg-bright, #e6e6e6); }
         .git-message { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; background: var(--app-bg, #1a1a1a); color: var(--app-fg-bright, #e6e6e6); border: 1px solid var(--app-border, #3c3c3c); padding: 8px; }
         #gitCommitModal { z-index: 1001; }
+        .modal-popup.settings-dialog { width: min(820px, 92vw); max-width: 92vw; min-width: 0; }
+        .settings-section-title { margin: 0 0 4px; font-size: 14px; color: var(--app-fg-bright, #e6e6e6); }
+        .settings-note { margin: 0 0 12px; font-size: 13px; opacity: 0.8; }
+        .settings-path { margin: 12px 0 0; font-size: 12px; opacity: 0.7; overflow-wrap: anywhere; }
+        .env-table-wrap { max-height: 40vh; overflow: auto; margin-bottom: 14px; }
+        .env-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .env-table th { text-align: left; font-weight: 600; opacity: 0.75; padding: 4px 8px; border-bottom: 1px solid var(--app-border, #3c3c3c); white-space: nowrap; }
+        .env-table td { padding: 5px 8px; border-bottom: 1px solid rgba(var(--app-secondary-rgb, 108, 117, 125), 0.25); vertical-align: middle; }
+        .env-table .env-name { font-weight: 600; color: var(--app-fg-bright, #e6e6e6); white-space: nowrap; }
+        .env-table .env-value { overflow-wrap: anywhere; }
+        .env-used .env-status { color: #2ea44f; }
+        .env-replacing .env-status { color: var(--app-primary, #F09226); font-weight: 600; }
+        .env-overridden .env-status { color: #d4a72c; }
+        .env-overridden .env-value { opacity: 0.55; text-decoration: line-through; }
+        .env-missing .env-status { color: var(--app-danger, #f14c4c); }
+        .env-delete { background: none; border: none; color: var(--app-fg-muted, #8a9698); font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+        .env-delete:hover { color: var(--app-danger, #f14c4c); background: rgba(var(--app-secondary-rgb, 108, 117, 125), 0.2); }
+        .env-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+        .modal-popup .env-add input[type="text"], .modal-popup .env-add input[type="password"] { flex: 1 1 180px; width: auto; margin: 0; padding: 8px; font-size: 13px; border: 1px solid var(--app-border, #2a2a2a); border-radius: 4px; background: var(--app-surface-alt, #0f0f0f); color: var(--app-fg-bright, #e6e6e6); }
+        .env-add label { font-size: 13px; display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+        .env-clear { justify-content: flex-start; align-items: center; gap: 8px; }
+        .env-clear-confirm { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+        .env-clear-confirm[hidden] { display: none; }
         .modal-popup.wide {
             min-width: 320px;
             max-width: 520px;
@@ -2040,6 +2063,7 @@
     <script src="tableView.js"></script>
     <script src="shiftDraw.js"></script>
     <script src="sourceControl.js"></script>
+    <script src="settingsDialog.js"></script>
     <script src="rgbViewControls.js"></script>
     <script src="linkControls.js"></script>
     <!-- Pure collapse/expand state for sidebar, right panel, and DAG toggles, unit tested in tests-js/ -->
@@ -2163,6 +2187,13 @@
                         <circle cx="12" cy="5.5" r="1.7"/>
                         <path d="M4 4.7v6.6"/>
                         <path d="M12 7.2v0.3c0 2.4-8 1.6-8 3.8"/>
+                    </svg>
+                </button>
+                <button class="panel-toolbar-btn" id="settingsToolbarBtn" title="Settings" aria-label="Settings">
+                    <svg data-icon="cog" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="8" cy="8" r="2.2"/>
+                        <path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/>
+                        <circle cx="8" cy="8" r="4.6"/>
                     </svg>
                 </button>
                 <div class="lineage-popover" id="ancestorsPopover" style="display:none;">
@@ -2301,6 +2332,42 @@
                 <button class="btn-cancel" id="gitCommitCancel">Cancel</button>
                 <button class="btn-confirm" id="gitCommitConfirm" disabled>Save</button>
             </div>
+        </div>
+    </div>
+
+    <div id="settingsModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <div class="modal-popup settings-dialog">
+            <div class="modal-header">
+                <h3 id="settingsTitle">Settings</h3>
+                <button class="modal-close" id="settingsClose" aria-label="Close settings">×</button>
+            </div>
+            <h4 class="settings-section-title">Environment variables</h4>
+            <p class="settings-note">Kept for you, outside the pipeline, and set whenever it runs. A variable set in the shell is used instead, unless the stored one overrides it.</p>
+            <div class="env-table-wrap">
+                <table class="env-table" id="envTable" hidden>
+                    <thead><tr><th>Name</th><th>Value</th><th>Storage</th><th>Status</th><th>Override shell</th><th aria-label="Delete"></th></tr></thead>
+                    <tbody id="envRows"></tbody>
+                </table>
+                <p class="settings-note" id="envEmpty" hidden>No environment variables are stored.</p>
+            </div>
+            <form id="envAddForm" class="env-add" autocomplete="off">
+                <input type="text" id="envNameInput" placeholder="Name, e.g. ANTHROPIC_API_KEY" aria-label="Name" spellcheck="false" autocapitalize="off" autocorrect="off">
+                <input type="text" id="envValueInput" placeholder="Value" aria-label="Value" spellcheck="false" autocapitalize="off" autocorrect="off">
+                <label title="Keep the value in the system keyring, not in a file"><input type="checkbox" id="envPrivateInput"> Private</label>
+                <label title="Use this value even when the shell sets one"><input type="checkbox" id="envOverrideInput"> Override shell</label>
+                <button type="submit" class="btn-confirm" id="envAddBtn" disabled>Save</button>
+            </form>
+            <p class="settings-note" id="envPrivateNote" hidden>This computer has no keyring, so values cannot be kept private.</p>
+            <div id="envError" class="modal-field-error" role="alert" hidden></div>
+            <div class="modal-buttons env-clear">
+                <button type="button" class="btn-cancel" id="envClearBtn" disabled>Clear all</button>
+                <span class="env-clear-confirm" id="envClearConfirm" hidden>
+                    <span id="envClearQuestion"></span>
+                    <button type="button" class="btn-cancel" id="envClearNo">Cancel</button>
+                    <button type="button" class="btn-confirm" id="envClearYes">Delete all</button>
+                </span>
+            </div>
+            <p class="settings-path" id="envPath"></p>
         </div>
     </div>
 

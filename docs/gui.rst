@@ -212,6 +212,31 @@ Git must be installed, and signing in to the shared copy must already be set
 up; sign-in prompts are disabled. After getting updates, reopen the results
 folder to load the updated files into the viewer.
 
+.. _gui-settings:
+
+Settings
+--------
+
+Click the cog in the top-right toolbar (or choose **Tools > Settings**) to see
+the environment variables stored for this pipeline, such as API keys. They are
+the same ones the ``env`` command manages (see :doc:`cli`).
+
+* Each row shows the variable's value, whether it is kept in a file or in the
+  system keyring, and its status: **In use**, **Overridden by the shell** (a
+  value set in the shell is used instead), **Overrides the shell** (the stored
+  value is used instead of the shell's) or **Not in the keyring on this
+  computer**.
+* Tick **Override shell** on a row to use the stored value even when the shell
+  sets one. Untick it to give the shell's value back.
+* To add a variable, or change one, type its name and value and click
+  **Save**. Tick **Private** to keep the value in the system keyring; it is then
+  hidden as you type and masked in the list. Private is off on computers that
+  have no keyring.
+* The **×** on a row deletes that variable. **Clear all** deletes every
+  variable, after asking.
+
+Changes apply straight away, including to runs started from the window.
+
 Running the pipeline on a page
 ------------------------------
 

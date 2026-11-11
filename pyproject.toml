@@ -46,6 +46,7 @@ dependencies = [
     "typer (>=0.21.1)",
     "pydantic (>=2.0.0)",
     "networkx (>=3.6.1)",
+    "keyring>=25.0.0",
 ]
 
 [project.optional-dependencies]

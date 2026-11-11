@@ -27,3 +27,42 @@ def cleanup_pt(root_data_path):
         os.remove(file_pt)
     if collectra_pt.exists():
         os.remove(collectra_pt)
+
+
+class MemoryKeyring:
+    """A keyring that keeps passwords in a dict, so tests never use the real one."""
+
+    def __init__(self):
+        self.passwords = {}
+
+    def get_password(self, service, username):
+        return self.passwords.get((service, username))
+
+    def set_password(self, service, username, password):
+        self.passwords[(service, username)] = password
+
+    def delete_password(self, service, username):
+        from keyring.errors import PasswordDeleteError
+
+        if self.passwords.pop((service, username), None) is None:
+            raise PasswordDeleteError(username)
+
+
+@pytest.fixture(autouse=True)
+def pipeline_env_directory(tmp_path_factory, monkeypatch):
+    """Keep each test's stored pipeline variables out of the user's config folder."""
+    from collectra.pipelines import env
+
+    directory = tmp_path_factory.mktemp("pipeline-env") / "env"
+    monkeypatch.setattr(env, "env_directory", lambda: directory)
+    return directory
+
+
+@pytest.fixture(autouse=True)
+def pipeline_env_keyring(monkeypatch):
+    """Keep each test's private pipeline variables out of the real keyring."""
+    from collectra.pipelines import env
+
+    keyring = MemoryKeyring()
+    monkeypatch.setattr(env, "keyring_backend", lambda: keyring)
+    return keyring

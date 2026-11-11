@@ -49,6 +49,44 @@ header) in each selected result. Results left over after the specified allocatio
 partition. Inputs are sorted before shuffling, so a fixed seed reproduces the
 same assignment for the same set of results.
 
+Environment variables
+---------------------
+
+A pipeline can keep environment variables, such as API keys, for the user who
+runs it. They are stored outside the pipeline, in the user's config folder, in
+a file named after the pipeline (``~/.config/collectra/env/hespi.yaml`` on
+Linux, ``~/Library/Application Support/collectra/env/hespi.yaml`` on macOS),
+which only that user can read. Every time the pipeline is loaded, its variables
+are put into the environment::
+
+    hespi env set ANTHROPIC_API_KEY             # asks for the value without showing it
+    hespi env set HF_HOME /data/scratch/hf      # or give the value
+    hespi env set ANTHROPIC_API_KEY --private   # keep it in the system keyring
+    hespi env show                              # --reveal shows private values
+    hespi env set HF_HOME /data/hf --override   # use it even when the shell sets one
+    hespi env override HF_HOME --off            # switch override off (or on, without --off)
+    hespi env delete HF_HOME
+    hespi env clear                             # asks first; --yes does not
+
+Typing a value at the prompt keeps it out of the shell's history. ``--private``
+keeps the value in the operating system's keyring (the macOS Keychain, Windows
+Credential Manager or the Linux Secret Service) and writes only its name to the
+file; ``show`` masks it. Machines without a keyring service, such as most
+cluster nodes, cannot store private values: ``set --private`` says so rather
+than writing the value to the file.
+
+A variable already set in the shell takes precedence over the stored one, so a
+job script can still change it. A variable stored with ``--override`` takes
+precedence over the shell instead; deleting it, or switching its override off,
+brings the shell's value back. Loading the pipeline, ``env set`` and
+``env show`` all say when the shell's value and the stored one differ. ``set``
+restates a variable in full, so give ``--private`` and ``--override`` again when
+changing a value that has them.
+
+The generic form of these commands is
+``collectra --pipeline pipeline.yaml env ...``; in Python, ``pipeline.env``
+gives the same operations. The GUI shows them under :ref:`Settings <gui-settings>`.
+
 Opening results in the GUI
 --------------------------
 
