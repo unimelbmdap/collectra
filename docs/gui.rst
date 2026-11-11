@@ -283,19 +283,25 @@ Running the pipeline on a page
 ------------------------------
 
 The play button (▶) in the panel toolbar, right after the search icon, runs
-the pipeline on the page that is open. It is enabled once the pipeline has
-loaded; with no page open, the panel says to open one first. Clicking it opens a confirmation panel that lists every task of the pipeline
-with what the run will do:
+the pipeline. It is enabled once the pipeline has loaded; with no page open,
+the panel says to open one first. Clicking it opens a small menu with
+**Run this image** and **Run whole collection**; clicking the button again
+closes the menu. While a run is going, the button shows the run's progress
+instead (see below).
+
+**Run this image** runs the pipeline on the page that is open. It opens a
+confirmation panel that lists every task of the pipeline with what the run will
+do:
 
 * **will run**: the task has no output on this page yet.
 * **will re-run**: the task has output, but a task upstream of it will run, so
   its input is about to change. The reason names the nearest such task.
 * **skipped**: the task already has output and is left alone.
 
-The run fills in what is missing; there is no option to force a task to run
-again. The only tasks that run again are the re-run ones. These **replace their
-existing output, including any edits you made by hand**, and the panel warns
-you when there are any. If nothing would re-run, the panel says your edits are
+The run fills in what is missing. Unless you tick **Overwrite existing results**
+(see below), the only tasks that run again are the re-run ones. These **replace
+their existing output, including any edits you made by hand**, and the panel
+warns you when there are any. If nothing would re-run, the panel says your edits are
 kept. If every task already has output, or the pipeline cannot run on this page,
 the panel says so and the run button in it is disabled.
 
@@ -311,9 +317,32 @@ The panel has an optional **Note** (at most 200 characters; whitespace is
 collapsed) that is saved with the run in ``run-log.txt``. Confirm with the
 button labelled with the number of tasks, for example ``Run 3 tasks``.
 
-While the run goes on, a progress popover shows how many tasks are done, and
-the toolbar button is highlighted. Click the button again to reopen the
-popover. **Stop** asks the run to start no further task; it takes effect
+**Run whole collection** runs every page in the sidebar list, which are the
+pages of the open project, with the pipeline's normal multi-page run, so model
+tasks are batched as they are on the command line. By default it fills in only
+what is missing and **replaces nothing on any page**, not even a task that
+follows a missing one. The panel starts with a summary line, for example
+``6 pages: 3 have results, 2 have none yet, 1 cannot run``, then lists each task
+with the number of pages it runs on, for example ``crop — runs on 4 pages``. A
+page that cannot run is listed with the reason and left out, while the other
+pages run. The panel has the same **Note**, which is saved in each page's
+``run-log.txt``, and its button is labelled with the number of pages, for
+example ``Run 5 pages``. If no page can run, or every page that can run already
+has its results, the panel says so and its run button is disabled.
+
+Both panels have a tick, **Overwrite existing results**. It is unticked every
+time a panel opens and is never remembered. Ticked, every task is run again and
+replaces its existing output, **including edits and annotations you made
+there**; the panel says exactly what will be replaced, and the label of the
+run button follows. A task that fails, or whose output cannot be saved, keeps
+its old output. Pages and tasks with no output yet simply run.
+
+A run always rewrites the header timestamp of a page's ``results.yaml``, even
+when no task ran; the command line does the same.
+
+While the run goes on, a progress popover shows how many tasks are done (for
+the whole collection, how many pages), and the toolbar button is highlighted. Click the button again to reopen the
+popover. **Stop** asks the run to start no further task, on any page; it takes effect
 between tasks, so the task in progress finishes first. When the run ends, the
 popover shows a summary and, if the page is still the one open, it is reloaded
 to show the new results.
@@ -326,6 +355,8 @@ task has output and does not redo it automatically. The failure is recorded in
 
 While a run is going:
 
+* Only one run can be active at a time. In a run of the whole collection,
+  every page in the list counts as being run.
 * The page being run cannot be edited: its text is read-only, its boxes and
   masks cannot be changed, and a notice in the toolbar says editing is paused
   until the run finishes. Other open pages stay editable.
@@ -337,7 +368,10 @@ While a run is going:
 
 ``run-log.txt`` sits beside ``results.yaml`` in the page's folder. It is
 append-only: each run adds one entry when it starts, with the plan, and finishes
-it with what happened to each task and a summary. It is plain text, and you may
+it with what happened to each task and a summary. A run of the whole collection
+adds one such entry to each page it runs on. If a task replaced existing output
+because of the overwrite tick, its line says ``re-ran, replaced existing
+output``. It is plain text, and you may
 edit it by hand; Collectra only ever appends to it. An example entry, for a
 pipeline whose ``crop`` task had no output and whose ``ocr`` task depends on it:
 
@@ -364,8 +398,8 @@ because an input it needs was not produced) as ``cancelled: <reason>``; the
 summary then also counts failed and cancelled tasks. Entries are separated by a
 blank line.
 
-The GUI runs one page at a time. To run many files, keep using the ``run``
-command line, which is unchanged.
+To run from a terminal, keep using the ``run`` command line, which is
+unchanged.
 
 Inspect and edit artefacts
 --------------------------
