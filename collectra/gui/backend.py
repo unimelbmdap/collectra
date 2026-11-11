@@ -53,9 +53,12 @@ RUN_STOP_TIMEOUT = 30
 
 @dataclass
 class _RunState:
-    """What the run started from the Run button is doing, for get_run_status."""
+    """What the run started from the Run button is doing, for get_run_status.
 
-    folder: Path
+    A single folder given as a Path is kept as a set of one.
+    """
+
+    folders: frozenset[Path]
     total: int
     running: bool = True
     started: int = 0
@@ -63,6 +66,16 @@ class _RunState:
     stop: bool = False
     summary: str | None = None
     error: str | None = None
+    unit: str = "tasks"
+
+    def __post_init__(self):
+        if isinstance(self.folders, Path):
+            self.folders = frozenset({self.folders})
+
+    @property
+    def folder(self) -> Path | None:
+        """The run's folder when it runs one page, else None."""
+        return next(iter(self.folders)) if len(self.folders) == 1 else None
 
 
 def _crashed_report(plan, error: BaseException):
@@ -223,7 +236,7 @@ class GUIBackend:
                 return None
             folder = Path(self._yaml_path).parent
         folder = folder.resolve()
-        if state is not None and state.running and state.folder == folder:
+        if state is not None and state.running and folder in state.folders:
             return {"success": False, "error": RUN_IN_PROGRESS}
         if folder == self._stale_folder:
             return {"success": False, "error": STALE_PAGE}
@@ -239,18 +252,24 @@ class GUIBackend:
         with self._text_save_lock:
             yield self._run_guard(folder)
 
-    def get_run_preview(self) -> dict:
+    def get_run_preview(self, overwrite: bool = False) -> dict:
         """Which tasks a run of the open page would run, re-run or skip.
 
         Planning loads the page into the pipeline as a run does, so it holds
         the run lock: no run starts while a preview is being made.
+
+        Args:
+            overwrite: Re-run every task that has output, replacing it.
+
+        Returns:
+            Whether the page can run, its planned tasks and a message.
         """
         try:
             folder = self._run_folder()
             if not self._run_lock.acquire(blocking=False):
                 raise RuntimeError("A run is already in progress")
             try:
-                plan = self._pipeline.plan_page_run(folder)
+                plan = self._plan(folder, overwrite)
             finally:
                 self._run_lock.release()
         except Exception as error:
@@ -280,12 +299,25 @@ class GUIBackend:
             raise RuntimeError("No pipeline is loaded")
         return Path(self._yaml_path).parent.resolve()
 
-    def start_run(self, note: str = "") -> dict:
+    def _plan(self, folder: Path, overwrite: bool):
+        """The page's plan; overwrite is passed only when it is asked for."""
+        if overwrite:
+            return self._pipeline.plan_page_run(folder, overwrite=True)
+        return self._pipeline.plan_page_run(folder)
+
+    def start_run(self, note: str = "", overwrite: bool = False) -> dict:
         """Run the pipeline on the open page in the background.
 
         The log's "started" entry is written first; if it cannot be, nothing
         runs. The run keeps the folder open now, even if another page is
         opened while it runs.
+
+        Args:
+            note: A note for the run log.
+            overwrite: Re-run every task that has output, replacing it.
+
+        Returns:
+            Whether the run started, with the error if it did not.
         """
         if not self._run_lock.acquire(blocking=False):
             return {"success": False, "error": "A run is already in progress"}
@@ -298,7 +330,7 @@ class GUIBackend:
             folder = self._run_folder()
             with self._text_save_lock:
                 # Taken once no edit is half-way through; later edits are refused.
-                plan = self._pipeline.plan_page_run(folder)
+                plan = self._plan(folder, overwrite)
                 self._run_state = _RunState(folder, total=len(plan.to_run))
             run_log.begin_entry(
                 folder,
@@ -363,12 +395,11 @@ class GUIBackend:
     def _reload_after_run(self, state: _RunState) -> None:
         """Reload the open page if it is the run's, so no edit saves the old one."""
         with self._text_save_lock:
-            if self._yaml_path and (
-                Path(self._yaml_path).parent.resolve() == state.folder
-            ):
+            folder = self._yaml_path and Path(self._yaml_path).parent.resolve()
+            if folder in state.folders:
                 result = self._load_yaml(self._yaml_path)
                 if not result["success"]:
-                    self._stale_folder = state.folder
+                    self._stale_folder = folder
                     state.error = (
                         "The page could not be reloaded after the run: "
                         f"{result['error']}"
@@ -388,7 +419,7 @@ class GUIBackend:
                 "summary": None,
                 "error": None,
             }
-        return {
+        status = {
             "running": state.running,
             "finished": not state.running,
             "folder": str(state.folder),
@@ -398,6 +429,11 @@ class GUIBackend:
             "summary": state.summary,
             "error": state.error,
         }
+        if state.unit == "pages":
+            status.update(
+                folder="", folders=sorted(map(str, state.folders)), unit="pages"
+            )
+        return status
 
     def stop_run(self) -> dict:
         """Ask the run to start no further task."""
