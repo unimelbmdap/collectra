@@ -72,6 +72,7 @@ from ..types.base import (
 from ..types.images import Image, ImageCrop
 from ..types.links import Link
 from ..types.texts import Text
+from ..usage import UsageLedger
 from .env import PipelineEnv
 from .node_graph_manager import NodeGraphManager
 from .run_plan import RunPlan, RunReport, TaskOutcome, plan_tasks
@@ -195,6 +196,7 @@ class Pipeline(LenientAttributes, BaseModel):
     _legacy_declaration: bool = PrivateAttr(default=False)
     # The environment variables the user stores for this pipeline.
     _env: PipelineEnv | None = PrivateAttr(default=None)
+    _usage: UsageLedger = PrivateAttr(default_factory=UsageLedger)
 
     @field_validator("version", mode="before")
     @classmethod
@@ -347,6 +349,12 @@ class Pipeline(LenientAttributes, BaseModel):
             render=render,
             force=force,
         )
+        self.usage.print_summary()
+
+    @property
+    def usage(self) -> UsageLedger:
+        """The LLM tokens and cost of the latest run, by task."""
+        return self._usage
 
     @property
     def env(self) -> PipelineEnv:
@@ -596,10 +604,12 @@ class Pipeline(LenientAttributes, BaseModel):
         """
         self._outcomes = {}
         self._run_errors = []
+        self._usage = UsageLedger()
         try:
             self._ensure_workflow_connected()
             starting_nodes = self._get_starting_nodes(task_name)
             run_options = self._extract_run_options(kwargs)
+            run_options["usage_ledger"] = self._usage
             self._process_files(starting_nodes, run_options)
         except Exception as e:
             logger.error("Workflow run failed: %s", e, exc_info=True)
@@ -904,8 +914,11 @@ class Pipeline(LenientAttributes, BaseModel):
                 if options["usage"]
                 else None
             ),
+            usage_ledger=options.get("usage_ledger"),
             render=options["render"],
-            file_path=Path(value),
+            # Absolute: tasks run inside the pipeline's folder, where a path
+            # relative to the caller's folder would point somewhere else.
+            file_path=Path(value).resolve(),
             single_run=options["single"],
         )
 

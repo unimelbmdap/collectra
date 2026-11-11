@@ -120,10 +120,34 @@ Commands
 --------
 
 ``run`` is the only task command. There is no training or chat command.
-It accepts the :doc:`shared run options <index>`; add ``--usage`` to record
-token usage for each task: ``input_tokens`` (which includes cached tokens),
-``output_tokens``, ``total_tokens``, ``cache_read_tokens`` and
-``cache_write_tokens``.
+It accepts the :doc:`shared run options <index>`.
+
+At the end of every ``run`` that called a model, a table shows each LLM task's
+model, calls, tokens and estimated cost, with a total:
+
+.. code-block:: text
+
+                                       LLM usage
+                                                      Cache   Cache
+    Task         Model            Calls      Input     read   write  Output     Cost
+    ────────────────────────────────────────────────────────────────────────────────
+    page_reader  claude-opus-5-5      1      3,000        0       0     900  $0.0300
+    line_reader  claude-opus-5-5     21  1,234,567  800,000  90,000  34,567    $3.41
+
+    Total                            22  1,237,567  800,000  90,000  35,467    $3.44
+
+Costs are in US dollars, worked out from published prices by the
+`genai-prices <https://github.com/pydantic/genai-prices>`_ package that
+pydantic-ai uses. They are estimates: check your provider's billing for the
+real amount. A model with no known price, such as a local one, shows
+``unknown``, and a total that leaves such calls out starts with ``≥``.
+
+Add ``--usage`` to also write each file's usage to ``usage.yaml`` in its
+results folder: ``input_tokens`` (which includes cached tokens),
+``output_tokens``, ``total_tokens``, ``cache_read_tokens``,
+``cache_write_tokens``, ``requests`` and ``cost_usd``. ``cost_usd`` is left out
+when the model's price is not known. Each run adds to the numbers already
+there.
 
 .. code-block:: bash
 

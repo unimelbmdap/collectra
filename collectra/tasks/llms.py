@@ -519,10 +519,12 @@ class LLM(TextOutputTask):
         return values
 
     def _record_usage(self, usage) -> None:
-        """Add one conversation's token usage to the usage file, if one is in use.
+        """Add one conversation's usage to the run's ledger and the usage file.
 
         ``input_tokens`` includes the tokens read from and written to the cache.
         """
+        if self.context.usage_ledger is not None:
+            self.context.usage_ledger.add(self.name, self.model, usage)
         if not self.context.usage_file:
             return
         usage_file = self.context.usage_file
@@ -533,8 +535,12 @@ class LLM(TextOutputTask):
                 "total_tokens": usage.input_tokens + usage.output_tokens,
                 "cache_read_tokens": usage.cache_read_tokens,
                 "cache_write_tokens": usage.cache_write_tokens,
+                "requests": usage.requests,
             }
         }
+        # In US dollars; left out when the model's prices are not known.
+        if usage.cost is not None:
+            data[self.name]["cost_usd"] = float(usage.cost)
         old_data = {}
         if usage_file.exists():
             with open(usage_file, "r") as f:
@@ -545,6 +551,8 @@ class LLM(TextOutputTask):
             else:
                 for item, item_value in value.items():
                     data[key][item] = data.get(key, {}).get(item, 0) + item_value
+        if "cost_usd" in data[self.name]:
+            data[self.name]["cost_usd"] = round(data[self.name]["cost_usd"], 6)
         usage_file.parent.mkdir(parents=True, exist_ok=True)
         with open(usage_file, "w") as f:
             yaml.dump(data, f)

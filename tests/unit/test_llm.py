@@ -1,15 +1,18 @@
 """Tests for collectra.llms: prompts, models, batching and usage."""
 
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
 from PIL import Image as PILImage
 from pydantic_ai.messages import BinaryContent, CachePoint
+from pydantic_ai.usage import RunUsage
 
 from collectra.commons import TaskContext
 from collectra.tasks.llms import LLM, LLMSetupError, model_id
 from collectra.types import Image, Text
+from collectra.usage import UsageLedger
 from tests.unit.scripted_llm import Scripted, prompt_parts, prompt_text
 
 # --- building the prompt (unchanged from the LangChain version) -----------------
@@ -423,6 +426,7 @@ def test_usage_is_recorded_for_the_file_being_run_not_the_one_prefetched(tmp_pat
             "total_tokens": 5,
             "cache_read_tokens": 0,
             "cache_write_tokens": 0,
+            "requests": 1,
         }
     }
 
@@ -438,6 +442,47 @@ def test_usage_adds_up_across_runs_and_keeps_other_tasks(tmp_path):
     assert data["other"] == {"input_tokens": 7}
     assert data["describe"]["input_tokens"] == 6
     assert data["describe"]["total_tokens"] == 10
+
+
+def test_the_cost_is_written_to_the_usage_file_and_adds_up(tmp_path):
+    usage_file = tmp_path / "usage.yaml"
+    task = task_with(Scripted(["a"]))
+    task.context = TaskContext(usage_file=usage_file)
+    task._record_usage(RunUsage(input_tokens=10, requests=1, cost=Decimal("0.0123")))
+    task._record_usage(RunUsage(input_tokens=10, requests=1, cost=Decimal("0.0100")))
+    data = yaml.safe_load(usage_file.read_text())
+    assert data["describe"]["cost_usd"] == pytest.approx(0.0223)
+    assert data["describe"]["requests"] == 2
+
+
+def test_a_cost_that_could_not_be_worked_out_is_left_out_of_the_usage_file(tmp_path):
+    usage_file = tmp_path / "usage.yaml"
+    task = task_with(Scripted(["a"]))
+    task.context = TaskContext(usage_file=usage_file)
+    task.run(Text(name="text", data="x"))
+    assert "cost_usd" not in yaml.safe_load(usage_file.read_text())["describe"]
+
+
+def test_usage_goes_into_the_runs_ledger_with_the_model(tmp_path):
+    ledger = UsageLedger()
+    task = task_with(Scripted(["a", "b"]))
+    task.context = TaskContext(usage_ledger=ledger)
+    task.run(Text(name="text", data="x"))
+    task.run(Text(name="text", data="y"))
+    entry = ledger.tasks["describe"]
+    assert entry.model == task.model
+    assert entry.calls == 2
+    assert entry.input_tokens == 6
+    assert entry.output_tokens == 4
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_priced_call_adds_its_cost_to_the_ledger():
+    ledger = UsageLedger()
+    task = task_with(Scripted(["a"]))
+    task.context = TaskContext(usage_ledger=ledger)
+    task._record_usage(RunUsage(input_tokens=10, requests=1, cost=Decimal("0.5")))
+    assert ledger.tasks["describe"].cost == Decimal("0.5")
 
 
 def test_no_usage_file_means_nothing_is_written(tmp_path):
