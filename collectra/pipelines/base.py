@@ -1252,11 +1252,8 @@ class Pipeline(LenientAttributes, BaseModel):
     def import_file(self, source: Path) -> Path:
         """Make the results folder for one input file, next to the file.
 
-        The folder holds an unchanged copy of the file and results with only
-        the input entry; no task runs. A folder that already is this file's
-        page (its results name the file and its copy is identical) is
-        returned as it is. Another file's folder of the same name is never
-        touched: the new folder is numbered instead.
+        This file's existing page is returned as it is; any other folder of
+        that name is left alone and the new one is numbered.
 
         Args:
             source: The input file.
@@ -1278,14 +1275,15 @@ class Pipeline(LenientAttributes, BaseModel):
         root = self._get_root_input()
 
         def is_page(folder: Path) -> bool:
-            if not (folder / self.RESULTS_FILE).exists():
-                return False
-            copy = folder / source.name
-            name = self._page_image_name(self._page_entry(folder, root)[1])
+            try:
+                name = self._page_image_name(self._page_entry(folder, root)[1])
+            except (OSError, yaml.YAMLError, AttributeError, TypeError, ValueError):
+                return False  # no results, or results that cannot be read
+            image = folder / source.name
             return (
                 name == source.name
-                and copy.is_file()
-                and filecmp.cmp(source, copy, shallow=False)
+                and image.is_file()
+                and filecmp.cmp(source, image, shallow=False)
             )
 
         folder = destination(
@@ -1300,6 +1298,7 @@ class Pipeline(LenientAttributes, BaseModel):
         except BaseException:
             shutil.rmtree(folder)
             raise
+        logger.info("Imported %s as %s", source, folder)
         return folder
 
     def _create_results_file(self, directory: Path, key: str, value: str | Path):

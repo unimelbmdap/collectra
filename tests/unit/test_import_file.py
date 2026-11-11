@@ -82,11 +82,7 @@ def test_different_file_with_same_stem_is_numbered(tmp_path, source, raw_img_pat
     assert pipeline.import_file(source / "page.jpg") == source / "page.imp"
     assert pipeline.import_file(source / "page.png") == source / "page-2.imp"
     before = snapshot(source / "page.imp")
-    # A different page.jpg, brought in from another directory.
-    other = tmp_path / "other"
-    other.mkdir()
-    (other / "page.jpg").write_bytes(raw_img_path.read_bytes() + b"other")
-    shutil.copy(other / "page.jpg", source / "page.jpg")
+    (source / "page.jpg").write_bytes(raw_img_path.read_bytes() + b"other")
     assert pipeline.import_file(source / "page.jpg") == source / "page-3.imp"
     assert snapshot(source / "page.imp") == before
 
@@ -96,6 +92,27 @@ def test_page_missing_its_copy_is_not_reused(tmp_path, source, raw_img_path):
     pipeline = build(tmp_path)
     (pipeline.import_file(source / "page.jpg") / "page.jpg").unlink()
     assert pipeline.import_file(source / "page.jpg") == source / "page-2.imp"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "page: [",
+        "- page\n- other\n",
+        "42\n",
+        "results: {type: collectra.Results, workflow: [1]}\n",
+        "page: [1, 2]\n",
+    ],
+    ids=["invalid", "list", "scalar", "bad-header", "bad-entry"],
+)
+def test_unreadable_results_are_not_this_page(tmp_path, source, raw_img_path, text):
+    shutil.copy(raw_img_path, source / "page.jpg")
+    (source / "page.imp").mkdir()
+    shutil.copy(raw_img_path, source / "page.imp" / "page.jpg")
+    (source / "page.imp" / "results.yaml").write_text(text)
+    before = snapshot(source / "page.imp")
+    assert build(tmp_path).import_file(source / "page.jpg") == source / "page-2.imp"
+    assert snapshot(source / "page.imp") == before
 
 
 def test_name_comes_from_the_stem(tmp_path, source, raw_img_path):
