@@ -665,7 +665,8 @@ class Pipeline(LenientAttributes, BaseModel):
             # A page run reads a page's image from its copy in the results
             # folder when the image its results refer to cannot be read.
             "page_copy": kwargs.pop("page_copy", False),
-            # Called with each file once all its tasks are done.
+            # Called with each file once all its tasks are done; it must not
+            # raise, or the files after it do not run.
             "page_done": kwargs.pop("page_done", None),
         }
         options["task_overrides"] = kwargs.copy()
@@ -906,6 +907,9 @@ class Pipeline(LenientAttributes, BaseModel):
             if Path(file_path).suffix == f".{self.ext}"
             else self._get_root_input()
         )
+        if options.get("page_copy"):
+            # A page run never starts results in a folder that is not a page.
+            self._check_page(Path(file_path))
         key, value = self._create_collectra_file(key, file_path, options["output"])
 
         # Create task context for this file
@@ -1146,6 +1150,7 @@ class Pipeline(LenientAttributes, BaseModel):
             rerun: Names of the tasks to run again on every page.
             should_stop: Checked before each task starts.
             page_done: Called with each folder once all its tasks are done.
+                It must not raise, or the folders after it do not run.
 
         Returns:
             The report of each folder, in the order of ``plans``.
@@ -1165,12 +1170,22 @@ class Pipeline(LenientAttributes, BaseModel):
             page_done=None if page_done is None else lambda f: page_done(Path(f)),
         )
         return {
-            Path(folder): self._page_report(str(folder), plan, stopped)
+            Path(folder): self._page_report(str(Path(folder)), plan, stopped)
             for folder, plan in plans.items()
         }
 
     def _page_report(self, page: str, plan: RunPlan, stopped: bool) -> RunReport:
-        """What happened to each of a page's planned tasks in the last run."""
+        """What happened to each of a page's planned tasks in the last run.
+
+        Args:
+            page: The page folder, as the run recorded it.
+            plan: The page's plan, which gives the tasks, their order and why
+                each re-runs.
+            stopped: Whether the run was stopped.
+
+        Returns:
+            The outcome of each planned task, in plan order.
+        """
         errors = "; ".join(e for file, e in self._run_errors if file in ("", page))
         statuses: dict[str, str] = {}
         outcomes = []
@@ -1185,7 +1200,7 @@ class Pipeline(LenientAttributes, BaseModel):
                     if stopped
                     else "did not run: its inputs were not produced"
                 )
-            if task.action == "rerun":
+            if task.action == "rerun" and status != "skipped":
                 source = task.reason.removeprefix("upstream ").removesuffix(" runs")
                 upstream = (
                     f" (upstream {source} ran)"

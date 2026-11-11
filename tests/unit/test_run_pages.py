@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from collectra.pipelines.run_plan import TaskPlan
+from collectra.pipelines.run_plan import TaskOutcome, TaskPlan
 from tests.unit import test_pipeline_stages as stages
 from tests.unit.test_run_page import (
     RAN,
@@ -86,7 +86,69 @@ def test_default_run_replaces_nothing(tmp_path, pages):
     after_a = outputs(a)
     assert {name: after_a[name] for name in before[a]} == before[a]
     assert outputs(b) == before[b]
-    assert outcome(reports[a], "classify").status == "skipped"
+    assert outcome(reports[a], "classify") == TaskOutcome(
+        "classify", "skipped", "kept existing output"
+    )
+
+
+def test_a_skipped_dependent_says_only_that_it_kept_its_output(tmp_path, pages):
+    a, _ = pages
+    drop(a, "words")
+    pipeline = build(tmp_path)
+    plan = pipeline.plan_page_run(a)
+    assert TaskPlan("classify", "rerun", "upstream ocr runs") in plan.tasks
+    report = pipeline.run_pages({a: plan}, set())[a]
+    assert outcome(report, "classify").detail == "kept existing output"
+
+
+def snapshot(folder: Path) -> dict:
+    """Every file in a folder, and the folder itself, with bytes and mtime."""
+    paths = [folder, *sorted(folder.rglob("*"))]
+    return {
+        path: (path.stat().st_mtime_ns, path.is_file() and path.read_bytes())
+        for path in paths
+    }
+
+
+def test_a_page_whose_results_went_after_planning_is_refused(tmp_path, pages):
+    a, b = pages
+    drop(b, "label")
+    pipeline = build(tmp_path)
+    plans = {folder: pipeline.plan_page_run(folder) for folder in pages}
+    (a / "results.yaml").unlink()
+    before = snapshot(a)
+    reports = pipeline.run_pages(plans, set())
+    assert snapshot(a) == before
+    assert {item.status for item in reports[a].outcomes} == {"failed"}
+    assert all("results.yaml does not exist" in i.detail for i in reports[a].outcomes)
+    assert outcome(reports[b], "classify").status == "ran"
+
+
+def test_a_folder_that_is_not_a_page_is_refused(tmp_path, pages):
+    _, b = pages
+    drop(b, "label")
+    pipeline = build(tmp_path)
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    (plain / "note.txt").write_text("mine")
+    before = snapshot(plain)
+    plan = pipeline.plan_page_run(b)
+    reports = pipeline.run_pages({plain: plan, b: plan}, set())
+    assert snapshot(plain) == before
+    assert {item.status for item in reports[plain].outcomes} == {"failed"}
+    assert outcome(reports[b], "classify").status == "ran"
+
+
+def test_a_folder_given_with_a_trailing_slash_gets_its_report(tmp_path, pages):
+    a, _ = pages
+    drop(a, "label")
+    pipeline = build(tmp_path)
+    reports = pipeline.run_pages({f"{a}/": pipeline.plan_page_run(a)}, set())
+    assert statuses(reports[a]) == {
+        "detect": "skipped",
+        "ocr": "skipped",
+        "classify": "ran",
+    }
 
 
 def test_overwrite_reruns_every_task(tmp_path, pages, monkeypatch):
