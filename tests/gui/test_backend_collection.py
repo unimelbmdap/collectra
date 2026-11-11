@@ -562,3 +562,20 @@ def test_a_failing_page_and_an_unplannable_page_do_not_stop_the_others(
     assert saved(b, "label").startswith("label of words")
     assert not (c / run_log.LOG_NAME).exists()
     assert "  result  0 ran, 3 skipped, 0 failed, " in log_text(d)
+
+
+def test_an_unplannable_reason_is_the_first_line_of_the_error(backend, pipeline):
+    pipeline.plan_errors = {"p2.collectra": ValueError("bad results\n  in line 3")}
+    assert backend.get_collection_preview()["unplannable"] == [
+        {"name": "p2.collectra", "reason": "bad results"}
+    ]
+
+
+def test_when_no_page_can_be_planned_the_message_says_so(backend, pipeline):
+    pipeline.plan_errors = dict.fromkeys(
+        ("p1.collectra", "p2.collectra", "p3.collectra"), ValueError("no")
+    )
+    message = "None of the pages can be run"
+    preview = backend.get_collection_preview()
+    assert (preview["can_run"], preview["message"]) == (False, message)
+    assert backend.start_collection_run() == {"success": False, "error": message}
