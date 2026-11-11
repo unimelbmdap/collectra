@@ -3329,7 +3329,7 @@
                 showResult('loadResult', { error: e.message }, true);
             } finally {
                 button.setAttribute('aria-label', 'Load');
-                button.title = '';
+                button.removeAttribute('title');
                 button.disabled = false;
             }
         }

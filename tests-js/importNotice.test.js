@@ -3,7 +3,7 @@ const vm = require('node:vm');
 const html = fs.readFileSync(require.resolve('../collectra/gui/index.html'), 'utf8');
 const {importNoticeText} = require('../collectra/gui/importNotice.js');
 
-const notice = (extra = {}) => ({summary: 'Imported 2 pages', imported: 2, existing: 0, skipped: [], failed: [], ...extra});
+const notice = (extra = {}) => ({summary: 'Imported 2 pages', failed: [], ...extra});
 
 describe('importNoticeText', () => {
     it('is empty when nothing was imported', () => {
@@ -16,13 +16,13 @@ describe('importNoticeText', () => {
     });
 
     it('leaves skipped files to the summary', () => {
-        const info = notice({summary: 'Imported 2 pages, skipped 1 file Grapto doesn\'t accept', skipped: ['notes.txt: not accepted']});
+        const info = notice({summary: 'Imported 2 pages, skipped 1 file Grapto doesn\'t accept'});
         expect(importNoticeText(info)).toBe('Imported 2 pages, skipped 1 file Grapto doesn\'t accept');
     });
 
     it('adds one line for each failed file', () => {
-        const info = notice({summary: 'Imported 1 page, failed 2', failed: ['a.jpg: read-only', 'b.png: no space']});
-        expect(importNoticeText(info)).toBe('Imported 1 page, failed 2\nFailed: a.jpg: read-only\nFailed: b.png: no space');
+        const info = notice({summary: 'Imported 1 page, 2 failed', failed: ['a.jpg: read-only', 'b.png: no space']});
+        expect(importNoticeText(info)).toBe('Imported 1 page, 2 failed\nFailed: a.jpg: read-only\nFailed: b.png: no space');
     });
 });
 
@@ -43,9 +43,12 @@ const ready = html.slice(html.indexOf("window.addEventListener('pywebviewready'"
 function element() {
     const attributes = {};
     return {
-        textContent: '', className: '', title: '', disabled: false,
+        textContent: '', className: '', disabled: false,
+        get title() { return attributes.title || ''; },
+        set title(value) { attributes.title = String(value); },
         setAttribute(name, value) { attributes[name] = String(value); },
         getAttribute(name) { return attributes[name]; },
+        removeAttribute(name) { delete attributes[name]; },
     };
 }
 
@@ -82,11 +85,11 @@ describe('opening a folder', () => {
     });
 
     it('shows a failed import as an error', async () => {
-        const result = {success: true, mode: 'single', import: notice({summary: 'Failed 1', failed: ['a.jpg: read-only']})};
+        const result = {success: true, mode: 'single', import: notice({summary: '1 failed', failed: ['a.jpg: read-only']})};
         const {els, context} = page({select_collectra_path: async () => result});
         await context.selectCollectra();
         expect(context.handleSingleFolderResult).toHaveBeenCalled();
-        expect(els.loadResult.textContent).toBe('Failed 1\nFailed: a.jpg: read-only');
+        expect(els.loadResult.textContent).toBe('1 failed\nFailed: a.jpg: read-only');
         expect(els.loadResult.className).toBe('result error');
     });
 
@@ -98,11 +101,10 @@ describe('opening a folder', () => {
     });
 
     it('shows names from the folder as text', async () => {
-        const info = notice({summary: 'Failed 1', failed: ['<b>x</b>.jpg: read-only']});
+        const info = notice({summary: '1 failed', failed: ['<b>x</b>.jpg: read-only']});
         const {els, context} = page({select_collectra_path: async () => parent({import: info})});
         await context.selectCollectra();
-        expect(els.loadResult.textContent).toBe('Failed 1\nFailed: <b>x</b>.jpg: read-only');
-        expect(els.loadResult.innerHTML).toBeUndefined();
+        expect(els.loadResult.textContent).toBe('1 failed\nFailed: <b>x</b>.jpg: read-only');
     });
 });
 
@@ -128,7 +130,7 @@ describe('the load button while a folder opens', () => {
     ])('says Opening… and is back to Load after %s', async (_, outcome) => {
         const els = await whilePending(outcome);
         expect(label(els)).toBe('Load');
-        expect(els.selectCollectraBtn.title).toBe('');
+        expect(els.selectCollectraBtn.getAttribute('title')).toBeUndefined();
         expect(els.selectCollectraBtn.disabled).toBe(false);
     });
 

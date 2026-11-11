@@ -2,7 +2,8 @@
 // one line for each file that could not be imported.
 function importNoticeText(info) {
     if (!info || !info.summary) return '';
-    return [info.summary, ...(info.failed || []).map((entry) => `Failed: ${entry}`)].join('\n');
+    const failed = (info.failed || []).map((entry) => `Failed: ${entry}`);
+    return [info.summary, ...failed].join('\n');
 }
 
 if (typeof module !== 'undefined') module.exports = {importNoticeText};
