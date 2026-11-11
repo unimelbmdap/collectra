@@ -79,7 +79,7 @@ with the pipeline's extension, so ``page001.jpg`` becomes ``page001.collectra``
 for a pipeline whose extension is ``collectra``. The image is copied into it
 unchanged, and a ``results.yaml`` is written that holds only that input image.
 No task runs, so every task shows as **will run** in the run button's preview
-(see `Running the pipeline on a page`_).
+(see `Running the pipeline`_).
 
 * If the name is already taken by something that is not this image's page, the
   new folder is numbered: ``page001-2.collectra``, then ``page001-3.collectra``.
@@ -279,8 +279,8 @@ the same ones the ``env`` command manages (see :doc:`cli`).
 
 Changes apply straight away, including to runs started from the window.
 
-Running the pipeline on a page
-------------------------------
+Running the pipeline
+--------------------
 
 The play button (▶) in the panel toolbar, right after the search icon, runs
 the pipeline. It is enabled once the pipeline has loaded; with no page open,
@@ -317,28 +317,32 @@ The panel has an optional **Note** (at most 200 characters; whitespace is
 collapsed) that is saved with the run in ``run-log.txt``. Confirm with the
 button labelled with the number of tasks, for example ``Run 3 tasks``.
 
-**Run whole collection** runs every page in the sidebar list, which are the
-pages of the open project, with the pipeline's normal multi-page run, so model
+**Run whole collection** runs the pages listed in the sidebar with the
+pipeline's normal multi-page run, so model
 tasks are batched as they are on the command line. By default it fills in only
 what is missing and **replaces nothing on any page**, not even a task that
 follows a missing one. The panel starts with a summary line, for example
-``6 pages: 3 have results, 2 have none yet, 1 cannot run``, then lists each task
+``5 pages: 2 have tasks to run, 3 are complete, 1 cannot run``, then lists each task
 with the number of pages it runs on, for example ``crop — runs on 4 pages``. A
 page that cannot run is listed with the reason and left out, while the other
 pages run. The panel has the same **Note**, which is saved in each page's
-``run-log.txt``, and its button is labelled with the number of pages, for
-example ``Run 5 pages``. If no page can run, or every page that can run already
+``run-log.txt``, and its button is labelled with the number of pages that have
+tasks to run, for example ``Run 2 pages``. If no page can run, or every page that can run already
 has its results, the panel says so and its run button is disabled.
 
 Both panels have a tick, **Overwrite existing results**. It is unticked every
 time a panel opens and is never remembered. Ticked, every task is run again and
 replaces its existing output, **including edits and annotations you made
-there**; the panel says exactly what will be replaced, and the label of the
-run button follows. A task that fails, or whose output cannot be saved, keeps
+there**; the panel says exactly what will be replaced, for example
+``5 pages: 3 have results to replace, 2 run for the first time``, and the
+label of the run button follows. A task that fails, or whose output cannot be saved, keeps
 its old output. Pages and tasks with no output yet simply run.
 
-A run always rewrites the header timestamp of a page's ``results.yaml``, even
-when no task ran; the command line does the same.
+A run always rewrites a page's ``results.yaml`` on save, even when no task ran;
+the command line does the same. A file written by Collectra changes only its
+``timestamp:`` line, and a file with an older ``collectra_results_metadata:``
+header is rewritten with the current ``results:`` header, keeping the workflow
+and version.
 
 While the run goes on, a progress popover shows how many tasks are done (for
 the whole collection, how many pages), and the toolbar button is highlighted. Click the button again to reopen the
@@ -355,11 +359,12 @@ task has output and does not redo it automatically. The failure is recorded in
 
 While a run is going:
 
-* Only one run can be active at a time. In a run of the whole collection,
-  every page in the list counts as being run.
+* Only one run can be active at a time.
 * The page being run cannot be edited: its text is read-only, its boxes and
   masks cannot be changed, and a notice in the toolbar says editing is paused
-  until the run finishes. Other open pages stay editable.
+  until the run finishes. For **Run this image**, other open pages stay
+  editable; for **Run whole collection**, no page in the list can be edited
+  while it runs.
 * Restarting Collectra and installing updates are refused. Closing the window
   stops the run and waits up to 30 seconds for the task in progress to finish.
 * Git actions that change things (**Get updates**, **Save changes**,
@@ -369,7 +374,7 @@ While a run is going:
 ``run-log.txt`` sits beside ``results.yaml`` in the page's folder. It is
 append-only: each run adds one entry when it starts, with the plan, and finishes
 it with what happened to each task and a summary. A run of the whole collection
-adds one such entry to each page it runs on. If a task replaced existing output
+adds one such entry to each page that is not left out. If a task replaced existing output
 because of the overwrite tick, its line says ``re-ran, replaced existing
 output``. It is plain text, and you may
 edit it by hand; Collectra only ever appends to it. An example entry, for a
