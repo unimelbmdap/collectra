@@ -21,6 +21,7 @@ __all__ = ["Pipeline"]
 
 import copy
 import datetime
+import filecmp
 import json
 import shlex
 import shutil
@@ -73,6 +74,7 @@ from ..types.images import Image, ImageCrop
 from ..types.links import Link
 from ..types.texts import Text
 from .env import PipelineEnv
+from .importing import destination
 from .node_graph_manager import NodeGraphManager
 from .run_plan import RunPlan, RunReport, TaskOutcome, plan_tasks
 
@@ -1246,6 +1248,59 @@ class Pipeline(LenientAttributes, BaseModel):
         # reader in Collectra applies it rather than stripping it.
         shutil.copy2(file_path, savef / file_path.name)
         return savef
+
+    def import_file(self, source: Path) -> Path:
+        """Make the results folder for one input file, next to the file.
+
+        The folder holds an unchanged copy of the file and results with only
+        the input entry; no task runs. A folder that already is this file's
+        page (its results name the file and its copy is identical) is
+        returned as it is. Another file's folder of the same name is never
+        touched: the new folder is numbered instead.
+
+        Args:
+            source: The input file.
+
+        Returns:
+            The results folder.
+
+        Raises:
+            ValueError: The pipeline does not accept this kind of file.
+            OSError: The folder could not be written; what this call created
+                is removed.
+        """
+        source = Path(source)
+        accepted = self.file_extensions() - {f".{self.ext}"}
+        if source.suffix.lower() not in accepted:
+            raise ValueError(
+                f"{source.name} is not an input the {self.name} pipeline accepts."
+            )
+        root = self._get_root_input()
+
+        def is_page(folder: Path) -> bool:
+            if not (folder / self.RESULTS_FILE).exists():
+                return False
+            copy = folder / source.name
+            name = self._page_image_name(self._page_entry(folder, root)[1])
+            return (
+                name == source.name
+                and copy.is_file()
+                and filecmp.cmp(source, copy, shallow=False)
+            )
+
+        folder = destination(
+            source, self.ext, lambda path: path.exists() and not is_page(path)
+        )
+        if folder.exists():
+            return folder
+        folder.mkdir()
+        try:
+            shutil.copy2(source, folder / source.name)
+            self._create_results_file(folder, root, source)
+        except BaseException:
+            shutil.rmtree(folder)
+            raise
+        return folder
 
     def _create_results_file(self, directory: Path, key: str, value: str | Path):
         """Create a new results.yaml file in the given directory."""
