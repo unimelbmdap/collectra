@@ -20,7 +20,6 @@ from pathlib import Path
 
 import pandas as pd
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage
 
 from collectra.tasks.canonicalisers import LLMCanonicaliser
 from collectra.tasks.vector_store import VectorStore
@@ -350,7 +349,7 @@ class IRNResolver(LLMCanonicaliser):
         messages = self.replace_inputs(
             pattern, prompt, *args, entities=candidates_string
         )
-        self.messages.append(HumanMessage(content=messages))
+        self.messages.append(messages)
         self.check_inputs(*args)
         response = self.invoke()
 

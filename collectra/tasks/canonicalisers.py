@@ -19,7 +19,6 @@ import re
 from pathlib import Path
 
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage
 
 from collectra.tasks.llms import LLM as CollectraLLM
 from collectra.tasks.vector_store import VectorStore
@@ -111,7 +110,7 @@ class LLMCanonicaliser(CollectraLLM):
 
         messages = self.replace_inputs(pattern, prompt, *args, entities=entities)
 
-        self.messages.append(HumanMessage(content=messages))
+        self.messages.append(messages)
 
         self.check_inputs(*args)
 

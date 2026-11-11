@@ -1895,12 +1895,19 @@ class Pipeline(LenientAttributes, BaseModel):
                 description=f"Running {task.name}",
             )
         )
-        with change_dir(self.path):
-            for entry in listed:
-                if not isinstance(entry, list):
-                    entry = list(entry)
-                entry_result = self._execute_entries(entry, task)
-                results.extend(entry_result)
+        try:
+            with change_dir(self.path):
+                for entry in listed:
+                    if not isinstance(entry, list):
+                        entry = list(entry)
+                    entry_result = self._execute_entries(entry, task)
+                    results.extend(entry_result)
+        finally:
+            # A task that fails leaves track()'s generator, and its refresh
+            # thread, open. Closing it now stops the thread at once; left to
+            # the garbage collector it can deadlock with the bar's own lock.
+            if listed is not entries:
+                listed.close()
         return results
 
     def _execute_entries(self, entries: list[Artefact], task: Task) -> list[Artefact]:

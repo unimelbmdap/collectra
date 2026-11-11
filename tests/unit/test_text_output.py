@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 import pytest
 import yaml
-from langchain_core.messages import AIMessage
 from pydantic import ValidationError
 
 from collectra import Pipeline
@@ -256,11 +255,10 @@ def test_concatenated_text_can_be_saved(tmp_path):
 def test_an_llm_saves_its_response_to_a_file(tmp_path, files):
     from collectra.tasks.llms import LLM
 
-    class Chain:
-        def invoke(self, messages):
-            return AIMessage(content="# Heading\n\nBody")
+    from tests.unit.scripted_llm import Scripted
 
-    with patch.object(LLM, "chain", property(lambda self: Chain())):
+    model = Scripted(["# Heading\n\nBody"])
+    with patch.object(LLM, "llm", property(lambda self: model)):
         pipe = pipeline(
             tmp_path,
             first={

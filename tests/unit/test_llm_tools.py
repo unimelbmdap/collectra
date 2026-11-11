@@ -1,12 +1,10 @@
 """An LLM can call named lookups as tools before it gives its answer."""
 
-import threading
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 import yaml
-from langchain_core.messages import AIMessage, ToolMessage
+from pydantic_ai.messages import ModelResponse, ToolCallPart, ToolReturnPart
 
 from collectra import Pipeline
 from collectra.commons import TaskContext
@@ -14,46 +12,22 @@ from collectra.tasks.base import Task
 from collectra.tasks.llms import LLM, ToolCallingUnsupported
 from collectra.types.images import Image
 from collectra.types.texts import Text
+from tests.unit.scripted_llm import (
+    USAGE,
+    Scripted,
+    answer,
+    lookup,
+    prompt_text,
+    submit,
+)
 from tests.unit.test_pipeline_stages import files  # noqa: F401
 
 THIS = "tests.unit.test_llm_tools"
-USAGE = {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5}
 
 
-def call(query, id="c1", name="genera_lookup"):
-    return AIMessage(
-        content="",
-        tool_calls=[
-            {"name": name, "args": {"query": query}, "id": id, "type": "tool_call"}
-        ],
-        usage_metadata=USAGE,
-    )
-
-
-def answer(text):
-    return AIMessage(content=text, usage_metadata=USAGE)
-
-
-class ScriptedModel:
-    """A chat model that replies from a script and records every call it gets."""
-
-    def __init__(self, replies, supports_tools=True):
-        self.replies = list(replies)
-        self.supports_tools = supports_tools
-        self.calls: list[list] = []
-        self.bound: list[list[str]] = []
-
-    def bind_tools(self, tools):
-        if not self.supports_tools:
-            raise NotImplementedError("no tool calling here")
-        self.bound.append(
-            [getattr(tool, "name", None) or tool.__name__ for tool in tools]
-        )
-        return self
-
-    def invoke(self, messages):
-        self.calls.append(list(messages))
-        return self.replies.pop(0)
+def returned(request: list) -> list[ToolReturnPart]:
+    """The tool results sent back to the model in its latest request."""
+    return [p for p in request[-1].parts if isinstance(p, ToolReturnPart)]
 
 
 def build(tmp_path, replies=(), tools=("genera_lookup",), **llm):
@@ -80,7 +54,7 @@ def build(tmp_path, replies=(), tools=("genera_lookup",), **llm):
     )
     pipeline.connect()
     task = pipeline.node_manager.resolve_node("reader").get_task()
-    model = ScriptedModel(replies)
+    model = Scripted(list(replies))
     task.__dict__["llm"] = model
     return pipeline, task, model
 
@@ -115,92 +89,75 @@ def test_tools_can_be_combined_with_several_outputs():
 
 
 def test_the_model_looks_things_up_then_answers(tmp_path):
-    _, task, model = build(tmp_path, [call("Didymograpus"), answer("Didymograptus")])
+    _, task, model = build(tmp_path, [lookup("Didymograpus"), answer("Didymograptus")])
     result = task.run(note())
     assert isinstance(result, Text) and result() == "Didymograptus"
     assert result.name == "answer"
-    assert model.bound == [["genera_lookup"]]
-    assert len(model.calls) == 2
+    assert model.function_tools[0] == ["genera_lookup"]
+    assert len(model.requests) == 2
 
 
 def test_the_lookup_result_is_fed_back_to_the_model(tmp_path):
     _, task, model = build(
-        tmp_path, [call("Didymograpus", id="abc"), answer("Didymograptus")]
+        tmp_path, [lookup("Didymograpus", id="abc"), answer("Didymograptus")]
     )
     task.run(note())
-    second = model.calls[1]
-    assert isinstance(second[-2], AIMessage) and second[-2].tool_calls
-    returned = second[-1]
-    assert isinstance(returned, ToolMessage)
-    assert returned.tool_call_id == "abc" and returned.name == "genera_lookup"
-    assert "Candidates for 'Didymograpus'" in returned.content
-    assert "Didymograptus" in returned.content
+    (result,) = returned(model.requests[1])
+    assert result.tool_call_id == "abc" and result.tool_name == "genera_lookup"
+    assert "Candidates for 'Didymograpus'" in result.content
+    assert "Didymograptus" in result.content
 
 
 def test_a_model_that_needs_no_lookup_just_answers(tmp_path):
     _, task, model = build(tmp_path, [answer("Monograptus")])
     assert task.run(note("Monograptus"))() == "Monograptus"
-    assert len(model.calls) == 1
+    assert len(model.requests) == 1
 
 
 def test_several_lookups_in_one_reply_are_all_answered(tmp_path):
-    both = AIMessage(
-        content="",
-        tool_calls=[
-            {
-                "name": "genera_lookup",
-                "args": {"query": "didymograpus"},
-                "id": "a",
-                "type": "tool_call",
-            },
-            {
-                "name": "genera_lookup",
-                "args": {"query": "monograptus"},
-                "id": "b",
-                "type": "tool_call",
-            },
+    both = ModelResponse(
+        parts=[
+            ToolCallPart("genera_lookup", {"query": "didymograpus"}, tool_call_id="a"),
+            ToolCallPart("genera_lookup", {"query": "monograptus"}, tool_call_id="b"),
         ],
-        usage_metadata=USAGE,
+        usage=USAGE,
     )
     _, task, model = build(tmp_path, [both, answer("done")])
     task.run(note())
-    replies = [m for m in model.calls[1] if isinstance(m, ToolMessage)]
+    replies = returned(model.requests[1])
     assert [m.tool_call_id for m in replies] == ["a", "b"]
     assert "didymograpus" in replies[0].content and "monograptus" in replies[1].content
 
 
 def test_the_tasks_own_messages_are_not_polluted_by_the_conversation(tmp_path):
-    _, task, _ = build(tmp_path, [call("x"), answer("y")])
+    _, task, _ = build(tmp_path, [lookup("x"), answer("y")])
     task.run(note())
     assert len(task.messages) == 2
 
 
 def test_an_unknown_tool_name_gets_an_error_the_model_can_read(tmp_path):
-    _, task, model = build(tmp_path, [call("x", name="made_up"), answer("fine")])
+    _, task, model = build(tmp_path, [lookup("x", name="made_up"), answer("fine")])
     assert task.run(note())() == "fine"
-    message = [m for m in model.calls[1] if isinstance(m, ToolMessage)][0]
-    assert (
-        "Unknown tool 'made_up'" in message.content
-        and "genera_lookup" in message.content
-    )
+    message = str(model.requests[1][-1].parts[-1].content)
+    assert "made_up" in message and "genera_lookup" in message
 
 
 def test_a_lookup_that_fails_is_reported_to_the_model_not_raised(tmp_path):
-    pipeline, task, model = build(tmp_path, [call("x"), answer("fine")])
+    pipeline, task, model = build(tmp_path, [lookup("x"), answer("fine")])
     with patch.object(
         type(pipeline.resources["genera_lookup"]),
         "search",
         side_effect=RuntimeError("index broke"),
     ):
         assert task.run(note())() == "fine"
-    message = [m for m in model.calls[1] if isinstance(m, ToolMessage)][0]
+    (message,) = returned(model.requests[1])
     assert "Lookup failed" in message.content and "index broke" in message.content
 
 
 def test_lookups_beyond_the_limit_are_refused_and_the_model_must_answer(tmp_path):
     pipeline, task, model = build(
         tmp_path,
-        [call("a", "1"), call("b", "2"), call("c", "3"), answer("final")],
+        [lookup("a", "1"), lookup("b", "2"), lookup("c", "3"), answer("final")],
         max_tool_calls=2,
     )
     searches = []
@@ -213,7 +170,7 @@ def test_lookups_beyond_the_limit_are_refused_and_the_model_must_answer(tmp_path
     with patch.object(type(pipeline.resources["genera_lookup"]), "search", spy):
         assert task.run(note())() == "final"
     assert searches == ["a", "b"]  # the third was not run
-    refusal = [m for m in model.calls[3] if isinstance(m, ToolMessage)][-1]
+    (refusal,) = returned(model.requests[3])
     assert (
         "limit" in refusal.content.lower() and "final answer" in refusal.content.lower()
     )
@@ -221,14 +178,14 @@ def test_lookups_beyond_the_limit_are_refused_and_the_model_must_answer(tmp_path
 
 def test_a_model_that_never_stops_calling_tools_is_an_error(tmp_path):
     _, task, _ = build(
-        tmp_path, [call("x", str(i)) for i in range(20)], max_tool_calls=2
+        tmp_path, [lookup("x", str(i)) for i in range(20)], max_tool_calls=2
     )
     with pytest.raises(RuntimeError, match="final answer after 2 lookups"):
         task.run(note())
 
 
 def test_lookups_are_logged_with_the_task_tool_and_query(tmp_path, caplog):
-    _, task, _ = build(tmp_path, [call("Didymograpus"), answer("x")])
+    _, task, _ = build(tmp_path, [lookup("Didymograpus"), answer("x")])
     with caplog.at_level("INFO", logger="collectra"):
         task.run(note())
     line = next(
@@ -241,15 +198,15 @@ def test_lookups_are_logged_with_the_task_tool_and_query(tmp_path, caplog):
 
 
 def test_a_model_without_tool_calling_raises_a_clear_error(tmp_path):
-    _, task, model = build(tmp_path, [])
-    model.supports_tools = False
+    _, task, _ = build(tmp_path, [])
+    task.__dict__["llm"] = Scripted([], supports_tools=False)
     with pytest.raises(ToolCallingUnsupported, match=r"reader.*tool"):
         task.run(note())
 
 
 def test_a_task_not_in_a_pipeline_says_so(tmp_path):
     task = LLM("loose", "m", template="{note}", input="note", tools=["genera_lookup"])
-    task.__dict__["llm"] = ScriptedModel([])
+    task.__dict__["llm"] = Scripted([])
     with pytest.raises(RuntimeError, match="loose.*pipeline"):
         task.run(note())
 
@@ -258,49 +215,36 @@ def test_a_task_not_in_a_pipeline_says_so(tmp_path):
 
 
 def test_usage_is_recorded_for_every_turn_of_the_conversation(tmp_path):
-    from collectra.commons import TaskContext
-
-    _, task, _ = build(tmp_path, [call("x"), answer("y")])
+    _, task, _ = build(tmp_path, [lookup("x"), answer("y")])
     task.context = TaskContext(usage_file=tmp_path / "usage.yaml")
-    with patch("collectra.tasks.llms.get_llmloader") as loader:
-        loader.return_value.LLMWrapper.get_token_count.return_value = {"tokens": 5}
-        task.run(note())
-    assert loader.return_value.LLMWrapper.get_token_count.call_count == 2
-    assert yaml.safe_load((tmp_path / "usage.yaml").read_text()) == {
-        "reader": {"tokens": 10}
-    }
+    task.run(note())
+    usage = yaml.safe_load((tmp_path / "usage.yaml").read_text())["reader"]
+    assert (usage["input_tokens"], usage["output_tokens"]) == (6, 4)
+    assert usage["total_tokens"] == 10
 
 
 # --- batching ----------------------------------------------------------------------
 
 
-class RuleModel:
-    """Looks up the text once, then answers; waits at a barrier if given one."""
+def rule(fail_on=None):
+    """Look the prompt's text up once, then answer; fail first on ``fail_on``."""
 
-    def __init__(self, barrier=None, fail_on=None):
-        self.barrier = barrier
-        self.fail_on = fail_on
-        self.turns = 0
-        self.lock = threading.Lock()
+    def respond(messages):
+        text = prompt_text(messages)
+        looked_up = any(
+            isinstance(p, ToolReturnPart)
+            for m in messages
+            for p in getattr(m, "parts", [])
+        )
+        if text == fail_on and not looked_up:
+            return RuntimeError("rate limited")
+        return answer(f"answer:{text}") if looked_up else lookup(text)
 
-    def bind_tools(self, tools):
-        return self
+    return respond
 
-    def invoke(self, messages):
-        with self.lock:
-            self.turns += 1
-        text = messages[1].content[-1]["text"]
-        if (
-            self.fail_on
-            and text == self.fail_on
-            and not any(isinstance(m, ToolMessage) for m in messages)
-        ):
-            raise RuntimeError("rate limited")
-        if any(isinstance(m, ToolMessage) for m in messages):
-            return answer(f"answer:{text}")
-        if self.barrier is not None:
-            self.barrier.wait(timeout=5)  # only passes if the loops run together
-        return call(text)
+
+def RuleModel(fail_on=None, delay=0.0):
+    return Scripted(respond=rule(fail_on), delay=delay)
 
 
 def entries(*texts):
@@ -314,10 +258,11 @@ def batched(tmp_path, model, size=3):
 
 
 def test_prefetch_runs_the_conversations_concurrently(tmp_path):
-    model = RuleModel(barrier=threading.Barrier(3))
+    model = RuleModel(delay=0.02)
     task = batched(tmp_path, model)
     task.prefetch(entries("a", "b", "c"))
-    assert model.turns == 6  # two turns each
+    assert len(model.requests) == 6  # two turns each
+    assert model.most_at_once == 3
     assert sorted(len(v) for v in task._prefetched.values()) == [1, 1, 1]
 
 
@@ -325,26 +270,24 @@ def test_run_reuses_the_conversations_without_asking_the_model_again(tmp_path):
     model = RuleModel()
     task = batched(tmp_path, model)
     task.prefetch(entries("a", "b", "c"))
-    turns = model.turns
+    turns = len(model.requests)
     assert [task.run(*e)() for e in entries("c", "a", "b")] == [
         "answer:c",
         "answer:a",
         "answer:b",
     ]
-    assert model.turns == turns
+    assert len(model.requests) == turns
 
 
 def test_usage_for_prefetched_conversations_is_recorded_when_they_are_used(tmp_path):
-    from collectra.commons import TaskContext
-
     model = RuleModel()
     task = batched(tmp_path, model)
     task.prefetch(entries("a"))
-    task.context = TaskContext(usage_file=tmp_path / "usage.yaml")
-    with patch("collectra.tasks.llms.get_llmloader") as loader:
-        loader.return_value.LLMWrapper.get_token_count.return_value = {"tokens": 5}
-        task.run(*entries("a")[0])
-    assert loader.return_value.LLMWrapper.get_token_count.call_count == 2
+    usage_file = tmp_path / "usage.yaml"
+    assert not usage_file.exists()
+    task.context = TaskContext(usage_file=usage_file)
+    task.run(*entries("a")[0])
+    assert yaml.safe_load(usage_file.read_text())["reader"]["input_tokens"] == 6
 
 
 def test_a_conversation_that_fails_in_prefetch_is_retried_alone(tmp_path):
@@ -355,12 +298,12 @@ def test_a_conversation_that_fails_in_prefetch_is_retried_alone(tmp_path):
     assert task.run(*entries("a")[0])() == "answer:a"
     with pytest.raises(RuntimeError, match="rate limited"):  # fails again alone
         task.run(*entries("b")[0])
-    assert model.turns >= 3
+    assert len(model.requests) >= 3
 
 
 def test_prefetch_without_tool_support_surfaces_the_error(tmp_path):
-    _, task, model = build(tmp_path, [], batch_size=2)
-    model.supports_tools = False
+    _, task, _ = build(tmp_path, [], batch_size=2)
+    task.__dict__["llm"] = Scripted([], supports_tools=False)
     with pytest.raises(ToolCallingUnsupported):
         task.prefetch(entries("a", "b"))
 
@@ -375,7 +318,7 @@ class Describe(Task):
 
 def test_a_pipeline_task_uses_the_lookup_and_saves_the_final_answer(tmp_path, files):
     (tmp_path / "genera.txt").write_text("Didymograptus\nMonograptus\n")
-    model = ScriptedModel([call("Didymograpus"), answer("Didymograptus")])
+    model = Scripted([lookup("Didymograpus"), answer("Didymograptus")])
     pipeline = Pipeline(
         "Tools",
         "tls",
@@ -402,20 +345,10 @@ def test_a_pipeline_task_uses_the_lookup_and_saves_the_final_answer(tmp_path, fi
     assert saved["answer"]["data"] == "Didymograptus"
     assert saved["answer"]["id"] == "answer"
     assert "genera_lookup" not in saved
-    assert model.bound == [["genera_lookup"]]
+    assert model.function_tools[0] == ["genera_lookup"]
 
 
 # --- tools with several outputs ---------------------------------------------------------
-
-
-def submit(id="s1", **fields):
-    return AIMessage(
-        content="",
-        tool_calls=[
-            {"name": "LLMOutputs", "args": fields, "id": id, "type": "tool_call"}
-        ],
-        usage_metadata=USAGE,
-    )
 
 
 def build_structured(tmp_path, replies, **llm):
@@ -442,7 +375,7 @@ def build_structured(tmp_path, replies, **llm):
     )
     pipeline.connect()
     task = pipeline.node_manager.resolve_node("reader").get_task()
-    model = ScriptedModel(replies)
+    model = Scripted(list(replies))
     task.__dict__["llm"] = model
     return task, model
 
@@ -450,22 +383,23 @@ def build_structured(tmp_path, replies, **llm):
 def test_the_answer_schema_is_offered_as_a_tool_next_to_the_lookups(tmp_path):
     task, model = build_structured(tmp_path, [submit(genus="G", age="A")])
     task.run(note())
-    assert model.bound == [["genera_lookup", "LLMOutputs"]]
+    assert model.function_tools[0] == ["genera_lookup"]
+    assert model.output_tools[0] == ["LLMOutputs"]
 
 
 def test_the_model_looks_things_up_then_submits_every_field(tmp_path):
     task, model = build_structured(
         tmp_path,
-        [call("Didymograpus"), submit(genus="Didymograptus", age="Ordovician")],
+        [lookup("Didymograpus"), submit(genus="Didymograptus", age="Ordovician")],
     )
     result = task.run(note())
     assert [(t.name, t()) for t in result] == [
         ("genus", "Didymograptus"),
         ("age", "Ordovician"),
     ]
-    assert len(model.calls) == 2
-    fed_back = model.calls[1][-1]
-    assert isinstance(fed_back, ToolMessage) and "Didymograptus" in fed_back.content
+    assert len(model.requests) == 2
+    (fed_back,) = returned(model.requests[1])
+    assert "Didymograptus" in fed_back.content
 
 
 def test_a_field_left_out_is_an_empty_text(tmp_path):
@@ -475,27 +409,20 @@ def test_a_field_left_out_is_an_empty_text(tmp_path):
 
 
 def test_a_submit_in_the_same_reply_as_a_lookup_ends_the_conversation(tmp_path):
-    both = AIMessage(
-        content="",
-        tool_calls=[
-            {
-                "name": "genera_lookup",
-                "args": {"query": "x"},
-                "id": "l1",
-                "type": "tool_call",
-            },
-            {
-                "name": "LLMOutputs",
-                "args": {"genus": "G", "age": "A"},
-                "id": "s1",
-                "type": "tool_call",
-            },
+    both = ModelResponse(
+        parts=[
+            ToolCallPart("genera_lookup", {"query": "x"}, tool_call_id="l1"),
+            ToolCallPart("LLMOutputs", {"genus": "G", "age": "A"}, tool_call_id="s1"),
         ],
-        usage_metadata=USAGE,
+        usage=USAGE,
     )
     task, model = build_structured(tmp_path, [both])
-    assert [t() for t in task.run(note())] == ["G", "A"]
-    assert len(model.calls) == 1
+    with patch.object(
+        type(task.pipeline.resources["genera_lookup"]), "search"
+    ) as search:
+        assert [t() for t in task.run(note())] == ["G", "A"]
+    assert len(model.requests) == 1
+    search.assert_not_called()  # the answer is in: no need to look anything up
 
 
 def test_a_plain_text_reply_is_told_to_submit_the_answer(tmp_path):
@@ -503,8 +430,8 @@ def test_a_plain_text_reply_is_told_to_submit_the_answer(tmp_path):
         tmp_path, [answer("It is Didymograptus"), submit(genus="G", age="A")]
     )
     assert [t() for t in task.run(note())] == ["G", "A"]
-    nudge = model.calls[1][-1]
-    assert "LLMOutputs" in nudge.content
+    nudge = str(model.requests[1][-1].parts[-1].content)
+    assert "tool" in nudge
 
 
 def test_a_model_that_never_submits_is_an_error(tmp_path):
@@ -516,24 +443,34 @@ def test_a_model_that_never_submits_is_an_error(tmp_path):
 def test_structured_conversations_are_prefetched_and_reused(tmp_path):
     task, model = build_structured(
         tmp_path,
-        [call("Didymograpus"), submit(genus="Didymograptus", age="Ordovician")],
+        [lookup("Didymograpus"), submit(genus="Didymograptus", age="Ordovician")],
         batch_size=2,
     )
     task.prefetch([[note()]])
-    assert len(model.calls) == 2
+    assert len(model.requests) == 2
     result = task.run(note())
     assert [t() for t in result] == ["Didymograptus", "Ordovician"]
-    assert len(model.calls) == 2
+    assert len(model.requests) == 2
 
 
 def test_usage_is_recorded_for_each_turn_of_a_structured_conversation(tmp_path):
     task, _ = build_structured(
-        tmp_path, [call("Didymograpus"), submit(genus="G", age="A")]
+        tmp_path, [lookup("Didymograpus"), submit(genus="G", age="A")]
     )
     task.context = TaskContext(usage_file=tmp_path / "usage.yaml")
-    with patch("collectra.tasks.llms.get_llmloader") as loader:
-        loader.return_value.LLMWrapper.get_token_count.return_value = {"tokens": 5}
-        task.run(note())
-    assert yaml.safe_load((tmp_path / "usage.yaml").read_text()) == {
-        "reader": {"tokens": 10}
-    }
+    task.run(note())
+    usage = yaml.safe_load((tmp_path / "usage.yaml").read_text())["reader"]
+    assert usage["total_tokens"] == 10
+
+
+def test_a_lookup_can_ask_the_model_to_try_again(tmp_path):
+    from pydantic_ai import ModelRetry
+
+    pipeline, task, model = build(tmp_path, [lookup("x"), answer("fine")])
+    with patch.object(
+        type(pipeline.resources["genera_lookup"]),
+        "search",
+        side_effect=ModelRetry("search with fewer words"),
+    ):
+        assert task.run(note())() == "fine"
+    assert "search with fewer words" in str(model.requests[1][-1].parts[-1].content)

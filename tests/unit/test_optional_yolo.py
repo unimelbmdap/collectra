@@ -97,14 +97,31 @@ def test_default_locked_dependency_graph_excludes_optional_backends():
         return {name for name, _ in seen}
 
     excluded = {
-        "ultralytics", "ultralytics-thop", "ultralytics-platform", "drawyolo",
-        "surya-ocr", "pyqt5", "pyqt6", "pyqt6-webengine", "pyqtwebengine",
-        "torch", "torchvision", "timm", "rfdetr", "transformers",
-        "ensemble-boxes", "numba", "llvmlite",
+        "ultralytics",
+        "ultralytics-thop",
+        "ultralytics-platform",
+        "drawyolo",
+        "surya-ocr",
+        "pyqt5",
+        "pyqt6",
+        "pyqt6-webengine",
+        "pyqtwebengine",
+        "torch",
+        "torchvision",
+        "timm",
+        "rfdetr",
+        "transformers",
+        "ensemble-boxes",
+        "numba",
+        "llvmlite",
+        "pydantic-ai-slim",
         "llmloader",
     }
     assert not (reachable() & excluded)
     assert {"ultralytics", "drawyolo"} <= reachable(["yolo"])
-    assert {"torch", "torchvision", "timm", "rfdetr", "transformers"} <= reachable(["ml"])
+    assert {"torch", "torchvision", "timm", "rfdetr", "transformers"} <= reachable(
+        ["ml"]
+    )
     assert {"ensemble-boxes", "numba", "llvmlite"} <= reachable(["ml"])
-    assert "llmloader" in reachable(["ml"])
+    assert "pydantic-ai-slim" in reachable(["ml"])
+    assert "llmloader" not in reachable(["ml"])

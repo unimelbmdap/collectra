@@ -6,13 +6,13 @@ import textwrap
 
 
 def test_gui_and_pipeline_discovery_with_ml_backends_unavailable():
-    script = textwrap.dedent('''
+    script = textwrap.dedent("""
         import importlib.abc
         import sys
         import tempfile
         from pathlib import Path
 
-        blocked = {'torch', 'torchvision', 'timm', 'rfdetr', 'transformers', 'onnxruntime', 'ultralytics', 'ensemble_boxes', 'numba', 'llvmlite', 'llmloader', 'langchain_openai', 'sam3'}
+        blocked = {'torch', 'torchvision', 'timm', 'rfdetr', 'transformers', 'onnxruntime', 'ultralytics', 'ensemble_boxes', 'numba', 'llvmlite', 'llmloader', 'pydantic_ai', 'langchain_openai', 'sam3'}
         class WithoutML(importlib.abc.MetaPathFinder):
             def find_spec(self, fullname, path=None, target=None):
                 if fullname.split('.')[0] in blocked:
@@ -52,7 +52,7 @@ def test_gui_and_pipeline_discovery_with_ml_backends_unavailable():
             pipeline._ensure_workflow_connected()
             from collectra.tasks.llms import LLM
             try:
-                LLM('test', model='dummy').llm
+                LLM('test', model='claude-sonnet-5-5').llm
             except ImportError as error:
                 assert 'collectra[ml]' in str(error)
             else:
@@ -77,6 +77,8 @@ def test_gui_and_pipeline_discovery_with_ml_backends_unavailable():
             assert api.update_display_text('text', 'edited')['success']
             assert yaml.safe_load((page / 'results.yaml').read_text())['text']['data'] == 'edited'
         assert not (blocked & set(sys.modules))
-    ''')
-    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    """)
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True
+    )
     assert result.returncode == 0, result.stdout + result.stderr
