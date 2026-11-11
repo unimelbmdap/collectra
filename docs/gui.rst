@@ -59,6 +59,48 @@ An installed pipeline command offers the same interface::
 
     my-pipeline gui results
 
+.. _gui-open-images:
+
+Open images
+-----------
+
+You can also open an image file, or a folder holding images, instead of
+results. Collectra turns each image into a page, and the page opens like any
+other. The file types accepted are the ones the pipeline reads as input; for
+example, the Grapto pipeline accepts ``.bmp``, ``.gif``,
+``.jpeg``, ``.jpg``, ``.png``, ``.tif``, ``.tiff`` and ``.webp``, in any case.
+Other files are skipped and counted, and hidden files (names starting with a
+dot) are ignored. Opening a folder looks only at the files and folders directly
+in it, not at its subfolders. (The ``run`` command still searches folders
+recursively.)
+
+For each image, Collectra creates a folder next to it, named after the image
+with the pipeline's extension, so ``page001.jpg`` becomes ``page001.collectra``
+for a pipeline whose extension is ``collectra``. The image is copied into it
+unchanged, and a ``results.yaml`` is written that holds only that input image.
+No task runs, so every task shows as **will run** in the run button's preview
+(see `Running the pipeline on a page`_).
+
+* If the name is already taken by something that is not this image's page, the
+  new folder is numbered: ``page001-2.collectra``, then ``page001-3.collectra``.
+  Opening the same image again opens its existing page instead of making
+  another.
+* A folder named ``<name>.<extension>`` that has no ``results.yaml`` and holds
+  exactly one image is turned into a page where it is, without copying. With no
+  image, or with several, it is skipped and left alone.
+* Existing results are never changed. A folder that already has a
+  ``results.yaml`` is opened as it is, and a folder with a ``results.yaml`` whose
+  name does not end in the pipeline's extension is never imported into.
+* One image that cannot be imported does not stop the others.
+
+When something was imported, skipped or failed, the **Load Details** window
+opens after you choose the folder and shows a short summary, for example
+``Imported 3 pages, opened 1 existing, skipped 2 files My Pipeline doesn't
+accept``. It also counts folders skipped for not holding exactly one image, and
+lists each failure with its reason on a ``Failed:`` line. Nothing is shown when
+you only opened existing results. When you start the GUI from the command line
+with paths, the same summary is also printed in the terminal.
+
 macOS Applications launcher
 ---------------------------
 
