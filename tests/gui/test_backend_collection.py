@@ -134,6 +134,7 @@ def test_preview_counts_pages_and_tasks(backend):
         "pages": 3,
         "to_replace": 2,
         "first_time": 1,
+        "to_run": 2,
         "tasks": [
             {"name": "ocr", "pages": 2, "replace": 0},
             {"name": "tidy", "pages": 1, "replace": 0},
@@ -510,6 +511,21 @@ def test_unticked_collection_run_replaces_nothing(tmp_path, real_pages):
     assert "  result  0 ran, 3 skipped, 0 failed, " in log_text(b)
     assert "  result  3 ran, 0 skipped, 0 failed, " in log_text(c)
     assert not (d / run_log.LOG_NAME).exists()
+
+
+def test_preview_counts_the_pages_with_tasks_to_run(tmp_path, real_pages):
+    from tests.unit.test_run_page import drop
+
+    a, b, c, d = real_pages
+    drop(a, "words")
+    drop(c, "boxes", "words", "label")
+    drop(d, "label")
+    backend = real_collection(tmp_path, real_pages)
+    # The complete page b has nothing to run unless the tick is on
+    assert backend.get_collection_preview()["to_run"] == 3
+    assert backend.get_collection_preview(overwrite=True)["to_run"] == 4
+    all_done = real_collection(tmp_path, [b])
+    assert all_done.get_collection_preview()["to_run"] == 0
 
 
 def test_ticked_collection_run_replaces_and_keeps_what_fails(

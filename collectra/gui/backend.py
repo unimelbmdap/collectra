@@ -425,7 +425,7 @@ class GUIBackend:
 
         Returns:
             Whether the collection can run; how many pages are listed, have
-            results and have none; each task that would run, with the number
+            results, have none and have tasks to run; each task that would run, with the number
             of pages it runs on and replaces output on; the pages that cannot
             run, with the reason; and a message.
         """
@@ -435,6 +435,7 @@ class GUIBackend:
             "pages": len(self._collectra_folders),
             "to_replace": 0,
             "first_time": 0,
+            "to_run": 0,
             "tasks": [],
             "unplannable": [],
             "message": "",
@@ -466,6 +467,7 @@ class GUIBackend:
             "can_run": not message,
             "to_replace": to_replace,
             "first_time": len(plans) - to_replace,
+            "to_run": sum(bool(plan.to_run) for plan in plans.values()),
             "tasks": [entry for entry in tasks.values() if entry["pages"]],
             "message": message,
         }
