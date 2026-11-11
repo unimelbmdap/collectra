@@ -13,13 +13,7 @@ from collectra.gui.backend import GUIBackend, _RunState
 from collectra.pipelines.importing import ImportReport
 from tests.unit.test_import_inputs import build
 
-NOTICE = {
-    "summary": "Imported 1 page",
-    "imported": 1,
-    "existing": 0,
-    "skipped": [],
-    "failed": [],
-}
+NOTICE = {"summary": "Imported 1 page", "failed": []}
 
 
 class FakePipeline:
@@ -108,9 +102,6 @@ def test_the_notice_names_what_was_skipped_and_failed(parent):
     backend = GUIBackend(FakePipeline(report))
     assert backend._import_paths([parent]) == {
         "summary": report.summary("demo"),
-        "imported": 0,
-        "existing": 1,
-        "skipped": ["notes.txt: not accepted", "empty.collectra: 0 images"],
         "failed": ["locked.png: denied"],
     }
 
@@ -199,6 +190,21 @@ def test_startup_imports_a_raw_file_and_prints_the_notice_once(parent, capsys):
     assert capsys.readouterr().out == "Imported 1 page\n"
 
 
+def test_startup_imports_raw_files_in_one_call(parent, capsys):
+    pages = [parent / "b.collectra", parent / "a.collectra"]
+    pipeline = FakePipeline(ImportReport(pages=pages, imported=2), pages=pages)
+    inputs = [parent / "b.png", parent / "a.png"]
+    for path in inputs:
+        path.write_bytes(b"raw")
+    initial = GUIBackend(pipeline, inputs=inputs).get_initial_items()
+    assert pipeline.imports == [inputs]
+    assert [folder["path"] for folder in initial["folders"]] == [
+        str(page) for page in pages
+    ]
+    assert initial["import"] == {"summary": "Imported 2 pages", "failed": []}
+    assert capsys.readouterr().out == "Imported 2 pages\n"
+
+
 def test_startup_imports_a_folder_then_lists_it(parent, capsys):
     pipeline = imported_one(parent)
     initial = GUIBackend(pipeline, inputs=[parent]).get_initial_items()
@@ -281,7 +287,7 @@ def test_startup_adopts_a_page_folder_input(tmp_path, raw_img_path, capsys):
         "page.jpg",
         "results.yaml",
     ]
-    assert initial["import"]["imported"] == 1
+    assert initial["import"] == NOTICE
     assert capsys.readouterr().out == "Imported 1 page\n"
 
 
@@ -292,8 +298,10 @@ def test_startup_skips_a_file_the_pipeline_does_not_accept(tmp_path, raw_img_pat
     inputs = [tmp_path / "a.jpg", tmp_path / "n.txt"]
     initial = GUIBackend(pipeline, inputs=inputs).get_initial_items()
     assert [entry["name"] for entry in initial["folders"]] == ["a.imp"]
-    assert initial["import"]["skipped"][0].startswith("n.txt: ")
-    assert "skipped 1 file" in initial["import"]["summary"]
+    assert initial["import"] == {
+        "summary": "Imported 1 page, skipped 1 file Import doesn't accept",
+        "failed": [],
+    }
     with pytest.raises(ValueError, match="No GUI results found"):
         GUIBackend(pipeline, inputs=[tmp_path / "n.txt"])
 

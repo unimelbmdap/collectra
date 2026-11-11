@@ -662,6 +662,12 @@ class GUIBackend:
 
         An input in a folder holding results.yaml opens that folder without
         writing anything.
+
+        Args:
+            inputs: The files and folders given on the command line.
+
+        Returns:
+            dict with the folder list, and the import notice when there is one.
         """
         paths = [Path(value).expanduser().resolve() for value in inputs]
         pending = []
@@ -671,7 +677,11 @@ class GUIBackend:
             directory = path.parent if path.is_file() else path
             if not (directory / "results.yaml").is_file():
                 pending.append(path)
-        imported = self._import_paths(pending) if pending else {}
+        report = self._import_report(pending)
+        imported = self._notice(report)
+        pages = {}  # every page created or opened above, by its folder
+        for page in report.pages if report else []:
+            pages.setdefault(page.parent, []).append(page)
         seen = set()
         for path in paths:
             directory = path.parent if path.is_file() else path
@@ -684,8 +694,8 @@ class GUIBackend:
                     if child.is_dir() and child.suffix == f".{self._extension}"
                 ]
             else:
-                # Imported above, so this finds its page without writing.
-                candidates = self._pipeline.import_inputs([path]).pages
+                # Imported above; the first file of a folder lists its pages.
+                candidates = pages.pop(path.parent, [])
             for candidate in candidates:
                 scan = self._scan_collectra_folder(candidate)
                 if scan is None:
@@ -720,23 +730,27 @@ class GUIBackend:
             paths: The files and folders being opened.
 
         Returns:
-            dict with the summary notice, the counts, and the skipped and failed
-            names, or an empty dict when only existing results were opened.
+            dict with the summary notice and the failed names, or an empty dict
+            when only existing results were opened.
+        """
+        return self._notice(self._import_report(paths))
+
+    def _import_report(self, paths: Sequence[Path]):
+        """Import the raw inputs among the paths, if the pipeline imports.
+
+        Args:
+            paths: The files and folders being opened.
+
+        Returns:
+            The pipeline's ImportReport, or None when nothing was imported.
         """
         import_inputs = getattr(self._pipeline, "import_inputs", None)
-        if import_inputs is None:
-            return {}
-        report = import_inputs(paths)
-        summary = report.summary(self._pipeline.name)
-        if not summary:
-            return {}
-        return {
-            "summary": summary,
-            "imported": report.imported,
-            "existing": report.existing,
-            "skipped": report.skipped + report.skipped_folders,
-            "failed": report.failed,
-        }
+        return import_inputs(paths) if import_inputs and paths else None
+
+    def _notice(self, report) -> dict:
+        """What the page shows of an import: see _import_paths."""
+        summary = report.summary(self._pipeline.name) if report else ""
+        return {"summary": summary, "failed": report.failed} if summary else {}
 
     @property
     def _extension(self) -> str:
