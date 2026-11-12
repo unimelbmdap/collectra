@@ -27,9 +27,7 @@ dependencies = [
     "jinja2 (>=3.1.6)",
     "markdown (>=3.9)",
     "pytz (>=2025.2)",
-    "langchain (>=1.1.0)",
     "pandas (>=2.3.3)",
-    "h5py (>=3.15.1)",
     "editdistance (>=0.6.0)",
     "iterative-stratification (>=0.1.9)",
     "plotly (>=5.0.0)",
@@ -51,13 +49,13 @@ dependencies = [
 
 [project.optional-dependencies]
 ml = [
-    "llmloader (>=0.1.10)",
     "ensemble-boxes (>=1.0.9)",
     "torch (>=2.9.1)",
     "torchvision (>=0.24.1)",
     "transformers (>=4.46.0)",
     "timm (>=1.0.9)",
     "rfdetr[train,loggers] (>=1.6.5.post0)",
+    "pydantic-ai-slim[anthropic,google,mistral,openai]>=2.56.0",
 ]
 yolo = [
     "ultralytics (>=8.4.160)",
@@ -115,7 +113,7 @@ filterwarnings = [
 ]
 
 [tool.uv]
-# sam3 pins numpy<2, but llmloader needs numpy>=2.1 on Python 3.13+.
+# sam3 pins numpy<2, but numpy 1.x has no wheels for Python 3.13+.
 override-dependencies = [
     "numpy>=2.1 ; python_full_version >= '3.13'",
     "numpy>=1.26 ; python_full_version < '3.13'",

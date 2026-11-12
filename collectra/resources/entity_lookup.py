@@ -140,8 +140,8 @@ class EntityLookup(Resource):
     # --- the tool an LLM can call ---------------------------------------------------
 
     def as_tool(self):
-        """This lookup as a LangChain tool the model can call with a ``query``."""
-        from langchain_core.tools import StructuredTool
+        """This lookup as a tool the model can call with a ``query``."""
+        from pydantic_ai import Tool
 
         def lookup(query: str) -> str:
             if not query.strip():
@@ -159,8 +159,8 @@ class EntityLookup(Resource):
             return "\n".join(lines)
 
         about = self.description.strip().rstrip(".")
-        return StructuredTool.from_function(
-            func=lookup,
+        return Tool(
+            lookup,
             name=self.name,
             description=(
                 f"Look up known entries{f' ({about})' if about else ''}. Pass the "

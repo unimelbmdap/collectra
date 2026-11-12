@@ -5,6 +5,8 @@ from typing import Any, ClassVar, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict
 
+from ..usage import UsageLedger
+
 __all__ = [
     "T",
     "EntityMixin",
@@ -27,12 +29,16 @@ class TaskContext(BaseModel):
 
     Attributes:
         usage_file: Optional path to write LLM usage statistics.
+        usage_ledger: Adds up the LLM usage of the whole run, for its summary.
         render: Whether to render workflow visualizations.
         file_path: Current file being processed.
         single_run: Whether to stop after first task execution.
     """
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     usage_file: Path | None = None
+    usage_ledger: UsageLedger | None = None
     render: bool = False
     file_path: Path | None = None
     single_run: bool = False

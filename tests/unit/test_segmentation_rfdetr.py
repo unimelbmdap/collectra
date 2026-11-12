@@ -8,7 +8,13 @@ import numpy as np
 import pytest
 from PIL import Image as PILImage
 
-from collectra import Pipeline, Image, ImageCrop, ImageSegmentation, ImageSegmenterRFDETR
+from collectra import (
+    Pipeline,
+    Image,
+    ImageCrop,
+    ImageSegmentation,
+    ImageSegmenterRFDETR,
+)
 from collectra.cli import invoke
 from collectra.tasks.image_segmentation import rfdetr
 from collectra.tasks.image_segmentation.data import SegmentationSample
@@ -24,7 +30,9 @@ def sample(tmp_path):
     pixels[3, 4] = 0
     mask = tmp_path / "mask.png"
     PILImage.fromarray(pixels).save(mask)
-    instance = ImageSegmentation(name="text_region", data=path, mask=mask, parents=[image.id])
+    instance = ImageSegmentation(
+        name="text_region", data=path, mask=mask, parents=[image.id]
+    )
     return SegmentationSample(image, [instance])
 
 
@@ -35,32 +43,49 @@ class Prediction(SimpleNamespace):
 
 def predictor(masks, names=("text_region",)):
     return SimpleNamespace(
-        model_config=SimpleNamespace(segmentation_head=True), class_names=list(names),
-        predict=Mock(return_value=Prediction(
-            mask=np.asarray(masks), class_id=np.zeros(len(masks), dtype=int),
-            data={"class_name": np.array([names[0]] * len(masks))},
-        )),
+        model_config=SimpleNamespace(segmentation_head=True),
+        class_names=list(names),
+        predict=Mock(
+            return_value=Prediction(
+                mask=np.asarray(masks),
+                class_id=np.zeros(len(masks), dtype=int),
+                data={"class_name": np.array([names[0]] * len(masks))},
+            )
+        ),
     )
 
 
 def test_prediction_inverts_crop_and_preserves_parent(sample, tmp_path):
-    crop = ImageCrop(name="crop", id="crop", data=sample.image.data,
-                     x_center=.5, y_center=3.5/8, width_relative=8/12, height_relative=5/8, partition="test")
+    crop = ImageCrop(
+        name="crop",
+        id="crop",
+        data=sample.image.data,
+        x_center=0.5,
+        y_center=3.5 / 8,
+        width_relative=8 / 12,
+        height_relative=5 / 8,
+        partition="test",
+    )
     local = np.ones((5, 8), dtype=bool)
     local[2, 2] = False
-    task = ImageSegmenterRFDETR("segment", output="text_region", threshold=.7)
+    task = ImageSegmenterRFDETR("segment", output="text_region", threshold=0.7)
     task.context.file_path = tmp_path / "results"
     task._predictor = predictor([local])
-    result, = task.run(crop)
+    (result,) = task.run(crop)
     assert isinstance(result, ImageSegmentation)
     assert result.parents == [crop.id]
     assert result.name == "text_region" and result.partition == "test"
-    np.testing.assert_array_equal(np.asarray(result._mask_image()) != 0, np.asarray(sample.instances[0]._mask_image()) != 0)
+    np.testing.assert_array_equal(
+        np.asarray(result._mask_image()) != 0,
+        np.asarray(sample.instances[0]._mask_image()) != 0,
+    )
     task._predictor.predict.assert_called_once()
-    assert task._predictor.predict.call_args.kwargs == {"threshold": .7}
+    assert task._predictor.predict.call_args.kwargs == {"threshold": 0.7}
 
 
-def test_pipeline_run_stores_mask_paths_relative_to_results(pipeline, tmp_path, monkeypatch):
+def test_pipeline_run_stores_mask_paths_relative_to_results(
+    pipeline, tmp_path, monkeypatch
+):
     import yaml
 
     page = tmp_path / "pages" / "page.png"
@@ -87,7 +112,7 @@ def test_segmentation_input_constrains_prediction(sample, tmp_path):
     image = sample.instances[0]
     view = image.pil()
     task._predictor = predictor([np.ones((view.height, view.width), bool)])
-    result, = task.run(image)
+    (result,) = task.run(image)
     np.testing.assert_array_equal(result._mask_image(), image._mask_image())
 
 
@@ -100,7 +125,9 @@ def test_empty_predictions_and_unconfigured_classes(sample, tmp_path):
     assert task.run(sample.image) == []
 
 
-@pytest.mark.parametrize("model,classname", [("small", "RFDETRSegSmall"), ("RFDETRSegNano", "RFDETRSegNano")])
+@pytest.mark.parametrize(
+    "model,classname", [("small", "RFDETRSegSmall"), ("RFDETRSegNano", "RFDETRSegNano")]
+)
 def test_lazy_variant_backend(monkeypatch, model, classname):
     backend = SimpleNamespace(**{classname: Mock(return_value=predictor([]))})
     monkeypatch.setattr(rfdetr, "_rfdetr", lambda: backend)
@@ -110,12 +137,19 @@ def test_lazy_variant_backend(monkeypatch, model, classname):
     getattr(backend, classname).assert_called_once_with(device="cpu", resolution=384)
 
 
-def test_checkpoint_resolves_relative_to_pipeline_and_rejects_detection(monkeypatch, tmp_path):
+def test_checkpoint_resolves_relative_to_pipeline_and_rejects_detection(
+    monkeypatch, tmp_path
+):
     checkpoint = tmp_path / "weights.pt"
     checkpoint.touch()
     loaded = predictor([])
     loader = Mock(return_value=loaded)
-    monkeypatch.setattr(rfdetr, "_rfdetr", lambda: SimpleNamespace(RFDETR=SimpleNamespace(from_checkpoint=loader)))
+    monkeypatch.setattr(
+        rfdetr,
+        "_rfdetr",
+        lambda: SimpleNamespace(RFDETR=SimpleNamespace(from_checkpoint=loader)),
+    )
+    monkeypatch.setattr(rfdetr, "_auto_device", lambda: "cuda")
     task = ImageSegmenterRFDETR("segment", model="weights.pt")
     task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path)
     task._init_model()
@@ -126,7 +160,9 @@ def test_checkpoint_resolves_relative_to_pipeline_and_rejects_detection(monkeypa
         task._init_model()
 
 
-def test_export_keeps_class_names_and_native_loader_decodes_holes(sample, tmp_path, monkeypatch):
+def test_export_keeps_class_names_and_native_loader_decodes_holes(
+    sample, tmp_path, monkeypatch
+):
     task = ImageSegmenterRFDETR("segment", output="text_region", prompt="printed page")
     monkeypatch.setattr(task, "_samples", lambda *a, **kw: [sample])
     dataset = task.prepare_training_data([], tmp_path / "dataset")
@@ -135,8 +171,13 @@ def test_export_keeps_class_names_and_native_loader_decodes_holes(sample, tmp_pa
     pytest.importorskip("torch")
     pytest.importorskip("rfdetr")
     from rfdetr.datasets.coco import convert_coco_poly_to_mask
-    decoded = convert_coco_poly_to_mask([annotations["annotations"][0]["segmentation"]], 8, 12)
-    np.testing.assert_array_equal(decoded[0].numpy(), np.asarray(sample.instances[0]._mask_image()) != 0)
+
+    decoded = convert_coco_poly_to_mask(
+        [annotations["annotations"][0]["segmentation"]], 8, 12
+    )
+    np.testing.assert_array_equal(
+        decoded[0].numpy(), np.asarray(sample.instances[0]._mask_image()) != 0
+    )
 
 
 @pytest.fixture
@@ -144,18 +185,34 @@ def pipeline(tmp_path):
     import yaml
 
     path = tmp_path / "pipeline.yaml"
-    path.write_text(yaml.safe_dump({
-        "collectra_pipeline_metadata": {"name": "Segments", "ext": "htr", "version": "1"},
-        "segment": {"type": "collectra.ImageSegmenterRFDETR", "input": "page", "output": "text_region"},
-    }))
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "collectra_pipeline_metadata": {
+                    "name": "Segments",
+                    "ext": "htr",
+                    "version": "1",
+                },
+                "segment": {
+                    "type": "collectra.ImageSegmenterRFDETR",
+                    "input": "page",
+                    "output": "text_region",
+                },
+            }
+        )
+    )
     return Pipeline.from_file(path)
 
 
 def fake_training(monkeypatch):
     def run(command, **kwargs):
-        assert command[2:4] == ["-m", "collectra.tasks.image_segmentation.rfdetr_training"]
+        assert command[2:4] == [
+            "-m",
+            "collectra.tasks.image_segmentation.rfdetr_training",
+        ]
         config = json.loads(Path(command[-1]).read_text())
         (Path(config["params"]["output_dir"]) / "best.pt").write_bytes(b"best weights")
+
     monkeypatch.setattr(rfdetr.subprocess, "run", run)
 
 
@@ -164,16 +221,55 @@ def test_training_cli_flags_and_model_adoption(pipeline, sample, tmp_path, monke
     monkeypatch.setattr(task, "_samples", Mock(return_value=[sample]))
     fake_training(monkeypatch)
     output = tmp_path / "nested" / "run"
-    invoke(pipeline, ["task", "segment", "train", "--output", str(output), "--wandb", "--max-items", "3", "--exclude", "test", str(tmp_path)])
+    invoke(
+        pipeline,
+        [
+            "task",
+            "segment",
+            "train",
+            "--output",
+            str(output),
+            "--wandb",
+            "--max-items",
+            "3",
+            "--exclude",
+            "test",
+            str(tmp_path),
+        ],
+    )
     config = json.loads((output / "rfdetr-training.json").read_text())
     assert config["params"]["wandb"]
     assert config["params"]["project"] == "Segments-segment"
     assert config["params"]["run"] == "run"
     assert config["params"]["use_ema"] is False
+    assert config["params"]["eval_masks_head_resolution"] is False
     assert config["has_validation"] is False
     task._samples.assert_called_once_with([str(tmp_path)], max_items=3, exclude="test")
     assert task.model.read_bytes() == b"best weights"
     assert pipeline.data["segment"]["model"] == task.model.name
+
+
+def test_training_eval_masks_head_resolution_flag(
+    pipeline, sample, tmp_path, monkeypatch
+):
+    task = pipeline.cli_tasks()["segment"]
+    monkeypatch.setattr(task, "_samples", Mock(return_value=[sample]))
+    fake_training(monkeypatch)
+    output = tmp_path / "run"
+    invoke(
+        pipeline,
+        [
+            "task",
+            "segment",
+            "train",
+            "--output",
+            str(output),
+            "--eval-masks-head-resolution",
+            str(tmp_path),
+        ],
+    )
+    config = json.loads((output / "rfdetr-training.json").read_text())
+    assert config["params"]["eval_masks_head_resolution"] is True
 
 
 def test_training_model_override(pipeline, sample, tmp_path, monkeypatch):
@@ -181,8 +277,22 @@ def test_training_model_override(pipeline, sample, tmp_path, monkeypatch):
     monkeypatch.setattr(task, "_samples", Mock(return_value=[sample]))
     fake_training(monkeypatch)
     output = tmp_path / "run"
-    invoke(pipeline, ["task", "segment", "train", "--output", str(output), "--model", "medium", str(tmp_path)])
-    assert json.loads((output / "rfdetr-training.json").read_text())["model"] == "medium"
+    invoke(
+        pipeline,
+        [
+            "task",
+            "segment",
+            "train",
+            "--output",
+            str(output),
+            "--model",
+            "medium",
+            str(tmp_path),
+        ],
+    )
+    assert (
+        json.loads((output / "rfdetr-training.json").read_text())["model"] == "medium"
+    )
     # The trained weights still replace the configured model.
     assert pipeline.data["segment"]["model"] == task.model.name
 
@@ -192,7 +302,9 @@ def test_training_model_override(pipeline, sample, tmp_path, monkeypatch):
     assert config["model"] == str((tmp_path / "start.pt").resolve())
 
 
-def test_missing_model_override_fails_before_preparation(pipeline, sample, tmp_path, monkeypatch):
+def test_missing_model_override_fails_before_preparation(
+    pipeline, sample, tmp_path, monkeypatch
+):
     task = pipeline.cli_tasks()["segment"]
     monkeypatch.setattr(task, "_samples", Mock(return_value=[sample]))
     with pytest.raises(FileNotFoundError, match="nano, small"):
@@ -211,12 +323,16 @@ def test_reuse_overrides_loading_and_max_items(pipeline, sample, tmp_path, monke
     task._samples.assert_not_called()
 
 
-def test_missing_reuse_falls_back_and_no_keep_log(pipeline, sample, tmp_path, monkeypatch):
+def test_missing_reuse_falls_back_and_no_keep_log(
+    pipeline, sample, tmp_path, monkeypatch
+):
     task = pipeline.cli_tasks()["segment"]
     monkeypatch.setattr(task, "_samples", Mock(return_value=[sample]))
     fake_training(monkeypatch)
     output = tmp_path / "run"
-    destination = task.train([str(tmp_path)], output=output, reuse_data=True, keep_log=False)
+    destination = task.train(
+        [str(tmp_path)], output=output, reuse_data=True, keep_log=False
+    )
     task._samples.assert_called_once()
     assert destination.is_file() and not output.exists()
 
@@ -230,10 +346,16 @@ def test_mask_iou_is_class_aware_and_resizes():
     torch = pytest.importorskip("torch")
     from collectra.tasks.image_segmentation.rfdetr_training import mask_overlap
 
-    prediction = {"masks": torch.ones(3, 1, 4, 4, dtype=torch.bool),
-                  "labels": torch.tensor([0, 1, 2]), "scores": torch.tensor([.9, .9, .1])}
-    target = {"masks": torch.ones(1, 2, 2, dtype=torch.bool), "labels": torch.tensor([0])}
-    intersection, union = mask_overlap(prediction, target, .5)
+    prediction = {
+        "masks": torch.ones(3, 1, 4, 4, dtype=torch.bool),
+        "labels": torch.tensor([0, 1, 2]),
+        "scores": torch.tensor([0.9, 0.9, 0.1]),
+    }
+    target = {
+        "masks": torch.ones(1, 2, 2, dtype=torch.bool),
+        "labels": torch.tensor([0]),
+    }
+    intersection, union = mask_overlap(prediction, target, 0.5)
     assert intersection == 4 and union == 8  # absent-class false positive counts
 
 
@@ -244,22 +366,32 @@ def test_callbacks_keep_only_best_weights_and_write_csv(tmp_path):
 
     model = torch.nn.Linear(2, 1)
     config = {"model_name": "RFDETRSegSmall", "segmentation_head": True}
-    module = SimpleNamespace(model=model, train_config=SimpleNamespace(model_dump=lambda: {}),
-                             model_config=SimpleNamespace(model_dump=lambda: config))
-    trainer = SimpleNamespace(is_global_zero=True, sanity_checking=False, current_epoch=0,
-                              callback_metrics={"val/mask_iou": torch.tensor(.7), "train/loss": torch.tensor(2.)},
-                              datamodule=SimpleNamespace(class_names=["text_region"]))
-    callback = make_callback(tmp_path, .5, True)
+    module = SimpleNamespace(
+        model=model,
+        train_config=SimpleNamespace(model_dump=lambda: {}),
+        model_config=SimpleNamespace(model_dump=lambda: config),
+    )
+    trainer = SimpleNamespace(
+        is_global_zero=True,
+        sanity_checking=False,
+        current_epoch=0,
+        callback_metrics={
+            "val/mask_iou": torch.tensor(0.7),
+            "train/loss": torch.tensor(2.0),
+        },
+        datamodule=SimpleNamespace(class_names=["text_region"]),
+    )
+    callback = make_callback(tmp_path, 0.5, True)
     callback.on_validation_end(trainer, module)
     saved = torch.load(tmp_path / "best.pt", weights_only=True)
     assert saved["args"]["class_names"] == ["text_region"]
     assert set(saved) == {"model", "args", "model_config", "model_name", "epoch"}
     trainer.current_epoch = 1
-    trainer.callback_metrics["val/mask_iou"] = torch.tensor(.6)
+    trainer.callback_metrics["val/mask_iou"] = torch.tensor(0.6)
     callback.on_validation_end(trainer, module)
     assert torch.load(tmp_path / "best.pt", weights_only=True)["epoch"] == 0
     assert len((tmp_path / "metrics.csv").read_text().splitlines()) == 3
-    trainer.callback_metrics["val/mask_iou"] = torch.tensor(.8)
+    trainer.callback_metrics["val/mask_iou"] = torch.tensor(0.8)
     callback.on_validation_end(trainer, module)
     assert torch.load(tmp_path / "best.pt", weights_only=True)["epoch"] == 1
 
@@ -273,12 +405,23 @@ def test_native_trainer_hooks_disable_optimizer_checkpoints(tmp_path):
     from collectra.tasks.image_segmentation.rfdetr_training import training_hooks
 
     original = training.build_trainer
-    config = SegmentationTrainConfig(dataset_dir=str(tmp_path), output_dir=str(tmp_path), epochs=1, use_ema=False,
-                                     tensorboard=False, wandb=False, progress_bar=None)
-    with training_hooks(tmp_path, .5, False):
-        trainer = training.build_trainer(config, RFDETRSegSmallConfig(), accelerator="cpu", devices=1)
+    config = SegmentationTrainConfig(
+        dataset_dir=str(tmp_path),
+        output_dir=str(tmp_path),
+        epochs=1,
+        use_ema=False,
+        tensorboard=False,
+        wandb=False,
+        progress_bar=None,
+    )
+    with training_hooks(tmp_path, 0.5, False):
+        trainer = training.build_trainer(
+            config, RFDETRSegSmallConfig(), accelerator="cpu", devices=1
+        )
         assert not any(isinstance(cb, ModelCheckpoint) for cb in trainer.callbacks)
-        assert any(type(cb).__name__ == "SegmentationMetrics" for cb in trainer.callbacks)
+        assert any(
+            type(cb).__name__ == "SegmentationMetrics" for cb in trainer.callbacks
+        )
         assert trainer.limit_val_batches == 0
     assert training.build_trainer is original
 
@@ -293,10 +436,19 @@ def test_native_csv_logger_does_not_share_collectra_metrics_csv(tmp_path):
     from collectra.tasks.image_segmentation.rfdetr_training import training_hooks
 
     original = native.CSVLogger
-    config = SegmentationTrainConfig(dataset_dir=str(tmp_path), output_dir=str(tmp_path), epochs=1, use_ema=False,
-                                     tensorboard=False, wandb=False, progress_bar=None)
-    with training_hooks(tmp_path, .5, True):
-        trainer = training.build_trainer(config, RFDETRSegSmallConfig(), accelerator="cpu", devices=1)
+    config = SegmentationTrainConfig(
+        dataset_dir=str(tmp_path),
+        output_dir=str(tmp_path),
+        epochs=1,
+        use_ema=False,
+        tensorboard=False,
+        wandb=False,
+        progress_bar=None,
+    )
+    with training_hooks(tmp_path, 0.5, True):
+        trainer = training.build_trainer(
+            config, RFDETRSegSmallConfig(), accelerator="cpu", devices=1
+        )
     assert native.CSVLogger is original
     (logger,) = [item for item in trainer.loggers if isinstance(item, CSVLogger)]
     assert Path(logger.log_dir) == tmp_path / "lightning"
@@ -309,7 +461,9 @@ def test_native_csv_logger_does_not_share_collectra_metrics_csv(tmp_path):
 
 
 @pytest.mark.parametrize("has_validation", [True, False])
-def test_cpu_epoch_loop_reports_metrics_and_saves_reloadable_weights(tmp_path, has_validation):
+def test_cpu_epoch_loop_reports_metrics_and_saves_reloadable_weights(
+    tmp_path, has_validation
+):
     import csv
 
     torch = pytest.importorskip("torch")
@@ -331,9 +485,12 @@ def test_cpu_epoch_loop_reports_metrics_and_saves_reloadable_weights(tmp_path, h
             super().__init__()
             self.model = torch.nn.Linear(2, 1)
             self.train_config = SimpleNamespace(model_dump=lambda: {})
-            self.model_config = SimpleNamespace(model_dump=lambda: {
-                "model_name": "RFDETRSegSmall", "segmentation_head": True,
-            })
+            self.model_config = SimpleNamespace(
+                model_dump=lambda: {
+                    "model_name": "RFDETRSegSmall",
+                    "segmentation_head": True,
+                }
+            )
 
         def training_step(self, batch, batch_idx):
             loss = self.model(batch[0]).square().mean()
@@ -342,29 +499,233 @@ def test_cpu_epoch_loop_reports_metrics_and_saves_reloadable_weights(tmp_path, h
 
         def validation_step(self, batch, batch_idx):
             return {
-                "results": [{"masks": torch.full((1, 1, 2, 2), self.current_epoch == 0),
-                             "labels": torch.tensor([0]), "scores": torch.tensor([.9])}],
-                "targets": [{"masks": torch.ones(1, 2, 2, dtype=torch.bool), "labels": torch.tensor([0])}],
+                "results": [
+                    {
+                        "masks": torch.full((1, 1, 2, 2), self.current_epoch == 0),
+                        "labels": torch.tensor([0]),
+                        "scores": torch.tensor([0.9]),
+                    }
+                ],
+                "targets": [
+                    {
+                        "masks": torch.ones(1, 2, 2, dtype=torch.bool),
+                        "labels": torch.tensor([0]),
+                    }
+                ],
             }
 
         def configure_optimizers(self):
-            return torch.optim.SGD(self.parameters(), lr=.01)
+            return torch.optim.SGD(self.parameters(), lr=0.01)
+
+    def train_predictions(trainer, pl_module):
+        # One of four true pixels predicted: IoU 0.25 on the training images.
+        quarter = torch.tensor([[[[True, False], [False, False]]]])
+        yield (
+            [
+                {
+                    "masks": quarter,
+                    "labels": torch.tensor([0]),
+                    "scores": torch.tensor([0.9]),
+                }
+            ],
+            [
+                {
+                    "masks": torch.ones(1, 2, 2, dtype=torch.bool),
+                    "labels": torch.tensor([0]),
+                }
+            ],
+        )
 
     trainer = lightning.Trainer(
-        max_epochs=2, accelerator="cpu", devices=1, logger=False,
-        enable_checkpointing=False, enable_model_summary=False, enable_progress_bar=False,
-        callbacks=[make_callback(tmp_path, .5, has_validation)],
-        limit_val_batches=1 if has_validation else 0, num_sanity_val_steps=0,
+        max_epochs=2,
+        accelerator="cpu",
+        devices=1,
+        logger=False,
+        enable_checkpointing=False,
+        enable_model_summary=False,
+        enable_progress_bar=False,
+        callbacks=[
+            make_callback(
+                tmp_path, 0.5, has_validation, train_predictions=train_predictions
+            )
+        ],
+        limit_val_batches=1 if has_validation else 0,
+        num_sanity_val_steps=0,
     )
     trainer.fit(Model(), datamodule=Data())
     rows = list(csv.DictReader((tmp_path / "metrics.csv").open()))
     assert [int(row["epoch"]) for row in rows] == [1, 2]
     assert all(row["train/loss"] for row in rows)
+    assert [float(row["train/mask_iou"]) for row in rows] == [0.25, 0.25]
     checkpoint = torch.load(tmp_path / "best.pt", weights_only=True)
     assert "optimizer_states" not in checkpoint
     assert checkpoint["args"]["class_names"] == ["text_region"]
     if has_validation:
-        assert [float(row["val/mask_iou"]) for row in rows] == [1., 0.]
+        assert [float(row["val/mask_iou"]) for row in rows] == [1.0, 0.0]
         assert checkpoint["epoch"] == 0
     else:
         assert checkpoint["epoch"] == 1  # decreasing training loss
+
+
+# --- the device -------------------------------------------------------------------
+
+
+def test_without_a_device_the_segmenter_uses_what_this_machine_has(
+    monkeypatch, tmp_path
+):
+    # A Mac has no CUDA: insisting on it failed the first time the segmenter ran.
+    checkpoint = tmp_path / "weights.pt"
+    checkpoint.touch()
+    loader = Mock(return_value=predictor([]))
+    monkeypatch.setattr(
+        rfdetr,
+        "_rfdetr",
+        lambda: SimpleNamespace(RFDETR=SimpleNamespace(from_checkpoint=loader)),
+    )
+    monkeypatch.setattr(rfdetr, "_auto_device", lambda: "mps")
+    task = ImageSegmenterRFDETR("segment", model=str(checkpoint))
+    assert task.device is None
+    assert task.resolved_device() == "mps"
+    task._init_model()
+    loader.assert_called_once_with(str(checkpoint), device="mps")
+
+
+def test_a_device_that_is_given_is_used_as_it_is(monkeypatch):
+    monkeypatch.setattr(rfdetr, "_auto_device", lambda: "mps")
+    assert ImageSegmenterRFDETR("segment", device="cpu").resolved_device() == "cpu"
+
+
+@pytest.mark.parametrize(
+    "cuda, mps, expected",
+    [(True, True, "cuda"), (False, True, "mps"), (False, False, "cpu")],
+)
+def test_the_automatic_device_prefers_cuda_then_mps_then_the_cpu(
+    monkeypatch, cuda, mps, expected
+):
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: mps)
+    assert rfdetr._auto_device() == expected
+
+
+@pytest.fixture
+def train_eval(tmp_path, monkeypatch):
+    """rfdetr_train_predictions over a fake RF-DETR module and data module."""
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("rfdetr")
+    from contextlib import nullcontext
+
+    import rfdetr.training.module_data as module_data
+
+    from collectra.tasks.image_segmentation.rfdetr_training import (
+        rfdetr_train_predictions,
+    )
+
+    exported = tmp_path / "dataset"
+    (exported / "train").mkdir(parents=True)
+    built = []
+
+    class DataModule:
+        def __init__(self, model_config, train_config):
+            self.dataset_dir = Path(train_config["dataset_dir"])
+            self.stages = []
+            built.append(self)
+
+        def setup(self, stage):
+            self.stages.append(stage)
+
+        def val_dataloader(self):
+            return ["batch"]
+
+        def transfer_batch_to_device(self, batch, device, index):
+            orig_size = torch.tensor([4, 6])
+            return f"{batch} on {device}", [{"orig_size": orig_size}]
+
+    monkeypatch.setattr(module_data, "RFDETRDataModule", DataModule)
+
+    class Model(torch.nn.Module):
+        def forward(self, samples):
+            assert not self.training, "training images are scored in eval mode"
+            return f"outputs of {samples}"
+
+    model = Model().train()
+    pl_module = SimpleNamespace(
+        train_config=SimpleNamespace(
+            dataset_dir=str(exported),
+            model_copy=lambda update: update,
+        ),
+        model_config="model config",
+        device="cpu",
+        _resolve_eval_model=lambda: model,
+        postprocess=lambda outputs, sizes: (outputs, sizes.tolist()),
+    )
+    trainer = SimpleNamespace(
+        precision_plugin=SimpleNamespace(val_step_context=nullcontext)
+    )
+    output = tmp_path / "output"
+    output.mkdir()
+    return SimpleNamespace(
+        predict=rfdetr_train_predictions(output),
+        trainer=trainer,
+        pl_module=pl_module,
+        model=model,
+        built=built,
+        exported=exported,
+        output=output,
+    )
+
+
+def test_training_images_are_predicted_like_validation(train_eval):
+    batches = list(train_eval.predict(train_eval.trainer, train_eval.pl_module))
+    assert batches == [
+        (
+            ("outputs of batch on cpu", [[4, 6]]),
+            [{"orig_size": batches[0][1][0]["orig_size"]}],
+        )
+    ]
+    assert train_eval.model.training, "the model goes back to training mode"
+
+
+def test_the_training_view_links_both_splits_to_the_training_images(train_eval):
+    list(train_eval.predict(train_eval.trainer, train_eval.pl_module))
+    view = train_eval.output / "train-eval"
+    for split in ("train", "valid"):
+        assert (view / split).resolve() == train_eval.exported.resolve() / "train"
+    (module,) = train_eval.built
+    assert module.dataset_dir == view
+    assert module.stages == ["validate"]
+
+
+def test_the_data_module_is_built_once_for_the_whole_run(train_eval):
+    for _ in range(3):
+        list(train_eval.predict(train_eval.trainer, train_eval.pl_module))
+    assert len(train_eval.built) == 1
+
+
+def test_an_existing_view_of_the_same_images_is_reused(train_eval):
+    view = train_eval.output / "train-eval"
+    view.mkdir()
+    (view / "train").symlink_to(train_eval.exported.resolve() / "train")
+    list(train_eval.predict(train_eval.trainer, train_eval.pl_module))
+    assert (view / "valid").resolve() == train_eval.exported.resolve() / "train"
+
+
+def test_a_view_of_other_images_is_not_silently_used(train_eval, tmp_path):
+    other = tmp_path / "other"
+    other.mkdir()
+    view = train_eval.output / "train-eval"
+    view.mkdir()
+    (view / "train").symlink_to(other)
+    with pytest.raises(FileExistsError):
+        list(train_eval.predict(train_eval.trainer, train_eval.pl_module))
+
+
+def test_a_failed_prediction_still_restores_training_mode(train_eval):
+    def fail(outputs, sizes):
+        raise RuntimeError("out of memory")
+
+    train_eval.pl_module.postprocess = fail
+    with pytest.raises(RuntimeError):
+        list(train_eval.predict(train_eval.trainer, train_eval.pl_module))
+    assert train_eval.model.training

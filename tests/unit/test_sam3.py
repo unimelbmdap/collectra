@@ -122,8 +122,13 @@ def test_inference_runs_under_bfloat16_autocast(image, tmp_path):
     seen = []
 
     def prompt(**kwargs):
-        seen.append((torch.is_autocast_enabled("cpu"), torch.get_autocast_dtype("cpu"),
-                     torch.is_grad_enabled()))
+        seen.append(
+            (
+                torch.is_autocast_enabled("cpu"),
+                torch.get_autocast_dtype("cpu"),
+                torch.is_grad_enabled(),
+            )
+        )
         masks = torch.zeros((1, 1, 8, 12), dtype=torch.bfloat16)
         masks[0, 0, 1:3, 2:5] = 1
         return {"masks": masks}
@@ -182,7 +187,9 @@ def test_model_loading_handles_official_and_finetuned_checkpoints(
 
 
 @pytest.mark.parametrize("full_checkpoint", [False, True])
-def test_sam31_weights_preserve_image_features_and_roundtrip(monkeypatch, full_checkpoint):
+def test_sam31_weights_preserve_image_features_and_roundtrip(
+    monkeypatch, full_checkpoint
+):
     torch = pytest.importorskip("torch")
     from collectra.tasks.image_segmentation.sam3_training import load_image_state
 
@@ -202,24 +209,37 @@ def test_sam31_weights_preserve_image_features_and_roundtrip(monkeypatch, full_c
 
     source = image_model()
     prefix = "backbone.vision_backbone."
-    state = {k: v for k, v in source.state_dict().items() if not k.startswith(prefix + "convs.3.")}
+    state = {
+        k: v
+        for k, v in source.state_dict().items()
+        if not k.startswith(prefix + "convs.3.")
+    }
     for branch in ("interactive_convs", "propagation_convs"):
-        state.update({k.replace("convs.", branch + "."): v for k, v in list(state.items())
-                      if k.startswith(prefix + "convs.")})
+        state.update(
+            {
+                k.replace("convs.", branch + "."): v
+                for k, v in list(state.items())
+                if k.startswith(prefix + "convs.")
+            }
+        )
     if full_checkpoint:
         state = {"detector." + k: v for k, v in state.items()}
         state["tracker.unused"] = torch.zeros(1)
     target = image_model()
     load_image_state(target, state)
     pixels = torch.randn(1, 2, 8, 8)
-    for original, loaded in zip(source.backbone.vision_backbone.convs[:3],
-                                target.backbone.vision_backbone.convs[:3]):
+    for original, loaded in zip(
+        source.backbone.vision_backbone.convs[:3],
+        target.backbone.vision_backbone.convs[:3],
+    ):
         torch.testing.assert_close(original(pixels), loaded(pixels))
     # Fine-tuned image-only checkpoints remain strictly loadable.
     restored = image_model()
     load_image_state(restored, target.state_dict())
     broken = dict(state)
-    first = ("detector." if full_checkpoint else "") + prefix + "convs.0.conv_1x1.weight"
+    first = (
+        ("detector." if full_checkpoint else "") + prefix + "convs.0.conv_1x1.weight"
+    )
     del broken[first]
     with pytest.raises(RuntimeError, match="Missing key"):
         load_image_state(image_model(), broken)
@@ -232,6 +252,7 @@ def test_sam31_weights_preserve_image_features_and_roundtrip(monkeypatch, full_c
 def test_training_model_mlps_support_backprop_without_changing_inference(monkeypatch):
     import sys
     from types import ModuleType
+
     torch = pytest.importorskip("torch")
     from collectra.tasks.image_segmentation.sam3_training import build_training_model
 
@@ -279,11 +300,16 @@ def test_training_model_mlps_support_backprop_without_changing_inference(monkeyp
 
 
 @pytest.mark.parametrize("freeze_semantic", [False, True])
-def test_instance_training_ddp_handles_unsupervised_semantic_output(tmp_path, freeze_semantic):
+def test_instance_training_ddp_handles_unsupervised_semantic_output(
+    tmp_path, freeze_semantic
+):
     from contextlib import nullcontext
+
     torch = pytest.importorskip("torch")
     import torch.distributed as dist
-    from collectra.tasks.image_segmentation.sam3_training import freeze_unused_semantic_head
+    from collectra.tasks.image_segmentation.sam3_training import (
+        freeze_unused_semantic_head,
+    )
 
     if not dist.is_available() or not dist.is_gloo_available() or dist.is_initialized():
         pytest.skip("Requires an independent CPU/Gloo process group")
@@ -313,21 +339,40 @@ def test_instance_training_ddp_handles_unsupervised_semantic_output(tmp_path, fr
 
         def forward(self, x):
             features = self.backbone(x)
-            return StageOutputs([{
-                "pred_masks": self.segmentation_head.instance_seg_head(features),
-                "semantic_seg": self.segmentation_head.semantic_seg_head(features),
-            }])
+            return StageOutputs(
+                [
+                    {
+                        "pred_masks": self.segmentation_head.instance_seg_head(
+                            features
+                        ),
+                        "semantic_seg": self.segmentation_head.semantic_seg_head(
+                            features
+                        ),
+                    }
+                ]
+            )
 
     model = InstanceModel()
     before = {key: value.clone() for key, value in model.state_dict().items()}
     if freeze_semantic:
         freeze_unused_semantic_head(model)
-    dist.init_process_group("gloo", init_method=(tmp_path / "rendezvous").as_uri(),
-                            rank=0, world_size=1)
+    dist.init_process_group(
+        "gloo", init_method=(tmp_path / "rendezvous").as_uri(), rank=0, world_size=1
+    )
     try:
-        parallel = torch.nn.parallel.DistributedDataParallel(model, find_unused_parameters=True)
-        optimizer = torch.optim.SGD((p for p in model.parameters() if p.requires_grad), lr=0.1)
-        expectation = nullcontext() if freeze_semantic else pytest.raises(RuntimeError, match="Expected to have finished reduction")
+        parallel = torch.nn.parallel.DistributedDataParallel(
+            model, find_unused_parameters=True
+        )
+        optimizer = torch.optim.SGD(
+            (p for p in model.parameters() if p.requires_grad), lr=0.1
+        )
+        expectation = (
+            nullcontext()
+            if freeze_semantic
+            else pytest.raises(
+                RuntimeError, match="Expected to have finished reduction"
+            )
+        )
         with expectation:
             for _ in range(3):
                 optimizer.zero_grad()
@@ -375,8 +420,15 @@ def test_export_preserves_instances_holes_labels_and_partitions(image, tmp_path)
 
 def test_export_skips_masks_outside_their_input_image(image, tmp_path):
     # The left half of the 12x8 source; masks on the right lie outside it.
-    crop = ImageCrop(name="crop", id="crop", data=image.get_path(), x_center=0.25,
-                     y_center=0.5, width_relative=0.5, height_relative=1.0)
+    crop = ImageCrop(
+        name="crop",
+        id="crop",
+        data=image.get_path(),
+        x_center=0.25,
+        y_center=0.5,
+        width_relative=0.5,
+        height_relative=1.0,
+    )
     inside = np.zeros((8, 12), dtype="uint8")
     inside[2:6, 1:5] = 1
     outside = np.zeros((8, 12), dtype="uint8")
@@ -396,26 +448,44 @@ def test_export_skips_masks_outside_their_input_image(image, tmp_path):
     assert [item["id"] for item in train["images"]] == [1]
     assert [item["image_id"] for item in train["annotations"]] == [1]
     assert train["annotations"][0]["bbox"] == [1, 2, 4, 4]
-    assert sorted(path.name for path in (dataset / "train").glob("*.png")) == ["00000001.png"]
+    assert sorted(path.name for path in (dataset / "train").glob("*.png")) == [
+        "00000001.png"
+    ]
     assert sum("WARNING: skipping mask" in message for message in messages) == 2
-    assert any("skipped 2 masks" in message and "1 images" in message for message in messages)
+    assert any(
+        "skipped 2 masks" in message and "1 images" in message for message in messages
+    )
 
 
 def test_export_fails_when_every_training_mask_is_outside(image, tmp_path):
-    crop = ImageCrop(name="crop", id="crop", data=image.get_path(), x_center=0.25,
-                     y_center=0.5, width_relative=0.5, height_relative=1.0)
+    crop = ImageCrop(
+        name="crop",
+        id="crop",
+        data=image.get_path(),
+        x_center=0.25,
+        y_center=0.5,
+        width_relative=0.5,
+        height_relative=1.0,
+    )
     outside = np.zeros((8, 12), dtype="uint8")
     outside[2:6, 8:11] = 1
     with pytest.raises(ValueError, match="No labelled training instances remain"):
-        export_dataset([SegmentationSample(crop, [instance(crop, tmp_path, pixels=outside)])],
-                       tmp_path / "dataset", progress=lambda message: None)
+        export_dataset(
+            [SegmentationSample(crop, [instance(crop, tmp_path, pixels=outside)])],
+            tmp_path / "dataset",
+            progress=lambda message: None,
+        )
 
 
 @pytest.mark.parametrize("exclude,expected_train", [("test", 2), ("", 3)])
 def test_export_excludes_requested_partitions(image, tmp_path, exclude, expected_train):
-    samples = [SegmentationSample(image, [instance(image, tmp_path, partition=partition)])
-               for partition in ("", "validation", "test", "holdout")]
-    dataset = export_dataset(samples, tmp_path / "dataset", validation="validation", exclude=exclude)
+    samples = [
+        SegmentationSample(image, [instance(image, tmp_path, partition=partition)])
+        for partition in ("", "validation", "test", "holdout")
+    ]
+    dataset = export_dataset(
+        samples, tmp_path / "dataset", validation="validation", exclude=exclude
+    )
     train = json.loads((dataset / "train/_annotations.coco.json").read_text())
     valid = json.loads((dataset / "valid/_annotations.coco.json").read_text())
     assert len(train["images"]) == expected_train
@@ -423,9 +493,17 @@ def test_export_excludes_requested_partitions(image, tmp_path, exclude, expected
 
 
 def test_max_items_caps_combined_splits_after_exclusions(image, tmp_path):
-    samples = [SegmentationSample(image, [instance(image, tmp_path, partition=partition)])
-               for partition in ("test", "", "validation", "", "validation")]
-    dataset = export_dataset(samples, tmp_path / "dataset", validation="validation", exclude="test", max_items=2)
+    samples = [
+        SegmentationSample(image, [instance(image, tmp_path, partition=partition)])
+        for partition in ("test", "", "validation", "", "validation")
+    ]
+    dataset = export_dataset(
+        samples,
+        tmp_path / "dataset",
+        validation="validation",
+        exclude="test",
+        max_items=2,
+    )
     train = json.loads((dataset / "train/_annotations.coco.json").read_text())
     valid = json.loads((dataset / "valid/_annotations.coco.json").read_text())
     assert len(train["images"]) == len(valid["images"]) == 1
@@ -450,7 +528,9 @@ def test_cli_and_public_exports_need_no_sam_backend(capsys):
 
 @pytest.mark.parametrize("input_kind", ["parent", "page", "yaml"])
 @pytest.mark.parametrize("max_items", [None, 1])
-def test_pipeline_training_export_without_model_installation(tmp_path, input_kind, capsys, max_items):
+def test_pipeline_training_export_without_model_installation(
+    tmp_path, input_kind, capsys, max_items
+):
     page = tmp_path / "page.collectra"
     page.mkdir()
     image_path = page / "source.png"
@@ -498,7 +578,9 @@ def test_pipeline_training_export_without_model_installation(tmp_path, input_kin
         bad.mkdir()
         (bad / "results.yaml").write_text("This must never be loaded")
         inputs.append(str(bad))
-    directory = task.prepare_training_data(inputs, tmp_path / "dataset", max_items=max_items)
+    directory = task.prepare_training_data(
+        inputs, tmp_path / "dataset", max_items=max_items
+    )
     progress = capsys.readouterr().out
     assert f"Load 1/{2 if max_items else 1}:" in progress
     if max_items:
@@ -571,17 +653,32 @@ def test_training_configuration_enables_real_mask_losses(image, tmp_path, sam_pa
     assert config["trainer"]["max_epochs"] == 2
 
 
-def test_validation_configuration_installs_iou_and_reporting(image, tmp_path, sam_package):
+def test_validation_configuration_installs_iou_and_reporting(
+    image, tmp_path, sam_package
+):
     from collectra.tasks.image_segmentation.sam3_training import training_config
 
     dataset = export_dataset(
-        [SegmentationSample(image, [instance(image, tmp_path)]),
-         SegmentationSample(image, [instance(image, tmp_path, partition="validation")])],
-        tmp_path / "dataset", validation="validation",
+        [
+            SegmentationSample(image, [instance(image, tmp_path)]),
+            SegmentationSample(
+                image, [instance(image, tmp_path, partition="validation")]
+            ),
+        ],
+        tmp_path / "dataset",
+        validation="validation",
     )
-    config = training_config(dataset, tmp_path, tmp_path / "initial.pt",
-                             epochs=3, batch=1, num_gpus=2, wandb=True,
-                             run_name="region_segmentor", confidence_threshold=0.7)
+    config = training_config(
+        dataset,
+        tmp_path,
+        tmp_path / "initial.pt",
+        epochs=3,
+        batch=1,
+        num_gpus=2,
+        wandb=True,
+        run_name="region_segmentor",
+        confidence_threshold=0.7,
+    )
     trainer = config["trainer"]
     assert trainer["_target_"].endswith("sam3_metrics.create_trainer")
     assert trainer["skip_saving_ckpts"] is True
@@ -594,13 +691,35 @@ def test_validation_configuration_installs_iou_and_reporting(image, tmp_path, sa
         "_target_": "collectra.tasks.image_segmentation.sam3_metrics.MaskIoU",
         "confidence_threshold": 0.7,
     }
+    # Training images are rescored like validation for train/mask_iou.
+    train_eval = trainer["collectra_train_eval"]
+    assert train_eval["dataset"]["img_folder"] == str(dataset / "train")
+    assert train_eval["dataset"]["ann_file"] == str(
+        dataset / "train/_annotations.coco.json"
+    )
+    # Otherwise identical to validation (transforms, loader, collate function).
+    paths = ("img_folder", "ann_file")
+    assert {k: v for k, v in train_eval["dataset"].items() if k not in paths} == {
+        k: v for k, v in trainer["data"]["val"]["dataset"].items() if k not in paths
+    }
+    assert {k: v for k, v in train_eval.items() if k != "dataset"} == {
+        k: v for k, v in trainer["data"]["val"].items() if k != "dataset"
+    }
+    assert trainer["collectra_mask_threshold"] == 0.7
 
 
 @pytest.mark.parametrize("explicit_output", [True, False])
 @pytest.mark.parametrize("keep_log", [True, False])
 @pytest.mark.parametrize("excluded", ["", "test"])
 def test_train_adopts_checkpoint_and_updates_pipeline_config(
-    image, tmp_path, sam_package, monkeypatch, explicit_output, keep_log, capsys, excluded
+    image,
+    tmp_path,
+    sam_package,
+    monkeypatch,
+    explicit_output,
+    keep_log,
+    capsys,
+    excluded,
 ):
     from collectra.tasks.image_segmentation import sam3
 
@@ -609,7 +728,9 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
         sam3, "datetime", SimpleNamespace(now=lambda: datetime(2026, 10, 16, 14))
     )
     task = ImageSegmenterSam3("segment", model="initial.pt")
-    task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path, data={"segment": {}}, save=Mock())
+    task.pipeline = SimpleNamespace(
+        name="mypipeline", path=tmp_path, data={"segment": {}}, save=Mock()
+    )
     dataset = export_dataset(
         [SegmentationSample(image, [instance(image, tmp_path)])], tmp_path / "dataset"
     )
@@ -625,14 +746,20 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
         assert config["trainer"]["collectra_wandb"] is True
         assert config["trainer"]["collectra_project"] == f"mypipeline-segment"
         assert config["trainer"]["collectra_run_name"] == output.name
-        checkpoint = (
-            Path(config["paths"]["experiment_log_dir"]) / "checkpoints/best.pt"
-        )
+        checkpoint = Path(config["paths"]["experiment_log_dir"]) / "checkpoints/best.pt"
         checkpoint.parent.mkdir(parents=True)
         checkpoint.write_bytes(b"fake weights")
 
     monkeypatch.setattr(sam3.subprocess, "run", train)
-    arguments = ["train", "--validation", "validation", "results", "--epochs", "1", "--wandb"]
+    arguments = [
+        "train",
+        "--validation",
+        "validation",
+        "results",
+        "--epochs",
+        "1",
+        "--wandb",
+    ]
     output = tmp_path / ("output" if explicit_output else "20261016_140000")
     if explicit_output:
         arguments.extend(["--output", str(output), "--max-items", "2", "--reuse-data"])
@@ -645,7 +772,13 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
     if excluded:
         arguments.extend(["--exclude", excluded])
     trained = invoke(task, arguments)
-    prepare.assert_called_once_with(["results"], output / "dataset", "validation", excluded, max_items=2 if explicit_output else None)
+    prepare.assert_called_once_with(
+        ["results"],
+        output / "dataset",
+        "validation",
+        excluded,
+        max_items=2 if explicit_output else None,
+    )
     assert trained.read_bytes() == b"fake weights"
     assert task.pipeline.data["segment"]["model"] == trained.name
     task.pipeline.save.assert_called_once_with("segment")
@@ -661,63 +794,259 @@ def test_train_adopts_checkpoint_and_updates_pipeline_config(
     assert "Training complete" in progress
 
 
-@pytest.mark.parametrize('inputs', [[], ['nonexistent-source-directory']])
-@pytest.mark.parametrize('max_items', [None, 1, 0])
+@pytest.mark.parametrize("inputs", [[], ["nonexistent-source-directory"]])
+@pytest.mark.parametrize("max_items", [None, 1, 0])
 def test_train_reuses_output_dataset_without_source_checks(
     image, tmp_path, sam_package, monkeypatch, capsys, inputs, max_items
 ):
     from collectra.tasks.image_segmentation import sam3
 
-    output = tmp_path / 'existing-training'
+    output = tmp_path / "existing-training"
     dataset = export_dataset(
-        [SegmentationSample(image, [instance(image, tmp_path)])], output / 'dataset'
+        [SegmentationSample(image, [instance(image, tmp_path)])], output / "dataset"
     )
-    before = {path: path.read_bytes() for path in dataset.rglob('*') if path.is_file()}
-    task = ImageSegmenterSam3('segment', model='initial.pt')
-    task.pipeline = SimpleNamespace(name="mypipeline", path=tmp_path, data={'segment': {}}, save=Mock())
-    prepare = Mock(side_effect=AssertionError('Must not prepare or check source data'))
-    monkeypatch.setattr(task, 'prepare_training_data', prepare)
-    monkeypatch.setattr(task, '_checkpoint', lambda: tmp_path / 'initial.pt')
+    before = {path: path.read_bytes() for path in dataset.rglob("*") if path.is_file()}
+    task = ImageSegmenterSam3("segment", model="initial.pt")
+    task.pipeline = SimpleNamespace(
+        name="mypipeline", path=tmp_path, data={"segment": {}}, save=Mock()
+    )
+    prepare = Mock(side_effect=AssertionError("Must not prepare or check source data"))
+    monkeypatch.setattr(task, "prepare_training_data", prepare)
+    monkeypatch.setattr(task, "_checkpoint", lambda: tmp_path / "initial.pt")
 
     def train(command, **kwargs):
         config = yaml.safe_load(Path(command[-1]).read_text())
-        assert config['trainer']['data']['train']['dataset']['img_folder'] == str(dataset / 'train')
-        checkpoint = output / 'training/checkpoints/best.pt'
+        assert config["trainer"]["data"]["train"]["dataset"]["img_folder"] == str(
+            dataset / "train"
+        )
+        checkpoint = output / "training/checkpoints/best.pt"
         checkpoint.parent.mkdir(parents=True)
-        checkpoint.write_bytes(b'reused-data-model')
+        checkpoint.write_bytes(b"reused-data-model")
 
-    monkeypatch.setattr(sam3.subprocess, 'run', train)
-    options = ['train', *inputs, '--output', str(output), '--reuse-data',
-               '--validation', 'ignored-new-partition', '--exclude', 'ignored']
+    monkeypatch.setattr(sam3.subprocess, "run", train)
+    options = [
+        "train",
+        *inputs,
+        "--output",
+        str(output),
+        "--reuse-data",
+        "--validation",
+        "ignored-new-partition",
+        "--exclude",
+        "ignored",
+    ]
     if max_items is not None:
-        options.extend(['--max-items', str(max_items)])
+        options.extend(["--max-items", str(max_items)])
     trained = invoke(task, options)
     prepare.assert_not_called()
-    assert trained.read_bytes() == b'reused-data-model'
+    assert trained.read_bytes() == b"reused-data-model"
     assert all(path.read_bytes() == content for path, content in before.items())
     progress = capsys.readouterr().out
-    assert 'Skipping source checks and export' in progress
+    assert "Skipping source checks and export" in progress
     if max_items is not None:
-        assert 'Ignoring --max-items' in progress
+        assert "Ignoring --max-items" in progress
 
 
 def test_reuse_data_requires_output_and_normal_training_requires_inputs():
-    task = ImageSegmenterSam3('segment')
-    with pytest.raises(ValueError, match='--reuse-data requires --output'):
-        invoke(task, ['train', '--reuse-data'])
-    with pytest.raises(ValueError, match='Supply training inputs'):
-        invoke(task, ['train'])
+    task = ImageSegmenterSam3("segment")
+    with pytest.raises(ValueError, match="--reuse-data requires --output"):
+        invoke(task, ["train", "--reuse-data"])
+    with pytest.raises(ValueError, match="Supply training inputs"):
+        invoke(task, ["train"])
 
 
 def test_reuse_missing_dataset_requires_inputs(tmp_path):
     with pytest.raises(ValueError, match="requires an existing export"):
-        invoke(ImageSegmenterSam3("segment"), ["train", "--reuse-data", "--output", str(tmp_path)])
+        invoke(
+            ImageSegmenterSam3("segment"),
+            ["train", "--reuse-data", "--output", str(tmp_path)],
+        )
 
 
-@pytest.mark.parametrize("options, message", [
-    (["--max-items", "0"], "max_items must be positive"),
-    (["--max-items", "-1"], "max_items must be positive"),
-])
+@pytest.mark.parametrize(
+    "options, message",
+    [
+        (["--max-items", "0"], "max_items must be positive"),
+        (["--max-items", "-1"], "max_items must be positive"),
+    ],
+)
 def test_max_items_rejects_invalid_options(options, message):
     with pytest.raises(ValueError, match=message):
         invoke(ImageSegmenterSam3("segment"), ["train", "results", *options])
+
+
+def test_box_only_training_does_not_rescore_masks(image, tmp_path, sam_package):
+    """Without masks there is no mask IoU, so no extra pass over the training images."""
+    from collectra.tasks.image_segmentation.sam3_training import training_config
+
+    dataset = export_dataset(
+        [
+            SegmentationSample(image, [instance(image, tmp_path)]),
+            SegmentationSample(
+                image, [instance(image, tmp_path, partition="validation")]
+            ),
+        ],
+        tmp_path / "dataset",
+        validation="validation",
+    )
+    config = training_config(
+        dataset,
+        tmp_path,
+        tmp_path / "initial.pt",
+        epochs=1,
+        batch=1,
+        num_gpus=1,
+        masks=False,
+    )
+    assert config["trainer"]["collectra_selection"] == "bbox_ap"
+    assert "collectra_train_eval" not in config["trainer"]
+
+
+class FakeSam3Trainer:
+    """Stands in for SAM3's Trainer underneath collectra's hooks."""
+
+    def train_epoch(self, train_loader):
+        return {"Losses/train_all_loss": 0.5}
+
+    def val_epoch(self, val_loader, phase):
+        return {"Meters_val/roboflow100/mask_iou/iou": 0.8}
+
+
+@pytest.fixture
+def hooks(monkeypatch, tmp_path):
+    """Collectra's SAM3 hooks over a fake trainer and model, without SAM3 installed."""
+    import sys
+    import types
+
+    import torch
+
+    from collectra.tasks.image_segmentation import sam3_metrics
+
+    for name in ("sam3.model.utils.misc", "sam3.train.utils.train_utils"):
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    sys.modules["sam3.model.utils.misc"].copy_data_to_device = (
+        lambda batch, device, non_blocking: batch
+    )
+    sys.modules["sam3.train.utils.train_utils"].get_amp_type = lambda dtype: None
+
+    class Meter:
+        def __init__(self, threshold):
+            self.threshold = threshold
+            self.batches = []
+
+        def update(self, *, find_stages, batch):
+            self.batches.append((find_stages, batch))
+
+        def compute_synced(self):
+            return {"iou": 0.25}
+
+    meters = []
+    monkeypatch.setattr(
+        sam3_metrics,
+        "MaskIoU",
+        lambda threshold: meters.append(Meter(threshold)) or meters[-1],
+    )
+
+    class Model(torch.nn.Module):
+        def forward(self, batch):
+            assert not self.training, "training images are scored in eval mode"
+            return ["stages for", batch]
+
+    class Hooks(sam3_metrics.TrainingHooks, FakeSam3Trainer):
+        pass
+
+    def make(has_validation=True, train_eval=True):
+        hooks = Hooks.__new__(Hooks)
+        hooks._collectra_has_validation = has_validation
+        hooks._collectra_selection = "mask_iou"
+        hooks._collectra_best = None
+        hooks._collectra_output = tmp_path
+        hooks._collectra_mask_threshold = 0.7
+        hooks._collectra_reporter = Mock()
+        hooks._collectra_train_eval = (
+            SimpleNamespace(get_loader=lambda epoch: [{"roboflow": f"batch {epoch}"}])
+            if train_eval
+            else None
+        )
+        hooks.distributed_rank = 1  # no best.pt to write
+        hooks.epoch = 2
+        hooks.device = "cpu"
+        hooks.optim_conf = None
+        hooks.model = Model().train()
+        return hooks
+
+    make.meters = meters
+    return make
+
+
+def test_the_training_images_are_scored_in_eval_mode_and_reported(hooks):
+    trainer = hooks()
+    trainer._collectra_record_train_iou()
+    (meter,) = hooks.meters
+    assert meter.threshold == 0.7
+    assert meter.batches == [(["stages for", "batch 2"], "batch 2")]
+    trainer._collectra_reporter.record.assert_called_once_with(
+        3, "train", {"mask_iou": 0.25}
+    )
+    assert trainer.model.training, "the model goes back to training mode"
+
+
+def test_without_a_train_eval_dataset_nothing_is_scored(hooks):
+    trainer = hooks(train_eval=False)
+    trainer._collectra_record_train_iou()
+    assert hooks.meters == []
+    trainer._collectra_reporter.record.assert_not_called()
+
+
+def test_with_validation_the_training_images_are_scored_after_it(hooks):
+    trainer = hooks(has_validation=True)
+    trainer.train_epoch(None)
+    assert hooks.meters == []
+    metrics = trainer.val_epoch(None, "val")
+    assert metrics["mask_iou"] == 0.8
+    assert len(hooks.meters) == 1
+    assert trainer.model.training
+
+
+def test_without_validation_the_training_images_are_scored_after_each_epoch(hooks):
+    trainer = hooks(has_validation=False)
+    trainer.train_epoch(None)
+    assert len(hooks.meters) == 1
+    calls = trainer._collectra_reporter.record.call_args_list
+    assert calls[-1].args == (3, "train", {"mask_iou": 0.25})
+
+
+@pytest.mark.parametrize("configured", [True, False])
+def test_the_hooks_build_the_training_image_loader_from_its_config(
+    monkeypatch, tmp_path, configured
+):
+    import sys
+    import types
+
+    from collectra.tasks.image_segmentation.sam3_metrics import TrainingHooks
+
+    hydra = types.ModuleType("hydra")
+    hydra.utils = types.ModuleType("hydra.utils")
+    hydra.utils.instantiate = lambda config: ("loader built from", config)
+    monkeypatch.setitem(sys.modules, "hydra", hydra)
+    monkeypatch.setitem(sys.modules, "hydra.utils", hydra.utils)
+
+    class Base:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.distributed_rank = 1  # no reporter, so no metrics.csv
+
+    class Hooks(TrainingHooks, Base):
+        pass
+
+    hooks = Hooks(
+        collectra_output=tmp_path,
+        collectra_train_eval={"dataset": "train"} if configured else None,
+        collectra_mask_threshold=0.6,
+        data={"train": {}},
+    )
+    assert hooks._collectra_train_eval == (
+        ("loader built from", {"dataset": "train"}) if configured else None
+    )
+    assert hooks._collectra_mask_threshold == 0.6
+    assert hooks.kwargs == {"data": {"train": {}}}

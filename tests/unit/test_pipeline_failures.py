@@ -145,3 +145,30 @@ def test_a_keyboard_interrupt_still_stops_the_run(tmp_path, files, monkeypatch):
     monkeypatch.setattr(Boom, "run", interrupted)
     with pytest.raises(KeyboardInterrupt):
         build(tmp_path).run(files=files[:1])
+
+
+def test_a_failed_task_closes_its_progress_bar_at_once(tmp_path, files, monkeypatch):
+    # The bar's track() generator runs a refresh thread. Left for the garbage
+    # collector after a failure, closing it could deadlock the run, so it must
+    # be closed as soon as the task stops, not whenever it is collected.
+    import gc
+
+    from collectra.pipelines import base
+
+    opened, closed = [], []
+
+    def track(entries, **kwargs):
+        opened.append(kwargs["description"])
+        try:
+            yield from entries
+        finally:
+            closed.append(kwargs["description"])
+
+    monkeypatch.setattr(base, "track", track)
+    gc.disable()
+    try:
+        build(tmp_path).run("boom", single=True, files=files[:1])
+        assert "Running boom" in opened
+        assert closed == opened
+    finally:
+        gc.enable()

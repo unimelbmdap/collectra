@@ -311,8 +311,11 @@ def get_distance_matrix(
     output: str,
     model: str = "vgg19",
 ):
-    """Compute the distance matrix for the embeddings"""
-    import h5py
+    """Compute the distance matrix for the embeddings.
+
+    Saves a NumPy ``.npz`` file at ``output`` holding ``distmatrix`` and
+    ``index``, the file name of each row.
+    """
     import numpy as np
     import pandas as pd
     from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -333,9 +336,11 @@ def get_distance_matrix(
             distvec = pdist(embeddings, metric="euclidean")
 
         indices = df.filenames.to_list()
-        with h5py.File(export, "w") as f:
-            f.create_dataset("distmatrix", data=squareform(distvec))
-            f.create_dataset("index", data=np.array(indices, dtype="S"))
+        # An open file, so np.savez does not add ".npz" to the name given.
+        with open(export, "wb") as f:
+            np.savez(
+                f, distmatrix=squareform(distvec), index=np.array(indices, dtype=str)
+            )
     except Exception as e:
         print(f"Error computing distance matrix: {e}")
 
@@ -346,12 +351,17 @@ def farthest_first(
     """Perform farthest-first traversal to select k diverse samples."""
     import random
 
-    import h5py
     import numpy as np
 
-    with h5py.File(ref, "r") as f:
-        dist_matrix = f["distmatrix"][:]
-        indices: list[str] = [s.decode("utf-8") for s in f["index"][:]]  # type: ignore
+    with open(ref, "rb") as f:
+        if f.read(4) == b"\x89HDF":
+            raise ValueError(
+                f"{ref} was saved as HDF5 by an older version of collectra. "
+                "Run get_distance_matrix again to save it in the current format."
+            )
+    with np.load(ref) as data:
+        dist_matrix = data["distmatrix"]
+        indices: list[str] = data["index"].tolist()
     new_ids = []
     if within and selected_ids:
         iterator = [indices.index(sid) for sid in selected_ids]

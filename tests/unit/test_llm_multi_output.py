@@ -1,11 +1,9 @@
 """An LLM with several output nodes answers in structured form, one Text per node."""
 
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 import yaml
-from langchain_core.messages import AIMessage
 from pydantic import BaseModel
 
 from collectra import Pipeline
@@ -15,6 +13,7 @@ from collectra.tasks.llms import LLM
 from collectra.types.images import Image
 from collectra.types.texts import Text
 from tests.unit.test_pipeline_stages import files  # noqa: F401
+from tests.unit.scripted_llm import Scripted, prompt_text
 from utils.get_types import get_return_type, unpack_types
 
 THIS = "tests.unit.test_llm_multi_output"
@@ -26,66 +25,9 @@ LABEL = {
 }
 
 
-class FakeStructured:
-    """Stands in for ``llm.with_structured_output(Model, include_raw=True)``."""
-
-    def __init__(self, model, reply):
-        self.model = model
-        self.reply = reply
-        self.invoked = []
-        self.batches = []
-        self.configs = []
-
-    @staticmethod
-    def _text(messages):
-        return messages[1].content[-1]["text"]
-
-    def _result(self, messages):
-        value = self.reply(self._text(messages))
-        if isinstance(value, Exception):
-            raise value
-        raw = AIMessage(
-            content="",
-            usage_metadata={"input_tokens": 3, "output_tokens": 2, "total_tokens": 5},
-        )
-        try:
-            return {
-                "raw": raw,
-                "parsed": self.model.model_validate(value),
-                "parsing_error": None,
-            }
-        except Exception as error:
-            return {"raw": raw, "parsed": None, "parsing_error": error}
-
-    def invoke(self, messages):
-        self.invoked.append(self._text(messages))
-        return self._result(messages)
-
-    def batch(self, inputs, config=None, return_exceptions=False):
-        self.batches.append([self._text(m) for m in inputs])
-        self.configs.append(config)
-        results = []
-        for messages in inputs:
-            try:
-                results.append(self._result(messages))
-            except Exception as error:
-                results.append(error)
-        return results
-
-
-class FakeLLM:
-    def __init__(self, reply=lambda text: dict(LABEL), supported=True):
-        self.reply = reply
-        self.supported = supported
-        self.structured = None
-        self.asked = []
-
-    def with_structured_output(self, model, include_raw=False):
-        self.asked.append((model, include_raw))
-        if not self.supported:
-            raise NotImplementedError("this model cannot call tools")
-        self.structured = FakeStructured(model, self.reply)
-        return self.structured
+def FakeLLM(reply=lambda text: dict(LABEL), supported=True):
+    """A model that answers each prompt with ``reply(prompt text)``."""
+    return Scripted(reply=reply, supports_tools=supported)
 
 
 def reader(llm=None, outputs=OUTPUTS, **kwargs):
@@ -170,13 +112,16 @@ def test_run_returns_one_text_per_output_node_in_order():
     assert all(isinstance(t, Text) for t in result)
 
 
-def test_the_structured_model_is_requested_with_the_raw_reply_for_usage():
+def test_the_answer_is_asked_for_as_a_tool_with_one_field_per_node():
     llm = FakeLLM()
-    reader(llm).run(label())
-    model, include_raw = llm.asked[0]
-    assert include_raw is True
-    assert list(model.model_json_schema()["properties"]) == OUTPUTS
-    assert len(llm.asked) == 1  # built once, reused
+    task = reader(llm)
+    task.run(label())
+    task.run(label())
+    (tool,) = llm.infos[0].output_tools
+    assert tool.name == "LLMOutputs"
+    assert list(tool.parameters_json_schema["properties"]) == OUTPUTS
+    assert not llm.infos[0].allow_text_output
+    assert task.agent is task.agent  # built once, reused
 
 
 def test_missing_fields_become_empty_strings():
@@ -191,37 +136,31 @@ def test_nothing_found_still_gives_every_node_an_empty_text():
 
 
 def test_a_single_output_is_still_free_text():
-    chain_calls = []
-
-    class Free:
-        def invoke(self, messages):
-            chain_calls.append(1)
-            return AIMessage(content="plain answer")
-
+    free = Scripted(["plain answer"])
     task = LLM("t", "m", template="{label}", output=["only"])
-    task.__dict__["llm"] = Free()
+    task.__dict__["llm"] = free
     result = task.run(label())
     assert isinstance(result, Text) and result() == "plain answer"
     assert result.name == "only"
+    assert free.infos[0].output_tools == []
 
 
-def test_a_reply_the_schema_rejects_is_an_error_rather_than_empty_output():
-    class Strict(FakeLLM):
-        def with_structured_output(self, model, include_raw=False):
-            chain = super().with_structured_output(model, include_raw)
-            chain.model = type(
-                "Broken",
-                (),
-                {
-                    "model_validate": staticmethod(
-                        lambda v: (_ for _ in ()).throw(ValueError("bad"))
-                    )
-                },
-            )
-            return chain
+def garbage():
+    """A reply whose answer is not an object of fields."""
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
 
-    with pytest.raises(ValueError, match="bad"):
-        reader(Strict()).run(label())
+    return ModelResponse(parts=[ToolCallPart("LLMOutputs", "not json at all")])
+
+
+def test_a_reply_the_schema_rejects_is_sent_back_for_the_model_to_correct():
+    llm = Scripted([garbage(), dict(LABEL)])
+    assert [t() for t in reader(llm).run(label())] == [LABEL[n] for n in OUTPUTS]
+    assert len(llm.requests) == 2
+
+
+def test_a_reply_the_schema_keeps_rejecting_is_an_error_rather_than_empty_output():
+    with pytest.raises(RuntimeError, match="reader.*did not give a final answer"):
+        reader(Scripted(reply=lambda text: garbage())).run(label())
 
 
 def test_a_model_without_tool_calling_raises_a_clear_error():
@@ -244,42 +183,38 @@ def entries(*texts):
     return [[Text(name="label", data=t)] for t in texts]
 
 
-def test_batches_use_the_structured_model_and_runs_reuse_the_parsed_replies():
-    llm = FakeLLM(lambda text: {"genus_draft": text.upper()})
+def test_batches_use_the_structured_answer_and_runs_reuse_the_parsed_replies():
+    llm = Scripted(reply=lambda text: {"genus_draft": text.upper()}, delay=0.02)
     task = reader(llm, batch_size=2)
     task.prefetch(entries("a", "b", "c"))
-    assert [len(b) for b in llm.structured.batches] == [2, 1]
-    assert llm.structured.configs[0] == {"max_concurrency": 2}
+    assert llm.most_at_once == 2 and len(llm.requests) == 3
     first = task.run(*entries("a")[0])
     assert [t() for t in first] == ["", "A", ""]
-    assert llm.structured.invoked == []
+    assert len(llm.requests) == 3
 
 
 def test_an_unreadable_batch_reply_is_retried_alone():
     def reply(text):
-        return "garbage, not an object" if text == "bad" else {"genus_draft": 5}
+        return garbage() if text == "bad" else {"genus_draft": 5}
 
-    llm = FakeLLM(reply)
+    llm = Scripted(reply=reply)
     task = reader(llm, batch_size=2)
     task.prefetch(entries("good", "bad"))
+    asked = len(llm.requests)
     assert [t() for t in task.run(*entries("good")[0])][1] == "5"
-    assert llm.structured.invoked == []
-    with pytest.raises(Exception):  # still unreadable when asked alone
+    assert len(llm.requests) == asked
+    with pytest.raises(RuntimeError):  # still unreadable when asked alone
         task.run(*entries("bad")[0])
-    assert llm.structured.invoked == ["bad"]
+    assert len(llm.requests) > asked
+    assert {prompt_text(r) for r in llm.requests[asked:]} == {"bad"}
 
 
-def test_usage_is_recorded_from_the_raw_reply(tmp_path):
+def test_usage_is_recorded_for_a_structured_answer(tmp_path):
     task = reader()
     task.context = TaskContext(usage_file=tmp_path / "usage.yaml")
-    with patch("collectra.tasks.llms.get_llmloader") as loader:
-        loader.return_value.LLMWrapper.get_token_count.return_value = {"tokens": 5}
-        task.run(label())
-    (seen,) = loader.return_value.LLMWrapper.get_token_count.call_args.args
-    assert isinstance(seen, AIMessage)
-    assert yaml.safe_load((tmp_path / "usage.yaml").read_text()) == {
-        "reader": {"tokens": 5}
-    }
+    task.run(label())
+    usage = yaml.safe_load((tmp_path / "usage.yaml").read_text())["reader"]
+    assert (usage["input_tokens"], usage["output_tokens"]) == (3, 2)
 
 
 # --- the graph and the saved results ------------------------------------------
@@ -359,9 +294,9 @@ def test_a_second_run_skips_the_task_because_every_node_has_output(tmp_path, fil
     with patch.object(LLM, "llm", property(lambda self: fake)):
         pipe = label_pipeline(tmp_path)
         pipe.run(files=files[:1])
-        asked = len(fake.asked)
+        asked = len(fake.requests)
         pipe.run("reader", single=True, files=[str(folder(tmp_path))])
-    assert len(fake.asked) == asked  # nothing was sent again
+    assert len(fake.requests) == asked  # nothing was sent again
 
 
 def test_files_are_written_only_for_nodes_with_text(tmp_path, files):
