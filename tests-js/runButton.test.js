@@ -49,6 +49,33 @@ describe('the Run toolbar button', () => {
     });
 });
 
+const cssRule = (selector) => {
+    const start = html.indexOf(`${selector} {`);
+    return start < 0 ? '' : html.slice(start, html.indexOf('}', start));
+};
+
+describe('the Run confirmation panel size', () => {
+    it('has a fixed width, so a longer line does not widen it', () => {
+        const rule = cssRule('#runModal .modal-popup');
+        expect(rule).toMatch(/width:\s*min\(90vw, \d+px\)/);
+        expect(rule).not.toContain('max-content');
+    });
+
+    it('shows the summary line in a smaller font', () => {
+        expect(cssRule('#runModalSummary')).toMatch(/font-size:\s*12px/);
+    });
+
+    it('reserves room for the summary line, so ticking Overwrite does not resize it', () => {
+        expect(cssRule('#runModalSummary')).toMatch(/min-height:\s*[\d.]+em/);
+    });
+
+    it('keeps that room when the summary line is empty', () => {
+        const rule = cssRule('#runModalSummary[hidden]');
+        expect(rule).toMatch(/display:\s*block/);
+        expect(rule).toMatch(/visibility:\s*hidden/);
+    });
+});
+
 describe('the Run confirmation panel markup', () => {
     it('reuses the delete dialog markup and classes', () => {
         expect(modal).toContain('class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="runModalTitle"');

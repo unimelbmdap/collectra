@@ -964,6 +964,19 @@
             margin: 0 0 8px 0;
             color: var(--app-fg, #cccccc);
         }
+        /* Run panel keeps one size: fixed width and room for three summary lines */
+        #runModal .modal-popup {
+            width: min(90vw, 560px);
+        }
+        #runModalSummary {
+            font-size: 12px;
+            line-height: 1.4;
+            min-height: 4.2em;
+        }
+        #runModalSummary[hidden] {
+            display: block;
+            visibility: hidden;
+        }
         .delete-children {
             list-style: none;
             margin: 0;
