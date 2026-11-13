@@ -205,6 +205,7 @@ def test_an_already_imported_file_is_opened(tmp_path, source, raw_img_path):
     pipeline = build(tmp_path)
     shutil.copy(raw_img_path, source / "one.jpg")
     folder = pipeline.import_file(source / "one.jpg")
+    shutil.copy(raw_img_path, source / "one.jpg")  # The same image again
     before = snapshot(source)
     report = pipeline.import_inputs([source / "one.jpg"])
     assert (report.pages, report.imported, report.existing) == ([folder], 0, 1)

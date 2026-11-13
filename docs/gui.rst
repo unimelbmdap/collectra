@@ -75,15 +75,17 @@ subfolders. (The ``run`` command still searches folders recursively.)
 
 For each image, Collectra creates a folder next to it, named after the image
 with the pipeline's extension, so ``page001.jpg`` becomes ``page001.collectra``
-for a pipeline whose extension is ``collectra``. The image is copied into it
-unchanged, and a ``results.yaml`` is written that holds only that input image.
+for a pipeline whose extension is ``collectra``. The image is moved into it
+unchanged, so the original is no longer beside it, and a ``results.yaml`` is
+written that holds only that input image.
 No task runs, so every task shows as **will run** in the run button's preview
 (see `Running the pipeline`_).
 
 * If the name is already taken by something that is not this image's page, the
   new folder is numbered: ``page001-2.collectra``, then ``page001-3.collectra``.
-  Opening the same image again opens its existing page instead of making
-  another.
+  A copy of the same image opened again opens the existing page instead of
+  making another, and is left where it is.
+* If the page cannot be written, the image is put back where it was.
 * A folder named ``<name>.<extension>`` that has no ``results.yaml`` and holds
   exactly one image is turned into a page where it is, without copying. With no
   image, or with several, it is skipped and left alone.
@@ -309,8 +311,7 @@ extension (for example ``page.mypipe``); a renamed folder, or a page made by
 another pipeline, is refused and left untouched. If the results were made by
 another pipeline, or by another version of this one, the panel warns you, and
 the run's log entry notes it, but the run is not blocked. The image is read from
-the copy in the page's folder when the original it was made from has been moved
-or deleted.
+the page's folder.
 
 The panel has an optional **Note** (at most 200 characters; whitespace is
 collapsed) that is saved with the run in ``run-log.txt``. Confirm with the

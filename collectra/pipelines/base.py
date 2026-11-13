@@ -1347,7 +1347,9 @@ class Pipeline(LenientAttributes, BaseModel):
         return savef
 
     def import_file(self, source: Path) -> Path:
-        """Make the results folder for one input file, next to the file.
+        """Make the results folder for one input file and move the file into it.
+
+        The folder is made next to the file.
 
         This file's existing page is returned as it is; any other folder of
         that name is left alone and the new one is numbered.
@@ -1389,11 +1391,21 @@ class Pipeline(LenientAttributes, BaseModel):
         if folder.exists():
             return folder
         folder.mkdir()
+        image = folder / source.name
+        moved = False
         try:
-            shutil.copy2(source, folder / source.name)
+            shutil.move(source, image)
+            moved = True
             self._create_results_file(folder, root, source)
         except BaseException:
-            shutil.rmtree(folder, ignore_errors=True)
+            restored = True
+            if moved:
+                try:
+                    shutil.move(image, source)
+                except OSError:
+                    restored = False  # The folder holds the only copy
+            if restored:
+                shutil.rmtree(folder, ignore_errors=True)
             raise
         logger.info("Imported %s as %s", source, folder)
         return folder
@@ -1403,7 +1415,7 @@ class Pipeline(LenientAttributes, BaseModel):
 
         An input is an existing results folder (opened, nothing written), a
         ``<x>.<ext>`` folder without results (adopted in place when it holds
-        exactly one accepted file), an accepted file (imported next to itself),
+        exactly one accepted file), an accepted file (moved into a folder next to itself),
         or any other folder, whose direct children are handled the same way in
         case-insensitive order. Hidden entries are ignored; one input failing
         does not stop the others.

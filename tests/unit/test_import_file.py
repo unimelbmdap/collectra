@@ -46,7 +46,7 @@ def snapshot(folder: Path) -> dict:
     }
 
 
-def test_import_makes_folder_copy_and_root_only_results(tmp_path, source, raw_img_path):
+def test_import_makes_folder_and_root_only_results(tmp_path, source, raw_img_path):
     image = source / "page001.jpg"
     shutil.copy(raw_img_path, image)
     folder = build(tmp_path).import_file(image)
@@ -55,7 +55,7 @@ def test_import_makes_folder_copy_and_root_only_results(tmp_path, source, raw_im
         "page001.jpg",
         "results.yaml",
     ]
-    assert (folder / "page001.jpg").read_bytes() == image.read_bytes()
+    assert (folder / "page001.jpg").read_bytes() == raw_img_path.read_bytes()
     results = yaml.safe_load((folder / "results.yaml").read_text())
     header = pop_header(results)
     assert (header.workflow, header.version) == ("Import", "0.1.0")
@@ -64,15 +64,24 @@ def test_import_makes_folder_copy_and_root_only_results(tmp_path, source, raw_im
     }
 
 
+def test_the_image_is_moved_not_copied(tmp_path, source, raw_img_path):
+    image = source / "page.jpg"
+    shutil.copy(raw_img_path, image)
+    folder = build(tmp_path).import_file(image)
+    assert not image.exists()
+    assert (folder / "page.jpg").read_bytes() == raw_img_path.read_bytes()
+
+
 def test_same_source_is_not_imported_twice(tmp_path, source, raw_img_path):
     image = source / "page.jpg"
     shutil.copy(raw_img_path, image)
     pipeline = build(tmp_path)
     folder = pipeline.import_file(image)
+    shutil.copy(raw_img_path, image)  # The same image again
     before = snapshot(source)
     assert pipeline.import_file(image) == folder
     assert not (source / "page-2.imp").exists()
-    assert snapshot(source) == before
+    assert snapshot(source) == before  # The original is left where it is
 
 
 def test_different_file_with_same_stem_is_numbered(tmp_path, source, raw_img_path):
@@ -91,6 +100,7 @@ def test_page_missing_its_copy_is_not_reused(tmp_path, source, raw_img_path):
     shutil.copy(raw_img_path, source / "page.jpg")
     pipeline = build(tmp_path)
     (pipeline.import_file(source / "page.jpg") / "page.jpg").unlink()
+    shutil.copy(raw_img_path, source / "page.jpg")
     assert pipeline.import_file(source / "page.jpg") == source / "page-2.imp"
 
 
@@ -132,7 +142,7 @@ def test_unaccepted_extension_is_refused(tmp_path, source, name):
     assert sorted(source.iterdir()) == [source / name]
 
 
-def test_failed_copy_leaves_nothing(tmp_path, source, raw_img_path, monkeypatch):
+def test_failed_move_leaves_nothing(tmp_path, source, raw_img_path, monkeypatch):
     shutil.copy(raw_img_path, source / "page.jpg")
     # An existing folder is taken, and kept on failure
     (source / "page.imp").mkdir()
@@ -142,11 +152,51 @@ def test_failed_copy_leaves_nothing(tmp_path, source, raw_img_path, monkeypatch)
         assert (source / "page-2.imp").is_dir()
         raise OSError("disk full")
 
-    monkeypatch.setattr(shutil, "copy2", fail)
+    monkeypatch.setattr(shutil, "move", fail)
     with pytest.raises(OSError, match="disk full"):
         build(tmp_path).import_file(source / "page.jpg")
     assert sorted(path.name for path in source.iterdir()) == ["page.imp", "page.jpg"]
+    assert (source / "page.jpg").read_bytes() == raw_img_path.read_bytes()
     assert (source / "page.imp" / "mine.txt").read_text() == "kept"
+
+
+def test_failed_results_put_the_image_back(tmp_path, source, raw_img_path, monkeypatch):
+    shutil.copy(raw_img_path, source / "page.jpg")
+    pipeline = build(tmp_path)
+
+    def fail(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(pipeline, "_create_results_file", fail)
+    with pytest.raises(OSError, match="disk full"):
+        pipeline.import_file(source / "page.jpg")
+    assert sorted(path.name for path in source.iterdir()) == ["page.jpg"]
+    assert (source / "page.jpg").read_bytes() == raw_img_path.read_bytes()
+
+
+def test_an_image_that_cannot_be_put_back_is_kept(
+    tmp_path, source, raw_img_path, monkeypatch
+):
+    shutil.copy(raw_img_path, source / "page.jpg")
+    pipeline = build(tmp_path)
+    move = shutil.move
+    calls = []
+
+    def flaky(src, dst):
+        calls.append(src)
+        if len(calls) > 1:
+            raise OSError("cannot restore")
+        return move(src, dst)
+
+    def fail(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(shutil, "move", flaky)
+    monkeypatch.setattr(pipeline, "_create_results_file", fail)
+    with pytest.raises(OSError, match="disk full"):
+        pipeline.import_file(source / "page.jpg")
+    kept = source / "page.imp" / "page.jpg"
+    assert kept.read_bytes() == raw_img_path.read_bytes()
 
 
 def test_a_failing_cleanup_keeps_the_original_error(
@@ -161,7 +211,7 @@ def test_a_failing_cleanup_keeps_the_original_error(
         if not ignore_errors:
             raise OSError("cannot remove")
 
-    monkeypatch.setattr(shutil, "copy2", fail)
+    monkeypatch.setattr(shutil, "move", fail)
     monkeypatch.setattr(shutil, "rmtree", deny)
     with pytest.raises(OSError, match="disk full"):
         build(tmp_path).import_file(source / "page.jpg")
